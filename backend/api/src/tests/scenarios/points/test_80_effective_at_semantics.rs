@@ -25,6 +25,11 @@
 // which intentionally does NOT touch `points_wallets` Stored columns — this
 // keeps the derived balance the sole source of truth for these assertions.
 //
+// These scenarios exercise ledger-based credit types (`TopupCredit`,
+// `GrantedCredit`, `RegistrationCredit`) because `SubscriptionCredit` now lives
+// on `points_quota_entitlements` and does not use `points_credit_ledger`
+// `effective_at` semantics.
+//
 // =============================================================================
 
 use crate::tests::helpers::points_helpers::{
@@ -63,15 +68,15 @@ async fn test_future_effective_not_visible_not_consumable(ctx: &mut TestContext)
     let realm_id = ctx._realm_id.clone();
     let user_id = create_test_user(&ctx.app_state.pool, &realm_id, "be-t02-future@exam.com").await;
 
-    // Seed TWO subscription_credit rows on the same (user, realm, bucket):
+    // Seed TWO topup rows on the same (user, realm, bucket):
     //   * immediately-available  (effective_at = NULL)  -> 2000 in derived balance
     //   * future-effective       (effective_at = NOW+1d) -> excluded from derived
     let _immediate_id = create_credit_ledger_entry_with_effective_at(
         ctx,
         user_id,
         &realm_id,
-        CreditType::SubscriptionCredit,
-        CreditSourceType::SubscriptionInitial,
+        CreditType::TopupCredit,
+        CreditSourceType::Topup,
         format!("be-t02-future-imm-{}", Uuid::now_v7()),
         2000,
         None,
@@ -84,8 +89,8 @@ async fn test_future_effective_not_visible_not_consumable(ctx: &mut TestContext)
         ctx,
         user_id,
         &realm_id,
-        CreditType::SubscriptionCredit,
-        CreditSourceType::SubscriptionInitial,
+        CreditType::TopupCredit,
+        CreditSourceType::Topup,
         format!("be-t02-future-next-{}", Uuid::now_v7()),
         3000,
         None,
@@ -94,14 +99,7 @@ async fn test_future_effective_not_visible_not_consumable(ctx: &mut TestContext)
     .await;
 
     // (a) Invisibility: derived available balance counts ONLY the immediate row.
-    assert_derived_balance(
-        ctx,
-        user_id,
-        &realm_id,
-        CreditType::SubscriptionCredit,
-        2000,
-    )
-    .await;
+    assert_derived_balance(ctx, user_id, &realm_id, CreditType::TopupCredit, 2000).await;
     assert_eq!(
         count_future_effective_active_rows(ctx, user_id, &realm_id).await,
         1,
@@ -181,14 +179,14 @@ async fn test_zero_delay_available_advance_clock_only(ctx: &mut TestContext) {
     let user_id =
         create_test_user(&ctx.app_state.pool, &realm_id, "be-t02-zerodelay@exam.com").await;
 
-    // Seed a future-effective subscription_credit row (effective tomorrow).
+    // Seed a future-effective topup row (effective tomorrow).
     let future_effective = Utc::now() + Duration::days(1);
     let ledger_id = create_credit_ledger_entry_with_effective_at(
         ctx,
         user_id,
         &realm_id,
-        CreditType::SubscriptionCredit,
-        CreditSourceType::SubscriptionInitial,
+        CreditType::TopupCredit,
+        CreditSourceType::Topup,
         format!("be-t02-zerodelay-{}", Uuid::now_v7()),
         5000,
         None,
@@ -197,7 +195,7 @@ async fn test_zero_delay_available_advance_clock_only(ctx: &mut TestContext) {
     .await;
 
     // Pre-advance assertion: row is future-effective → not in derived balance.
-    assert_derived_balance(ctx, user_id, &realm_id, CreditType::SubscriptionCredit, 0).await;
+    assert_derived_balance(ctx, user_id, &realm_id, CreditType::TopupCredit, 0).await;
     assert_eq!(
         count_future_effective_active_rows(ctx, user_id, &realm_id).await,
         1,
@@ -222,14 +220,7 @@ async fn test_zero_delay_available_advance_clock_only(ctx: &mut TestContext) {
 
     // Post-advance assertion (a): derived balance now INCLUDES the row,
     // immediately, with no worker invocation.
-    assert_derived_balance(
-        ctx,
-        user_id,
-        &realm_id,
-        CreditType::SubscriptionCredit,
-        5000,
-    )
-    .await;
+    assert_derived_balance(ctx, user_id, &realm_id, CreditType::TopupCredit, 5000).await;
     assert_eq!(
         count_future_effective_active_rows(ctx, user_id, &realm_id).await,
         0,
@@ -289,19 +280,7 @@ async fn test_immediate_available_when_effective_at_null(ctx: &mut TestContext) 
     let user_id =
         create_test_user(&ctx.app_state.pool, &realm_id, "be-t02-immediate@exam.com").await;
 
-    // Three rows across two credit types, ALL with effective_at = NULL.
-    let _sub = create_credit_ledger_entry_with_effective_at(
-        ctx,
-        user_id,
-        &realm_id,
-        CreditType::SubscriptionCredit,
-        CreditSourceType::SubscriptionInitial,
-        format!("be-t02-imm-sub-{}", Uuid::now_v7()),
-        4000,
-        None,
-        None, // ← NULL: immediately available
-    )
-    .await;
+    // Three ledger-based rows, ALL with effective_at = NULL.
     let _topup = create_credit_ledger_entry_with_effective_at(
         ctx,
         user_id,
@@ -310,6 +289,18 @@ async fn test_immediate_available_when_effective_at_null(ctx: &mut TestContext) 
         CreditSourceType::Topup,
         format!("be-t02-imm-topup-{}", Uuid::now_v7()),
         1500,
+        None,
+        None, // ← NULL: immediately available
+    )
+    .await;
+    let _granted = create_credit_ledger_entry_with_effective_at(
+        ctx,
+        user_id,
+        &realm_id,
+        CreditType::GrantedCredit,
+        CreditSourceType::AdminGrant,
+        format!("be-t02-imm-granted-{}", Uuid::now_v7()),
+        4000,
         None,
         None,
     )
@@ -328,43 +319,14 @@ async fn test_immediate_available_when_effective_at_null(ctx: &mut TestContext) 
     .await;
 
     // NULL effective_at → every row is in the available set, immediately.
-    assert_derived_balance(
-        ctx,
-        user_id,
-        &realm_id,
-        CreditType::SubscriptionCredit,
-        4000,
-    )
-    .await;
     assert_derived_balance(ctx, user_id, &realm_id, CreditType::TopupCredit, 1500).await;
+    assert_derived_balance(ctx, user_id, &realm_id, CreditType::GrantedCredit, 4000).await;
     assert_derived_balance(ctx, user_id, &realm_id, CreditType::RegistrationCredit, 500).await;
 
     // Total derived balance = sum of all immediately-available rows.
     assert_eq!(
         get_derived_total_balance(ctx, user_id, &realm_id).await,
-        4000 + 1500 + 500,
+        1500 + 4000 + 500,
         "total derived available balance must equal sum of all effective_at=NULL rows"
     );
-
-    // And all 4000 subscription credits are immediately consumable.
-    let identity = create_test_third_party_identity(&realm_id);
-    let input = ConsumePointsInput {
-        user_id: user_id.to_string(),
-        client_app_id: ctx._client_app_id.clone(),
-        amount: 4000,
-        description: Some("be-t02 immediate-availability consume".to_string()),
-    };
-    let result = ctx
-        .app_state
-        .points_service
-        .consume_points(identity, &realm_id, input)
-        .await
-        .expect("consume must succeed — effective_at=NULL rows are immediately available");
-
-    // After consume, subscription pool drops to 0; other pools untouched.
-    assert_derived_balance(ctx, user_id, &realm_id, CreditType::SubscriptionCredit, 0).await;
-    assert_derived_balance(ctx, user_id, &realm_id, CreditType::TopupCredit, 1500).await;
-    assert_derived_balance(ctx, user_id, &realm_id, CreditType::RegistrationCredit, 500).await;
-    // sanity: result had exactly one per-bucket transaction
-    assert_eq!(result.len(), 1);
 }

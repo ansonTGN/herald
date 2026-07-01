@@ -25,6 +25,7 @@
 //
 // =============================================================================
 
+use crate::tests::helpers::test_setup_helpers::record_test_user_consent;
 use crate::tests::scenarios::points::fixtures::*;
 use crate::tests::schema_test_context::SchemaTestContext as TestContext;
 use axum::{
@@ -44,7 +45,8 @@ async fn test_scenario_admin_update_entitlement_points_policy(ctx: &mut TestCont
 
     let admin_email = "admin24@example.com";
     let admin_password = "admin123";
-    create_test_admin(&ctx._app_state.pool, &ctx._realm_id, admin_email).await;
+    let admin_user_id = create_test_admin(&ctx._app_state.pool, &ctx._realm_id, admin_email).await;
+    record_test_user_consent(&ctx._app_state.pool, admin_user_id, &ctx._realm_id).await;
 
     let mapping_id =
         create_test_entitlement_mapping(&ctx._app_state.pool, &ctx._realm_id, "pro-monthly", 2999)

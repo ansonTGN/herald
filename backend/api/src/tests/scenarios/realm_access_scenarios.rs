@@ -25,6 +25,7 @@
 //
 // =============================================================================
 
+use crate::tests::helpers::test_setup_helpers::record_test_user_consent;
 use crate::tests::helpers::*;
 use crate::tests::schema_test_context::SchemaTestContext as TestContext;
 use axum::{
@@ -34,6 +35,24 @@ use axum::{
 use serde_json::json;
 use test_context::test_context;
 use tower::ServiceExt;
+
+/// Record legal consent for a realm admin user created via the realm API.
+///
+/// Realm creation bypasses the normal registration-time consent recording, so
+/// tests that log in as the newly-created admin must mirror it here to avoid
+/// being blocked by the legal-consent gate (BE-D08).
+async fn record_consent_for_email(ctx: &TestContext, email: &str, realm_id: &str) {
+    let user_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT id FROM account WHERE email = $1 AND realm_id = $2",
+    )
+    .bind(email)
+    .bind(realm_id)
+    .fetch_one(&ctx._app_state.pool)
+    .await
+    .expect("Failed to find realm admin user");
+
+    record_test_user_consent(&ctx._app_state.pool, user_id, realm_id).await;
+}
 
 /// ============================================================================
 /// Scenario 1: Create Multiple Realms with Isolated Admin Access
@@ -103,6 +122,7 @@ async fn test_scenario_create_multiple_realms_and_access_users(ctx: &mut TestCon
         "[Step 1] ✓ realm1 创建成功: {} ({})",
         realm1_name, realm1_id
     );
+    record_consent_for_email(ctx, realm1_admin_email, &realm1_id).await;
 
     // ============================================================================
     // Step 2: 创建 realm2 (带管理员)
@@ -136,6 +156,7 @@ async fn test_scenario_create_multiple_realms_and_access_users(ctx: &mut TestCon
         "[Step 2] ✓ realm2 创建成功: {} ({})",
         realm2_name, realm2_id
     );
+    record_consent_for_email(ctx, realm2_admin_email, &realm2_id).await;
 
     // ============================================================================
     // Step 3: Login as realm1 admin and access realm1 users
@@ -298,6 +319,7 @@ async fn test_scenario_realm_switching(ctx: &mut TestContext) {
 
     let resp = app.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::CREATED, "创建 realm1 应返回 201");
+    record_consent_for_email(ctx, "admin1@realm1.com", &realm1_id).await;
 
     // Create realm2
     let create_payload = json!({
@@ -319,6 +341,7 @@ async fn test_scenario_realm_switching(ctx: &mut TestContext) {
 
     let resp = app.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::CREATED, "创建 realm2 应返回 201");
+    record_consent_for_email(ctx, "admin2@realm2.com", &realm2_id).await;
     println!("[Step 1] ✓ realm1 和 realm2 创建成功");
 
     // ============================================================================
@@ -509,6 +532,7 @@ async fn test_scenario_realm_dashboard_access(ctx: &mut TestContext) {
     let resp = app.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::CREATED);
     println!("[Setup] ✓ 测试 Realm 创建成功: {}", test_realm_id);
+    record_consent_for_email(ctx, "admin@dashboard.com", &test_realm_id).await;
 
     // ============================================================================
     // Step 1: 访问 Realm Dashboard
@@ -618,6 +642,7 @@ async fn test_scenario_admin_list_realms_paginated_includes_all_realms(ctx: &mut
         "创建新 Realm 应返回 201"
     );
     println!("[Step 1] ✓ 新 Realm 创建成功: {}", new_realm_id);
+    record_consent_for_email(ctx, &format!("admin@{}.com", new_realm_id), &new_realm_id).await;
 
     // Step 2: call the paginated realm list as the admin identity
     println!("[Step 2] 调用 GET /api/realms/paginated");

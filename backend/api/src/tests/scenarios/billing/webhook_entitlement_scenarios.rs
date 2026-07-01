@@ -100,10 +100,10 @@ mod tests {
     }
 
     // Helper: get wallet balance for a user.
-    // Derived from `points_credit_ledger` (same predicate as production
-    // `compute_available_balance`); `points_wallets.total_balance` was dropped.
+    // Derived from `points_credit_ledger` for topup/registration/free_periodic
+    // credits and from the window-quota model for subscription_credit.
     async fn get_wallet_balance(ctx: &SchemaTestContext, user_id: Uuid, realm_id: &str) -> i64 {
-        sqlx::query_scalar::<_, i64>(
+        let ledger_balance: i64 = sqlx::query_scalar(
             "SELECT COALESCE(SUM(l.remaining_amount) FILTER (
                         WHERE l.status = 'active' AND l.remaining_amount > 0
                           AND (l.effective_at IS NULL OR l.effective_at <= NOW())
@@ -118,7 +118,23 @@ mod tests {
         .bind(realm_id)
         .fetch_one(&ctx.app_state.pool)
         .await
-        .unwrap_or(0)
+        .unwrap_or(0);
+
+        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+            &ctx.app_state.pool,
+            realm_id,
+        )
+        .await;
+        let subscription_balance = crate::tests::helpers::points_helpers::compute_window_available(
+            ctx,
+            realm_id,
+            user_id,
+            bucket_id,
+            herald_core::domain::points::entities::CreditType::SubscriptionCredit,
+        )
+        .await;
+
+        ledger_balance + subscription_balance
     }
 
     // Helper: get subscription count by entitlement_key

@@ -250,7 +250,7 @@ mod tests {
             "billingAddress": "789 User Lane",
             "billingPhone": "+1-555-0300",
             "billingTaxId": "TAX-123",
-            "dueDate": "2026-06-30",
+            "dueDate": "2099-12-31",
         });
 
         let response = app
@@ -327,7 +327,7 @@ mod tests {
             "billingName": "Jane Buyer",
             "billingAddress": "321 Buyer Blvd",
             "billingTaxId": "TAX-456",
-            "dueDate": "2026-06-30",
+            "dueDate": "2099-12-31",
         });
 
         let response = app
@@ -381,7 +381,7 @@ mod tests {
             "billingName": "No Seller User",
             "billingAddress": "999 No Seller St",
             "billingTaxId": "TAX-789",
-            "dueDate": "2026-06-30",
+            "dueDate": "2099-12-31",
         });
 
         let response = app
@@ -438,7 +438,7 @@ mod tests {
             "billingName": "Wrong Realm User",
             "billingAddress": "000 Wrong Realm St",
             "billingTaxId": "TAX-WRONG",
-            "dueDate": "2026-06-30",
+            "dueDate": "2099-12-31",
         });
 
         let response = app
@@ -720,7 +720,7 @@ mod tests {
             "sellerName": "Test Seller",
             "sellerAddress": "456 Seller Ave",
             "sellerTaxId": "SELLER-TAX",
-            "dueDate": "2026-06-30",
+            "dueDate": "2099-12-31",
         });
 
         let response = app
@@ -857,7 +857,7 @@ mod tests {
             "billingName": "Subs Reference User",
             "billingAddress": "555 Subs Lane",
             "billingTaxId": "TAX-SUBS",
-            "dueDate": "2026-06-30",
+            "dueDate": "2099-12-31",
         });
 
         let response = app
@@ -915,7 +915,7 @@ mod tests {
             "billingAddress": "111 Tracking Ave",
             "billingEmail": "tracking@test.com",
             "billingTaxId": "TAX-TRACK",
-            "dueDate": "2026-06-30",
+            "dueDate": "2099-12-31",
         });
 
         let apply_response = app
@@ -1066,7 +1066,7 @@ mod tests {
             "billingName": "Missing Reference User",
             "billingAddress": "222 Missing St",
             "billingTaxId": "TAX-MISS",
-            "dueDate": "2026-06-30",
+            "dueDate": "2099-12-31",
         });
 
         let response = app
@@ -1127,7 +1127,7 @@ mod tests {
             "billingName": "Imposter User",
             "billingAddress": "333 Imposter Rd",
             "billingTaxId": "TAX-IMP",
-            "dueDate": "2026-06-30",
+            "dueDate": "2099-12-31",
         });
 
         let response = app
@@ -1181,7 +1181,7 @@ mod tests {
             "billingName": "Fake Payment User",
             "billingAddress": "444 Fake St",
             "billingTaxId": "TAX-FAKE",
-            "dueDate": "2026-06-30",
+            "dueDate": "2099-12-31",
         });
 
         let response = app

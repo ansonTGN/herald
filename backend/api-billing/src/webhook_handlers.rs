@@ -26,7 +26,6 @@ use herald_core::domain::billing::{
 use herald_core::domain::common::entities::app_errors::CoreError;
 use herald_core::domain::points::IdempotencyResult;
 use herald_core::domain::points::entities::{PointsTransaction, TransactionType};
-use herald_core::domain::points::ports::PointsRepository;
 use herald_core::domain::points::subscription_service::CancelMode;
 use herald_core::domain::purchase::metadata_keys;
 use herald_core::domain::purchase::{CompletePaymentAttemptInput, PaymentCompletionSource};
@@ -139,6 +138,7 @@ struct CreemRefundCreatedPayload {
     original_amount: i64,
     user_id: Uuid,
     refund_type: String,
+    external_subscription_id: Option<String>,
 }
 
 struct CreemSubscriptionLifecyclePayload {
@@ -648,6 +648,7 @@ fn parse_refund_created_payload(event: &Value) -> Result<CreemRefundCreatedPaylo
             .as_str()
             .unwrap_or("subscription")
             .to_string(),
+        external_subscription_id: object["subscriptionId"].as_str().map(str::to_string),
     })
 }
 
@@ -1803,38 +1804,52 @@ async fn handle_refund_created(
             // subscription_id`. The pre-redesign chained pre-grant reclaim +
             // broad `revoke_subscription_unused` ledger-row paths are retired
             // under the window quota model. A refund targets the originating
-            // subscription; resolve its id via the user's active subscription
-            // schedules in this realm+bucket. Idempotent: no active
+            // subscription; resolve it by external_subscription_id from the
+            // event payload and verify it belongs to the routing bucket resolved
+            // from the original payment attempt. Idempotent: no active
             // entitlement / already-revoked ⟹ no-op.
-            let schedules = app_state
-                .points_repository
-                .find_grant_schedules_by_user_realm(realm_id, payload.user_id)
-                .await?;
-            for schedule in schedules
-                .iter()
-                .filter(|s| s.active && s.subscription_id.is_some() && s.bucket_id == bucket_id)
-            {
-                if let Some(sub_id) = schedule.subscription_id {
-                    let _output = app_state
-                        .subscription_service
-                        .handle_subscription_cancel(
-                            payload.user_id,
-                            bucket_id,
-                            realm_id,
-                            sub_id,
-                            CancelMode::ImmediateCancel,
-                            None,
-                            None,
-                        )
-                        .await?;
-                }
+            let external_subscription_id =
+                payload.external_subscription_id.as_deref().ok_or_else(|| {
+                    CoreError::BadRequest(
+                        "Missing subscriptionId in subscription refund payload".to_string(),
+                    )
+                })?;
+            let subscription =
+                resolve_existing_creem_subscription(&app_state, external_subscription_id)
+                    .await?
+                    .ok_or_else(|| {
+                        CoreError::BadRequest(format!(
+                            "No subscription found for refund {}: external_subscription_id {}",
+                            payload.refund_id, external_subscription_id
+                        ))
+                    })?;
+
+            if subscription.bucket_id != bucket_id {
+                return Err(CoreError::BadRequest(format!(
+                    "Refund bucket {} does not match subscription bucket {} for refund {}",
+                    bucket_id, subscription.bucket_id, payload.refund_id
+                )));
             }
+
+            let _output = app_state
+                .subscription_service
+                .handle_subscription_cancel(
+                    payload.user_id,
+                    bucket_id,
+                    realm_id,
+                    subscription.id,
+                    CancelMode::ImmediateCancel,
+                    None,
+                    None,
+                )
+                .await?;
 
             info!(
                 realm_id = %realm_id,
                 user_id = %payload.user_id,
                 refund_id = %payload.refund_id,
-                "Subscription refund - revoked subscription quota entitlements"
+                subscription_id = %subscription.id,
+                "Subscription refund - revoked subscription quota entitlement"
             );
         }
     }
@@ -1941,12 +1956,11 @@ async fn handle_subscription_lifecycle_status(
             .await?;
     }
 
-    // Subscription Expired (BE-D06/D10): under the window quota model the
-    // active entitlement's `effective_until` already encodes the period end
-    // from the grant, so it ages out naturally. The pre-redesign broad
-    // `revoke_subscription_credits_by_entitlement` ledger-row reclaim is
-    // retired. Route through `handle_subscription_cancel(DefaultCancel)` so the
-    // lifecycle end is logged and the entitlement self-expires (idempotent).
+    // Subscription Expired (BE-D06/D10): an expired subscription is a
+    // terminal lifecycle state; revoke the active quota entitlement
+    // immediately so the user's window availability drops to zero. This is
+    // idempotent because `revoke_quota_entitlement` is keyed by
+    // (realm_id, user_id, bucket_id, credit_type, source_id).
     if status == SubscriptionStatus::Expired {
         let (subscription_id, bucket_id) = synced
             .as_ref()
@@ -1960,7 +1974,7 @@ async fn handle_subscription_lifecycle_status(
                 bucket_id,
                 realm_id,
                 subscription_id,
-                CancelMode::DefaultCancel,
+                CancelMode::ImmediateCancel,
                 None,
                 Some(&entitlement_key),
             )
@@ -1971,7 +1985,7 @@ async fn handle_subscription_lifecycle_status(
             user_id = %user_id,
             entitlement_key = %entitlement_key,
             subscription_id = %subscription_id,
-            "Subscription expired - entitlement ages out at effective_until (window quota model)"
+            "Subscription expired - revoked active quota entitlement (window quota model)"
         );
     }
 

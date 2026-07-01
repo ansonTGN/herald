@@ -3,7 +3,7 @@
 use crate::tests::schema_test_context::SchemaTestContext;
 use herald_core::domain::authentication::Identity;
 use herald_core::domain::client_api_keys::entities::ClientApiKey;
-use herald_core::domain::points::entities::{CreditType, TransactionType};
+use herald_core::domain::points::entities::{CreditType, PointsQuotaEntitlement, TransactionType};
 use herald_core::domain::user::entities::User;
 use sqlx::Row;
 use uuid::Uuid;
@@ -386,12 +386,16 @@ pub async fn create_credit_ledger_entry(
 /// `points_credit_ledger` (same predicate as consumption) — the wallet row no
 /// longer carries Stored per-type balances. The grouping matches the legacy
 /// meaning: `topup` = topup + registration + free_periodic credit types.
+///
+/// Subscription balance is sourced from the window-quota model
+/// (`points_quota_entitlements` + `points_transactions` window aggregation),
+/// not from ledger rows.
 pub async fn get_points_wallet_by_user(
     ctx: &SchemaTestContext,
     user_id: Uuid,
 ) -> Option<(Uuid, i64, i64, i64)> {
-    sqlx::query(
-        "SELECT w.id,
+    let row = sqlx::query(
+        "SELECT w.id, w.realm_id, w.bucket_id,
                 COALESCE(SUM(l.remaining_amount) FILTER (
                     WHERE l.status = 'active' AND l.remaining_amount > 0
                       AND (l.effective_at IS NULL OR l.effective_at <= NOW())
@@ -402,13 +406,7 @@ pub async fn get_points_wallet_by_user(
                       AND l.credit_type IN ('topup_credit','registration_credit','free_periodic_credit')
                       AND (l.effective_at IS NULL OR l.effective_at <= NOW())
                       AND (l.expires_at  IS NULL OR l.expires_at  >  NOW())
-                ), 0)::BIGINT AS topup_balance,
-                COALESCE(SUM(l.remaining_amount) FILTER (
-                    WHERE l.status = 'active' AND l.remaining_amount > 0
-                      AND l.credit_type = 'subscription_credit'
-                      AND (l.effective_at IS NULL OR l.effective_at <= NOW())
-                      AND (l.expires_at  IS NULL OR l.expires_at  >  NOW())
-                ), 0)::BIGINT AS subscription_balance
+                ), 0)::BIGINT AS topup_balance
          FROM points_wallets w
          LEFT JOIN points_credit_ledger l
            ON l.realm_id = w.realm_id AND l.user_id = w.user_id AND l.bucket_id = w.bucket_id
@@ -420,12 +418,30 @@ pub async fn get_points_wallet_by_user(
     .bind(user_id)
     .fetch_optional(&ctx.app_state.pool)
     .await
-    .unwrap()
-    .map(|row| (
-        row.get("id"),
-        row.get("total_balance"),
-        row.get("topup_balance"),
-        row.get("subscription_balance"),
+    .unwrap()?;
+
+    use sqlx::Row;
+    let wallet_id: Uuid = row.get("id");
+    let realm_id: String = row.get("realm_id");
+    let bucket_id: Uuid = row.get("bucket_id");
+    let ledger_total: i64 = row.get("total_balance");
+    let topup_balance: i64 = row.get("topup_balance");
+
+    // Subscription availability comes from the quota window model.
+    let subscription_balance = compute_window_available(
+        ctx,
+        &realm_id,
+        user_id,
+        bucket_id,
+        CreditType::SubscriptionCredit,
+    )
+    .await;
+
+    Some((
+        wallet_id,
+        ledger_total + subscription_balance,
+        topup_balance,
+        subscription_balance,
     ))
 }
 
@@ -434,12 +450,16 @@ pub async fn get_points_wallet_by_user(
 /// Returns (total, topup, subscription). Under point-time the balance
 /// figures are DERIVED from `points_credit_ledger` using the same predicate as
 /// consumption — `points_wallets` no longer carries Stored per-type balances.
+///
+/// Subscription balance is sourced from the window-quota model
+/// (`points_quota_entitlements` + `points_transactions` window aggregation).
 pub async fn get_points_balance(
     ctx: &SchemaTestContext,
     wallet_id: Uuid,
 ) -> Option<(i64, i64, i64)> {
-    sqlx::query(
-        "SELECT COALESCE(SUM(l.remaining_amount) FILTER (
+    let row = sqlx::query(
+        "SELECT w.realm_id, w.bucket_id, w.user_id,
+                COALESCE(SUM(l.remaining_amount) FILTER (
                     WHERE l.status = 'active' AND l.remaining_amount > 0
                       AND (l.effective_at IS NULL OR l.effective_at <= NOW())
                       AND (l.expires_at  IS NULL OR l.expires_at  >  NOW())
@@ -449,13 +469,7 @@ pub async fn get_points_balance(
                       AND l.credit_type IN ('topup_credit','registration_credit','free_periodic_credit')
                       AND (l.effective_at IS NULL OR l.effective_at <= NOW())
                       AND (l.expires_at  IS NULL OR l.expires_at  >  NOW())
-                ), 0)::BIGINT AS topup_balance,
-                COALESCE(SUM(l.remaining_amount) FILTER (
-                    WHERE l.status = 'active' AND l.remaining_amount > 0
-                      AND l.credit_type = 'subscription_credit'
-                      AND (l.effective_at IS NULL OR l.effective_at <= NOW())
-                      AND (l.expires_at  IS NULL OR l.expires_at  >  NOW())
-                ), 0)::BIGINT AS subscription_balance
+                ), 0)::BIGINT AS topup_balance
          FROM points_wallets w
          LEFT JOIN points_credit_ledger l
            ON l.realm_id = w.realm_id AND l.user_id = w.user_id AND l.bucket_id = w.bucket_id
@@ -465,20 +479,51 @@ pub async fn get_points_balance(
     .bind(wallet_id)
     .fetch_optional(&ctx.app_state.pool)
     .await
-    .unwrap()
-    .map(|row| (
-        row.get("total_balance"),
-        row.get("topup_balance"),
-        row.get("subscription_balance"),
+    .unwrap()?;
+
+    use sqlx::Row;
+    let realm_id: String = row.get("realm_id");
+    let bucket_id: Uuid = row.get("bucket_id");
+    let user_id: Uuid = row.get("user_id");
+    let ledger_total: i64 = row.get("total_balance");
+    let topup_balance: i64 = row.get("topup_balance");
+
+    let subscription_balance = compute_window_available(
+        ctx,
+        &realm_id,
+        user_id,
+        bucket_id,
+        CreditType::SubscriptionCredit,
+    )
+    .await;
+
+    Some((
+        ledger_total + subscription_balance,
+        topup_balance,
+        subscription_balance,
     ))
 }
 
-/// Get total credit amount from ledger for a specific credit type
+/// Get total credit amount from ledger for a specific credit type.
+///
+/// For window-quota credit types (subscription_credit, free_periodic_credit)
+/// this sums the first-window `limit` from `points_quota_entitlements` instead
+/// of ledger `granted_amount`.
 pub async fn get_total_credit_by_type(
     ctx: &SchemaTestContext,
     user_id: Uuid,
     credit_type: CreditType,
 ) -> i64 {
+    if credit_type == CreditType::SubscriptionCredit
+        || credit_type == CreditType::FreePeriodicCredit
+    {
+        let entitlements = get_user_quota_entitlements(ctx, user_id, credit_type).await;
+        return entitlements
+            .iter()
+            .map(|e| e.quota_windows.first().map(|w| w.limit).unwrap_or(0))
+            .sum();
+    }
+
     sqlx::query_scalar::<_, i64>(
         "SELECT COALESCE(SUM(granted_amount), 0)::BIGINT FROM points_credit_ledger
          WHERE user_id = $1 AND credit_type = $2",
@@ -490,12 +535,23 @@ pub async fn get_total_credit_by_type(
     .unwrap()
 }
 
-/// Get remaining credit amount from ledger for a specific credit type
+/// Get remaining credit amount from ledger for a specific credit type.
+///
+/// For window-quota credit types this returns `compute_window_available`
+/// instead of summing ledger `remaining_amount`.
 pub async fn get_remaining_credit_by_type(
     ctx: &SchemaTestContext,
     user_id: Uuid,
     credit_type: CreditType,
 ) -> i64 {
+    if credit_type == CreditType::SubscriptionCredit
+        || credit_type == CreditType::FreePeriodicCredit
+    {
+        let realm_id = ctx._realm_id.clone();
+        let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, &realm_id).await;
+        return compute_window_available(ctx, &realm_id, user_id, bucket_id, credit_type).await;
+    }
+
     sqlx::query_scalar::<_, i64>(
         "SELECT COALESCE(SUM(remaining_amount), 0)::BIGINT FROM points_credit_ledger
          WHERE user_id = $1 AND credit_type = $2",
@@ -1035,8 +1091,9 @@ pub fn create_test_third_party_identity(realm_id: &str) -> Identity {
 /// `(total_balance, topup_balance, subscription_balance)`.
 ///
 /// Under point-time the balance figures are DERIVED from
-/// `points_credit_ledger` (same predicate as consumption); the assertion that
-/// each is >= 0 still holds because `remaining_amount` is non-negative.
+/// `points_credit_ledger` (same predicate as consumption) and from the quota
+/// window model; the assertion that each is >= 0 still holds because
+/// `remaining_amount` and window `remaining` are non-negative.
 pub async fn assert_balances_non_negative(
     ctx: &SchemaTestContext,
     user_id: Uuid,
@@ -1053,13 +1110,7 @@ pub async fn assert_balances_non_negative(
                       AND l.credit_type IN ('topup_credit','registration_credit','free_periodic_credit')
                       AND (l.effective_at IS NULL OR l.effective_at <= NOW())
                       AND (l.expires_at  IS NULL OR l.expires_at  >  NOW())
-                ), 0)::BIGINT AS topup_balance,
-                COALESCE(SUM(l.remaining_amount) FILTER (
-                    WHERE l.status = 'active' AND l.remaining_amount > 0
-                      AND l.credit_type = 'subscription_credit'
-                      AND (l.effective_at IS NULL OR l.effective_at <= NOW())
-                      AND (l.expires_at  IS NULL OR l.expires_at  >  NOW())
-                ), 0)::BIGINT AS subscription_balance
+                ), 0)::BIGINT AS topup_balance
          FROM points_wallets w
          LEFT JOIN points_credit_ledger l
            ON l.realm_id = w.realm_id AND l.user_id = w.user_id AND l.bucket_id = w.bucket_id
@@ -1071,9 +1122,34 @@ pub async fn assert_balances_non_negative(
     .await
     .expect("Failed to fetch account");
 
-    let total_balance: i64 = account.get("total_balance");
+    use sqlx::Row;
+    let ledger_total: i64 = account.get("total_balance");
     let topup_balance: i64 = account.get("topup_balance");
-    let subscription_balance: i64 = account.get("subscription_balance");
+
+    // Aggregate subscription availability across all of the user's wallets in
+    // this realm (typically one).
+    let wallet_rows =
+        sqlx::query("SELECT bucket_id FROM points_wallets WHERE user_id = $1 AND realm_id = $2")
+            .bind(user_id)
+            .bind(realm_id)
+            .fetch_all(&ctx.app_state.pool)
+            .await
+            .expect("Failed to fetch wallet buckets");
+
+    let mut subscription_balance: i64 = 0;
+    for row in wallet_rows {
+        let bucket_id: Uuid = row.get("bucket_id");
+        subscription_balance += compute_window_available(
+            ctx,
+            realm_id,
+            user_id,
+            bucket_id,
+            CreditType::SubscriptionCredit,
+        )
+        .await;
+    }
+
+    let total_balance = ledger_total + subscription_balance;
 
     assert!(
         total_balance >= 0,
@@ -1122,6 +1198,9 @@ pub async fn assert_ledger_invariants(ctx: &SchemaTestContext, user_id: Uuid) {
 /// (status / effective_at / expires_at). Under point-time this is a
 /// derived-vs-derived comparison: callers should obtain the values from
 /// `assert_balances_non_negative` (which uses the same predicate and grouping).
+///
+/// Subscription balance is compared against the quota window model, not ledger
+/// rows.
 pub async fn assert_account_matches_ledger_sums(
     ctx: &SchemaTestContext,
     user_id: Uuid,
@@ -1143,19 +1222,15 @@ pub async fn assert_account_matches_ledger_sums(
     .await
     .expect("Failed to sum topup ledger remaining");
 
-    let sub_ledger_sum: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(remaining_amount), 0)::BIGINT FROM points_credit_ledger
-         WHERE user_id = $1 AND realm_id = $2
-           AND credit_type = 'subscription_credit'
-           AND status = 'active' AND remaining_amount > 0
-           AND (effective_at IS NULL OR effective_at <= NOW())
-           AND (expires_at  IS NULL OR expires_at  >  NOW())",
+    let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, realm_id).await;
+    let sub_quota_sum = compute_window_available(
+        ctx,
+        realm_id,
+        user_id,
+        bucket_id,
+        CreditType::SubscriptionCredit,
     )
-    .bind(user_id)
-    .bind(realm_id)
-    .fetch_one(&ctx.app_state.pool)
-    .await
-    .expect("Failed to sum subscription ledger remaining");
+    .await;
 
     assert_eq!(
         topup_balance, topup_ledger_sum,
@@ -1163,47 +1238,67 @@ pub async fn assert_account_matches_ledger_sums(
         topup_balance, topup_ledger_sum
     );
     assert_eq!(
-        subscription_balance, sub_ledger_sum,
-        "subscription_balance ({}) must match ledger sum ({})",
-        subscription_balance, sub_ledger_sum
+        subscription_balance, sub_quota_sum,
+        "subscription_balance ({}) must match quota window availability ({})",
+        subscription_balance, sub_quota_sum
     );
 }
 
 /// Verify points were granted with correct entitlement_key association.
 ///
-/// Checks that at least `expected_amount` subscription credit was granted
-/// for the given entitlement_key by inspecting the credit ledger.
+/// Under the window-quota model subscription grants live in
+/// `points_quota_entitlements`; `source_id` is the subscription id. Join with
+/// `subscription` to aggregate by `entitlement_key` and sum the first window
+/// limit (matching the legacy "granted amount" semantics).
 pub async fn verify_points_granted_for_entitlement(
     ctx: &SchemaTestContext,
     user_id: Uuid,
     entitlement_key: &str,
     expected_amount: i64,
 ) {
-    let total: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(granted_amount), 0)::BIGINT FROM points_credit_ledger
-         WHERE user_id = $1 AND credit_type = 'subscription_credit' AND source_id LIKE $2",
+    let rows = sqlx::query(
+        r#"SELECT q.quota_windows
+           FROM points_quota_entitlements q
+           JOIN subscription s ON s.id = q.source_id::uuid
+           WHERE q.user_id = $1
+             AND q.credit_type = 'subscription_credit'
+             AND s.entitlement_key = $2"#,
     )
     .bind(user_id)
-    .bind(format!("{}:%", entitlement_key))
-    .fetch_one(&ctx.app_state.pool)
+    .bind(entitlement_key)
+    .fetch_all(&ctx.app_state.pool)
     .await
     .unwrap();
 
+    use sqlx::Row;
+    let total: i64 = rows
+        .iter()
+        .map(|row| {
+            let windows: serde_json::Value = row.get("quota_windows");
+            windows
+                .as_array()
+                .and_then(|arr| arr.first())
+                .and_then(|w| w.get("limit").and_then(|v| v.as_i64()))
+                .unwrap_or(0)
+        })
+        .sum();
+
     assert!(
         total >= expected_amount,
-        "Expected at least {} subscription credit granted, got {}",
+        "Expected at least {} subscription credit granted for entitlement {}, got {}",
         expected_amount,
+        entitlement_key,
         total
     );
 }
 
-/// Get current points balance for a user (derived SUM from ledger).
+/// Get current points balance for a user (derived SUM from ledger + quota windows).
 ///
 /// Returns 0 if the user has no wallet. Under point-time the balance
-/// is DERIVED from `points_credit_ledger` using the same predicate as
-/// consumption — `points_wallets` no longer carries a Stored `total_balance`.
+/// is DERIVED from `points_credit_ledger` AND from `points_quota_entitlements`
+/// window availability. `points_wallets` no longer carries a Stored `total_balance`.
 pub async fn get_points_balance_for_user(ctx: &SchemaTestContext, user_id: Uuid) -> i64 {
-    let balance: Option<i64> = sqlx::query_scalar(
+    let ledger_balance: Option<i64> = sqlx::query_scalar(
         "SELECT COALESCE(SUM(l.remaining_amount) FILTER (
                     WHERE l.status = 'active' AND l.remaining_amount > 0
                       AND (l.effective_at IS NULL OR l.effective_at <= NOW())
@@ -1220,7 +1315,33 @@ pub async fn get_points_balance_for_user(ctx: &SchemaTestContext, user_id: Uuid)
     .unwrap()
     .flatten();
 
-    balance.unwrap_or(0)
+    let ledger_balance = ledger_balance.unwrap_or(0);
+
+    // Add subscription window availability from the quota model. Scope to the
+    // first wallet found for the user (tests use a single wallet per user).
+    let wallet =
+        sqlx::query("SELECT realm_id, bucket_id FROM points_wallets WHERE user_id = $1 LIMIT 1")
+            .bind(user_id)
+            .fetch_optional(&ctx.app_state.pool)
+            .await
+            .unwrap();
+
+    if let Some(row) = wallet {
+        use sqlx::Row;
+        let realm_id: String = row.get("realm_id");
+        let bucket_id: Uuid = row.get("bucket_id");
+        let sub_available = compute_window_available(
+            ctx,
+            &realm_id,
+            user_id,
+            bucket_id,
+            CreditType::SubscriptionCredit,
+        )
+        .await;
+        ledger_balance + sub_available
+    } else {
+        ledger_balance
+    }
 }
 
 /// Get points grant schedule by entitlement_key.
@@ -1399,6 +1520,15 @@ pub async fn get_derived_balance_by_credit_type(
     realm_id: &str,
     credit_type: herald_core::domain::points::entities::CreditType,
 ) -> i64 {
+    // Window-quota model: subscription/free_periodic availability is computed
+    // from active entitlements + consume transactions, not ledger rows.
+    if credit_type == CreditType::SubscriptionCredit
+        || credit_type == CreditType::FreePeriodicCredit
+    {
+        let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, realm_id).await;
+        return compute_window_available(ctx, realm_id, user_id, bucket_id, credit_type).await;
+    }
+
     let sql = format!(
         "SELECT COALESCE(SUM(remaining_amount), 0)::BIGINT FROM points_credit_ledger
          WHERE user_id = $1 AND realm_id = $2 AND credit_type = $3 AND ({pred})",
@@ -1428,12 +1558,32 @@ pub async fn get_derived_total_balance(
          WHERE user_id = $1 AND realm_id = $2 AND ({pred})",
         pred = DERIVED_AVAILABLE_PREDICATE
     );
-    sqlx::query_scalar(&sql)
+    let ledger_total: i64 = sqlx::query_scalar(&sql)
         .bind(user_id)
         .bind(realm_id)
         .fetch_one(&ctx.app_state.pool)
         .await
-        .expect("Failed to compute derived total balance")
+        .expect("Failed to compute derived total balance");
+
+    let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, realm_id).await;
+    let sub_available = compute_window_available(
+        ctx,
+        realm_id,
+        user_id,
+        bucket_id,
+        CreditType::SubscriptionCredit,
+    )
+    .await;
+    let free_available = compute_window_available(
+        ctx,
+        realm_id,
+        user_id,
+        bucket_id,
+        CreditType::FreePeriodicCredit,
+    )
+    .await;
+
+    ledger_total + sub_available + free_available
 }
 
 /// Assert the derived available balance for a credit type matches `expected`.
@@ -1916,6 +2066,114 @@ pub async fn assert_window_available(
     );
 }
 
+/// Get all quota entitlement rows for a user scoped to the test realm and
+/// legacy test bucket. Mirrors `get_user_ledgers_by_credit_type` but for the
+/// window-quota model. Returns rows regardless of status so callers can assert
+/// on active/revoked/expired transitions.
+pub async fn get_user_quota_entitlements(
+    ctx: &SchemaTestContext,
+    user_id: Uuid,
+    credit_type: CreditType,
+) -> Vec<PointsQuotaEntitlement> {
+    let realm_id = ctx._realm_id.clone();
+    let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, &realm_id).await;
+
+    let rows = sqlx::query(
+        r#"SELECT id, user_id, realm_id, bucket_id, credit_type, source_type, source_id,
+                  quota_windows, effective_from, effective_until, status, idempotency_key,
+                  created_at, updated_at
+           FROM points_quota_entitlements
+           WHERE realm_id = $1 AND user_id = $2 AND bucket_id = $3 AND credit_type = $4
+           ORDER BY created_at DESC"#,
+    )
+    .bind(&realm_id)
+    .bind(user_id)
+    .bind(bucket_id)
+    .bind(credit_type.to_string())
+    .fetch_all(&ctx.app_state.pool)
+    .await
+    .expect("Failed to fetch user quota entitlements");
+
+    #[derive(Debug, serde::Deserialize)]
+    struct QuotaWindowDbJson {
+        #[serde(rename = "windowSeconds")]
+        window_seconds: i64,
+        limit: i64,
+        key: String,
+    }
+
+    rows.into_iter()
+        .map(|row| {
+            use sqlx::Row;
+            let quota_windows: serde_json::Value = row.get("quota_windows");
+            let quota_windows: Vec<QuotaWindowDbJson> = serde_json::from_value(quota_windows)
+                .expect("quota_windows must deserialize to Vec<QuotaWindowDbJson>");
+            let quota_windows = quota_windows
+                .into_iter()
+                .map(|w| herald_core::domain::points::entities::QuotaWindow {
+                    window_seconds: w.window_seconds,
+                    limit: w.limit,
+                    key: w.key,
+                })
+                .collect();
+            PointsQuotaEntitlement {
+                id: row.get("id"),
+                user_id: row.get("user_id"),
+                realm_id: row.get("realm_id"),
+                bucket_id: row.get("bucket_id"),
+                credit_type: row.get::<String, _>("credit_type").parse().unwrap(),
+                source_type: row.get::<String, _>("source_type").parse().unwrap(),
+                source_id: row.get("source_id"),
+                quota_windows,
+                effective_from: row.get("effective_from"),
+                effective_until: row.get("effective_until"),
+                status: row.get::<String, _>("status").parse().unwrap(),
+                idempotency_key: row.get("idempotency_key"),
+                created_at: row.get("created_at"),
+                updated_at: row.get("updated_at"),
+            }
+        })
+        .collect()
+}
+
+/// Count quota entitlement rows for `subscription_credit` in the test realm
+/// and legacy test bucket (any status). Convenience wrapper for the common
+/// "exactly one subscription grant" assertion.
+pub async fn count_subscription_quota_entitlements(
+    ctx: &SchemaTestContext,
+    user_id: Uuid,
+) -> usize {
+    let realm_id = ctx._realm_id.clone();
+    let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, &realm_id).await;
+    count_all_quota_entitlements(
+        ctx,
+        &realm_id,
+        user_id,
+        bucket_id,
+        CreditType::SubscriptionCredit,
+    )
+    .await as usize
+}
+
+/// Sum the first-window `limit` across all active quota entitlements for a
+/// user/credit_type in the test realm and legacy bucket. Use this as the
+/// quota-model equivalent of `get_total_credit_by_type` for subscription or
+/// free_periodic credit.
+pub async fn get_total_quota_limit_by_type(
+    ctx: &SchemaTestContext,
+    user_id: Uuid,
+    credit_type: CreditType,
+) -> i64 {
+    let entitlements = get_user_quota_entitlements(ctx, user_id, credit_type).await;
+    entitlements
+        .iter()
+        .filter(|e| {
+            e.status == herald_core::domain::points::entities::QuotaEntitlementStatus::Active
+        })
+        .map(|e| e.quota_windows.first().map(|w| w.limit).unwrap_or(0))
+        .sum()
+}
+
 /// Seed a `provider_entitlement_mappings` row WITH `quota_windows` attached,
 /// routed to the realm's legacy test bucket. Non-empty `quota_windows`
 /// switches the grant to the window-quota model (design §4.3.2). Returns the
@@ -1932,18 +2190,20 @@ pub async fn create_entitlement_mapping_with_quota_windows(
     let mapping_id = Uuid::now_v7();
     let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, realm_id).await;
     let windows_json = quota_windows_jsonb(quota_windows);
+    let points_per_period = quota_windows.first().map(|(_, limit, _)| *limit);
 
     sqlx::query(
         r#"INSERT INTO provider_entitlement_mappings
              (id, realm_id, payment_provider, external_product_id, entitlement_key,
-              grant_on_subscribe, enabled, bucket_id, quota_windows, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, true, $7, $8, NOW(), NOW())"#,
+              points_per_period, grant_on_subscribe, enabled, bucket_id, quota_windows, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, true, $8, $9, NOW(), NOW())"#,
     )
     .bind(mapping_id)
     .bind(realm_id)
     .bind(provider)
     .bind(external_product_id)
     .bind(entitlement_key)
+    .bind(points_per_period)
     .bind(grant_on_subscribe)
     .bind(bucket_id)
     .bind(&windows_json)

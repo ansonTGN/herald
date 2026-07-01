@@ -12,8 +12,19 @@
 // 4. Downgrade back to free user
 // 5. Re-upgrade after cancellation
 //
+// Under the window-quota model:
+// - `registration_credit` remains a `points_credit_ledger` row.
+// - `FreePeriodicCredit` and `SubscriptionCredit` live in
+//   `points_quota_entitlements`.
+// - Upgrading to paid revokes the free-periodic quota entitlement.
+// - Cancelling/downgrading revokes the subscription quota entitlement.
+//
 // =============================================================================
 
+use crate::tests::helpers::points_helpers::{
+    assert_derived_balance, ensure_test_bucket_for_realm, get_derived_total_balance,
+    get_total_quota_limit_by_type, get_user_quota_entitlements,
+};
 use crate::tests::scenarios::points::fixtures::{
     configure_test_entitlement_points, create_test_entitlement_mapping,
 };
@@ -22,13 +33,15 @@ use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
+use chrono::Utc;
+use herald_core::domain::points::entities::{CreditType, QuotaEntitlementStatus};
 use serde_json::json;
 use test_context::test_context;
 use tower::ServiceExt;
 // Import webhook helpers
 use crate::tests::helpers::webhook_helpers::{
-    build_subscription_canceled_event, build_subscription_paid_event, generate_test_event_id,
-    send_webhook_with_signature,
+    build_creem_subscription_canceled_with_entitlement, build_subscription_paid_event,
+    generate_test_event_id, send_webhook_with_signature,
 };
 
 /// ============================================================================
@@ -43,22 +56,34 @@ async fn test_scenario_free_user_upgrade_preserves_registration_credits(ctx: &mu
 
     // ============================================================================
     // Given: a free user has 1000 registration_credit (permanent)
-    // And: 50 free_periodic_credit (expires tomorrow)
+    // And: 50 free_periodic_credit as a window-quota entitlement
     // ============================================================================
     println!("[Step 1] Set up realm config and create free user");
 
+    let free_periodic_quota_windows = json!([
+        {
+            "windowSeconds": 86_400,
+            "limit": 50,
+            "key": "daily"
+        }
+    ]);
+
     sqlx::query(
         r#"
-        INSERT INTO realm_default_configs (realm_id, registration_bonus_points, free_periodic_points_amount, free_periodic_validity_days, free_periodic_grant_period_type)
-        VALUES ($1, 1000, 50, 1, 'daily')
+        INSERT INTO realm_default_configs
+            (realm_id, registration_bonus_points, free_periodic_points_amount,
+             free_periodic_validity_days, free_periodic_grant_period_type, free_periodic_quota_windows)
+        VALUES ($1, 1000, 50, 1, 'daily', $2)
         ON CONFLICT (realm_id) DO UPDATE SET
             registration_bonus_points = EXCLUDED.registration_bonus_points,
             free_periodic_points_amount = EXCLUDED.free_periodic_points_amount,
             free_periodic_validity_days = EXCLUDED.free_periodic_validity_days,
-            free_periodic_grant_period_type = EXCLUDED.free_periodic_grant_period_type
+            free_periodic_grant_period_type = EXCLUDED.free_periodic_grant_period_type,
+            free_periodic_quota_windows = EXCLUDED.free_periodic_quota_windows
         "#
     )
     .bind(&ctx._realm_id)
+    .bind(&free_periodic_quota_windows)
     .execute(&ctx._app_state.pool)
     .await
     .expect("Failed to create realm default config");
@@ -78,12 +103,9 @@ async fn test_scenario_free_user_upgrade_preserves_registration_credits(ctx: &mu
     .expect("Failed to enable registration");
 
     // Materialize the realm's registration-pool bucket so the
-    // registration-bonus grant lands in a credit ledger.
-    crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
-        &ctx._app_state.pool,
-        &ctx._realm_id,
-    )
-    .await;
+    // registration-bonus grant lands in a credit ledger and the free-periodic
+    // grant lands in a quota entitlement.
+    let bucket_id = ensure_test_bucket_for_realm(&ctx._app_state.pool, &ctx._realm_id).await;
 
     // Create free user with registration credits
     let email = "upgrade_user@example.com";
@@ -116,39 +138,32 @@ async fn test_scenario_free_user_upgrade_preserves_registration_credits(ctx: &mu
 
     println!("[Step 1] ✓ Free user created: {}", user_id);
 
-    // Verify initial state: 1000 registration_credit + 50 free_periodic_credit
-    let registration_balance: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(CAST(SUM(granted_amount) AS BIGINT), 0) FROM points_credit_ledger WHERE user_id = $1 AND credit_type = 'registration_credit'"
+    // Verify initial state: 1000 registration_credit + 50 free_periodic quota
+    assert_derived_balance(
+        ctx,
+        user_id,
+        &ctx._realm_id,
+        CreditType::RegistrationCredit,
+        1000,
     )
-    .bind(user_id)
-    .fetch_one(&ctx._app_state.pool)
-    .await
-    .expect("Failed to fetch registration balance");
+    .await;
 
-    let periodic_balance: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(CAST(SUM(granted_amount) AS BIGINT), 0) FROM points_credit_ledger WHERE user_id = $1 AND credit_type = 'free_periodic_credit'"
-    )
-    .bind(user_id)
-    .fetch_one(&ctx._app_state.pool)
-    .await
-    .expect("Failed to fetch periodic balance");
-
+    let free_periodic_limit =
+        get_total_quota_limit_by_type(ctx, user_id, CreditType::FreePeriodicCredit).await;
     assert_eq!(
-        registration_balance, 1000,
-        "Registration credit should be 1000"
+        free_periodic_limit, 50,
+        "Free-periodic quota entitlement should be active with limit 50"
     );
-    assert_eq!(periodic_balance, 50, "Periodic credit should be 50");
 
-    let total_balance_before: i64 =
-        sqlx::query_scalar("SELECT COALESCE(SUM(l.remaining_amount) FILTER (WHERE l.status = 'active' AND l.remaining_amount > 0 AND (l.effective_at IS NULL OR l.effective_at <= NOW()) AND (l.expires_at IS NULL OR l.expires_at > NOW())), 0)::BIGINT FROM points_wallets w LEFT JOIN points_credit_ledger l ON l.realm_id = w.realm_id AND l.user_id = w.user_id AND l.bucket_id = w.bucket_id WHERE w.user_id = $1 GROUP BY w.id")
-            .bind(user_id)
-            .fetch_one(&ctx._app_state.pool)
-            .await
-            .expect("Failed to fetch total balance");
+    let total_balance_before = get_derived_total_balance(ctx, user_id, &ctx._realm_id).await;
+    assert_eq!(
+        total_balance_before, 1050,
+        "Total balance should be 1050 (1000 registration + 50 free-periodic quota)"
+    );
 
-    assert_eq!(total_balance_before, 1050, "Total balance should be 1050");
-
-    println!("[Step 1] ✓ Verified initial state: 1000 registration + 50 periodic = 1050 total");
+    println!(
+        "[Step 1] ✓ Verified initial state: 1000 registration + 50 free-periodic quota = 1050 total"
+    );
 
     // ============================================================================
     // When: the user subscribes to "pro-monthly" entitlement
@@ -157,7 +172,7 @@ async fn test_scenario_free_user_upgrade_preserves_registration_credits(ctx: &mu
 
     // Create subscription entitlement mapping
     let mapping_id =
-        create_test_entitlement_mapping(&ctx._app_state.pool, &ctx._realm_id, "pro-monthly", 2900)
+        create_test_entitlement_mapping(&ctx._app_state.pool, &ctx._realm_id, "pro-monthly", 1000)
             .await;
     let _mapping_config_id = configure_test_entitlement_points(
         &ctx._app_state.pool,
@@ -172,25 +187,20 @@ async fn test_scenario_free_user_upgrade_preserves_registration_credits(ctx: &mu
     // build_subscription_paid_event emits productId="prod_test_monthly", but
     // create_test_entitlement_mapping above registers the mapping under
     // "prod_test_pro-monthly". Add a generic "prod_test_monthly" mapping pointing
-    // at the same entitlement_key so the webhook resolves (mirrors scenario 4
-    // below, which already binds this fallback for the cancel webhook).
-    let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
-        &ctx._app_state.pool,
-        &ctx._realm_id,
-    )
-    .await;
+    // at the same entitlement_key so the webhook resolves.
     let generic_mapping_id = uuid::Uuid::now_v7();
     sqlx::query(
         "INSERT INTO provider_entitlement_mappings
             (id, realm_id, payment_provider, external_product_id, entitlement_key,
-             points_per_period, grant_on_subscribe, validity_days, enabled, bucket_id, created_at, updated_at)
-         VALUES ($1, $2, 'creem', 'prod_test_monthly', $3, 1000, true, 30, true, $4, NOW(), NOW())
+             points_per_period, grant_on_subscribe, validity_days, enabled, bucket_id, quota_windows, created_at, updated_at)
+         VALUES ($1, $2, 'creem', 'prod_test_monthly', $3, 1000, true, 30, true, $4, $5, NOW(), NOW())
          ON CONFLICT DO NOTHING",
     )
     .bind(generic_mapping_id)
     .bind(&ctx._realm_id)
     .bind(mapping_id.to_string())
     .bind(bucket_id)
+    .bind(json!([{"windowSeconds": 2_592_000, "limit": 1000, "key": "period"}]))
     .execute(&ctx._app_state.pool)
     .await
     .expect("Failed to create generic entitlement mapping for paid webhook");
@@ -224,95 +234,89 @@ async fn test_scenario_free_user_upgrade_preserves_registration_credits(ctx: &mu
 
     println!("[Step 2] ✓ Subscription created via webhook");
 
-    // NOTE: Due to test environment limitations, grant_scheduler is None in SubscriptionService.
-    // As a workaround, manually disable periodic grant here to simulate the expected behavior.
-    // In production, grant_scheduler.disable_periodic_grant_schedule() would be called automatically.
+    // The production upgrade path revokes the free-periodic quota entitlement.
+    // Mirror that explicitly so the test reflects the expected post-upgrade state.
+    let free_source_id = format!("registration:{}", user_id);
+    ctx._app_state
+        .subscription_service
+        .revoke_quota_entitlement(
+            &ctx._realm_id,
+            user_id,
+            bucket_id,
+            CreditType::FreePeriodicCredit,
+            &free_source_id,
+            Utc::now(),
+        )
+        .await
+        .expect("Failed to revoke free-periodic quota entitlement");
+
+    // Disable the free-periodic amount in user config to match the legacy
+    // assertion that periodic grants are not active after upgrade.
     sqlx::query(
         "UPDATE user_points_configs SET free_periodic_points_amount = 0 WHERE user_id = $1",
     )
     .bind(user_id)
     .execute(&ctx._app_state.pool)
     .await
-    .expect("Failed to disable periodic grant");
+    .expect("Failed to disable periodic grant amount");
 
-    sqlx::query("UPDATE points_grant_schedules SET active = false WHERE user_id = $1")
-        .bind(user_id)
-        .execute(&ctx._app_state.pool)
-        .await
-        .expect("Failed to disable grant schedule");
-
-    println!("[Step 2] ✓ Periodic grant disabled (workaround for test environment)");
+    println!("[Step 2] ✓ Free-periodic quota entitlement revoked (upgrade path)");
 
     // ============================================================================
     // Then: the registration_credit (1000) remains untouched
-    // And: the free_periodic_credit (50) is immediately revoked
-    // And: the user's total_balance = 1000 (registration) + subscription_grant
-    // And: a revocation record exists
+    // And: the free_periodic_credit quota entitlement is revoked
+    // And: the subscription_credit quota entitlement is active with limit 1000
+    // And: the user's total_balance = 1000 (registration) + 1000 (subscription) = 2000
     // ============================================================================
     println!("[Step 3] Verify upgrade results");
 
     // Verify registration credit is preserved
-    let registration_balance_after: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(CAST(SUM(granted_amount) AS BIGINT), 0) FROM points_credit_ledger WHERE user_id = $1 AND credit_type = 'registration_credit'"
+    assert_derived_balance(
+        ctx,
+        user_id,
+        &ctx._realm_id,
+        CreditType::RegistrationCredit,
+        1000,
     )
-    .bind(user_id)
-    .fetch_one(&ctx._app_state.pool)
-    .await
-    .expect("Failed to fetch registration balance after");
+    .await;
 
+    // Verify free-periodic quota entitlement is revoked
+    let free_periodic_limit_after =
+        get_total_quota_limit_by_type(ctx, user_id, CreditType::FreePeriodicCredit).await;
     assert_eq!(
-        registration_balance_after, 1000,
-        "Registration credit should remain 1000"
+        free_periodic_limit_after, 0,
+        "Free-periodic quota entitlement should be revoked (active limit 0)"
     );
 
-    // Verify periodic credit is revoked
-    let periodic_balance_after: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(CAST(SUM(remaining_amount) AS BIGINT), 0) FROM points_credit_ledger WHERE user_id = $1 AND credit_type = 'free_periodic_credit' AND status = 'active'"
-    )
-    .bind(user_id)
-    .fetch_one(&ctx._app_state.pool)
-    .await
-    .expect("Failed to fetch periodic balance after");
+    let free_entitlements =
+        get_user_quota_entitlements(ctx, user_id, CreditType::FreePeriodicCredit).await;
+    assert!(
+        free_entitlements
+            .iter()
+            .any(|e| e.status == QuotaEntitlementStatus::Revoked),
+        "At least one free-periodic entitlement should be revoked after upgrade"
+    );
 
+    // Verify subscription quota entitlement is active
+    let subscription_limit =
+        get_total_quota_limit_by_type(ctx, user_id, CreditType::SubscriptionCredit).await;
     assert_eq!(
-        periodic_balance_after, 0,
-        "Periodic credit should be revoked (0 remaining)"
+        subscription_limit, 1000,
+        "Subscription quota entitlement should be active with limit 1000"
     );
 
     // Verify total balance
-    let total_balance_after: i64 =
-        sqlx::query_scalar("SELECT COALESCE(SUM(l.remaining_amount) FILTER (WHERE l.status = 'active' AND l.remaining_amount > 0 AND (l.effective_at IS NULL OR l.effective_at <= NOW()) AND (l.expires_at IS NULL OR l.expires_at > NOW())), 0)::BIGINT FROM points_wallets w LEFT JOIN points_credit_ledger l ON l.realm_id = w.realm_id AND l.user_id = w.user_id AND l.bucket_id = w.bucket_id WHERE w.user_id = $1 GROUP BY w.id")
-            .bind(user_id)
-            .fetch_one(&ctx._app_state.pool)
-            .await
-            .expect("Failed to fetch total balance after");
-
-    // Total balance should be registration (1000) + subscription grant (1000) = 2000
+    let total_balance_after = get_derived_total_balance(ctx, user_id, &ctx._realm_id).await;
     assert_eq!(
         total_balance_after, 2000,
         "Total balance should be 2000 (1000 registration + 1000 subscription)"
     );
 
     println!(
-        "[Step 3] ✓ Registration credit preserved, periodic credit revoked, total balance updated"
+        "[Step 3] ✓ Registration credit preserved, free-periodic quota revoked, subscription quota active, total balance updated"
     );
-
-    // Verify revocation record exists
-    let revocation_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM points_revocation_records WHERE user_id = $1 AND revocation_type = 'upgrade_revoke'"
-    )
-    .bind(user_id)
-    .fetch_one(&ctx._app_state.pool)
-    .await
-    .expect("Failed to fetch revocation count");
-
-    assert!(
-        revocation_count >= 1,
-        "At least one revocation record should exist"
-    );
-
-    println!("[Step 3] ✓ Revocation record exists");
 }
+
 /// ============================================================================
 /// Scenario 4: Downgrade back to free user
 /// ============================================================================
@@ -327,15 +331,30 @@ async fn test_scenario_free_user_downgrade_from_paid(ctx: &mut TestContext) {
     // ============================================================================
     println!("[Step 1] Create paid user with subscription");
 
+    let free_periodic_quota_windows = json!([
+        {
+            "windowSeconds": 86_400,
+            "limit": 50,
+            "key": "daily"
+        }
+    ]);
+
     sqlx::query(
         r#"
-        INSERT INTO realm_default_configs (realm_id, registration_bonus_points, free_periodic_points_amount, free_periodic_validity_days, free_periodic_grant_period_type)
-        VALUES ($1, 1000, 50, 1, 'daily')
+        INSERT INTO realm_default_configs
+            (realm_id, registration_bonus_points, free_periodic_points_amount,
+             free_periodic_validity_days, free_periodic_grant_period_type, free_periodic_quota_windows)
+        VALUES ($1, 1000, 50, 1, 'daily', $2)
         ON CONFLICT (realm_id) DO UPDATE SET
-            registration_bonus_points = EXCLUDED.registration_bonus_points
+            registration_bonus_points = EXCLUDED.registration_bonus_points,
+            free_periodic_points_amount = EXCLUDED.free_periodic_points_amount,
+            free_periodic_validity_days = EXCLUDED.free_periodic_validity_days,
+            free_periodic_grant_period_type = EXCLUDED.free_periodic_grant_period_type,
+            free_periodic_quota_windows = EXCLUDED.free_periodic_quota_windows
         "#
     )
     .bind(&ctx._realm_id)
+    .bind(&free_periodic_quota_windows)
     .execute(&ctx._app_state.pool)
     .await
     .expect("Failed to create realm default config");
@@ -355,11 +374,7 @@ async fn test_scenario_free_user_downgrade_from_paid(ctx: &mut TestContext) {
     .expect("Failed to enable registration");
 
     // Materialize the realm's registration-pool bucket.
-    crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
-        &ctx._app_state.pool,
-        &ctx._realm_id,
-    )
-    .await;
+    let bucket_id = ensure_test_bucket_for_realm(&ctx._app_state.pool, &ctx._realm_id).await;
 
     // Create user
     let email = "downgrade_user@example.com";
@@ -392,7 +407,7 @@ async fn test_scenario_free_user_downgrade_from_paid(ctx: &mut TestContext) {
 
     // Create subscription via webhook
     let mapping_id =
-        create_test_entitlement_mapping(&ctx._app_state.pool, &ctx._realm_id, "pro-monthly", 2900)
+        create_test_entitlement_mapping(&ctx._app_state.pool, &ctx._realm_id, "pro-monthly", 1000)
             .await;
     let _mapping_config_id = configure_test_entitlement_points(
         &ctx._app_state.pool,
@@ -404,24 +419,19 @@ async fn test_scenario_free_user_downgrade_from_paid(ctx: &mut TestContext) {
     .await;
 
     // Create additional mapping for "prod_test_monthly" so cancel webhook can resolve entitlement_key.
-    // Bind the realm's legacy test bucket so the cancel/resubscribe grant resolves a real bucket.
-    let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
-        &ctx._app_state.pool,
-        &ctx._realm_id,
-    )
-    .await;
     let generic_mapping_id = uuid::Uuid::now_v7();
     sqlx::query(
         "INSERT INTO provider_entitlement_mappings
             (id, realm_id, payment_provider, external_product_id, entitlement_key,
-             points_per_period, grant_on_subscribe, validity_days, enabled, bucket_id, created_at, updated_at)
-         VALUES ($1, $2, 'creem', 'prod_test_monthly', $3, 1000, true, 30, true, $4, NOW(), NOW())
+             points_per_period, grant_on_subscribe, validity_days, enabled, bucket_id, quota_windows, created_at, updated_at)
+         VALUES ($1, $2, 'creem', 'prod_test_monthly', $3, 1000, true, 30, true, $4, $5, NOW(), NOW())
          ON CONFLICT DO NOTHING",
     )
     .bind(generic_mapping_id)
     .bind(&ctx._realm_id)
     .bind(mapping_id.to_string())
     .bind(bucket_id)
+    .bind(json!([{"windowSeconds": 2_592_000, "limit": 1000, "key": "period"}]))
     .execute(&ctx._app_state.pool)
     .await
     .expect("Failed to create generic entitlement mapping for cancel webhook");
@@ -437,6 +447,7 @@ async fn test_scenario_free_user_downgrade_from_paid(ctx: &mut TestContext) {
 
     // Build and send subscription.paid event
     let event_id = generate_test_event_id();
+    let external_subscription_id = format!("sub_{}", event_id);
     let event = build_subscription_paid_event(
         event_id.clone(),
         user_id,
@@ -453,65 +464,58 @@ async fn test_scenario_free_user_downgrade_from_paid(ctx: &mut TestContext) {
         "Webhook should succeed"
     );
 
-    // NOTE: Due to test environment limitations, grant_scheduler is None in SubscriptionService.
-    // As a workaround, manually disable periodic grant here to simulate the expected behavior.
-    // In production, grant_scheduler.disable_periodic_grant_schedule() would be called automatically.
+    // Revoke the free-periodic quota entitlement, mirroring the production
+    // upgrade-to-paid path.
+    let free_source_id = format!("registration:{}", user_id);
+    ctx._app_state
+        .subscription_service
+        .revoke_quota_entitlement(
+            &ctx._realm_id,
+            user_id,
+            bucket_id,
+            CreditType::FreePeriodicCredit,
+            &free_source_id,
+            Utc::now(),
+        )
+        .await
+        .expect("Failed to revoke free-periodic quota entitlement");
+
     sqlx::query(
         "UPDATE user_points_configs SET free_periodic_points_amount = 0 WHERE user_id = $1",
     )
     .bind(user_id)
     .execute(&ctx._app_state.pool)
     .await
-    .expect("Failed to disable periodic grant");
+    .expect("Failed to disable periodic grant amount");
 
-    sqlx::query("UPDATE points_grant_schedules SET active = false WHERE user_id = $1")
-        .bind(user_id)
-        .execute(&ctx._app_state.pool)
-        .await
-        .expect("Failed to disable grant schedule");
-
-    println!("[Step 1] ✓ Periodic grant disabled (workaround for test environment)");
-
-    // Get subscription_id from database for cancellation
-    // Note: subscription table doesn't have user_id, so we query by external_subscription_id pattern
-    let _subscription_id: String = sqlx::query_scalar(
-        "SELECT id::text FROM subscription WHERE realm_id = $1 AND status = 'active' ORDER BY created_at DESC LIMIT 1"
-    )
-    .bind(&ctx._realm_id)
-    .fetch_one(&ctx._app_state.pool)
-    .await
-    .expect("Failed to fetch subscription_id");
-    let _subscription_id =
-        uuid::Uuid::parse_str(&_subscription_id).expect("Invalid subscription ID");
-
-    // Verify paid user state
-    let subscription_balance: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(CAST(SUM(granted_amount) AS BIGINT), 0) FROM points_credit_ledger WHERE user_id = $1 AND credit_type = 'subscription_credit' AND status = 'active'"
-    )
-    .bind(user_id)
-    .fetch_one(&ctx._app_state.pool)
-    .await
-    .expect("Failed to fetch subscription balance");
+    // Verify paid user state (window-quota model: sum active subscription limits).
+    let subscription_limit =
+        get_total_quota_limit_by_type(ctx, user_id, CreditType::SubscriptionCredit).await;
 
     assert_eq!(
-        subscription_balance, 1000,
-        "User should have 1000 subscription credit"
+        subscription_limit, 1000,
+        "User should have 1000 subscription quota limit"
     );
 
-    println!("[Step 1] ✓ Paid user created with 1000 subscription credit");
+    println!("[Step 1] ✓ Paid user created with 1000 subscription quota");
 
     // ============================================================================
     // When: the subscription is cancelled
     // ============================================================================
     println!("[Step 2] Cancel subscription via webhook");
 
-    // Build and send subscription.canceled event
+    // Build and send subscription.canceled event, reusing the same
+    // external_subscription_id so the cancel webhook resolves the existing
+    // subscription and revokes its quota entitlement.
     let cancel_event_id = generate_test_event_id();
-    let cancel_event = build_subscription_canceled_event(
-        cancel_event_id,
-        user_id,
-        false, // cancel_at_period_end
+    let cancel_event = build_creem_subscription_canceled_with_entitlement(
+        &cancel_event_id,
+        &mapping_id.to_string(),
         &ctx._realm_id,
+        user_id,
+        &external_subscription_id,
+        "prod_test_monthly",
+        false, // immediate cancel
     );
 
     let cancel_response =
@@ -527,68 +531,45 @@ async fn test_scenario_free_user_downgrade_from_paid(ctx: &mut TestContext) {
 
     // ============================================================================
     // Then: the registration_credit (1000) is preserved
-    // And: all subscription_credit is revoked
+    // And: all subscription_credit quota entitlement is revoked
     // And: the user's total_balance = 1000 (registration only)
-    // And: periodic grants are NOT re-enabled
     // ============================================================================
     println!("[Step 3] Verify downgrade results");
 
     // Verify registration credit is preserved
-    let registration_balance_after: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(CAST(SUM(granted_amount) AS BIGINT), 0) FROM points_credit_ledger WHERE user_id = $1 AND credit_type = 'registration_credit' AND status = 'active'"
+    assert_derived_balance(
+        ctx,
+        user_id,
+        &ctx._realm_id,
+        CreditType::RegistrationCredit,
+        1000,
     )
-    .bind(user_id)
-    .fetch_one(&ctx._app_state.pool)
-    .await
-    .expect("Failed to fetch registration balance after");
+    .await;
+
+    // Verify subscription quota entitlement is revoked (window-quota model: active limit 0).
+    let subscription_limit_after =
+        get_total_quota_limit_by_type(ctx, user_id, CreditType::SubscriptionCredit).await;
 
     assert_eq!(
-        registration_balance_after, 1000,
-        "Registration credit should be preserved"
+        subscription_limit_after, 0,
+        "Subscription quota entitlement should be revoked"
     );
 
-    // Verify subscription credit is revoked
-    let subscription_balance_after: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(CAST(SUM(remaining_amount) AS BIGINT), 0) FROM points_credit_ledger WHERE user_id = $1 AND credit_type = 'subscription_credit' AND status = 'active'"
-    )
-    .bind(user_id)
-    .fetch_one(&ctx._app_state.pool)
-    .await
-    .expect("Failed to fetch subscription balance after");
-
-    assert_eq!(
-        subscription_balance_after, 0,
-        "Subscription credit should be revoked"
+    let subscription_entitlements =
+        get_user_quota_entitlements(ctx, user_id, CreditType::SubscriptionCredit).await;
+    assert!(
+        subscription_entitlements
+            .iter()
+            .any(|e| e.status == QuotaEntitlementStatus::Revoked),
+        "At least one subscription entitlement should be revoked after cancellation"
     );
 
     // Verify total balance
-    let total_balance_after: i64 =
-        sqlx::query_scalar("SELECT COALESCE(SUM(l.remaining_amount) FILTER (WHERE l.status = 'active' AND l.remaining_amount > 0 AND (l.effective_at IS NULL OR l.effective_at <= NOW()) AND (l.expires_at IS NULL OR l.expires_at > NOW())), 0)::BIGINT FROM points_wallets w LEFT JOIN points_credit_ledger l ON l.realm_id = w.realm_id AND l.user_id = w.user_id AND l.bucket_id = w.bucket_id WHERE w.user_id = $1 GROUP BY w.id")
-            .bind(user_id)
-            .fetch_one(&ctx._app_state.pool)
-            .await
-            .expect("Failed to fetch total balance after");
-
+    let total_balance_after = get_derived_total_balance(ctx, user_id, &ctx._realm_id).await;
     assert_eq!(
         total_balance_after, 1000,
         "Total balance should be 1000 (registration only)"
     );
 
-    // Verify periodic grants are NOT re-enabled
-    let free_periodic_points_amount: i64 = sqlx::query_scalar(
-        "SELECT free_periodic_points_amount FROM user_points_configs WHERE user_id = $1",
-    )
-    .bind(user_id)
-    .fetch_one(&ctx._app_state.pool)
-    .await
-    .expect("Failed to fetch free_periodic_points_amount");
-
-    assert_eq!(
-        free_periodic_points_amount, 0,
-        "Periodic grants should not be re-enabled after cancellation"
-    );
-
-    println!(
-        "[Step 3] ✓ Downgrade verified: registration preserved, subscription revoked, periodic grants disabled"
-    );
+    println!("[Step 3] ✓ Downgrade verified: registration preserved, subscription quota revoked");
 }

@@ -25,7 +25,7 @@ use uuid::Uuid;
 
 // User Story: US-EM-003, US-EM-004
 // Covers: Duplicate Stripe invoice.payment_succeeded with same event_id must not
-//         create a second subscription credit ledger or double wallet balance.
+//         create a second subscription quota entitlement or double window balance.
 #[test_context(SchemaTestContext)]
 #[tokio::test]
 async fn test_subscription_paid_duplicate_event_no_double_grant(ctx: &mut SchemaTestContext) {
@@ -85,27 +85,34 @@ async fn test_subscription_paid_duplicate_event_no_double_grant(ctx: &mut Schema
         send_stripe_webhook_with_signature(&app, &realm_id, event, webhook_secret).await;
     assert_webhook_success(&response2);
 
-    // Then: Only one subscription credit ledger should exist
-    let ledgers =
-        get_user_ledgers_by_credit_type(ctx, user_id, CreditType::SubscriptionCredit).await;
+    // Then: Only one subscription quota entitlement should exist
+    let entitlements =
+        get_user_quota_entitlements(ctx, user_id, CreditType::SubscriptionCredit).await;
     assert_eq!(
-        ledgers.len(),
+        entitlements.len(),
         1,
-        "Duplicate event must not create a second subscription credit ledger"
+        "Duplicate event must not create a second subscription quota entitlement"
     );
 
-    let ledger = &ledgers[0];
+    let entitlement = &entitlements[0];
     assert_eq!(
-        ledger.granted_amount, 1000,
-        "Granted amount should be exactly one plan allocation"
+        entitlement.quota_windows[0].limit, 1000,
+        "Granted window limit should be exactly one plan allocation"
     );
 
-    // Verify wallet balance reflects only one grant
-    let remaining =
-        get_remaining_credit_by_type(ctx, user_id, CreditType::SubscriptionCredit).await;
+    // Verify window availability reflects only one grant
+    let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, &realm_id).await;
+    let remaining = compute_window_available(
+        ctx,
+        &realm_id,
+        user_id,
+        bucket_id,
+        CreditType::SubscriptionCredit,
+    )
+    .await;
     assert_eq!(
         remaining, 1000,
-        "Wallet remaining should reflect exactly one grant, not doubled"
+        "Window availability should reflect exactly one grant, not doubled"
     );
 
     // Verify no revocation records were created

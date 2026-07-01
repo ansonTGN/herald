@@ -668,11 +668,11 @@ mod tests {
             balance
         );
 
-        // Verify ledger entries have expiration set
+        // Verify quota entitlement has an expiration window set
         let has_expiry: bool = sqlx::query_scalar(
             "SELECT EXISTS(
-                SELECT 1 FROM points_credit_ledger
-                WHERE user_id = $1 AND credit_type = 'subscription_credit' AND expires_at IS NOT NULL
+                SELECT 1 FROM points_quota_entitlements
+                WHERE user_id = $1 AND credit_type = 'subscription_credit' AND effective_until IS NOT NULL
             )",
         )
         .bind(user_id)
@@ -682,7 +682,7 @@ mod tests {
 
         assert!(
             has_expiry,
-            "Subscription credit should have expiration date when validity_days is set"
+            "Subscription quota entitlement should have effective_until set when validity_days is configured"
         );
     }
 

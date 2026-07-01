@@ -270,13 +270,14 @@ pub async fn create_test_entitlement_mapping(
     sqlx::query(
         "INSERT INTO provider_entitlement_mappings
             (id, realm_id, payment_provider, external_product_id, entitlement_key,
-             grant_on_subscribe, enabled, bucket_id, quota_windows, created_at, updated_at)
-         VALUES ($1, $2, 'creem', $3, $4, true, true, $5, $6, NOW(), NOW())",
+             points_per_period, grant_on_subscribe, enabled, bucket_id, quota_windows, created_at, updated_at)
+         VALUES ($1, $2, 'creem', $3, $4, $5, true, true, $6, $7, NOW(), NOW())",
     )
     .bind(mapping_id)
     .bind(realm_id)
     .bind(&external_product_id)
     .bind(mapping_id.to_string())
+    .bind(points_per_period)
     .bind(bucket_id)
     .bind(quota_windows)
     .execute(pool)
@@ -308,10 +309,11 @@ pub async fn configure_test_entitlement_points(
 
     sqlx::query(
         "UPDATE provider_entitlement_mappings
-         SET validity_days = $1, quota_windows = $2, updated_at = NOW()
-         WHERE id = $3 AND realm_id = $4",
+         SET validity_days = $1, points_per_period = $2, quota_windows = $3, updated_at = NOW()
+         WHERE id = $4 AND realm_id = $5",
     )
     .bind(validity_days)
+    .bind(points_per_period)
     .bind(quota_windows)
     .bind(mapping_id)
     .bind(realm_id)

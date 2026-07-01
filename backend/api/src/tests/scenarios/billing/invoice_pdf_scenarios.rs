@@ -70,7 +70,7 @@ mod tests {
             "sellerName": "Test Seller Inc.",
             "sellerAddress": "456 Seller Ave",
             "sellerTaxId": "SELLER-TAX-001",
-            "dueDate": "2026-06-30",
+            "dueDate": "2099-12-31",
         });
 
         let response = app

@@ -893,22 +893,18 @@ pub async fn void_invoice(
         ));
     }
 
-    // Status-transition validation. `paid` is normally terminal, but a paid
-    // invoice with no active refund credit notes (i.e. only voided notes or none
-    // at all) is allowed to be voided. Already-void invoices are still rejected
-    // here via the terminal-state check (no active notes can exist for them).
-    let allow_paid_void = detail.invoice.status == InvoiceStatus::Paid;
-    if !allow_paid_void {
-        validate_status_transition(
-            detail.invoice.status,
-            InvoiceStatus::Void,
-            detail.line_items.len(),
-            detail.invoice.total,
-            ActorType::User,
-            false,
-            request.void_reason.as_deref(),
-        )?;
-    }
+    // Status-transition validation. `paid` and `void` are terminal states and
+    // cannot be transitioned away from, matching the invoice state machine in
+    // the PRD (draft → issued → paid / void / overdue; paid is immutable).
+    validate_status_transition(
+        detail.invoice.status,
+        InvoiceStatus::Void,
+        detail.line_items.len(),
+        detail.invoice.total,
+        ActorType::User,
+        false,
+        request.void_reason.as_deref(),
+    )?;
 
     let actor_user_id = Uuid::parse_str(&identity.user_id()).ok();
     state

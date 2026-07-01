@@ -2,10 +2,16 @@
 // Test: Subscription Downgrade Webhook
 // =============================================================================
 //
-// Tests for subscription.update webhook events (downgrades).
+// Tests for subscription.update webhook events (downgrades) under the
+// window-quota model.
 //
 // User Story: docs/user-stories/points-billing-events.md
 // Covers: US-BI-010 (Subscription downgrade takes effect next period)
+//
+// Under the quota model, handle_subscription_downgrade does NOT revoke the
+// active entitlement. The user keeps their current window quota until
+// effective_until; the next renewal webhook grants a fresh entitlement from the
+// new mapping's quota_windows.
 //
 // =============================================================================
 
@@ -14,7 +20,7 @@ use crate::tests::helpers::webhook_helpers::*;
 use crate::tests::scenarios::points::fixtures::*;
 use crate::tests::schema_test_context::SchemaTestContext;
 use chrono::{Duration, Utc};
-use herald_core::domain::points::entities::{CreditLedgerStatus, CreditSourceType, CreditType};
+use herald_core::domain::points::entities::{CreditType, QuotaEntitlementStatus, QuotaSourceType};
 use test_context::test_context;
 use uuid::Uuid;
 
@@ -32,6 +38,7 @@ async fn test_subscription_downgrade_no_immediate_revoke(ctx: &mut SchemaTestCon
     let user_id = create_test_user(&ctx.app_state.pool, &realm_id, "user1@example.com").await;
     let premium_plan_id = Uuid::now_v7();
     let basic_plan_id = Uuid::now_v7();
+    let subscription_id = Uuid::now_v7();
     let event_id = generate_test_event_id();
     let period_end = Utc::now() + Duration::days(30);
 
@@ -44,27 +51,35 @@ async fn test_subscription_downgrade_no_immediate_revoke(ctx: &mut SchemaTestCon
 
     create_points_wallet(ctx, user_id, &realm_id).await;
 
-    // User currently has Premium Plan (10000 points)
-    create_credit_ledger_entry_v2(
+    // User currently has Premium Plan (10000 points) as a window-quota entitlement
+    let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, &realm_id).await;
+    grant_quota_entitlement_for_test(
         ctx,
-        user_id,
         &realm_id,
+        user_id,
+        bucket_id,
         CreditType::SubscriptionCredit,
-        CreditSourceType::SubscriptionInitial,
-        premium_plan_id.to_string(),
-        10000,
+        QuotaSourceType::SubscriptionInitial,
+        &subscription_id.to_string(),
+        &[(2_592_000, 10000, "period")],
+        Utc::now(),
         Some(period_end),
     )
     .await;
 
     // When: User downgrades to Basic Plan (5000 points)
-    let event = build_subscription_updated_event(
+    // Use the new plan's own external_product_id so the price-aware webhook
+    // resolver lands on the basic mapping instead of colliding on the shared
+    // prod_test_monthly product.
+    let mut event = build_subscription_updated_event_with_product(
         event_id,
         user_id,
         premium_plan_id,
         basic_plan_id,
         &realm_id,
+        &format!("prod_test_{}", basic_plan_id),
     );
+    event["data"]["object"]["subscriptionId"] = serde_json::json!(subscription_id.to_string());
 
     let app = ctx.create_unified_test_router();
     let response = send_webhook_with_signature(&app, &realm_id, event, "test_webhook_secret").await;
@@ -72,30 +87,49 @@ async fn test_subscription_downgrade_no_immediate_revoke(ctx: &mut SchemaTestCon
     // Then
     assert_webhook_success(&response);
 
-    // Current period ledger should remain unchanged
-    let ledgers =
-        get_user_ledgers_by_credit_type(ctx, user_id, CreditType::SubscriptionCredit).await;
+    // Existing entitlement should remain untouched
+    let entitlements =
+        get_user_quota_entitlements(ctx, user_id, CreditType::SubscriptionCredit).await;
     assert_eq!(
-        ledgers.len(),
+        entitlements.len(),
         1,
-        "Should not create new ledger for downgrade"
+        "Should not create new entitlement for downgrade"
     );
 
-    let ledger = &ledgers[0];
+    let entitlement = &entitlements[0];
     assert_eq!(
-        ledger.remaining_amount, 10000,
-        "Points should remain unchanged"
-    );
-    assert_eq!(
-        ledger.status,
-        CreditLedgerStatus::Active,
+        entitlement.status,
+        QuotaEntitlementStatus::Active,
         "Status should remain active"
     );
-    assert_eq!(ledger.revoked_amount, 0, "No points should be revoked");
+    assert_eq!(
+        entitlement.quota_windows.len(),
+        1,
+        "Should still have one quota window"
+    );
+    assert_eq!(
+        entitlement.quota_windows[0].limit, 10000,
+        "Window limit should remain unchanged"
+    );
+    assert_eq!(
+        entitlement.source_type,
+        QuotaSourceType::SubscriptionInitial,
+        "Source type should remain subscription_initial"
+    );
+    assert_eq!(
+        entitlement.source_id,
+        subscription_id.to_string(),
+        "Source id should remain unchanged"
+    );
 
-    // No revocation records should be created
-    let revocations = get_revocation_records(ctx, user_id).await;
-    assert_eq!(revocations.len(), 0, "No revocation records for downgrade");
+    assert_derived_balance(
+        ctx,
+        user_id,
+        &realm_id,
+        CreditType::SubscriptionCredit,
+        10000,
+    )
+    .await;
 }
 
 // ============================================================================
@@ -112,6 +146,7 @@ async fn test_subscription_downgrade_idempotency(ctx: &mut SchemaTestContext) {
     let user_id = create_test_user(&ctx.app_state.pool, &realm_id, "user2@example.com").await;
     let premium_plan_id = Uuid::now_v7();
     let basic_plan_id = Uuid::now_v7();
+    let subscription_id = Uuid::now_v7();
     let event_id = generate_test_event_id();
     let period_end = Utc::now() + Duration::days(30);
 
@@ -124,27 +159,32 @@ async fn test_subscription_downgrade_idempotency(ctx: &mut SchemaTestContext) {
 
     create_points_wallet(ctx, user_id, &realm_id).await;
 
-    // User currently has Premium Plan (10000 points)
-    create_credit_ledger_entry_v2(
+    // User currently has Premium Plan (10000 points) as a window-quota entitlement
+    let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, &realm_id).await;
+    grant_quota_entitlement_for_test(
         ctx,
-        user_id,
         &realm_id,
+        user_id,
+        bucket_id,
         CreditType::SubscriptionCredit,
-        CreditSourceType::SubscriptionInitial,
-        premium_plan_id.to_string(),
-        10000,
+        QuotaSourceType::SubscriptionInitial,
+        &subscription_id.to_string(),
+        &[(2_592_000, 10000, "period")],
+        Utc::now(),
         Some(period_end),
     )
     .await;
 
-    // Build downgrade event with a shared event_id
-    let event = build_subscription_updated_event(
+    // Build downgrade event with a shared event_id and the new plan's product id
+    let mut event = build_subscription_updated_event_with_product(
         event_id.clone(),
         user_id,
         premium_plan_id,
         basic_plan_id,
         &realm_id,
+        &format!("prod_test_{}", basic_plan_id),
     );
+    event["data"]["object"]["subscriptionId"] = serde_json::json!(subscription_id.to_string());
 
     let app = ctx.create_unified_test_router();
 
@@ -158,28 +198,32 @@ async fn test_subscription_downgrade_idempotency(ctx: &mut SchemaTestContext) {
         send_webhook_with_signature(&app, &realm_id, event, "test_webhook_secret").await;
     assert_webhook_success(&response2);
 
-    // Then: Should still have exactly 1 ledger (downgrade does not create new ledger)
-    let ledgers =
-        get_user_ledgers_by_credit_type(ctx, user_id, CreditType::SubscriptionCredit).await;
+    // Then: Should still have exactly 1 entitlement (downgrade does not create one)
     assert_eq!(
-        ledgers.len(),
+        count_subscription_quota_entitlements(ctx, user_id).await,
         1,
-        "Should still have exactly one ledger after idempotent downgrade"
+        "Should still have exactly one entitlement after idempotent downgrade"
     );
 
-    // Points should remain unchanged
-    let ledger = &ledgers[0];
+    let entitlements =
+        get_user_quota_entitlements(ctx, user_id, CreditType::SubscriptionCredit).await;
+    let entitlement = &entitlements[0];
     assert_eq!(
-        ledger.remaining_amount, 10000,
-        "Points should remain unchanged"
+        entitlement.status,
+        QuotaEntitlementStatus::Active,
+        "Status should remain active"
     );
-    assert_eq!(ledger.revoked_amount, 0, "No points should be revoked");
+    assert_eq!(
+        entitlement.quota_windows[0].limit, 10000,
+        "Window limit should remain unchanged"
+    );
 
-    // No revocation records should be created
-    let revocations = get_revocation_records(ctx, user_id).await;
-    assert_eq!(
-        revocations.len(),
-        0,
-        "No revocation records for idempotent downgrade"
-    );
+    assert_derived_balance(
+        ctx,
+        user_id,
+        &realm_id,
+        CreditType::SubscriptionCredit,
+        10000,
+    )
+    .await;
 }
