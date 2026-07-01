@@ -9,29 +9,28 @@ use crate::common::policies::ensure_policy;
 use crate::points::entities::{
     CreditSourceType, CreditType, PointsQuotaEntitlement, QuotaEntitlementStatus, QuotaSourceType,
 };
+use crate::points::grant_schedule::PointsGrantSchedule;
 use crate::points::services::registration_pool_resolver::RegistrationPoolResolver;
 use crate::points::{PointsPolicy, PointsRepository, PointsService, UserPointsConfig};
 
-/// Registration Service - Handles user registration and initial points grant
+/// Registration Service - Handles user registration and initial points grant.
 ///
-/// points-grant-redesign (BE-D07): the free-periodic grant no longer builds a
-/// `points_grant_schedule` + first-period ledger grant. It grants a single
-/// window-quota entitlement (`points_quota_entitlements`, design §5.4) snapshotting
+/// The free-periodic grant grants a single window-quota entitlement
+/// (`points_quota_entitlements`) snapshotting
 /// `realm_default_configs.free_periodic_quota_windows`. Availability is computed
 /// from the consume stream + the entitlement's effective interval; there is no
 /// per-period issuance and no schedule to update. Upgrade-to-paid revokes the
-/// entitlement (replaces the pre-redesign `revoke_free_user_credits` ledger
-/// reclaim; consumed amounts NOT reverse-adjusted).
+/// entitlement (consumed amounts NOT reverse-adjusted).
 ///
-/// Per design (credit-bucket): registration and free periodic
-/// grants target the Realm's registration pool Bucket (the single Bucket flagged
-/// `receives_registration_credits = true`). That Bucket is resolved through the
-/// injected `RegistrationPoolResolver` port (infra impl). When no
-/// Bucket is marked, grants are skipped fail-safe (no cross-pool fallback).
+/// Registration and free-periodic grants target the Realm's registration pool
+/// Bucket (the single Bucket flagged `receives_registration_credits = true`).
+/// That Bucket is resolved through the injected `RegistrationPoolResolver` port.
+/// When no Bucket is marked, grants are skipped fail-safe (no cross-pool
+/// fallback).
 ///
-/// `registration_credit` (permanent pool) grant is PRESERVED zero-regression
-/// (design R5): it still routes through `PointsService::grant_points_internal`
-/// topup-style into `points_credit_ledger`.
+/// `registration_credit` (permanent pool) grant is preserved: it still routes
+/// through `PointsService::grant_points_internal` topup-style into
+/// `points_credit_ledger`.
 pub struct RegistrationService<R, P, Z>
 where
     R: PointsRepository + Send + Sync,
@@ -95,7 +94,7 @@ where
             "Handling user registration"
         );
 
-        // 1. Check if user config already exists (prevent duplicate)
+        // Check if user config already exists (prevent duplicate).
         if self.repository.find_user_config(user_id).await?.is_some() {
             return Err(CoreError::BadRequest(format!(
                 "User {} already has a points config",
@@ -103,27 +102,25 @@ where
             )));
         }
 
-        // 2. Get realm default config
+        // Get realm default config.
         let realm_config = self
             .repository
             .find_realm_config(realm_id)
             .await?
             .ok_or(CoreError::NotFound)?;
 
-        // 3. Resolve the registration pool Bucket for this Realm.
-        // Per design: target = the Realm's Bucket flagged
-        // `receives_registration_credits = true` (at most one per Realm).
-        // `None` means no marked Bucket → fail-safe skip grants (no cross-pool
-        // fallback). This is NOT an error: a Realm may legitimately
-        // have no registration pool configured.
+        // Resolve the registration pool Bucket for this Realm. Target = the
+        // Realm's Bucket flagged `receives_registration_credits = true` (at
+        // most one per Realm). `None` means no marked Bucket → fail-safe skip
+        // grants (no cross-pool fallback). This is NOT an error: a Realm may
+        // legitimately have no registration pool configured.
         let registration_pool_bucket_id = self
             .registration_pool_resolver
             .resolve_registration_pool_bucket(realm_id)
             .await?;
 
-        // 4. Grant registration bonus (permanent). ZERO REGRESSION: routes
-        //    through the pool-side `grant_points_internal` topup-style path
-        //    into `points_credit_ledger`, unchanged from pre-redesign.
+        // Grant registration bonus (permanent) through the pool-side
+        // `grant_points_internal` topup-style path into `points_credit_ledger`.
         let registration_bonus = realm_config.registration_bonus_points;
         if registration_bonus > 0 {
             if let Some(bucket_id) = registration_pool_bucket_id {
@@ -159,8 +156,7 @@ where
             }
         }
 
-        // 5. Create user points config (without a schedule — the window model
-        //    no longer writes `points_grant_schedule`).
+        // Create user points config (without a schedule).
         let now = Utc::now();
         let grant_period_type = realm_config.free_periodic_grant_period_type;
         let user_config = UserPointsConfig {
@@ -171,9 +167,9 @@ where
             free_periodic_grant_period_type: Some(grant_period_type),
             free_periodic_validity_days: realm_config.free_periodic_validity_days,
             // No schedule in the window model: next_grant_time / granted_periods
-            // / grant_schedule_id carry no meaning for a quota entitlement.
-            // They are retained on the struct (pool-side zero-regression +
-            // future schedule-cleanup) but left at their neutral values.
+            // / grant_schedule_id carry no meaning for a quota entitlement. They
+            // are retained on the struct for future schedule-cleanup but left at
+            // their neutral values.
             next_grant_time: None,
             granted_periods: 0,
             grant_schedule_id: None,
@@ -183,14 +179,13 @@ where
 
         let _user_config = self.repository.create_user_config(user_config).await?;
 
-        // 6. Grant the free-periodic quota entitlement (design §5.4). Replaces
-        //    the pre-redesign "build free schedule + first-period ledger grant"
-        //    pair. The snapshot is read from `realm_default_configs.
-        //    free_periodic_quota_windows` (BE-D07 field wiring). Empty snapshot
-        //    ⟹ fail-safe skip (no grant, no error): a Realm with no free
-        //    periodic quota configured simply gets no free window credit.
+        // Grant free periodic credits. Window-configured realms use quota
+        // entitlements; legacy amount-configured realms keep the schedule +
+        // first-period ledger grant so worker-down read-path realization has a
+        // schedule to advance.
         let quota_windows = realm_config.free_periodic_quota_windows.clone();
-        if !quota_windows.is_empty() {
+        let has_quota_windows = !quota_windows.is_empty();
+        if has_quota_windows {
             if let Some(bucket_id) = registration_pool_bucket_id {
                 self.grant_free_periodic_entitlement(
                     realm_id,
@@ -215,21 +210,70 @@ where
             );
         }
 
+        if !has_quota_windows && realm_config.free_periodic_points_amount > 0 {
+            if let Some(bucket_id) = registration_pool_bucket_id {
+                let schedule = PointsGrantSchedule {
+                    id: generate_uuid_v7(),
+                    user_id,
+                    realm_id: realm_id.to_string(),
+                    bucket_id,
+                    subscription_id: None,
+                    entitlement_key: None,
+                    grant_period_type,
+                    base_time: now,
+                    next_grant_time: now,
+                    points_per_period: realm_config.free_periodic_points_amount,
+                    validity_days: realm_config.free_periodic_validity_days,
+                    granted_periods: 0,
+                    max_periods: None,
+                    active: true,
+                    created_at: now,
+                    updated_at: now,
+                };
+                let schedule = self.repository.create_grant_schedule(schedule).await?;
+                let expires_at = grant_period_type
+                    .calculate_expiration(now, realm_config.free_periodic_validity_days);
+                self.repository
+                    .pregrant_next_period_atomic(realm_id, &schedule, 1, Some(now), expires_at)
+                    .await?;
+                let refreshed = self
+                    .repository
+                    .find_grant_schedule(schedule.id)
+                    .await?
+                    .unwrap_or(schedule);
+                self.repository
+                    .update_user_config(
+                        user_id,
+                        Some(refreshed.next_grant_time),
+                        refreshed.granted_periods,
+                        Some(refreshed.id),
+                    )
+                    .await?;
+            } else {
+                tracing::warn!(
+                    realm_id = %realm_id,
+                    user_id = %user_id,
+                    amount = realm_config.free_periodic_points_amount,
+                    "No registration pool Bucket configured; skipping free periodic schedule grant (fail-safe)"
+                );
+            }
+        }
+
         Ok(())
     }
 
     /// Grant the free-periodic window-quota entitlement for a newly-registered
     /// user. Delegates to `repository.grant_quota_entitlement_atomic`, which is
     /// idempotent on the entitlement's `idempotency_key`
-    /// (`UNIQUE(realm_id, user_id, bucket_id, credit_type, idempotency_key)`,
-    /// design §4.3.2): a replayed registration anchor returns the pre-existing
-    /// entitlement row without re-writing.
+    /// (`UNIQUE(realm_id, user_id, bucket_id, credit_type, idempotency_key)`):
+    /// a replayed registration anchor returns the pre-existing entitlement row
+    /// without re-writing.
     ///
     /// `source_id` / `idempotency_key` anchor to the registration event
     /// (`registration:{user_id}` / `free:registration:{user_id}`) so a duplicate
     /// registration for the same user converges on the same entitlement.
     /// `effective_until = None` (the free entitlement is ongoing until revoked
-    /// on upgrade-to-paid, design §5.4).
+    /// on upgrade-to-paid).
     async fn grant_free_periodic_entitlement(
         &self,
         realm_id: &str,
@@ -275,10 +319,8 @@ where
     }
 
     /// Revoke the free-periodic quota entitlement (used when a free user
-    /// upgrades to a paid plan). Replaces the pre-redesign ledger-reclaim path
-    /// (`revoke_points_by_credit_type` + schedule deactivate) with a quota-
-    /// entitlement revoke (design §5.4). Consumed amounts are NOT reverse-
-    /// adjusted: they age out naturally as the sliding window advances.
+    /// upgrades to a paid plan). Consumed amounts are NOT reverse-adjusted: they
+    /// age out naturally as the sliding window advances.
     ///
     /// Method name retained for call-site compatibility; semantics changed.
     pub async fn revoke_free_user_credits(
@@ -422,12 +464,12 @@ mod tests {
         assert_eq!(schedule.calculate_next_expiration(), None); // Permanent
     }
 
-    // Per design: registration and free-periodic grants target the
-    // Realm's single registration-pool Bucket (`receives_registration_credits`).
-    // When the resolver returns `None` (no marked Bucket) the service MUST skip
-    // grants fail-safe and never fall back to an implicit pool. These tests pin
-    // the resolver contract via a stub so the fail-safe rule has a regression
-    // guard independent of the DB-backed infra impl.
+    // Registration and free-periodic grants target the Realm's single
+    // registration-pool Bucket (`receives_registration_credits`). When the
+    // resolver returns `None` (no marked Bucket) the service MUST skip grants
+    // fail-safe and never fall back to an implicit pool. These tests pin the
+    // resolver contract via a stub so the fail-safe rule has a regression guard
+    // independent of the DB-backed infra impl.
 
     struct StubRegistrationPoolResolver {
         bucket: Option<Uuid>,

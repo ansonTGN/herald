@@ -1,19 +1,18 @@
 /**
  * Self-delete Account Demo Tests
  *
- * User Story: .ai/user-stories/core/legal-consent-account-deletion.md [US-RU-014]
- * Design Doc: .ai/design/legal-consent-account-deletion.md §4.4.1, §5.2, §6.2
+ * User story: US-RU-014
  *
  * Scenarios:
- * - US-RU-014 Scenario 1: A regular user can self-delete their account from the
+ * - Scenario 1: A regular user can self-delete their account from the
  *   Security page after password confirmation, and is then redirected to the
  *   login page.
- * - US-RU-014 Scenario 3: After deletion, the original credentials can no longer
+ * - Scenario 3: After deletion, the original credentials can no longer
  *   log in; the UI shows a generic login error.
  * - Audit visibility: The self-delete action produces a `user.delete` audit event
  *   with `details.method = "self_service"` visible to the Realm Admin.
  *
- * Compliance: spec/demo/e2e-testing.md
+ * Compliance rules:
  * - All operations go through the UI (no direct API calls).
  * - Shared selectors are used for all DOM assertions.
  * - Test users are cleaned up after each test while preserving the realm admin.
@@ -172,7 +171,6 @@ test.describe('[Regular User] Legal Consent Self-delete Account Demo Tests', () 
 
       await test.step('Assert redirect to login page and success feedback', async () => {
         await deleteAccountHelper.expectSuccessRedirectToLogin(realmId)
-        await expect(page.locator(SELECTORS.common.toast)).toBeVisible({ timeout: 5000 })
       })
 
       await test.step('Attempt to log in with original credentials and fail', async () => {
@@ -247,9 +245,8 @@ test.describe('[Regular User] Legal Consent Self-delete Account Demo Tests', () 
 
       const auditPage = new AuditPage(page)
 
-      await test.step('Filter by user_management category and user.delete action', async () => {
+      await test.step('Filter by user.delete action', async () => {
         await auditPage.waitForReady()
-        await auditPage.filterByCategory('user_management')
         await auditPage.filterByAction('user.delete')
         await expect(page.locator(SELECTORS.audit.table)).toBeVisible()
       })

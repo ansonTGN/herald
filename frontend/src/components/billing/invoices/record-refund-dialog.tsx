@@ -18,7 +18,7 @@ import { recordRefundFormSchema } from '@/lib/schemas/credit-note-forms'
 import { useCreateCreditNote } from '@/data/invoice-mutations'
 import { getErrorMessage } from '@/lib/error-utils'
 import { getFieldErrorMessage } from '@/lib/form-utils'
-import { centsToDisplayPrice, displayPriceToCents, formatInvoiceAmount } from '@/lib/invoice-utils'
+import { displayPriceToCents, formatInvoiceAmount } from '@/lib/invoice-utils'
 import { m } from '@/paraglide/messages'
 import type { InvoiceDetailResponse } from '@/lib/api-generated'
 
@@ -37,7 +37,6 @@ export function RecordRefundDialog({
 }: RecordRefundDialogProps) {
   const mutation = useCreateCreditNote(realmId, invoice.id)
   const [inlineError, setInlineError] = useState<string | null>(null)
-  const maxAmountDisplay = centsToDisplayPrice(invoice.amountRemaining)
 
   const form = useAppForm({
     schema: recordRefundFormSchema,
@@ -106,7 +105,6 @@ export function RecordRefundDialog({
                     type="number"
                     step="0.01"
                     min="0.01"
-                    max={maxAmountDisplay}
                     placeholder="0.00"
                     value={field.state.value ?? ''}
                     onChange={(e) => field.handleChange(e.target.value)}

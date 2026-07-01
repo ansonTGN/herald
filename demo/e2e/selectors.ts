@@ -1,22 +1,8 @@
 /**
- * Centralized Selectors for Herald Frontend E2E Tests
- *
- * Page Object Model (POM) pattern:
- * - All selectors defined in one place
- * - Easy maintenance when frontend changes
- * - Consistent selector usage across tests
- *
- * Selector Priority:
- * 1. data-testid (most stable)
- * 2. Aria roles (semantic)
- * 3. Text content (fallback)
+ * Centralized selectors for Herald frontend E2E tests.
  */
 
 export const SELECTORS = {
-  /**
-   * Login Page Selectors
-   * Route: /{realmId}/auth/login
-   */
   login: {
     container: '[data-testid="login-card"], [data-testid="login-container"]',
     title: '[data-testid="login-title"]',
@@ -27,10 +13,6 @@ export const SELECTORS = {
     errorMessage: '[data-testid="login-error-message"]',
   },
 
-  /**
-   * Dashboard Selectors
-   * Route: /{realmId}/
-   */
   dashboard: {
     heading: 'h1:has-text("Dashboard")',
     statsRow: '[data-testid="dashboard-stats-row"]',
@@ -50,9 +32,6 @@ export const SELECTORS = {
     chartSkeleton: '[data-testid="dashboard-chart-skeleton"]',
   },
 
-  /**
-   * Sidebar Selectors
-   */
   sidebar: {
     container: '[data-testid="admin-sidebar"]',
     menuDashboard: '[data-testid="sidebar-menu-dashboard"]',
@@ -68,18 +47,12 @@ export const SELECTORS = {
     menuEntitlementMappings: '[data-testid="sidebar-menu-entitlement-mappings"]',
   },
 
-  /**
-   * Language Switcher Selectors
-   */
   languageSwitcher: {
     trigger: '[data-testid="language-switcher"]',
     enItem: '[data-testid="language-switcher-item-en"]',
     zhItem: '[data-testid="language-switcher-item-zh-CN"]',
   },
 
-  /**
-   * Header Selectors
-   */
   header: {
     container: '[data-testid="admin-header"]',
     userAvatar: '[data-testid="user-avatar"]',
@@ -88,10 +61,6 @@ export const SELECTORS = {
     userDisplayName: '[data-testid="user-display-name"]',
   },
 
-  /**
-   * Audit Page Selectors
-   * Route: /{realmId}/manage/audit
-   */
   audit: {
     container: '[data-testid="audit-page"]',
     heading: '[data-testid="audit-heading"]',
@@ -114,10 +83,6 @@ export const SELECTORS = {
     paginationNext: '[data-testid="audit-pagination-next"]',
   },
 
-  /**
-   * Users Page Selectors
-   * Route: /{realmId}/users
-   */
   users: {
     container: '[data-testid="users-page"]',
     heading: '[data-testid="users-heading"]',
@@ -146,50 +111,34 @@ export const SELECTORS = {
     copyButton: '[data-testid="copy-password-button"]',
   },
 
-  /**
-   * Roles Page Selectors
-   * Route: /{realmId}/roles
-   */
   roles: {
     container: '[data-testid="roles-page"]',
     heading: '[data-testid="roles-heading"]',
     table: '[data-testid="role-table"]',
     addButton: '[data-testid="role-create-button"]',
     permissionsButton: '[data-testid="permissions-button"]',
-    // Create dialog
     createNameInput: '[data-testid="role-create-name-input"]',
     createDescriptionInput: '[data-testid="role-create-description-input"]',
     createSubmitButton: '[data-testid="role-create-submit-button"]',
-    // Edit dialog
     editNameInput: '[data-testid="role-edit-name-input"]',
     editDescriptionInput: '[data-testid="role-edit-description-input"]',
     editSubmitButton: '[data-testid="role-edit-submit-button"]',
   },
 
-  /**
-   * Permissions Page Selectors
-   * Route: /{realmId}/permissions
-   */
   permissions: {
     container: '[data-testid="permissions-page"]',
     heading: '[data-testid="permissions-heading"]',
     table: '[data-testid="permissions-table"]',
     addButton: '[data-testid="permission-create-button"]',
-    // Create dialog
     createNameInput: '[data-testid="permission-create-name-input"]',
     createDescriptionInput:
       '[data-testid="permission-create-description-input"]',
     createSubmitButton: '[data-testid="permission-create-submit-button"]',
-    // Edit dialog
     editNameInput: '[data-testid="permission-edit-name-input"]',
     editDescriptionInput: '[data-testid="permission-edit-description-input"]',
     editSubmitButton: '[data-testid="permission-edit-submit-button"]',
   },
 
-  /**
-   * Realms Page Selectors
-   * Route: /admin/realms
-   */
   realms: {
     container: '[data-testid="realms-page"]',
     heading: '[data-testid="realms-heading"]',
@@ -198,26 +147,19 @@ export const SELECTORS = {
       '[data-testid="add-realm-button"], [data-testid="create-realm-button"]',
   },
 
-  /**
-   * Profile Page Selectors
-   * Route: /{realmId}/profile
-   */
   profile: {
     container: '[data-testid="profile-page"]',
     heading: '[data-testid="profile-heading"]',
-    // Profile sidebar
     sidebarContainer: '[data-testid="profile-sidebar"]',
     menuProfile: '[data-testid="profile-menu-profile"]',
     menuSecurity: '[data-testid="profile-menu-security"]',
     logoutButton: '[data-testid="profile-logout-button"]',
     headerContainer: '[data-testid="profile-header"]',
-    // Profile fields
     emailField: '[data-testid="profile-email"]',
     nicknameField: '[data-testid="profile-nickname"]',
     nicknameInput: '[data-testid="nickname-input"]',
     statusField: '[data-testid="profile-status"]',
     saveButton: '[data-testid="save-profile-button"]',
-    // Change Password
     changePasswordHeading: '[data-testid="change-password-heading"]',
     oldPasswordInput: '[data-testid="change-password-old-input"]',
     newPasswordInput: '[data-testid="change-password-new-input"]',
@@ -225,82 +167,59 @@ export const SELECTORS = {
     changePasswordSubmitButton: '[data-testid="change-password-submit-button"]',
   },
 
-  /**
-   * Security/Profile Selectors
-   * Route: /{realmId}/user/security
-   */
   security: {
     pageTitle: '[data-testid="security-page-title"]',
     passwordSectionTitle: '[data-testid="password-section-title"]',
-    // TOTP Section
     totpSectionTitle: '[data-testid="totp-section-title"]',
-    // TOTP Status Card
     totpStatusCard: '[data-testid="totp-status-card"]',
     totpStatusCardEnabled: '[data-testid="totp-status-card-enabled"]',
     totpEnableButton: '[data-testid="totp-enable-button"]',
     totpDisableButton: '[data-testid="totp-disable-button"]',
     totpRegenerateButton: '[data-testid="totp-regenerate-button"]',
-    // TOTP Setup Page (3-step flow)
-    // Route: /{realmId}/user/security/totp-setup
     totpSetupPage: '[data-testid="totp-setup-page"]',
     totpSetupPageTitle: '[data-testid="totp-setup-page-title"]',
     totpSetupPageDescription: '[data-testid="totp-setup-page-description"]',
     totpSetupBackToSecurity: '[data-testid="totp-setup-back-to-security"]',
-    // Step 1: Password Confirmation
     totpSetupStepPassword: '[data-testid="totp-setup-step-password"]',
     totpSetupPasswordInput: '[data-testid="totp-setup-password-input"]',
     totpSetupGenerateButton: '[data-testid="totp-setup-generate-button"]',
     totpPasswordError: '[data-testid="totp-password-error"]',
-    // Step 2: QR Code Display
     totpSetupStepQRCode: '[data-testid="totp-setup-step-qr-code"]',
     totpQRCodeContainer: '[data-testid="totp-qr-code-container"]',
     totpQRCode: '[data-testid="totp-qr-code"]',
     totpSecretKey: '[data-testid="totp-qr-code-container"]',
     totpSetupBackButton: '[data-testid="totp-setup-back-button"]',
     totpSetupNextButton: '[data-testid="totp-setup-next-button"]',
-    // Step 3: Verification
     totpSetupStepVerify: '[data-testid="totp-setup-step-verify"]',
     totpOtpInput: '[data-testid="totp-otp-input"]',
     totpOtpDigit: (index: number) => `[data-testid="totp-otp-digit-${index}"]`,
     totpVerifyBackButton: '[data-testid="totp-verify-back-button"]',
     totpVerifySubmitButton: '[data-testid="totp-verify-submit-button"]',
     totpVerifyLoading: '[data-testid="totp-verify-loading"]',
-    // Common Setup Page Elements
     totpSavedBackupCodesCheckbox:
       '[data-testid="totp-saved-backup-codes-checkbox"]',
     totpSavedBackupCodesLabel: '[data-testid="totp-saved-backup-codes-label"]',
-    // TOTP Disable Form (Dialog)
     totpDisablePasswordInput: '[data-testid="totp-disable-password-input"]',
     totpDisableCancelButton: '[data-testid="totp-disable-cancel-button"]',
     totpDisableSubmitButton: '[data-testid="totp-disable-submit-button"]',
-    // TOTP Regenerate Form (Dialog)
     totpRegeneratePasswordInput:
       '[data-testid="totp-regenerate-password-input"]',
     totpRegenerateCancelButton: '[data-testid="totp-regenerate-cancel-button"]',
-    // Backup Codes
     backupCodesCopyAllButton: '[data-testid="backup-codes-copy-all-button"]',
     backupCode: (index: number) => `[data-testid="backup-code-${index}"]`,
-    // TOTP Status Display
     totpEnabledAt: '[data-testid="totp-enabled-at"]',
     totpLastVerifiedAt: '[data-testid="totp-last-verified-at"]',
     totpRemainingBackupCodes: '[data-testid="totp-remaining-backup-codes"]',
   },
 
-  /**
-   * Client Apps Page Selectors
-   * Route: /{realmId}/manage/client-apps
-   */
   clientApps: {
     page: '[data-testid="client-apps-page"]',
     heading: '[data-testid="client-apps-heading"]',
     table: '[data-testid="client-apps-table"]',
     addButton: '[data-testid="add-client-app-button"]',
     searchInput: '[data-testid="client-apps-search-input"]',
-    // Table rows (by row index)
     rowByIndex: (index: number) => `[data-testid="client-app-row-${index}"]`,
-    // Table rows (by app UUID)
     row: (appId: string) => `[data-app-id="${appId}"]`,
-    // Table rows (by client ID)
     rowByClientId: (clientId: string) => `[data-client-id="${clientId}"]`,
     editButton: (appId: string) =>
       `[data-app-id="${appId}"] [data-testid="edit-client-app-button"]`,
@@ -310,27 +229,18 @@ export const SELECTORS = {
       `[data-app-id="${appId}"] [data-testid="client-app-enabled-switch"]`,
   },
 
-  /**
-   * Client App Form Page Selectors
-   * Dedicated page with tabs for creating/editing client apps (replaces dialog).
-   */
   clientAppForm: {
-    // Page container
     page: '[data-testid="client-app-form-page"]',
     pageTitle: '[data-testid="page-title"]',
-    // Tab triggers
     tabBasic: '[data-testid="tab-basic"]',
     tabRedirectUris: '[data-testid="tab-redirect-uris"]',
     tabSecurity: '[data-testid="tab-security"]',
     tabAppearance: '[data-testid="tab-appearance"]',
-    // Basic tab
     clientIdInput: '[data-testid="client-id-input"]',
     clientIdDisplay: '[data-testid="client-id-display"]',
     nameInput: '[data-testid="client-app-name-input"]',
     descriptionInput: '[data-testid="client-app-description-input"]',
-    // Redirect URIs tab
     redirectUrisInput: '[data-testid="redirect-uris-input-field"]',
-    // Security tab
     enabledSwitch: '[data-testid="client-app-enabled-switch"]',
     sessionTtlInput: '[data-testid="session-ttl-input"]',
     sessionTtlPreset: (label: string) =>
@@ -338,17 +248,11 @@ export const SELECTORS = {
     sessionRenewalTtlInput: '[data-testid="session-renewal-ttl-input"]',
     deviceCodeGrantSwitch: '[data-testid="device-code-grant-switch"]',
     regenerateSecretSwitch: '[data-testid="regenerate-secret-switch"]',
-    // Appearance tab
     iconUrlInput: '[data-testid="icon-url-input"]',
-    // Footer buttons
     cancelButton: '[data-testid="cancel-button"]',
     submitButton: '[data-testid="submit-button"]',
   },
 
-  /**
-   * API Keys Page Selectors
-   * Route: /{realmId}/manage/api-keys
-   */
   apiKeys: {
     page: '[data-testid="api-keys-page"]',
     heading: '[data-testid="api-keys-heading"]',
@@ -367,10 +271,6 @@ export const SELECTORS = {
     manageRolesButton: '[data-testid="manage-api-key-roles-button"]',
   },
 
-  /**
-   * API Key Form Page Selectors
-   * Route: /{realmId}/manage/api-keys/new, /{realmId}/manage/api-keys/{apiKeyId}/edit
-   */
   apiKeyForm: {
     page: '[data-testid="api-key-form-page"]',
     pageTitle: '[data-testid="page-title"]',
@@ -388,10 +288,6 @@ export const SELECTORS = {
     submitButton: '[data-testid="submit-button"]',
   },
 
-  /**
-   * API Key Reveal Page Selectors
-   * Route: /{realmId}/manage/api-keys/reveal
-   */
   apiKeyReveal: {
     page: '[data-testid="api-key-reveal-page"]',
     pageTitle: '[data-testid="page-title"]',
@@ -401,18 +297,12 @@ export const SELECTORS = {
     doneButton: '[data-testid="api-key-reveal-done-button"]',
   },
 
-  /**
-   * API Key Delete Dialog Selectors
-   */
   apiKeyDelete: {
     dialog: '[data-testid="delete-confirmation-dialog"]',
     cancelButton: '[data-testid="cancel-delete-button"]',
     confirmButton: '[data-testid="confirm-delete-button"]',
   },
 
-  /**
-   * API Key Roles Dialog Selectors
-   */
   apiKeyRoles: {
     dialogContent: '[data-testid="api-key-roles-dialog-content"]',
     dialogTitle: '[data-testid="api-key-roles-dialog-title"]',
@@ -428,7 +318,6 @@ export const SELECTORS = {
    * Common Component Selectors
    */
   common: {
-    // Dialog/Modal
     dialog: '[data-testid="dialog"]',
     dialogTitle: '[data-testid="dialog-title"]',
     dialogContent: '[data-testid="dialog-content"]',
@@ -436,15 +325,13 @@ export const SELECTORS = {
     dialogCancelButton: '[data-testid="dialog-cancel-button"]',
     dialogSubmitButton: '[data-testid="dialog-submit-button"]',
 
-    // Form
     form: '[data-testid="form"]',
     formEmailInput: '[data-testid="email-input"]',
     formPasswordInput: '[data-testid="password-input"]',
     formNicknameInput: '[data-testid="nickname-input"]',
     formNameInput: '[data-testid="name-input"]',
 
-    // Feedback
-    // Sonner toast uses .data-[state=open]:animate-in to show toasts
+    // Sonner toast uses .data-[state=open]:animate-in to show toasts.
     toast: '[data-testid="toast"], [data-sonner-toast]',
     toastMessage:
       '[data-testid="toast-message"], [data-sonner-toast] [data-description]',
@@ -452,21 +339,15 @@ export const SELECTORS = {
       '[data-testid="success-message"], [data-sonner-toast].success',
     errorMessage: '[data-testid="error-message"], [data-sonner-toast].error',
 
-    // Loading
     loading: '[data-testid="loading"]',
     spinner: '[data-testid="spinner"]',
   },
 
-  /**
-   * Subscription History Page Selectors
-   * Route: /{realmId}/manage/subscription-history
-   */
   subscriptionHistory: {
     page: '[data-testid="subscription-history-page"]',
     filterContainer: '[data-testid="subscription-history-filter"]',
     listContainer: '[data-testid="subscription-history-list"]',
     backButton: '[data-testid="back-button"]',
-    // Filter fields
     filterUserId: '[data-testid="filter-user-id"]',
     filterPlan: '[data-testid="filter-plan"]',
     filterEventType: '[data-testid="filter-event-type"]',
@@ -475,32 +356,23 @@ export const SELECTORS = {
     filterToDate: '[data-testid="filter-to-date"]',
     filterSortBy: '[data-testid="filter-sort-by"]',
     filterSortOrder: '[data-testid="filter-sort-order"]',
-    // Filter buttons
     resetFilterButton: '[data-testid="reset-filter-button"]',
     applyFilterButton: '[data-testid="apply-filter-button"]',
-    // History table
     historyRow: (index: number) => `[data-testid="history-row-${index}"]`,
     previousPageButton: '[data-testid="previous-page-button"]',
     nextPageButton: '[data-testid="next-page-button"]',
   },
 
-  /**
-   * Subscription Detail History Page Selectors
-   * Route: /{realmId}/subscription/{subscriptionId}/history
-   */
   subscriptionDetailHistory: {
     page: '[data-testid="subscription-detail-history-page"]',
     timelineContainer: '[data-testid="subscription-timeline"]',
     timelineLoading: '[data-testid="timeline-loading"]',
     timelineEmpty: '[data-testid="timeline-empty"]',
     backButton: '[data-testid="back-button"]',
-    // Timeline events
     timelineEvent: (index: number) => `[data-testid="timeline-event-${index}"]`,
     viewEventDetailsButton: (index: number) =>
       `[data-testid="view-event-details-${index}"]`,
-    // Event details dialog
     eventDetailDialog: '[data-testid="event-detail-dialog"]',
-    // Event badges (parameterized by event type)
     eventBadge: (
       type:
         | "created"
@@ -513,21 +385,12 @@ export const SELECTORS = {
     ) => `[data-testid="event-badge-${type}"]`,
   },
 
-  /**
-   * Billing Page Selectors
-   * Route: /{realmId}/manage/billing
-   */
   billing: {
     page: '[data-testid="billing-page"]',
-    // Billing page navigation cards
     navEntitlementMappings: '[data-testid="billing-nav-entitlement-mappings"]',
     navSubscriptions: '[data-testid="billing-nav-subscriptions"]',
   },
 
-  /**
-   * Admin Subscription List Page Selectors
-   * Route: /{realmId}/manage/billing/subscriptions
-   */
   adminSubscriptionList: {
     page: '[data-testid="admin-subscription-list-page"]',
     heading: '[data-testid="admin-subscription-list-heading"]',
@@ -537,27 +400,21 @@ export const SELECTORS = {
     paymentProviderFilterSelect: '[data-testid="payment-provider-filter-select"]',
     subscriptionRow: (id: string) => `[data-testid="subscription-row-${id}"]`,
     firstSubscriptionRow: () => '[data-testid^="subscription-row-"]',
-    // Empty state
     emptyState: '[data-testid="admin-subscription-list-empty-state"]',
-    // Pagination
     pagination: '[data-testid="admin-subscription-list-pagination"]',
   },
 
   /**
    * Points Management Page Selectors (Admin)
-   * Route: /{realmId}/manage/points
    */
   pointsAdmin: {
-    // Page containers
     accountsPage: '[data-testid="points-wallets-page"]',
     heading: 'h1:has-text("Points Management")',
-    // User Wallets Section
     accountsSection: '[data-testid="points-wallets-page"]',
     accountsTable: '[data-testid="points-wallets-page"]',
     accountsSearch: '[data-testid="wallets-search-input"]',
     accountRow: (userId: string) => `[data-testid="wallet-row-${userId}"]`,
     firstAccountRow: () => '[data-testid^="wallet-row-"]',
-    // Transaction History Section
     transactionsSection:
       '[data-testid="transaction-history-table"], [data-testid="no-transactions"]',
     transactionsTable: '[data-testid="transaction-history-table"]',
@@ -573,7 +430,6 @@ export const SELECTORS = {
       `[data-testid="transaction-description-${index}"]`,
     transactionTime: (index: number) =>
       `[data-testid="transaction-time-${index}"]`,
-    // Transaction Filters
     transactionFilters: '[data-testid="transaction-filters"]',
     filterType: '[data-testid="filter-transaction-type"]',
     filterStartTime: '[data-testid="filter-from-date"]',
@@ -591,12 +447,10 @@ export const SELECTORS = {
   },
   /**
    * Points User Page Selectors
-   * Route: /{realmId}/user/points
    */
   pointsUser: {
     page: '[data-testid="user-points-page"]',
     heading: 'h1:has-text("My Points")',
-    // Balance Card
     balanceCard: '[data-testid="points-balance-card"]',
     balanceAmount: '[data-testid="points-balance"]',
     accountStatus: '[data-testid="points-wallet-status"]',
@@ -625,7 +479,6 @@ export const SELECTORS = {
     transactionBucketCell: (rowIndex: number) =>
       `[data-testid="transaction-bucket-${rowIndex}"]`,
     filterBucket: '[data-testid="filter-bucket"]',
-    // Transaction History
     transactionsSection:
       '[data-testid="transaction-history-table"], [data-testid="no-transactions"]',
     transactionsTable: '[data-testid="transaction-history-table"]',
@@ -639,29 +492,20 @@ export const SELECTORS = {
       `[data-testid="transaction-description-${index}"]`,
     transactionTime: (index: number) =>
       `[data-testid="transaction-time-${index}"]`,
-    // Transaction Filters
     filterType: '[data-testid="filter-transaction-type"]',
     filterStartTime: '[data-testid="filter-from-date"]',
     filterEndTime: '[data-testid="filter-to-date"]',
     resetFiltersButton: '[data-testid="clear-filters-button"]',
     applyFiltersButton: '[data-testid="apply-filters-button"]',
     exportButton: '[data-testid="export-transactions-button"]',
-    // Helper methods for dynamic selectors
     firstTransactionRow: () => '[data-testid^="transaction-row-"]',
   },
 
   /**
    * Grant Points Dialog Selectors
-   * Triggered from: /{realmId}/manage/points/wallets
-   *
-   * Two-step dialog flow:
-   * 1. Form dialog (search user, fill amount/validity/reason)
-   * 2. Confirmation dialog (review details, confirm)
    */
   grantPoints: {
-    // Wallets page trigger button
     grantPointsButton: '[data-testid="grant-points-button"]',
-    // Form dialog
     formDialog: '[data-testid="grant-points-form-dialog"]',
     userSearchInput: '[data-testid="grant-points-user-search-input"] input',
     amountInput: '[data-testid="grant-points-amount-input"]',
@@ -670,10 +514,8 @@ export const SELECTORS = {
     reasonInput: '[data-testid="grant-points-reason-input"]',
     cancelButton: '[data-testid="grant-points-cancel-button"]',
     submitButton: '[data-testid="grant-points-submit-button"]',
-    // Confirmation dialog
     confirmDialog: '[data-testid="grant-points-confirm-dialog"]',
     confirmButton: '[data-testid="grant-points-confirm-button"]',
-    // Error alert
     errorMessage: '[data-testid="grant-points-error-message"]',
     // Target Bucket Select (credit-bucket US-CB: bucketId is required).
     bucketSelect: '[data-testid="grant-points-bucket-select"]',
@@ -681,10 +523,8 @@ export const SELECTORS = {
 
   /**
    * Points Configuration Selectors (Admin)
-   * Route: /{realmId}/admin/points/default-config
    */
   points: {
-    // Realm Configuration
     registrationBonusPointsInput:
       '[data-testid="registration-bonus-points-input"]',
     freePeriodicPointsAmountInput:
@@ -697,7 +537,6 @@ export const SELECTORS = {
     successMessage: '[data-testid="success-message"]',
     errorMessage: '[data-testid="error-message"]',
 
-    // Free User Statistics
     totalFreeUsers: '[data-testid="total-free-users"]',
     activeFreeUsers: '[data-testid="active-free-users"]',
     upgradeRate: '[data-testid="upgrade-rate"]',
@@ -707,13 +546,11 @@ export const SELECTORS = {
     dateRangeFilter: '[data-testid="date-range-filter"]',
     userSearch: '[data-testid="user-search"]',
 
-    // Free User Points
     expiryWarning: '[data-testid="expiry-warning"]',
   },
 
   /**
    * Registration Page Selectors
-   * Route: /{realmId}/auth/register
    */
   registration: {
     card: '[data-testid="register-card"]',
@@ -728,23 +565,18 @@ export const SELECTORS = {
 
   /**
    * Unified Purchase - Purchase Points Page (User)
-   * Route: /{realmId}/user/purchase-points
    */
   purchasePoints: {
     page: '[data-testid="purchase-points-page"]',
     stepIndicator: '[data-testid="purchase-step-indicator"]',
     backButton: '[data-testid="purchase-back-button"]',
     nextButton: '[data-testid="purchase-next-button"]',
-    // Steps
-    stepPackages: '[data-testid="purchase-step-packages"]', // Mapping card selection step
+    stepPackages: '[data-testid="purchase-step-packages"]',
     stepPayment: '[data-testid="purchase-step-payment"]',
     stepProcessing: '[data-testid="purchase-step-processing"]',
     stepComplete: '[data-testid="purchase-step-complete"]',
   },
 
-  /**
-   * Unified Purchase - Payment Method Selector (User)
-   */
   paymentMethodSelector: {
     container: '[data-testid="payment-method-selector"]',
     button: (platform: string) =>
@@ -755,9 +587,6 @@ export const SELECTORS = {
       `[data-testid="payment-method-selected-${platform}"]`,
   },
 
-  /**
-   * Unified Purchase - Payment Attempt Status (User)
-   */
   paymentStatus: {
     container: '[data-testid="payment-status-display"]',
     pending: '[data-testid="payment-status-pending"]',
@@ -771,61 +600,41 @@ export const SELECTORS = {
     cancelButton: '[data-testid="payment-cancel-button"]',
   },
 
-  /**
-   * Payment Provider-Specific UI Selectors
-   * Rendered within PaymentAttemptStatus for Pending/RequiresAction states
-   */
   paymentProviderUI: {
-    // Stripe / Creem redirect flow
     redirectPrompt: '[data-testid="payment-redirect-prompt"]',
     redirectManualLink: '[data-testid="payment-redirect-manual-link"]',
-    // Degraded UI (missing payment context)
     contextDegraded: '[data-testid="payment-context-degraded"]',
-    // Cancel button (rendered inside provider-specific views)
     cancelButton: '[data-testid="payment-cancel-button"]',
-    // Countdown timer (rendered inside provider-specific views)
     countdownTimer: '[data-testid="payment-countdown-timer"]',
   },
 
   /**
    * Email Configuration Selectors (Settings > Email tab)
-   * Route: /{realmId}/manage/settings
    */
   emailConfig: {
-    // Tab trigger
     emailTab: '[data-testid="email-tab"]',
-    // Status badge
     statusBadge: '[data-testid="email-config-status-badge"]',
     statusError: '[data-testid="email-status-error"]',
-    // Provider selection
     providerResend: '[data-testid="email-provider-resend"]',
     providerSmtp: '[data-testid="email-provider-smtp"]',
-    // Common fields
     fromAddressInput: '[data-testid="email-from-address-input"]',
-    // Resend fields
     resendApiKeyInput: '[data-testid="email-resend-api-key-input"]',
-    // SMTP fields
     smtpHostInput: '[data-testid="email-smtp-host-input"]',
     smtpPortInput: '[data-testid="email-smtp-port-input"]',
     smtpEncryptionSelect: '[data-testid="email-smtp-encryption-select"]',
     smtpUsernameInput: '[data-testid="email-smtp-username-input"]',
     smtpPasswordInput: '[data-testid="email-smtp-password-input"]',
-    // Test email
     testRecipientInput: '[data-testid="email-test-recipient-input"]',
     testButton: '[data-testid="email-test-button"]',
     testError: '[data-testid="email-test-error"]',
     testSuccess: '[data-testid="email-test-success"]',
-    // Save
     saveButton: '[data-testid="email-save-button"]',
     saveError: '[data-testid="email-save-error"]',
   },
 
   /**
    * Points Usage Dashboard Selectors (rate-dashboard quota view)
-   * Route: /{realmId}/user/points
    *
-   * Converged testid contract from
-   * `.ai/task/points-grant-redesign/frontend/accept/FE-A07-report.md`.
    * `points-window-resets-in-{bucketId}-{winKey}` is intentionally omitted;
    * read the resets-in copy from within `points-window-row-{bucketId}-{winKey}`.
    */
@@ -848,9 +657,7 @@ export const SELECTORS = {
    *
    * Used by both entitlement-mapping (`prefix = 'quota-window'`) and realm
    * default free-periodic config (`prefix = 'realm-default-window'`).
-   *
-   * Converged testid contract from FE-A07-report.md. Save buttons are owned by
-   * the hosting page: `save-mapping-button` / `save-config-button`.
+   * Save buttons are owned by the hosting page.
    */
   pointsQuotaEditor: {
     editor: (prefix: string) => `[data-testid="${prefix}-editor"]`,
@@ -873,7 +680,6 @@ export const SELECTORS = {
 
   /**
    * Device Verification Page Selectors
-   * Route: /{realmId}/device, /{realmId}/device/{userCode}
    */
   deviceVerification: {
     card: '[data-testid="device-verification-card"]',
@@ -889,22 +695,14 @@ export const SELECTORS = {
   /**
    * Credit Bucket Directory (Admin)
    *
-   * Route: /{realmId}/manage/billing/credit-buckets
-   *
    * LOUD NOTE — i18n-dependent sidebar entry:
-   * The sidebar menu item testid `sidebar-menu-credit-buckets` is derived in
-   * `components/admin/sidebar.tsx` from the localized label
-   * `m['nav.credit_buckets']().toLowerCase().replace(/\s+/g,'-')`. The testid
-   * therefore differs per locale. Demo tests MUST navigate by route
+   * The sidebar menu item testid `sidebar-menu-credit-buckets` is derived from
+   * the localized label and differs per locale. Demo tests MUST navigate by route
    * (`/{realmId}/manage/billing/credit-buckets`), NOT by clicking the
-   * locale-derived sidebar testid. See `.ai/design/credit-bucket.md`
-   * and `demo/dev/dev.md` loud notes.
+   * locale-derived sidebar testid.
    *
    * User stories: US-CB-001 (admin CRUD), US-CB-002 (coverage set),
    * US-CB-003 (mapping→bucket assignment).
-   *
-   * Verified testids: frontend/src/components/billing/credit-bucket/*.tsx +
-   * frontend/src/routes/$realmId/manage/billing/credit-buckets.tsx.
    */
   creditBucket: {
     // Directory page container + toolbar
@@ -912,17 +710,14 @@ export const SELECTORS = {
     searchInput: '[data-testid="credit-bucket-search-input"]',
     newButton: '[data-testid="credit-bucket-new-button"]',
     emptyNewButton: '[data-testid="credit-bucket-empty-new-button"]',
-    // List item + per-bucket badges
     listItem: (bucketId: string) =>
       `[data-testid="credit-bucket-list-item-${bucketId}"]`,
     listItemRegistrationBadge: (bucketId: string) =>
       `[data-testid="credit-bucket-list-item-${bucketId}-registration-badge"]`,
     listItemDisabledBadge: (bucketId: string) =>
       `[data-testid="credit-bucket-list-item-${bucketId}-disabled-badge"]`,
-    // Empty / no-selection states
     emptyState: '[data-testid="credit-buckets-empty-state"]',
     noSelection: '[data-testid="credit-buckets-no-selection"]',
-    // Editor (used for both create and edit)
     editor: '[data-testid="credit-bucket-editor"]',
     editorName: '[data-testid="credit-bucket-editor-name"]',
     editorBucketKey: '[data-testid="credit-bucket-editor-bucket-key"]',
@@ -932,13 +727,11 @@ export const SELECTORS = {
     editorRegistrationConflict:
       '[data-testid="credit-bucket-editor-registration-conflict"]',
     editorSubmit: '[data-testid="credit-bucket-editor-submit"]',
-    // Delete dialog (destructive op)
     deleteButton: '[data-testid="credit-bucket-delete-button"]',
     deleteConfirmDialog: '[data-testid="delete-bucket-confirm-dialog"]',
     deleteErrorMessage: '[data-testid="delete-bucket-error-message"]',
     deleteConfirmButton: '[data-testid="delete-bucket-confirm-button"]',
     deleteCancelButton: '[data-testid="delete-bucket-cancel-button"]',
-    // Overview (matrix audit) page — Route: /{realmId}/manage/billing/credit-buckets/overview
     overviewPage: '[data-testid="credit-bucket-overview-page"]',
     overviewToolbar: '[data-testid="credit-bucket-overview-toolbar"]',
     overviewTable: '[data-testid="credit-bucket-overview-table"]',
@@ -959,15 +752,11 @@ export const SELECTORS = {
       `[data-testid="credit-bucket-overview-detail-${bucketId}"]`,
     overviewEmptyState: '[data-testid="credit-bucket-overview-empty-state"]',
     overviewEmptyCta: '[data-testid="credit-bucket-overview-empty-cta"]',
-    // Coverage set multiselect (binds client apps to a bucket).
-    // Prefix is `bucket-coverage-multiselect` (frontend credit-bucket-coverage-multiselect.tsx).
     coverageMultiselect: '[data-testid="bucket-coverage-multiselect"]',
     coverageMultiselectSearch: '[data-testid="bucket-coverage-multiselect-search"]',
     coverageMultiselectError: '[data-testid="bucket-coverage-multiselect-error"]',
     coverageMultiselectItem: (clientAppId: string) =>
       `[data-testid="bucket-coverage-multiselect-item-${clientAppId}"]`,
-    // Mappings multiselect (assigns entitlement mappings to a bucket).
-    // Prefix is `bucket-mappings-multiselect` (frontend credit-bucket-mappings-multiselect.tsx).
     mappingsMultiselect: '[data-testid="bucket-mappings-multiselect"]',
     mappingsMultiselectSearch: '[data-testid="bucket-mappings-multiselect-search"]',
     mappingsMultiselectError: '[data-testid="bucket-mappings-multiselect-error"]',
@@ -977,11 +766,6 @@ export const SELECTORS = {
 
   /**
    * Multi-Price Entitlement Mappings — master-detail page
-   * Route: /{realmId}/manage/billing/entitlement-mappings
-   *
-   * Frontend source (verified): frontend/src/components/billing/entitlement-mappings-page.tsx
-   * + entitlement-mapping-detail-dialog.tsx (ProtectedPriceConfirmDialog)
-   * + provider-sync-button.tsx (wrapper `<div data-testid="provider-sync-button">`).
    *
    * LOUD NOTE — price-edit-row testid fallback:
    * The price row testid is `price-edit-row-${externalPriceId ?? mappingId}`.
@@ -999,22 +783,18 @@ export const SELECTORS = {
    * dialog surfaces the active-sub count, not a confirm action.
    */
   multiPriceMapping: {
-    // Page shell + banner regions
     page: '[data-testid="entitlement-mappings-page"]',
     readonlyPermBanner: '[data-testid="readonly-perm-banner"]',
     webhookPriceUnresolvedBanner: '[data-testid="webhook-price-unresolved-banner"]',
     emptyState: '[data-testid="entitlement-mappings-empty-state"]',
     emptySyncButton: '[data-testid="empty-sync-button"]',
-    // Toolbar filters
     providerFilterSelect: '[data-testid="provider-filter-select"]',
     productFilterSelect: '[data-testid="product-filter-select"]',
     entitlementKeyFilterSelect: '[data-testid="entitlement-key-filter-select"]',
-    // Master list (left pane)
     mappingProductList: '[data-testid="mapping-product-list"]',
     mappingProductRow: (productId: string) =>
       `[data-testid="mapping-product-row-${productId}"]`,
     firstMappingProductRow: () => '[data-testid^="mapping-product-row-"]',
-    // Detail panel (right pane)
     mappingDetailPanel: '[data-testid="mapping-detail-panel"]',
     detailHead: '[data-testid="detail-head"]',
     sharedKeyChip: (entitlementKey: string) =>
@@ -1040,9 +820,6 @@ export const SELECTORS = {
 
   /**
    * Multi-Price Purchase — price-card grid + period toggle
-   * Route: /{realmId}/user/purchase-points
-   *
-   * Frontend source (verified): frontend/src/routes/$realmId/user/purchase-points.tsx.
    *
    * LOUD NOTE — period suffix:
    * The price-card testid is `purchase-price-card-${priceId}` in the Monthly
@@ -1055,29 +832,23 @@ export const SELECTORS = {
   purchasePriceCard: {
     page: '[data-testid="purchase-points-page"]',
     noClientAppMessage: '[data-testid="no-client-app-message"]',
-    // Period toggle (packages step)
     periodToggle: '[data-testid="purchase-period-toggle"]',
     periodToggleMonth: '[data-testid="purchase-period-toggle-month"]',
     periodToggleYear: '[data-testid="purchase-period-toggle-year"]',
-    // Price-card grid keyed by the active period pane
     priceGrid: (period: 'month' | 'year') =>
       `[data-testid="purchase-price-grid-${period}"]`,
-    // Per-price card. `period='year'` appends `-annual`.
     priceCard: (priceId: string, period?: 'month' | 'year') =>
       `[data-testid="purchase-price-card-${priceId}${period === 'year' ? '-annual' : ''}"]`,
-    // Disabled/not-purchasable reason row (rendered only when the card is disabled)
     priceCardReason: (priceId: string, period?: 'month' | 'year') =>
       `[data-testid="purchase-price-card-${priceId}${period === 'year' ? '-annual' : ''}-reason"]`,
-    // Empty state (period pane has zero cards)
     emptyState: '[data-testid="purchase-empty-state"]',
-    // Navigation buttons (packages/payment steps)
     nextButton: '[data-testid="purchase-next-button"]',
     backButton: '[data-testid="purchase-back-button"]',
   },
 
   /**
    * Stripe Checkout Button
-   * Frontend source: frontend/src/components/billing/stripe-checkout-button.tsx
+   *
    * The testid is keyed by the entitlement MAPPING id (not entitlement_key) so
    * multiple prices under one shared key each resolve their own checkout target.
    */
@@ -1086,7 +857,6 @@ export const SELECTORS = {
 
   /**
    * Unified Purchase - Purchase History (User)
-   * Route: /{realmId}/user/subscription-history
    */
   purchaseHistory: {
     page: '[data-testid="purchase-records-page"]',
@@ -1097,7 +867,6 @@ export const SELECTORS = {
     item: (id: string) => `[data-testid="purchase-history-item-${id}"]`,
     detailsButton: (id: string) =>
       `[data-testid="purchase-history-details-button-${id}"]`,
-    // Filters
     filterProvider: '[data-testid="filter-provider"]',
     filterStatus: '[data-testid="filter-status"]',
     filterFromDate: '[data-testid="filter-from-date"]',
@@ -1108,25 +877,19 @@ export const SELECTORS = {
 
   /**
    * Legal Consent & Account Deletion Selectors
-   *
-   * Covers registration consent, login re-consent, post-login reconsent dialog,
-   * public agreement pages, admin legal agreement management, and self-delete.
    */
   legalConsent: {
-    // Registration
     registerConsentCheckbox: '[data-testid="register-consent-checkbox"]',
     registerConsentError: '[data-testid="register-consent-error"]',
     termsOfServiceLink: '[data-testid="terms-of-service-link"]',
     privacyPolicyLink: '[data-testid="privacy-policy-link"]',
 
-    // Public agreement page
     agreementCard: '[data-testid="agreement-card"]',
     agreementTitle: '[data-testid="agreement-title"]',
     agreementVersion: '[data-testid="agreement-version"]',
     agreementEffectiveDate: '[data-testid="agreement-effective-date"]',
     agreementBody: '[data-testid="agreement-body"]',
 
-    // Login re-consent view
     loginReconsentView: '[data-testid="login-reconsent-view"]',
     loginReconsentAgreement: (type: string) =>
       `[data-testid="login-reconsent-agreement-${type}"]`,
@@ -1136,14 +899,12 @@ export const SELECTORS = {
     loginDeclineBackButton: '[data-testid="login-decline-back-button"]',
     loginConsentStatement: '[data-testid="login-consent-statement"]',
 
-    // Post-login reconsent dialog
     reconsentDialogTitle: '[data-testid="reconsent-dialog-title"]',
     reconsentDialogDescription: '[data-testid="reconsent-dialog-description"]',
     reconsentAgreement: (type: string) => `[data-testid="reconsent-agreement-${type}"]`,
     reconsentAgreeButton: '[data-testid="reconsent-agree-button"]',
     reconsentLogoutButton: '[data-testid="reconsent-logout-button"]',
 
-    // Admin Legal tab
     legalTab: '[data-testid="legal-tab"]',
     legalAgreementsTab: '[data-testid="legal-agreements-tab"]',
     legalAgreementCard: (type: string) => `[data-testid="legal-agreement-card-${type}"]`,
@@ -1154,8 +915,6 @@ export const SELECTORS = {
       `[data-testid="legal-version-label-input-${type}"]`,
     legalContentEnInput: (type: string) =>
       `[data-testid="legal-content-en-input-${type}"]`,
-    legalContentZhInput: (type: string) =>
-      `[data-testid="legal-content-zh-input-${type}"]`,
     legalPublishButton: (type: string) => `[data-testid="legal-publish-button-${type}"]`,
     legalRevertButton: (type: string) => `[data-testid="legal-revert-button-${type}"]`,
     legalRevertConfirmButton: (type: string) =>
@@ -1164,7 +923,6 @@ export const SELECTORS = {
     legalHistoryRow: (type: string, versionId: string) =>
       `[data-testid="legal-history-row-${type}-${versionId}"]`,
 
-    // Delete account
     deleteAccountOpenButton: '[data-testid="delete-account-open-button"]',
     deleteAccountDialog: '[data-testid="delete-account-dialog"]',
     deleteAccountDialogTitle: '[data-testid="delete-account-dialog-title"]',

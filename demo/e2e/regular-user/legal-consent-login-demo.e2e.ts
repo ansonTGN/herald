@@ -1,17 +1,16 @@
 /**
  * Login Re-consent Demo Tests
  *
- * User Story: .ai/user-stories/core/legal-consent-account-deletion.md [US-RU-012]
- * Design Doc: .ai/design/legal-consent-account-deletion.md §4.4.1, §5.1
+ * User story: US-RU-012
  *
  * Scenarios:
- * - US-RU-012 Agree path: after an admin publishes a new agreement version, a
+ * - Agree path: after an admin publishes a new agreement version, a
  *   regular user logging in is prompted to re-consent. Agreeing completes login
  *   and issues a session.
- * - US-RU-012 Refusal path: the same prompt offers a "Back to login" option.
+ * - Refusal path: the same prompt offers a "Back to login" option.
  *   Clicking it returns the user to the login form without issuing a session.
  *
- * Compliance: spec/demo/e2e-testing.md
+ * Compliance rules:
  * - All operations go through the UI (no direct API calls).
  * - Shared selectors are used for all DOM assertions.
  * - Test users are cleaned up after each test while preserving the realm admin.
@@ -96,6 +95,11 @@ test.describe('[Regular User] Login Re-consent Demo Tests', () => {
       )
       expect(response.ok()).toBe(true)
 
+      await page.waitForURL(`**/auth/login`, { timeout: 3000 }).catch(() => {
+        // TanStack Router may navigate directly to a user-facing page if
+        // auto-login is enabled; both destinations are treated as success.
+      })
+
       // Registration may redirect to the login page or (if auto-login is on) to
       // a user-facing page. Either destination is acceptable; verify-email is not.
       const currentUrl = page.url()
@@ -136,10 +140,10 @@ test.describe('[Regular User] Login Re-consent Demo Tests', () => {
       createdEmails.push(email)
 
       await test.step('Admin publishes a new custom Terms of Service version', async () => {
+        await adminLegalHelper.gotoLegalTab(realmId)
         await adminLegalHelper.publishCustomAgreement(
           'terms_of_service',
           'Updated Terms of Service for login re-consent demo (EN).',
-          '登录重新同意演示用的更新服务条款（中文）。',
           'login-reconsent-demo'
         )
       })
@@ -216,10 +220,10 @@ test.describe('[Regular User] Login Re-consent Demo Tests', () => {
       createdEmails.push(email)
 
       await test.step('Admin publishes another new custom Terms of Service version', async () => {
+        await adminLegalHelper.gotoLegalTab(realmId)
         await adminLegalHelper.publishCustomAgreement(
           'terms_of_service',
           'Second updated Terms of Service for refusal demo (EN).',
-          '拒绝路径演示用的第二版更新服务条款（中文）。',
           'login-reconsent-refusal-demo'
         )
       })

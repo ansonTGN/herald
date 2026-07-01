@@ -1,7 +1,3 @@
-// Permission-based policy implementations
-// These are infrastructure-layer implementations that use RedisPermissionChecker directly.
-// Moved from domain layer to eliminate domain -> infrastructure dependency.
-
 #![allow(clippy::manual_async_fn)]
 
 use std::sync::Arc;
@@ -17,13 +13,6 @@ use herald_domain::points::policies::PointsPolicy;
 
 use uuid::Uuid;
 
-// ============================================================================
-// Realm Policy
-// ============================================================================
-
-/// Permission-based realm policy
-/// Only allows users with "realm.manage" permission to manage realms
-///
 /// NOTE: Uses concrete RedisPermissionChecker type instead of trait object
 /// because PermissionService trait has `impl Future` return types which are
 /// not dyn-compatible (cannot be used as `dyn PermissionService`).
@@ -147,13 +136,6 @@ impl RealmPolicy for PermissionBasedRealmPolicy {
     }
 }
 
-// ============================================================================
-// Client Policy
-// ============================================================================
-
-/// Permission-based client policy
-/// Uses clients.view and clients.manage permissions
-///
 /// NOTE: Uses concrete RedisPermissionChecker type instead of trait object
 /// because PermissionService trait has `impl Future` return types which are
 /// not dyn-compatible (cannot be used as `dyn PermissionService`).
@@ -255,12 +237,6 @@ impl ClientPolicy for PermissionBasedClientPolicy {
     }
 }
 
-// ============================================================================
-// RealmConfig Policy
-// ============================================================================
-
-/// Permission-based realm config policy
-/// Uses settings.view and settings.manage permissions
 #[derive(Debug, Clone)]
 pub struct PermissionBasedRealmConfigPolicy {
     permission_checker: Arc<RedisPermissionChecker>,
@@ -322,12 +298,6 @@ impl RealmConfigPolicy for PermissionBasedRealmConfigPolicy {
     }
 }
 
-// ============================================================================
-// OAuthConfig Policy
-// ============================================================================
-
-/// Permission-based OAuth config policy
-/// Uses settings.view and settings.manage permissions
 #[derive(Debug, Clone)]
 pub struct PermissionBasedOAuthConfigPolicy {
     permission_checker: Arc<RedisPermissionChecker>,
@@ -401,12 +371,6 @@ impl OAuthConfigPolicy for PermissionBasedOAuthConfigPolicy {
     }
 }
 
-// ============================================================================
-// Billing Policy
-// ============================================================================
-
-/// 基于权限的策略（生产环境）
-///
 /// NOTE: Uses concrete RedisPermissionChecker type instead of trait object
 /// because PermissionService trait has `impl Future` return types which are
 /// not dyn-compatible (cannot be used as `dyn PermissionService`).
@@ -470,12 +434,6 @@ impl BillingPolicy for PermissionBasedBillingPolicy {
     }
 }
 
-// ============================================================================
-// Points Policy
-// ============================================================================
-
-/// 基于权限的策略（生产环境）
-///
 /// NOTE: Uses concrete RedisPermissionChecker type instead of trait object
 /// because PermissionService trait has `impl Future` return types which are
 /// not dyn-compatible (cannot be used as `dyn PermissionService`).
@@ -523,18 +481,26 @@ impl PointsPolicy for PermissionBasedPointsPolicy {
 
             let realm_id = identity.realm_id();
 
-            // Users can always view their own data
-            if let (Some(target), Some(current)) = (target_user_id, user_id.parse::<Uuid>().ok())
-                && target == current
-            {
+            // Authenticated users can always view their own points data.
+            // - Explicit self-view: target_user_id matches the caller.
+            // - Implicit self-view: target_user_id is None for list endpoints that
+            //   the service layer hard-scopes to the caller.
+            let current_user_id = user_id.parse::<Uuid>().ok();
+            let is_own_data = match (target_user_id, current_user_id) {
+                (Some(target), Some(current)) => target == current,
+                (None, Some(_)) => true,
+                _ => false,
+            };
+            if is_own_data {
                 tracing::debug!(
                     user_id = %user_id,
-                    "User viewing own points wallet"
+                    target_user_id = ?target_user_id,
+                    "User viewing own points data"
                 );
                 return true;
             }
 
-            // Check if user has points.view permission
+            // For cross-user views, require points.view permission.
             let has_permission_result = checker
                 .check_permission(&realm_id, &user_id, "points", "view")
                 .await;
@@ -561,7 +527,7 @@ impl PointsPolicy for PermissionBasedPointsPolicy {
                 .check_permission(&realm_id, &user_id, "points", "manage")
                 .await;
 
-            let has_manage_permission = match has_manage_permission_result {
+            match has_manage_permission_result {
                 Ok(perm) => perm,
                 Err(e) => {
                     tracing::error!(
@@ -572,22 +538,6 @@ impl PointsPolicy for PermissionBasedPointsPolicy {
                     );
                     false
                 }
-            };
-
-            if has_manage_permission {
-                return true;
-            }
-
-            // User with points.view but not manage can only view their own
-            match (target_user_id, user_id.parse::<Uuid>().ok()) {
-                (None, Some(_current)) => {
-                    tracing::debug!(
-                        user_id = %user_id,
-                        "User viewing own transaction history"
-                    );
-                    true
-                }
-                _ => false,
             }
         }
     }

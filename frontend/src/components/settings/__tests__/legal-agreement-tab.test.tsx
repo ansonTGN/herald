@@ -159,7 +159,7 @@ describe('LegalAgreementTab', () => {
     const publishButton = await screen.findByTestId('legal-publish-button-terms_of_service')
     await user.click(publishButton)
 
-    expect(await screen.findByText(/At least one locale content is required/i)).toBeInTheDocument()
+    expect(await screen.findByText(/English content is required/i)).toBeInTheDocument()
   })
 
   it('publishes a custom version and invalidates the admin agreements query', async () => {

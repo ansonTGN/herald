@@ -83,9 +83,7 @@ function execPgSql(query: string): string {
   ).trim()
 }
 
-/**
- * Resolve an invoice UUID by its invoice number within a realm.
- */
+/** Resolve an invoice UUID by invoice number. */
 export function getInvoiceIdByNumber(realmId: string, invoiceNumber: string): string {
   const id = execPgSql(
     `SELECT id FROM invoice WHERE realm_id = '${realmId}' AND invoice_number = '${invoiceNumber}'`,
@@ -96,9 +94,7 @@ export function getInvoiceIdByNumber(realmId: string, invoiceNumber: string): st
   return id
 }
 
-/**
- * Resolve an account UUID by email within a realm.
- */
+/** Resolve an account UUID by email. */
 export function getAccountIdByEmail(realmId: string, email: string): string {
   const id = execPgSql(
     `SELECT id FROM account WHERE realm_id = '${realmId}' AND email = '${email}'`,
@@ -110,10 +106,9 @@ export function getAccountIdByEmail(realmId: string, email: string): string {
 }
 
 /**
- * Create a manual invoice, issue it, and mark it as paid.
+ * Create, issue, and pay a manual invoice.
  *
  * Prerequisite: user is logged in as a realm admin on the invoice admin page.
- * Returns the generated invoice number.
  */
 export async function createAndPayManualInvoice(
   page: Page,
@@ -126,11 +121,7 @@ export async function createAndPayManualInvoice(
   return invoiceNumber
 }
 
-/**
- * Open the invoice detail dialog from the admin table by invoice number.
- *
- * Prerequisite: user is on the invoice admin page.
- */
+/** Open the invoice detail dialog from the admin table by invoice number. */
 export async function openInvoiceDetailDialogByNumber(
   page: Page,
   invoiceNumber: string,
@@ -143,6 +134,21 @@ export async function openInvoiceDetailDialogByNumber(
   await page.getByRole('menuitem', { name: 'View' }).click()
 
   await expect(page.getByTestId('invoice-detail-dialog')).toBeVisible({ timeout: 10000 })
+}
+
+/**
+ * Close the invoice detail dialog if it is open.
+ *
+ * Uses the Escape key, which triggers Radix Dialog's built-in close handler.
+ */
+export async function closeInvoiceDetailDialog(page: Page): Promise<void> {
+  const dialog = page.getByTestId('invoice-detail-dialog')
+  const isVisible = await dialog.isVisible().catch(() => false)
+  if (!isVisible) {
+    return
+  }
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeHidden({ timeout: 5000 })
 }
 
 /**
@@ -368,11 +374,7 @@ export function seedPaidExternalInvoice(
   }
 }
 
-/**
- * Format a cent amount as major-currency text with two decimals.
- *
- * Used by verification helpers that assert against rendered UI text.
- */
+/** Format a cent amount as major-currency text with two decimals. */
 function formatCurrencyMajor(cents: number): string {
   return (cents / 100).toFixed(2)
 }

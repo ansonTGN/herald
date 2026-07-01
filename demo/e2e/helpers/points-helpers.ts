@@ -1,30 +1,16 @@
 /**
  * Points System Test Helpers
  *
- * Helper functions for Points System demo tests
- * Following UI-Only principle - all operations through UI
+ * Helper functions for Points System demo tests.
+ * All operations go through the UI.
  */
 
 import { Page, expect } from '@playwright/test'
 import { SELECTORS } from '../selectors'
 import { TRANSACTION_TYPES, TransactionType, RENEWAL_PERIOD_TYPES, RenewalPeriodType, WAIT_TIMES, PLACEHOLDER_USER_ID } from './points-constants'
 
-// Re-export constants for convenience
 export { TRANSACTION_TYPES, RENEWAL_PERIOD_TYPES, WAIT_TIMES, PLACEHOLDER_USER_ID }
 export type { TransactionType, RenewalPeriodType }
-
-// ============================================================================
-// Retry Logic Helper
-// ============================================================================
-
-/**
- * Retry wrapper for async operations with exponential backoff
- * Useful for network-dependent operations that may fail transiently
- *
- * @param operation - Async function to retry
- * @param options - Retry configuration
- * @returns Result of the operation
- */
 export async function withRetry<T>(
   operation: () => Promise<T>,
   options: {
@@ -50,39 +36,29 @@ export async function withRetry<T>(
     } catch (error) {
       lastError = error as Error
 
-      // Check if error is retryable
       const errorMessage = error instanceof Error ? error.message : String(error)
       const isRetryable = retryableErrors.some(errMsg =>
         errorMessage.toLowerCase().includes(errMsg)
       )
 
-      // If not retryable or last attempt, throw immediately
       if (!isRetryable || attempt === maxRetries) {
         throw error
       }
 
-      // Log retry attempt
       console.log(
         `[Retry] Attempt ${attempt + 1}/${maxRetries + 1} failed: ${errorMessage.substring(0, 100)}`
       )
       console.log(`[Retry] Retrying in ${currentDelay}ms...`)
 
-      // Wait before retry
       await new Promise(resolve => setTimeout(resolve, currentDelay))
-
-      // Increase delay for next attempt (exponential backoff)
       currentDelay *= backoffMultiplier
     }
   }
 
-  // This should never be reached, but TypeScript requires it
   throw lastError || new Error('Retry failed')
 }
 
-/**
- * Wait for element to be stable with retry logic
- * Combines Playwright's waitFor with retry mechanism for flaky elements
- */
+/** Wait for an element to reach the expected state, retrying on timeout. */
 export async function waitForStableElement(
   page: Page,
   selector: string,
@@ -121,10 +97,6 @@ export async function waitForStableElement(
 }
 
 
-// ============================================================================
-// Types
-// ============================================================================
-
 export interface PointsWalletInfo {
   userId: string
   email: string
@@ -141,34 +113,17 @@ export interface TransactionInfo {
   time: string
 }
 
-// ============================================================================
-// Admin Points Page Helpers
-// ============================================================================
-
-/**
- * Search user accounts by email
- */
 export async function searchUserAccounts(page: Page, email: string): Promise<void> {
   await page.locator(SELECTORS.pointsAdmin.accountsSearch).clear()
   await page.locator(SELECTORS.pointsAdmin.accountsSearch).fill(email)
-
-  // Wait for debounced search to complete - check for URL update or results
   await page.waitForLoadState('networkidle')
 }
 
-/**
- * Select a user account to view transactions
- */
 export async function selectUserAccount(page: Page, userId: string): Promise<void> {
   await page.locator(SELECTORS.pointsAdmin.accountRow(userId)).click()
-
-  // Wait for transactions section to appear
   await expect(page.locator(SELECTORS.pointsAdmin.transactionsSection)).toBeVisible()
 }
 
-/**
- * Apply transaction filters (Admin)
- */
 export async function applyTransactionFilters(
   page: Page,
   filters: {
@@ -194,26 +149,15 @@ export async function applyTransactionFilters(
     await page.locator(SELECTORS.pointsAdmin.filterClientApp).selectOption(filters.clientApp)
   }
 
-  // Apply filters
   await page.locator(SELECTORS.pointsAdmin.applyFiltersButton).click()
-
-  // Wait for filter to apply - check for network idle
   await page.waitForLoadState('networkidle')
 }
 
-/**
- * Reset transaction filters (Admin)
- */
 export async function resetTransactionFilters(page: Page): Promise<void> {
   await page.locator(SELECTORS.pointsAdmin.resetFiltersButton).click()
-
-  // Wait for filter to reset - check for network idle
   await page.waitForLoadState('networkidle')
 }
 
-/**
- * Get user account info from table
- */
 export async function getUserAccountInfo(
   page: Page,
   userId: string
@@ -235,16 +179,12 @@ export async function getUserAccountInfo(
   }
 }
 
-/**
- * Get transaction info from table
- */
 export async function getTransactionInfo(
   page: Page,
   index: number
 ): Promise<TransactionInfo> {
   const row = page.locator(SELECTORS.pointsAdmin.transactionRow(index))
 
-  // Parallel fetch all text content
   const [type, amountText, balanceText, description, time] = await Promise.all([
     row.locator(SELECTORS.pointsAdmin.transactionType(index)).textContent(),
     row.locator(SELECTORS.pointsAdmin.transactionAmount(index)).textContent(),
@@ -263,46 +203,24 @@ export async function getTransactionInfo(
   }
 }
 
-// ============================================================================
-// User Points Page Helpers
-// ============================================================================
-
-/**
- * Navigate to Points User page
- */
 export async function navigateToPointsUser(page: Page, realmId: string): Promise<void> {
   await page.goto(`/${realmId}/user/points`)
   await expect(page.locator(SELECTORS.pointsUser.page)).toBeVisible()
 }
 
-/**
- * Generic helper to parse a number from a selector
- * @param page - Playwright Page object
- * @param selector - CSS selector for the element containing the number
- * @returns Parsed integer value
- */
 async function parseNumberFromSelector(page: Page, selector: string): Promise<number> {
   const text = await page.locator(selector).textContent()
   return parseInt(text?.replace(/,/g, '') || '0')
 }
 
-/**
- * Get user balance from balance card
- */
 export async function getUserBalance(page: Page): Promise<number> {
   return parseNumberFromSelector(page, SELECTORS.pointsUser.balanceAmount)
 }
 
-/**
- * Get account status from balance card
- */
 export async function getWalletStatus(page: Page): Promise<string> {
   return await page.locator(SELECTORS.pointsUser.accountStatus).textContent() || ''
 }
 
-/**
- * Apply user transaction filters
- */
 export async function applyUserTransactionFilters(
   page: Page,
   filters: {
@@ -323,53 +241,29 @@ export async function applyUserTransactionFilters(
     await page.locator(SELECTORS.pointsUser.filterEndTime).fill(filters.endTime)
   }
 
-  // Apply filters
   await page.locator(SELECTORS.pointsUser.applyFiltersButton).click()
-
-  // Wait for filter to apply - check for network idle
   await page.waitForLoadState('networkidle')
 }
 
-/**
- * Reset user transaction filters
- */
 export async function resetUserTransactionFilters(page: Page): Promise<void> {
   await page.locator(SELECTORS.pointsUser.resetFiltersButton).click()
-
-  // Wait for filter to reset - check for network idle
   await page.waitForLoadState('networkidle')
 }
 
-/**
- * Click view transaction detail
- */
 export async function viewTransactionDetail(page: Page, index: number): Promise<void> {
   await page.locator(SELECTORS.pointsUser.transactionRow(index)).click()
-
-  // Wait for detail dialog
   await expect(page.locator('[data-testid="transaction-detail-dialog"]')).toBeVisible()
 }
 
-/**
- * Export transaction history
- */
 export async function exportTransactionHistory(page: Page): Promise<void> {
-  // Setup download listener before clicking
+  // Set up the download listener before triggering the download.
   const downloadPromise = page.waitForEvent('download')
 
   await page.locator(SELECTORS.pointsUser.exportButton).click()
 
-  // Wait for download to start
   await downloadPromise
 }
 
-// ============================================================================
-// Points Configuration & Statistics Helpers
-// ============================================================================
-
-/**
- * Points-related route constants
- */
 export const POINTS_ROUTES = {
   DEFAULT_CONFIG: (realmId: string) => `/${realmId}/manage/points/default-config`,
   FREE_USERS: (realmId: string) => `/${realmId}/manage/points/free-users`,
@@ -377,16 +271,10 @@ export const POINTS_ROUTES = {
   REGISTER: (realmId: string) => `/${realmId}/auth/register`,
 } as const
 
-/**
- * Generate test email with timestamp for isolation
- */
 export function generateTestEmail(testStartTime: number, prefix: string = 'test-user'): string {
   return `${prefix}-${testStartTime}@example.com`
 }
 
-/**
- * Update realm points configuration
- */
 export async function updateRealmConfig(
   page: Page,
   selector: string,
@@ -398,9 +286,6 @@ export async function updateRealmConfig(
   await expect(page.locator(selector)).toHaveValue(value)
 }
 
-/**
- * Verify configuration validation error
- */
 export async function verifyConfigValidation(
   page: Page,
   selector: string,
@@ -409,14 +294,11 @@ export async function verifyConfigValidation(
 ): Promise<void> {
   await page.locator(selector).clear()
   await page.locator(selector).fill(invalidValue)
-  // Client-side Zod validation shows error immediately (save button is disabled)
+  // Client-side Zod validation shows the error immediately and disables save.
   await expect(page.getByText(expectedErrorPattern)).toBeVisible()
   await expect(page.locator(SELECTORS.points.saveButton)).toBeDisabled()
 }
 
-/**
- * Verify chart is displayed with optional legend verification
- */
 export async function verifyChartDisplayed(
   page: Page,
   chartSelector: string,
@@ -433,9 +315,6 @@ export async function verifyChartDisplayed(
   }
 }
 
-/**
- * Register a new user
- */
 export async function registerUser(
   page: Page,
   realmId: string,
@@ -444,27 +323,25 @@ export async function registerUser(
 ): Promise<void> {
   await page.goto(POINTS_ROUTES.REGISTER(realmId))
 
-  // Wait for form to be visible
   await page.getByTestId('register-email-input').waitFor({ state: 'visible', timeout: 5000 })
-
-  // Fill registration form
   await page.getByTestId('register-email-input').fill(email)
   await page.getByTestId('register-password-input').fill(password)
   await page.getByTestId('register-confirm-password-input').fill(password)
 
-  // Submit form using specific testid selector
-  await page.getByTestId('register-submit-button').click()
+  const consentCheckbox = page.locator(SELECTORS.legalConsent.registerConsentCheckbox)
+  if (await consentCheckbox.isVisible().catch(() => false)) {
+    await consentCheckbox.check()
+  }
 
-  // Wait for registration API response
-  await page.waitForResponse(
+  const responsePromise = page.waitForResponse(
     response => response.url().includes('/register') && response.request().method() === 'POST',
     { timeout: 10000 }
   )
+
+  await page.getByTestId('register-submit-button').click()
+  await responsePromise
 }
 
-/**
- * Navigate to points page and verify
- */
 export async function navigateToPointsPageAndVerify(
   page: Page,
   realmId: string
@@ -472,5 +349,4 @@ export async function navigateToPointsPageAndVerify(
   await page.goto(POINTS_ROUTES.USER_POINTS(realmId))
   await expect(page.locator(SELECTORS.pointsUser.page)).toBeVisible()
 }
-
 

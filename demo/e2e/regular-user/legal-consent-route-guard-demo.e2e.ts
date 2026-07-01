@@ -1,20 +1,19 @@
 /**
  * Route Guard Re-consent Demo Tests
  *
- * User Story: .ai/user-stories/core/legal-consent-account-deletion.md [US-RU-012]
- * Design Doc: .ai/design/legal-consent-account-deletion.md §4.4.2, §4.4.3, §5.1
+ * User story: US-RU-012
  *
  * Scenarios:
- * - US-RU-012 Core route guard: an already-logged-in regular user, after an admin
+ * - Core route guard: an already-logged-in regular user, after an admin
  *   publishes a new agreement version, navigates to a core route (/user/profile)
  *   and sees the post-login ReconsentDialog. Agreeing dismisses the dialog and
  *   allows navigation to complete.
- * - US-RU-012 Logout from dialog: the same prompt offers a logout option. Clicking
+ * - Logout from dialog: the same prompt offers a logout option. Clicking
  *   it signs the user out and redirects to the login page.
- * - US-RU-012 Non-core route exemption: while re-consent is pending, navigating to
+ * - Non-core route exemption: while re-consent is pending, navigating to
  *   a public legal agreement page does not show the ReconsentDialog.
  *
- * Compliance: spec/demo/e2e-testing.md
+ * Compliance rules:
  * - All operations go through the UI (no direct API calls).
  * - Shared selectors are used for all DOM assertions.
  * - Test users are cleaned up after each test while preserving the realm admin.
@@ -116,7 +115,6 @@ test.describe('[Regular User] Route Guard Re-consent Demo Tests', () => {
       await adminLegalHelper.publishCustomAgreement(
         'terms_of_service',
         'Updated Terms of Service for route guard re-consent demo (EN).',
-        '路由守卫重新同意演示用的更新服务条款（中文）。',
         'route-guard-reconsent-demo'
       )
     } finally {
@@ -149,7 +147,8 @@ test.describe('[Regular User] Route Guard Re-consent Demo Tests', () => {
         await expect(
           page.locator(SELECTORS.legalConsent.reconsentDialogTitle)
         ).toBeHidden({ timeout: 10000 })
-        await expect(page.locator(SELECTORS.profile.container)).toBeVisible({
+        await expect(page).toHaveURL(new RegExp(`/${realmId}/user/profile/?$`))
+        await expect(page.locator('[data-testid="email-display"]')).toContainText(email, {
           timeout: 10000,
         })
       })

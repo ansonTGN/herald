@@ -44,14 +44,13 @@ const publishSchema = z
       error: () => m['settings.legal.version_label_max_length'](),
     }),
     contentEn: z.string(),
-    contentZh: z.string(),
   })
-  .refine((value) => value.contentEn.trim().length > 0 || value.contentZh.trim().length > 0, {
+  .refine((value) => value.contentEn.trim().length > 0, {
     error: () => m['settings.legal.content_required'](),
     path: ['contentEn'],
   })
 
-const SUPPORTED_LOCALES = ['en', 'zh-CN'] as const
+const SUPPORTED_LOCALES = ['en'] as const
 
 function getAgreementTitle(agreementType: AgreementType): string {
   if (agreementType === 'terms_of_service') {
@@ -153,22 +152,18 @@ function AgreementCard({
     defaultValues: {
       versionLabel: '',
       contentEn: '',
-      contentZh: '',
     },
     onSubmit: async ({ value }) => {
       const content: Record<string, string> = {}
       if (value.contentEn.trim()) {
         content[SUPPORTED_LOCALES[0]] = value.contentEn.trim()
       }
-      if (value.contentZh.trim()) {
-        content[SUPPORTED_LOCALES[1]] = value.contentZh.trim()
-      }
 
       await publish.mutate({
         content,
         version_label: value.versionLabel.trim() || null,
       })
-      form.reset({ versionLabel: '', contentEn: '', contentZh: '' })
+      form.reset({ versionLabel: '', contentEn: '' })
     },
   })
 
@@ -216,15 +211,6 @@ function AgreementCard({
                 label={m['settings.legal.content_en_label']()}
                 inputId={`legal-content-en-${agreementType}`}
                 dataTestId={`legal-content-en-input-${agreementType}`}
-                disabled={publish.isSubmitting}
-                rows={6}
-              />
-              <TextareaField
-                form={form}
-                name="contentZh"
-                label={m['settings.legal.content_zh_label']()}
-                inputId={`legal-content-zh-${agreementType}`}
-                dataTestId={`legal-content-zh-input-${agreementType}`}
                 disabled={publish.isSubmitting}
                 rows={6}
               />

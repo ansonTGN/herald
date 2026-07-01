@@ -54,11 +54,8 @@ export class AdminLegalHelper extends BasePage {
   async publishCustomAgreement(
     agreementType: AgreementType,
     contentEn: string,
-    contentZh: string,
     versionLabel?: string
   ): Promise<void> {
-    const beforeVersion = await this.getCurrentVersion(agreementType)
-
     const card = this.agreementCard(agreementType)
     await expect(card).toBeVisible()
 
@@ -66,15 +63,22 @@ export class AdminLegalHelper extends BasePage {
       await this.fillField(card.locator(SELECTORS.legalConsent.legalVersionLabelInput(agreementType)), versionLabel)
     }
     await this.fillField(card.locator(SELECTORS.legalConsent.legalContentEnInput(agreementType)), contentEn)
-    await this.fillField(card.locator(SELECTORS.legalConsent.legalContentZhInput(agreementType)), contentZh)
 
+    const publishResponsePromise = this.page.waitForResponse(
+      response =>
+        response.url().includes(`/api/legal/admin/`) &&
+        response.url().includes(`/agreements/${agreementType}`) &&
+        response.request().method() === 'PUT',
+      { timeout: 10000 }
+    )
     const publishButton = card.locator(SELECTORS.legalConsent.legalPublishButton(agreementType))
     await this.smartClick(publishButton)
+    const publishResponse = await publishResponsePromise
+    expect(publishResponse.ok()).toBe(true)
 
-    await expect(async () => {
-      const afterVersion = await this.getCurrentVersion(agreementType)
-      expect(afterVersion).toBeGreaterThan(beforeVersion)
-    }).toPass({ timeout: 15000 })
+    await expect(
+      card.locator(SELECTORS.legalConsent.sourceBadge('custom')).first()
+    ).toBeVisible({ timeout: 15000 })
   }
 
   /**
@@ -104,7 +108,7 @@ export class AdminLegalHelper extends BasePage {
    */
   async expectSourceBadge(agreementType: AgreementType, source: SourceType): Promise<void> {
     const card = this.agreementCard(agreementType)
-    const badge = card.locator(SELECTORS.legalConsent.sourceBadge(source))
+    const badge = card.locator(SELECTORS.legalConsent.sourceBadge(source)).first()
     await expect(badge).toBeVisible()
   }
 

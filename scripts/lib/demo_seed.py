@@ -90,6 +90,7 @@ def ensure_demo_seed_data(logger: "Logger | None" = None) -> bool:
         _info(logger, "Ensuring demo seed data for realm-001...")
         admin_opener = _login(ADMIN_REALM, ADMIN_EMAIL, ADMIN_PASSWORD)
         _ensure_points_realm(admin_opener, logger)
+        _ensure_current_legal_consent(POINTS_REALM_ID, POINTS_REALM_ADMIN_EMAIL, logger)
 
         # Ensure credit buckets BEFORE any points/mapping/payment seed (bucket_id is NOT NULL).
         _ensure_credit_buckets(logger)
@@ -282,6 +283,8 @@ def _ensure_points_user(opener: urllib.request.OpenerDirector, logger: "Logger |
     if not user_id:
         raise SeedError("Could not resolve user@realm-001.com ID after creation")
 
+    _ensure_current_legal_consent(POINTS_REALM_ID, POINTS_USER_EMAIL, logger)
+
     _info(logger, "Ensuring user role assignment for user@realm-001.com...")
     status, body = _http_json(
         opener,
@@ -295,6 +298,53 @@ def _ensure_points_user(opener: urllib.request.OpenerDirector, logger: "Logger |
             f"Failed to update user roles: status={status}, body={json.dumps(body, ensure_ascii=False)}"
         )
     return user_id
+
+
+def _ensure_current_legal_consent(realm_id: str, email: str, logger: "Logger | None") -> None:
+    """Record consent to the current effective legal agreements for a seeded user."""
+    _info(logger, f"Ensuring legal consent for {email} in {realm_id}...")
+    sql = f"""
+DO $$
+DECLARE
+    v_user_id UUID;
+    v_agreement_type TEXT;
+    v_version_id UUID;
+BEGIN
+    SELECT id INTO v_user_id
+    FROM account
+    WHERE realm_id = '{realm_id}' AND email = '{email}'
+    LIMIT 1;
+
+    IF v_user_id IS NULL THEN
+        RAISE EXCEPTION 'Could not find seeded user % in realm %', '{email}', '{realm_id}';
+    END IF;
+
+    FOREACH v_agreement_type IN ARRAY ARRAY['terms_of_service', 'privacy_policy']
+    LOOP
+        SELECT id INTO v_version_id
+        FROM legal_agreement_version
+        WHERE agreement_type = v_agreement_type
+          AND (realm_id = '{realm_id}' OR realm_id IS NULL)
+        ORDER BY CASE WHEN realm_id = '{realm_id}' THEN 0 ELSE 1 END, version_no DESC
+        LIMIT 1;
+
+        IF v_version_id IS NOT NULL THEN
+            INSERT INTO user_agreement_consent (
+                id, user_id, realm_id, agreement_type, consented_version_id
+            ) VALUES (
+                uuidv7(), v_user_id, '{realm_id}', v_agreement_type, v_version_id
+            )
+            ON CONFLICT (user_id, agreement_type)
+            DO UPDATE SET
+                realm_id = EXCLUDED.realm_id,
+                consented_version_id = EXCLUDED.consented_version_id,
+                consented_at = NOW();
+        END IF;
+    END LOOP;
+END $$;
+"""
+    _sql_exec(sql)
+    _info(logger, f"[OK] Legal consent ready for {email} in {realm_id}")
 
 
 def _ensure_realm001_user_subscription_permissions(logger: "Logger | None") -> None:
@@ -1181,12 +1231,13 @@ BEGIN
     DELETE FROM subscription WHERE client_app_id = v_client_app_id;
 
     INSERT INTO subscription (
-        id, realm_id, external_subscription_id, external_product_id,
+        id, realm_id, user_id, external_subscription_id, external_product_id,
         payment_provider, status, entitlement_key,
         current_period_start, current_period_end, client_app_id, bucket_id
     ) VALUES (
         uuidv7(),
         '{ADMIN_REALM}',
+        v_user_id,
         'sub_demo_' || uuidv7(),
         'prod_demo_' || uuidv7(),
         'stripe',

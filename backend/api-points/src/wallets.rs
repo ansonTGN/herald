@@ -10,7 +10,6 @@ use crate::types::{
     BalancesByType, ListWalletsByBucketResponse, ListWalletsQuery, PointsWalletResponse,
     QuotaWindowViewDto, WalletByBucketResponse,
 };
-use herald_api_base::application::http::auth::util::require_permission;
 use herald_api_base::application::http::common::auth_utils::require_authenticated_user_in_realm;
 use herald_api_base::application::http::common::error_codes::POINTS_UNIT;
 use herald_api_base::application::http::server::api_entities::{
@@ -44,12 +43,12 @@ fn derived_to_balances_by_type(derived: &[(CreditType, i64)]) -> BalancesByType 
     out
 }
 
-/// Compute the per-bucket window-quota view for `(user, bucket)` (design §4.2.2
-/// / §4.4.3). Returns `(quota_windows, spendable_from_quota)`:
+/// Compute the per-bucket window-quota view for `(user, bucket)`. Returns
+/// `(quota_windows, spendable_from_quota)`:
 /// - `(None, None)` when the bucket has NO concrete id (aggregate user-total
 ///   row) OR the user has no active quota entitlement for the bucket
-///   (pool-only). This is the zero-regression path: pool-only buckets keep
-///   `quotaWindows` / `spendableFromQuota` absent.
+///   (pool-only). Pool-only buckets keep `quotaWindows` / `spendableFromQuota`
+///   absent.
 /// - `(Some(views), Some(min_remaining))` when active entitlements exist.
 ///
 /// `spendable_from_quota` is the minimum `remaining` across the windows (the
@@ -75,7 +74,7 @@ async fn compute_bucket_window_view(
         .map_err(ApiError::from)?;
     if views.is_empty() {
         // No active quota entitlement for this bucket → pool-only. Keep both
-        // fields `None` (zero-regression: the response omits them entirely via
+        // fields `None` (the response omits them entirely via
         // `skip_serializing_if`).
         return Ok((None, None));
     }
@@ -88,9 +87,8 @@ async fn compute_bucket_window_view(
 }
 
 /// Sum the pool-side credit-type balances (topup + registration + granted).
-/// These are the credit types that stay on the pool model (design §1.1 / R5:
-/// zero-regression). Subscription / free-periodic are window-model and excluded
-/// — their available amount comes from `spendable_from_quota`.
+/// Subscription / free-periodic are window-model and excluded — their available
+/// amount comes from `spendable_from_quota`.
 fn pool_balance_sum(balances: &BalancesByType) -> i64 {
     balances
         .topup
@@ -107,9 +105,9 @@ fn pool_balance_sum(balances: &BalancesByType) -> i64 {
 ///
 /// The aggregate user-total view (`find_by_user_id` for a multi-bucket user)
 /// has `bucket_id = None` and no single concrete wallet to expose — return
-/// `id: None` so a client can never mistake a synthesized id for "the wallet"
-/// (review #6 chimera fix). For a single-bucket user `bucket_id` is `Some`
-/// and `id` is that wallet row's id.
+/// `id: None` so a client can never mistake a synthesized id for "the wallet".
+/// For a single-bucket user `bucket_id` is `Some` and `id` is that wallet row's
+/// id.
 fn wallet_to_response(
     account: PointsWallet,
     derived: Vec<(CreditType, i64)>,
@@ -226,16 +224,15 @@ async fn group_wallets_by_bucket(
     let mut cross_bucket_total: i64 = 0;
     let mut items: Vec<WalletByBucketResponse> = Vec::with_capacity(balances_by_key.len());
     for ((bucket_id, user_id), balances_by_type) in balances_by_key {
-        // Window-quota view per concrete bucket (design §4.2.2). Pool-only
-        // buckets (no active entitlement) and the aggregate user-total row
-        // (bucket_id = None) get `(None, None)` — zero-regression.
+        // Window-quota view per concrete bucket. Pool-only buckets (no active
+        // entitlement) and the aggregate user-total row (bucket_id = None) get
+        // `(None, None)`.
         let (quota_windows, spendable_from_quota) =
             compute_bucket_window_view(state, realm_id, user_id, bucket_id, now).await?;
 
-        // Pool side = topup + registration + granted (zero-regression pool
-        // types). Only surfaced when non-zero OR when there is a window view
-        // (so a mixed bucket still breaks down both sides); pool-only buckets
-        // leave it `None` to match the pre-redesign single-number response.
+        // Pool side = topup + registration + granted. Only surfaced when
+        // non-zero OR when there is a window view (so a mixed bucket still
+        // breaks down both sides); pool-only buckets leave it `None`.
         let pool_sum = pool_balance_sum(&balances_by_type);
         let spendable_from_pool = if quota_windows.is_some() {
             Some(pool_sum)
@@ -243,10 +240,8 @@ async fn group_wallets_by_bucket(
             None
         };
 
-        // bucket_total (semantic extension, design §4.2.2) = window-available
-        // + pool balance. For pool-only buckets this collapses to the pool
-        // sum (== the pre-redesign `balances_by_type.total()` minus the
-        // window credit types, which are 0 there anyway) — zero-regression.
+        // bucket_total = window-available + pool balance. For pool-only
+        // buckets this collapses to the pool sum.
         let bucket_total = spendable_from_quota.unwrap_or(0).saturating_add(pool_sum);
         cross_bucket_total = cross_bucket_total.saturating_add(bucket_total);
 
@@ -273,7 +268,7 @@ async fn group_wallets_by_bucket(
     Ok((items, cross_bucket_total))
 }
 
-/// List all points wallets in a realm (admin only)
+/// List points wallets. Regular users see their own wallets; managers see all wallets in the realm.
 #[utoipa::path(
     get,
     path = "/api/points/{realmId}/wallets",
@@ -300,16 +295,7 @@ pub async fn list_wallets(
     Path(realm_id): Path<String>,
     Query(query): Query<ListWalletsQuery>,
 ) -> Result<ApiResult<ListWalletsByBucketResponse>, ApiError> {
-    let user_id = require_authenticated_user_in_realm(&identity, &realm_id, "points wallets")?;
-    require_permission(
-        &state,
-        &realm_id,
-        &user_id.to_string(),
-        "points",
-        "view",
-        "points.view",
-    )
-    .await?;
+    let _user_id = require_authenticated_user_in_realm(&identity, &realm_id, "points wallets")?;
 
     // Optional bucket filter parsed up front so malformed input surfaces as 400.
     let bucket_filter = match query.bucket_id.as_deref().map(str::trim) {
@@ -381,15 +367,6 @@ pub async fn get_wallet(
     Path((realm_id, user_id)): Path<(String, String)>,
 ) -> Result<Json<PointsWalletResponse>, ApiError> {
     let _user_id = require_authenticated_user_in_realm(&identity, &realm_id, "points wallet")?;
-    require_permission(
-        &state,
-        &realm_id,
-        &_user_id.to_string(),
-        "points",
-        "view",
-        "points.view",
-    )
-    .await?;
 
     let user_uuid = user_id
         .parse::<Uuid>()

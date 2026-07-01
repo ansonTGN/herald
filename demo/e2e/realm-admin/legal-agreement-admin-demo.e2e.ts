@@ -1,19 +1,18 @@
 /**
  * Realm Admin Legal Agreement Management Demo Tests
  *
- * User Story: .ai/user-stories/core/legal-consent-account-deletion.md [US-RA-019]
- * Design Doc: .ai/design/legal-consent-account-deletion.md §4.4.1, §4.4.2, §4.2.2, §5.1
+ * User story: US-RA-019
  *
  * Scenarios:
- * - US-RA-019 Scenario 1: Realm Admin opens Settings > Legal and views current
+ * - Scenario 1: Realm Admin opens Settings > Legal and views current
  *   agreements, source badges (default/custom), version metadata, and history.
- * - US-RA-019 Scenario 2/6: Publishing a custom agreement creates a new version,
+ * - Scenario 2/6: Publishing a custom agreement creates a new version,
  *   switches the source badge to custom, and triggers re-consent for a regular
  *   user on their next login.
- * - US-RA-019 Scenario 3: Reverting to the default template snapshot creates
+ * - Scenario 3: Reverting to the default template snapshot creates
  *   another new custom version and also triggers re-consent.
  *
- * Compliance: spec/demo/e2e-testing.md
+ * Compliance rules:
  * - All operations go through the UI (no direct API calls).
  * - Shared selectors are used for all DOM assertions.
  * - Test users are cleaned up after each test while preserving the realm admin.
@@ -74,8 +73,8 @@ test.describe('[Realm Admin] Legal Agreement Management Demo Tests', () => {
     agreementType: 'terms_of_service' | 'privacy_policy'
   ): Promise<'default' | 'custom'> {
     const card = page.locator(SELECTORS.legalConsent.legalAgreementCard(agreementType))
-    const customBadge = card.locator(SELECTORS.legalConsent.sourceBadge('custom'))
-    const defaultBadge = card.locator(SELECTORS.legalConsent.sourceBadge('default'))
+    const customBadge = card.locator(SELECTORS.legalConsent.sourceBadge('custom')).first()
+    const defaultBadge = card.locator(SELECTORS.legalConsent.sourceBadge('default')).first()
 
     if (await customBadge.isVisible({ timeout: 2000 }).catch(() => false)) {
       return 'custom'
@@ -158,6 +157,7 @@ test.describe('[Realm Admin] Legal Agreement Management Demo Tests', () => {
         const badge = card
           .locator(SELECTORS.legalConsent.sourceBadge('default'))
           .or(card.locator(SELECTORS.legalConsent.sourceBadge('custom')))
+          .first()
         await expect(badge).toBeVisible()
 
         const meta = page.locator(SELECTORS.legalConsent.legalAgreementMeta(agreementType))
@@ -208,7 +208,6 @@ test.describe('[Realm Admin] Legal Agreement Management Demo Tests', () => {
         await adminLegalHelper.publishCustomAgreement(
           'terms_of_service',
           'Custom Terms of Service for admin legal demo (EN).',
-          '管理员法律协议演示自定义服务条款（中文）。',
           'admin-legal-demo-publish'
         )
         await adminLegalHelper.expectSourceBadge('terms_of_service', 'custom')
@@ -239,9 +238,9 @@ test.describe('[Realm Admin] Legal Agreement Management Demo Tests', () => {
         page.locator(SELECTORS.legalConsent.loginAgreeAndContinueButton).click(),
       ])
 
-      await expect(
-        page.locator(SELECTORS.header.userAvatar).or(page.locator(SELECTORS.profile.container))
-      ).toBeVisible({ timeout: 10000 })
+      await expect(page.locator('[data-testid="email-display"]')).toBeVisible({
+        timeout: 10000,
+      })
     })
   })
 
@@ -257,7 +256,6 @@ test.describe('[Realm Admin] Legal Agreement Management Demo Tests', () => {
         await adminLegalHelper.publishCustomAgreement(
           'terms_of_service',
           'Pre-seed custom Terms of Service for revert demo (EN).',
-          '回退演示用预置自定义服务条款（中文）。',
           'admin-legal-demo-preseed'
         )
       }
@@ -315,9 +313,9 @@ test.describe('[Realm Admin] Legal Agreement Management Demo Tests', () => {
         page.locator(SELECTORS.legalConsent.loginAgreeAndContinueButton).click(),
       ])
 
-      await expect(
-        page.locator(SELECTORS.header.userAvatar).or(page.locator(SELECTORS.profile.container))
-      ).toBeVisible({ timeout: 10000 })
+      await expect(page.locator('[data-testid="email-display"]')).toBeVisible({
+        timeout: 10000,
+      })
     })
   })
 })

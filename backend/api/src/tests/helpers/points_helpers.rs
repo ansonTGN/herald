@@ -8,9 +8,6 @@ use herald_core::domain::user::entities::User;
 use sqlx::Row;
 use uuid::Uuid;
 
-/// ============================================================================
-/// Points Wallet Creation Helpers
-/// ============================================================================
 /// Ensure a user row exists in the account table (needed by grant_points_atomic).
 async fn ensure_test_user_exists(ctx: &SchemaTestContext, user_id: Uuid, realm_id: &str) {
     sqlx::query(
@@ -28,10 +25,9 @@ async fn ensure_test_user_exists(ctx: &SchemaTestContext, user_id: Uuid, realm_i
 
 /// Ensure a single legacy `credit_buckets` row exists for `realm_id` and return
 /// its id.
-///
-/// The credit-bucket migration made `points_wallets.bucket_id`,
-/// `points_transactions.bucket_id` and `points_credit_ledger.bucket_id` NOT
-/// NULL. Legacy scenario tests predate the Bucket model and never create a
+/// `points_wallets.bucket_id`, `points_transactions.bucket_id` and
+/// `points_credit_ledger.bucket_id` are NOT NULL. Legacy scenario tests
+/// predate the Bucket model and never create a
 /// bucket; without one every legacy INSERT into these tables violates the NOT
 /// NULL constraint. This helper materializes a deterministic, realm-scoped
 /// legacy bucket (`bucket_key = "legacy-<hash>"`, `enabled = true`,
@@ -99,7 +95,6 @@ pub async fn ensure_test_bucket_for_realm(pool: &sqlx::PgPool, realm_id: &str) -
 
 /// Attach a client app to this realm's legacy credit bucket (no-op if the
 /// legacy bucket has not been materialized yet).
-///
 /// Legacy scenario tests create client apps ad-hoc via several helpers; each
 /// such helper should call this so the consume-path coverage resolution
 /// includes the new client app.
@@ -130,7 +125,6 @@ pub async fn attach_client_app_to_legacy_bucket(
 }
 
 /// Create a points wallet for a user
-///
 /// Also ensures the user exists in the account table (needed by grant_points_atomic).
 /// Returns the wallet_id
 pub async fn create_points_wallet(
@@ -143,7 +137,7 @@ pub async fn create_points_wallet(
     let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, realm_id).await;
     let wallet_id = Uuid::now_v7();
 
-    // point-time: the 5 per-type balance columns and the
+    // The 5 per-type balance columns and the
     // `total_balance` GENERATED column were dropped from `points_wallets`;
     // available balance is derived from `points_credit_ledger`. This INSERT
     // therefore seeds only the retained lifetime-analytics columns.
@@ -195,8 +189,7 @@ pub async fn create_user_wallet_and_bucket_for_test(
 }
 
 /// Create a points wallet with initial balance
-///
-/// Under point-time `points_wallets` no longer holds Stored per-type
+/// `points_wallets` no longer holds Stored per-type
 /// balances; available balance is derived from `points_credit_ledger`. To keep
 /// this helper's contract ("after this returns, the wallet shows
 /// `topup_balance` of topup credit and `subscription_balance` of subscription
@@ -276,9 +269,6 @@ pub async fn create_points_wallet_with_balance(
     existing
 }
 
-/// ============================================================================
-/// Points Transaction Helpers
-/// ============================================================================
 /// Create a points transaction record
 pub async fn create_points_transaction(
     ctx: &mut SchemaTestContext,
@@ -328,14 +318,10 @@ pub async fn create_points_transaction(
     transaction_id
 }
 
-/// ============================================================================
-/// Points Ledger Helpers
-/// ============================================================================
 /// Create a credit ledger entry (for tracking credit grants).
-///
 /// Legacy helper kept for completeness; new tests should prefer
-/// `create_credit_ledger_entry_v2`. The credit-bucket migration reshaped
-/// `points_credit_ledger` (no more `wallet_id` / `transaction_id` / `amount` /
+/// `create_credit_ledger_entry_v2`. `points_credit_ledger` no longer stores
+/// `wallet_id` / `transaction_id` / `amount` /
 /// `remaining_amount` columns; `bucket_id` is NOT NULL, `remaining_amount` is a
 /// generated column). This helper resolves the user/realm/bucket from the
 /// wallet row and writes the new-schema columns.
@@ -376,17 +362,12 @@ pub async fn create_credit_ledger_entry(
     .expect("Failed to create credit ledger entry");
 }
 
-/// ============================================================================
-/// Query Helpers
-/// ============================================================================
 /// Get points wallet by user ID
-///
 /// Returns (wallet_id, balance, topup_balance, subscription_balance).
-/// Under point-time the balance figures are DERIVED from
+/// The balance figures are DERIVED from
 /// `points_credit_ledger` (same predicate as consumption) — the wallet row no
 /// longer carries Stored per-type balances. The grouping matches the legacy
 /// meaning: `topup` = topup + registration + free_periodic credit types.
-///
 /// Subscription balance is sourced from the window-quota model
 /// (`points_quota_entitlements` + `points_transactions` window aggregation),
 /// not from ledger rows.
@@ -446,11 +427,9 @@ pub async fn get_points_wallet_by_user(
 }
 
 /// Get points wallet balance
-///
-/// Returns (total, topup, subscription). Under point-time the balance
+/// Returns (total, topup, subscription). The balance
 /// figures are DERIVED from `points_credit_ledger` using the same predicate as
 /// consumption — `points_wallets` no longer carries Stored per-type balances.
-///
 /// Subscription balance is sourced from the window-quota model
 /// (`points_quota_entitlements` + `points_transactions` window aggregation).
 pub async fn get_points_balance(
@@ -505,7 +484,6 @@ pub async fn get_points_balance(
 }
 
 /// Get total credit amount from ledger for a specific credit type.
-///
 /// For window-quota credit types (subscription_credit, free_periodic_credit)
 /// this sums the first-window `limit` from `points_quota_entitlements` instead
 /// of ledger `granted_amount`.
@@ -536,7 +514,6 @@ pub async fn get_total_credit_by_type(
 }
 
 /// Get remaining credit amount from ledger for a specific credit type.
-///
 /// For window-quota credit types this returns `compute_window_available`
 /// instead of summing ledger `remaining_amount`.
 pub async fn get_remaining_credit_by_type(
@@ -564,7 +541,6 @@ pub async fn get_remaining_credit_by_type(
 }
 
 /// Get transactions for a user
-///
 /// Returns Vec of (transaction_id, transaction_type, amount)
 pub async fn get_user_transactions(
     ctx: &SchemaTestContext,
@@ -604,9 +580,6 @@ pub async fn count_transactions_by_type(
     .unwrap()
 }
 
-/// ============================================================================
-/// Assertion Helpers
-/// ============================================================================
 /// Assert points wallet balance matches expected values
 pub async fn assert_points_balance(
     ctx: &SchemaTestContext,
@@ -674,9 +647,6 @@ pub async fn assert_transaction_exists(
     );
 }
 
-/// ============================================================================
-/// Cleanup Helpers
-/// ============================================================================
 /// Delete all points data for a user
 pub async fn cleanup_user_points(ctx: &mut SchemaTestContext, user_id: Uuid) {
     sqlx::query("DELETE FROM points_transactions WHERE user_id = $1")
@@ -751,7 +721,7 @@ pub async fn create_credit_ledger_entry_v2(
     .await
     .expect("Failed to create credit ledger entry");
 
-    // point-time: `points_wallets` no longer holds Stored per-type
+    // `points_wallets` no longer holds Stored per-type
     // balances; available balance is derived from `points_credit_ledger`. We
     // only bump the retained lifetime-analytics columns (topup / subscription
     // / recharged) so analytics-style assertions still hold.
@@ -802,7 +772,6 @@ pub async fn get_wallet_bucket_id(ctx: &SchemaTestContext, realm_id: &str, user_
 /// that grant a ledger directly via `create_credit_ledger_entry_v2` must also
 /// seed this snapshot before sending a refund webhook, otherwise the handler
 /// rejects with "no payment_attempt for payment_id".
-///
 /// `provider_reference` is the value the webhook will look up (the test's
 /// `payment_id`); `bucket_id` should match the wallet the credits live in.
 pub async fn create_payment_attempt_snapshot(
@@ -912,10 +881,9 @@ pub async fn get_ledger_by_id(
 }
 
 /// Consume points from a specific ledger.
-///
 /// Bumps the ledger's `used_amount` (which recomputes the GENERATED
 /// `remaining_amount`) AND bumps the matching wallet's `total_consumed`
-/// lifetime-analytics column. Under point-time there is no per-type
+/// lifetime-analytics column. There is no per-type
 /// Stored balance column to decrement — the available balance is derived from
 /// `points_credit_ledger`, so bumping `used_amount` is sufficient to reduce
 /// the derived balance.
@@ -1050,9 +1018,6 @@ pub async fn assert_transaction_exists_by_type(
     );
 }
 
-/// ============================================================================
-/// Test Identity Creation Helper
-/// ============================================================================
 /// Create a test Identity for a user
 pub fn create_test_identity(user_id: Uuid, realm_id: &str) -> Identity {
     let user = User {
@@ -1085,12 +1050,10 @@ pub fn create_test_third_party_identity(realm_id: &str) -> Identity {
 }
 
 /// Assert all account balances are non-negative.
-///
 /// Aggregates across every wallet row the user owns in the realm (one row per
 /// `(user, bucket)` pool under the multi-bucket model). Returns the summed
 /// `(total_balance, topup_balance, subscription_balance)`.
-///
-/// Under point-time the balance figures are DERIVED from
+/// The balance figures are DERIVED from
 /// `points_credit_ledger` (same predicate as consumption) and from the quota
 /// window model; the assertion that each is >= 0 still holds because
 /// `remaining_amount` and window `remaining` are non-negative.
@@ -1195,10 +1158,9 @@ pub async fn assert_ledger_invariants(ctx: &SchemaTestContext, user_id: Uuid) {
 
 /// Assert caller-supplied balance figures match SUM(ledger.remaining_amount)
 /// grouped by credit type, using the same derived predicate as consumption
-/// (status / effective_at / expires_at). Under point-time this is a
+/// (status / effective_at / expires_at). This is a
 /// derived-vs-derived comparison: callers should obtain the values from
 /// `assert_balances_non_negative` (which uses the same predicate and grouping).
-///
 /// Subscription balance is compared against the quota window model, not ledger
 /// rows.
 pub async fn assert_account_matches_ledger_sums(
@@ -1245,7 +1207,6 @@ pub async fn assert_account_matches_ledger_sums(
 }
 
 /// Verify points were granted with correct entitlement_key association.
-///
 /// Under the window-quota model subscription grants live in
 /// `points_quota_entitlements`; `source_id` is the subscription id. Join with
 /// `subscription` to aggregate by `entitlement_key` and sum the first window
@@ -1293,8 +1254,7 @@ pub async fn verify_points_granted_for_entitlement(
 }
 
 /// Get current points balance for a user (derived SUM from ledger + quota windows).
-///
-/// Returns 0 if the user has no wallet. Under point-time the balance
+/// Returns 0 if the user has no wallet. The balance
 /// is DERIVED from `points_credit_ledger` AND from `points_quota_entitlements`
 /// window availability. `points_wallets` no longer carries a Stored `total_balance`.
 pub async fn get_points_balance_for_user(ctx: &SchemaTestContext, user_id: Uuid) -> i64 {
@@ -1345,7 +1305,6 @@ pub async fn get_points_balance_for_user(ctx: &SchemaTestContext, user_id: Uuid)
 }
 
 /// Get points grant schedule by entitlement_key.
-///
 /// Returns Vec of (id, entitlement_key, points_per_period, granted_periods, max_periods, active).
 pub async fn get_points_grant_schedule_by_entitlement(
     ctx: &SchemaTestContext,
@@ -1378,7 +1337,6 @@ pub async fn get_points_grant_schedule_by_entitlement(
 }
 
 /// Truncate a UTC datetime to microsecond precision.
-///
 /// Postgres `TIMESTAMPTZ` stores microsecond precision (not nanoseconds), so a
 /// seed value derived from `chrono::Utc::now()` (nanosecond precision) loses
 /// its sub-microsecond nanos on the DB round-trip. Truncating the seed before
@@ -1391,44 +1349,6 @@ pub fn trunc_to_micros(ts: chrono::DateTime<chrono::Utc>) -> chrono::DateTime<ch
     ts.with_nanosecond(truncated_nanos)
         .expect("truncated_nanos is a valid subsec nanos value (< 2e9)")
 }
-// Shared helpers for the point-time feature (design `.ai/design/point-time.md`).
-// These cover three reuse needs expressed by the
-// scenario matrix:
-//   1. Future-effective row injection — `inject_effective_at`,
-//      `create_credit_ledger_entry_with_effective_at`. The new entry helper
-//      intentionally does NOT call `create_credit_ledger_entry_v2`'s UPDATE
-//      `points_wallets` branch, so tests asserting the **derived** available
-//      balance (not the Stored column) are not polluted by Stored writes.
-//   2. Derived-predicate balance assertion — `get_derived_balance_by_credit_type`,
-//      `get_derived_total_balance`, `assert_derived_balance`. The SQL predicate
-//      mirrors production `compute_available_balance` /
-//      `compute_bucket_available_balances` verbatim:
-//        status='active' AND remaining_amount>0
-//          AND (effective_at IS NULL OR effective_at <= NOW())
-//          AND (expires_at  IS NULL OR expires_at  >  NOW())
-//      Downstream scenario items MUST use these instead of reading
-//      `points_wallets.total_balance` — the Stored column is not the available
-//      balance authority under point-time.
-//   3. Schedule / grant_record seed + advance + row-level reclaim positioning
-//      — `create_free_grant_schedule`, `create_subscription_grant_schedule`,
-//      `advance_schedule`, `create_grant_record`, `grant_record_exists`,
-//      `find_ledger_by_source_id`, `find_ledger_id_by_schedule_period`,
-//      `count_future_effective_active_rows`.
-// # `entitlement_key` decision (Scope item 3 / P2-4)
-// Free-periodic points are resolved by production `reconcile_due_for_user`
-// (domain/src/points/service.rs:218) → `pregrant_next_period_atomic`, which
-// reads `schedule.points_per_period` DIRECTLY. It does NOT consult
-// `provider_entitlement_mappings` or any `entitlement_key`-keyed lookup for
-// free schedules. Correspondingly, `registration_service.rs:177` seeds the
-// free-periodic schedule with `entitlement_key: None`, which infra persists
-// as the column default `''` (NOT NULL DEFAULT '', migration line 407).
-// `resolve_entitlement_points` (subscription_service.rs:33) operates on the
-// subscription `EntitlementMapping` row (a different table), not on the free
-// schedule. Therefore the faithful mirror for a FREE schedule seed is
-// `entitlement_key = ''` (callers may pass `""`). Subscription schedules
-// carry the entitlement_key from their `subscription.entitlement_key` and
-// should pass that non-empty value.
-
 /// Derived-predicate fragment mirroring production
 /// `compute_available_balance` / consumption selection.
 /// Kept inline (not a constant) so the full SQL stays readable at call sites.
@@ -1440,7 +1360,6 @@ const DERIVED_AVAILABLE_PREDICATE: &str = concat!(
 );
 
 /// UPDATE the `effective_at` column of an existing ledger row.
-///
 /// Use this to flip an immediately-available row to future-effective (or vice
 /// versa) without re-creating it. The DB CHECK
 /// `points_credit_ledger_effective_before_expires` rejects an inverted window
@@ -1461,15 +1380,13 @@ pub async fn inject_effective_at(
 }
 
 /// INSERT a credit ledger row directly with an explicit `effective_at`.
-///
 /// Unlike `create_credit_ledger_entry_v2`, this does NOT touch the
 /// `points_wallets` Stored balance columns — tests asserting the DERIVED
 /// available balance (via `assert_derived_balance`) must not have the Stored
 /// write masking regressions. If a test also needs the Stored column in sync
 /// (e.g. legacy analytics assertions), call `create_credit_ledger_entry_v2`
 /// separately or invoke the v2 helper then `inject_effective_at`.
-///
-/// `effective_at = None`  ⟺ immediately available (zero-regression default).
+/// `effective_at = None` ⟺ immediately available (default).
 /// `effective_at = Some(t)` ⟺ enters the available set only when `t <= NOW()`.
 pub async fn create_credit_ledger_entry_with_effective_at(
     ctx: &SchemaTestContext,
@@ -1510,7 +1427,6 @@ pub async fn create_credit_ledger_entry_with_effective_at(
 }
 
 /// Derived available balance for one `(user, realm, credit_type)` pool.
-///
 /// Mirrors production `compute_available_balance` verbatim — does NOT
 /// read `points_wallets.total_balance`. Future-effective and expired active
 /// rows are excluded by the shared predicate.
@@ -1544,7 +1460,6 @@ pub async fn get_derived_balance_by_credit_type(
 }
 
 /// Derived available balance summed across all credit types for a user.
-///
 /// Mirrors production total derived balance. Use this for "total
 /// available" assertions; prefer `get_derived_balance_by_credit_type` for
 /// per-pool assertions.
@@ -1587,10 +1502,9 @@ pub async fn get_derived_total_balance(
 }
 
 /// Assert the derived available balance for a credit type matches `expected`.
-///
-/// This is the canonical point-time balance assertion. Downstream scenario
+/// This is the canonical balance assertion. Downstream scenario
 /// items MUST use this instead of reading `points_wallets.total_balance` —
-/// the Stored column is not the available-balance authority under point-time
+/// the Stored column is not the available-balance authority
 /// and may lag or diverge.
 pub async fn assert_derived_balance(
     ctx: &SchemaTestContext,
@@ -1611,7 +1525,6 @@ pub async fn assert_derived_balance(
 
 /// Seed a FREE-periodic `points_grant_schedules` row (`subscription_id IS NULL`,
 /// `active = TRUE`).
-///
 /// `entitlement_key` is passed by the caller. Per the helper-module doc
 /// comment above, free-periodic schedules are resolved by production
 /// `reconcile_due_for_user` via `schedule.points_per_period` directly (NOT via
@@ -1619,7 +1532,6 @@ pub async fn assert_derived_balance(
 /// `entitlement_key: None` (persisted as `''`). Callers should pass `""` to
 /// mirror production faithfully unless they are explicitly testing a non-empty
 /// informational key.
-///
 /// Returns the new schedule id.
 pub async fn create_free_grant_schedule(
     ctx: &SchemaTestContext,
@@ -1661,7 +1573,6 @@ pub async fn create_free_grant_schedule(
 }
 
 /// Seed a SUBSCRIPTION-bound `points_grant_schedules` row.
-///
 /// `first_period_start` is stored as `base_time` (the period_number derivation
 /// anchor). `entitlement_key` mirrors the subscription's key
 /// (non-empty for subscription schedules).
@@ -1704,7 +1615,6 @@ pub async fn create_subscription_grant_schedule(
 }
 
 /// Advance a schedule row's `next_grant_time` and `granted_periods`.
-///
 /// Use this in worker-down scenarios to simulate the progression that
 /// `GrantScheduler::process_due_schedules` would have applied, without
 /// invoking the worker (worker is preheat, not correctness).
@@ -1728,7 +1638,6 @@ pub async fn advance_schedule(
 }
 
 /// Seed a `points_grant_records(schedule_id, period_number)` idempotency row.
-///
 /// `ledger_id` is REQUIRED — `points_grant_records.ledger_id` is a
 /// NOT NULL FK (the reclaim row-positioning bridge). Callers should first
 /// create the ledger row via `create_credit_ledger_entry_with_effective_at`
@@ -1810,7 +1719,6 @@ pub async fn find_ledger_by_source_id(
 
 /// Locate the ledger id for a `(schedule_id, period_number)` via the
 /// `points_grant_records.ledger_id` FK (reclaim bridge).
-///
 /// This is the same lookup production reclaim performs — it resolves
 /// the business idempotency key `(schedule_id, period_number)` (which lives
 /// only in `points_grant_records`) to a unique ledger row. Reclaim tests MUST
@@ -1850,20 +1758,6 @@ pub async fn count_future_effective_active_rows(
     .await
     .expect("Failed to count future-effective active rows")
 }
-
-// points-grant-redesign helpers (quota entitlement + window view)
-// Shared helpers for the window-quota model (design
-// `.ai/design/points-grant-redesign.md` §4.3.2 / §5.1 / §5.4). These mirror
-// the production read path (`find_active_quota_entitlements` predicate +
-// `compute_quota_windows_view`) so scenario tests assert against the SAME
-// authority the consumption / balance read path uses, not a second DDL.
-// Active-entitlement predicate (infra `find_active_quota_entitlements`,
-// postgres_repository.rs:5793):
-//   status = 'active' AND effective_from <= now
-//     AND (effective_until IS NULL OR effective_until > now)
-// A revoked entitlement (status='revoked' + effective_until set) leaves the
-// active set, so its windows contribute ZERO availability — the core reclaim
-// invariant (US-CB-008 / design §7 P0).
 
 /// JSONB shape of `quota_windows` / `free_periodic_quota_windows` as written by
 /// production serde (`QuotaWindowDbJson`, infra postgres_repository.rs:178).
@@ -1970,9 +1864,8 @@ pub async fn quota_entitlement_status(
 
 /// Window availability for `(user, bucket, credit_type)` = MIN over all ACTIVE
 /// entitlement windows of `(limit - SUM(consume in window))`, floored at 0.
-/// Mirrors production `compute_window_available_in_tx` (design §5.2). When no
+/// Mirrors production `compute_window_available_in_tx`. When no
 /// active entitlement exists, availability is 0 (the reclaim-zero invariant).
-///
 /// This recomputes the window aggregation in SQL exactly as production does:
 /// for each active entitlement's snapshot window, sum consume rows with
 /// `created_at >= now - window_seconds`, take `limit - used`, then take the
@@ -2176,7 +2069,7 @@ pub async fn get_total_quota_limit_by_type(
 
 /// Seed a `provider_entitlement_mappings` row WITH `quota_windows` attached,
 /// routed to the realm's legacy test bucket. Non-empty `quota_windows`
-/// switches the grant to the window-quota model (design §4.3.2). Returns the
+/// switches the grant to the window-quota model. Returns the
 /// mapping id.
 pub async fn create_entitlement_mapping_with_quota_windows(
     ctx: &SchemaTestContext,
