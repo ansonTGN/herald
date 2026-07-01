@@ -32,6 +32,7 @@ docs/
 | [audit.md](core/audit.md) | Audit 审计日志 | Realm Admin, Admin Realm |
 | [dashboard.md](core/dashboard.md) | Dashboard | Realm Admin |
 | [i18n.md](core/i18n.md) | 国际化（i18n）支持 | All Users |
+| [legal-consent-account-deletion.md](core/legal-consent-account-deletion.md) | 合规适配（用户协议 / 隐私政策 / 账户注销） | Regular User, Realm Admin |
 
 ### Auth 认证与授权
 

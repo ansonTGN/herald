@@ -15,7 +15,8 @@ docs/user-stories/
 │   ├── builtin-protection.md # 内置保护
 │   ├── regular-user.md   # 普通用户
 │   ├── i18n.md           # 国际化
-│   └── audit.md          # 审计日志
+│   ├── audit.md          # 审计日志
+│   └── legal-consent-account-deletion.md # 合规适配（用户协议 / 隐私政策 / 账户注销）
 ├── auth/                 # 认证授权
 │   ├── third-party-app.md # 第三方应用
 │   ├── client-app-settings.md # Client App 设置
@@ -68,6 +69,7 @@ docs/user-stories/
 | US-RA-016 | API Key 角色管理 | Realm Admin | P0 | [core/realm-admin](core/realm-admin.md#故事-16api-key-角色管理-us-ra-016) |
 | US-RA-017 | 创建 API Key 时绑定角色 | Realm Admin | P0 | [core/realm-admin](core/realm-admin.md#故事-17创建-api-key-时绑定角色-us-ra-017) |
 | US-RA-018 | API Key 按 Client App 隔离 | Realm Admin | P0 | [core/realm-admin](core/realm-admin.md#故事-18api-key-按-client-app-隔离-us-ra-018) |
+| US-RA-019 | 管理本 Realm 的用户协议与隐私政策 | Realm Admin | P1 | [core/legal-consent-account-deletion](core/legal-consent-account-deletion.md#故事-19管理本-realm-的用户协议与隐私政策-us-ra-019) |
 | US-RU-001 | 账号注册 | Regular User | P0 | [core/regular-user](core/regular-user.md#故事-1账号注册-us-ru-001) |
 | US-RU-002 | 账号登录 | Regular User | P0 | [core/regular-user](core/regular-user.md#故事-2账号登录-us-ru-002) |
 | US-RU-003 | OAuth 第三方登录 | Regular User | P0 | [core/regular-user](core/regular-user.md#故事-3oauth-第三方登录-us-ru-003) |
@@ -78,6 +80,11 @@ docs/user-stories/
 | US-RU-008 | 访问第三方应用（SSO） | Regular User | P0 | [core/regular-user](core/regular-user.md#故事-8访问第三方应用-us-ru-008) |
 | US-RU-009 | 认证重定向流程 | All Users | P0 | [core/regular-user](core/regular-user.md#故事-9认证重定向流程-us-ru-009) |
 | US-RU-010 | 从第三方 Web 应用跳转登录 | Regular User | P0 | [core/regular-user](core/regular-user.md#故事-10从第三方-web-应用跳转登录-us-ru-010) |
+| US-RU-011 | 注册时同意用户协议与隐私政策 | Regular User | P0 | [core/legal-consent-account-deletion](core/legal-consent-account-deletion.md#故事-11注册时同意用户协议与隐私政策-us-ru-011) |
+| US-RU-012 | 协议更新后重新同意 | Regular User | P0 | [core/legal-consent-account-deletion](core/legal-consent-account-deletion.md#故事-12协议更新后重新同意-us-ru-012) |
+| US-RU-013 | 查看当前生效的用户协议与隐私政策 | Regular User | P1 | [core/legal-consent-account-deletion](core/legal-consent-account-deletion.md#故事-13查看当前生效的用户协议与隐私政策-us-ru-013) |
+| US-RU-014 | 自助注销账户（软删除） | Regular User | P0 | [core/legal-consent-account-deletion](core/legal-consent-account-deletion.md#故事-14自助注销账户软删除-us-ru-014) |
+| US-RU-015 | 登录时确认同意用户协议与隐私政策 | Regular User | P0 | [core/legal-consent-account-deletion](core/legal-consent-account-deletion.md#故事-15登录时确认同意用户协议与隐私政策-us-ru-015) |
 | US-WO-001 | WeChat OAuth Provider 配置 | Realm Admin | P1 | [auth/wechat-oauth](auth/wechat-oauth.md#故事-1wechat-oauth-provider-配置-us-wo-001) |
 | US-WO-002 | WeChat Mini Program Provider 配置 | Realm Admin | P1 | [auth/wechat-oauth](auth/wechat-oauth.md#故事-2wechat-mini-program-provider-配置-us-wo-002) |
 | US-WO-003 | 微信网站应用登录 | Regular User | P1 | [auth/wechat-oauth](auth/wechat-oauth.md#故事-3微信网站应用登录-us-wo-003) |
@@ -205,8 +212,8 @@ docs/user-stories/
 | 角色 | 文档 | 相关 PRD |
 |------|------|---------|
 | Admin Realm | [core/admin-realm.md](core/admin-realm.md) | [Realm PRD](/docs/prd/core/realm.md) |
-| Realm Admin | [core/realm-admin.md](core/realm-admin.md), [core/builtin-protection.md](core/builtin-protection.md) | [Users PRD](/docs/prd/core/users.md), [Permissions PRD](/docs/prd/auth/permissions.md), [Client Apps PRD](/docs/prd/integration/client-app.md), [Realm Settings PRD](/docs/prd/core/realm-settings.md), [Dashboard PRD](/docs/prd/core/dashboard.md), [API Key Roles PRD](/docs/prd/integration/api-key-roles.md) |
-| Regular User | [core/regular-user.md](core/regular-user.md) | [Users PRD](/docs/prd/core/users.md), [OAuth PRD](/docs/prd/auth/oauth.md) |
+| Realm Admin | [core/realm-admin.md](core/realm-admin.md), [core/builtin-protection.md](core/builtin-protection.md), [core/legal-consent-account-deletion.md](core/legal-consent-account-deletion.md) | [Users PRD](/docs/prd/core/users.md), [Permissions PRD](/docs/prd/auth/permissions.md), [Client Apps PRD](/docs/prd/integration/client-app.md), [Realm Settings PRD](/docs/prd/core/realm-settings.md), [Dashboard PRD](/docs/prd/core/dashboard.md), [API Key Roles PRD](/docs/prd/integration/api-key-roles.md), [Legal Consent PRD](/docs/prd/core/legal-consent-account-deletion.md) |
+| Regular User | [core/regular-user.md](core/regular-user.md), [core/legal-consent-account-deletion.md](core/legal-consent-account-deletion.md) | [Users PRD](/docs/prd/core/users.md), [OAuth PRD](/docs/prd/auth/oauth.md), [Legal Consent PRD](/docs/prd/core/legal-consent-account-deletion.md) |
 | i18n | [core/i18n.md](core/i18n.md) | [i18n PRD](/docs/prd/core/i18n.md) |
 | Audit | [core/audit.md](core/audit.md) | [Audit PRD](/docs/prd/core/audit.md) |
 
