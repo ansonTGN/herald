@@ -1,7 +1,7 @@
 //! Shared external-HTTP observability helper.
 //!
 //! A single shared mechanism that all outbound HTTP clients
-//! (`herald-infra-stripe`, `herald-infra-creem`, `herald-infra-wechat`,
+//! (`herald-infra-stripe`, `herald-infra-creem`,
 //! `backend/infra/src/oauth/http_client.rs`, `backend/core/src/third/email.rs`)
 //! call to produce a consistent `external.http` tracing span and a
 //! `external.http.duration` histogram measurement.

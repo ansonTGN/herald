@@ -20,7 +20,6 @@ pub mod stripe;
 pub mod totp_key_management;
 pub mod user;
 pub mod user_totp;
-pub mod wechat;
 
 pub mod webhook;
 

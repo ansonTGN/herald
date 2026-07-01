@@ -12,7 +12,6 @@ too_many_arguments = "allow"
 herald-domain = { path = "../domain" }
 herald-entity = { path = "../entity" }
 herald-infra-stripe = { path = "../infra-stripe" }
-herald-infra-wechat = { path = "../infra-wechat" }
 herald-infra-creem = { path = "../infra-creem" }
 sea-orm = { workspace = true }
 sqlx = { workspace = true }
