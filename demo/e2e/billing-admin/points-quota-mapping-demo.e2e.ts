@@ -7,6 +7,10 @@
  * User Story:
  * - US-PO-009 (docs/user-stories/billing/points-admin.md) — 配置多时间窗滚动配额
  *
+ * LIVE: This suite resolves a real Stripe multi-price product at runtime
+ * (via `ensureMultiPriceCatalog`) instead of relying on the removed placeholder
+ * seed. Requires Stripe credentials in `demo/.env.demo`; skipped otherwise.
+ *
  * Design contract:
  * - `.ai/design/points-grant-redesign.md` §4.2 / §4.3.2 / §5.4
  * - `.ai/design-ui/points-grant-redesign/ui-spec.md` §3.2 / §4 / §7
@@ -29,10 +33,12 @@ import {
   QUOTA_DEMO_REALM,
   QUOTA_DEMO_ADMIN_EMAIL,
   QUOTA_DEMO_PASSWORD,
-  QUOTA_DEMO_PRODUCT_ID,
-  DEMO_QUOTA_WINDOWS,
   QUOTA_EDITOR_PREFIX,
 } from '../fixtures/points-quota.fixtures'
+import { secrets, hasStripePayment } from '../secrets/env'
+import { ensureMultiPriceCatalog } from '../helpers/resolve-mappings'
+
+const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
 
 // ============================================================================
 // Constants
@@ -50,6 +56,13 @@ const TEST_WINDOWS = [
 const SINGLE_WINDOW = [{ windowSeconds: 604_800, limit: 500, key: 'week' }]
 
 // ============================================================================
+// Live catalog setup — resolved once per worker via beforeAll.
+// ============================================================================
+
+/** Real Stripe product id resolved in beforeAll; empty until then. */
+let realProductId = ''
+
+// ============================================================================
 // Helpers
 // ============================================================================
 
@@ -64,7 +77,7 @@ async function loginAsAdmin(page: Page): Promise<void> {
 async function openQuotaEditor(page: Page): Promise<void> {
   const mappingsPage = new EntitlementMappingsPage(page)
   await mappingsPage.goto(TEST_REALM)
-  await mappingsPage.selectProduct(QUOTA_DEMO_PRODUCT_ID)
+  await mappingsPage.selectProduct(realProductId)
 
   const firstAdvanced = page
     .locator(SELECTORS.multiPriceMapping.mappingDetailPanel)
@@ -84,11 +97,27 @@ async function openQuotaEditor(page: Page): Promise<void> {
 
 test.describe('[Billing Admin] Entitlement Mapping 配额编辑器 (US-PO-009)', () => {
   test.beforeEach(async ({ page }) => {
+    // Skip gracefully when Stripe credentials are absent (live dependency).
+    test.skip(!hasStripePayment(), 'Stripe credentials required (live test)')
+
     await verifyTestEnvironment(page, {
       requiredRealms: [TEST_REALM],
       requiredUsers: [ADMIN_EMAIL],
     })
     await loginAsAdmin(page)
+
+    // Resolve the real multi-price catalog on first authenticated run (sync
+    // requires the admin session cookie carried by `page.request`).
+    if (!realProductId) {
+      const catalog = await ensureMultiPriceCatalog(page.request, {
+        baseUrl: BASE_URL,
+        realmId: TEST_REALM,
+        stripeSecretKey: secrets.stripe.secretKey!,
+        stripePublishableKey: secrets.stripe.publishableKey!,
+        stripeWebhookSecret: secrets.stripe.webhookSecret!,
+      })
+      realProductId = catalog.product.productId
+    }
   })
 
   test.afterEach(async ({ page }) => {
@@ -115,7 +144,7 @@ test.describe('[Billing Admin] Entitlement Mapping 配额编辑器 (US-PO-009)',
     await createEntitlementMappingWithQuotaWindows(
       page,
       TEST_REALM,
-      QUOTA_DEMO_PRODUCT_ID,
+      realProductId,
       TEST_WINDOWS,
     )
 
@@ -161,7 +190,7 @@ test.describe('[Billing Admin] Entitlement Mapping 配额编辑器 (US-PO-009)',
   test('US-PO-009 场景4: mapping_in_use 409 保护活跃订阅', async ({ page }) => {
     const mappingsPage = new EntitlementMappingsPage(page)
     await mappingsPage.goto(TEST_REALM)
-    await mappingsPage.selectProduct(QUOTA_DEMO_PRODUCT_ID)
+    await mappingsPage.selectProduct(realProductId)
 
     // Attempt to disable the first price row. If active subscriptions exist,
     // the backend returns 409 and the frontend surfaces the protected-price dialog.

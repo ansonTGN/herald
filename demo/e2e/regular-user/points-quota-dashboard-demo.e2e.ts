@@ -53,9 +53,12 @@ import {
   QUOTA_DEMO_USER_EMAIL,
   QUOTA_DEMO_PASSWORD,
   QUOTA_DEMO_ADMIN_EMAIL,
-  QUOTA_DEMO_PRODUCT_ID,
   DEMO_QUOTA_WINDOWS,
 } from '../fixtures/points-quota.fixtures'
+import { secrets, hasStripePayment } from '../secrets/env'
+import { ensureMultiPriceCatalog } from '../helpers/resolve-mappings'
+
+const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
 
 // ============================================================================
 // Constants
@@ -107,6 +110,8 @@ let setupStartTime = 0
 // ============================================================================
 
 test.beforeAll(async ({ browser }) => {
+  // Skip gracefully when Stripe credentials are absent (live dependency).
+  test.skip(!hasStripePayment(), 'Stripe credentials required (live test)')
   setupStartTime = Date.now()
 
   const context = await browser.newContext()
@@ -120,13 +125,24 @@ test.beforeAll(async ({ browser }) => {
       password: ADMIN_PASSWORD,
     })
 
-    // 2. Configure the pro-plan entitlement mapping with multi-window quota.
+    // 2. Resolve the real multi-price Stripe product + sync its catalog into
+    //    Herald. Replaces the removed placeholder seed id.
+    const catalog = await ensureMultiPriceCatalog(page.context().request, {
+      baseUrl: BASE_URL,
+      realmId: TEST_REALM,
+      stripeSecretKey: secrets.stripe.secretKey!,
+      stripePublishableKey: secrets.stripe.publishableKey!,
+      stripeWebhookSecret: secrets.stripe.webhookSecret!,
+    })
+    const realProductId = catalog.product.productId
+
+    // 3. Configure the pro-plan entitlement mapping with multi-window quota.
     //    This makes the subscription purchase grant quota entitlements instead
     //    of legacy ledger rows.
     await createEntitlementMappingWithQuotaWindows(
       page,
       TEST_REALM,
-      QUOTA_DEMO_PRODUCT_ID,
+      realProductId,
       DEMO_QUOTA_WINDOWS,
     )
 

@@ -16,13 +16,11 @@
  *     + exposed locator fields (mappingDetailPanel, saveMappingButton, …).
  * - seed ids: `demo/e2e/helpers/multi-price-seed-ids.ts`.
  *
- * The seeded multi-price product (`prod_stripe_multi_pro`) is inserted DIRECTLY
- * into `provider_entitlement_mappings` by `scripts/lib/demo_seed.py::
- * _ensure_multi_price_demo_data` (NOT via sync). It is therefore present at seed
- * time — S1 drives a SEPARATE real sync operation (the toolbar sync button),
- * which surfaces `sync-result-products` / `sync-result-prices`; the seeded
- * product is the master-detail fixture S2-S4 + protected-price + webhook-
- * unresolved operate on.
+ * The multi-price product is a REAL Stripe product ensured in beforeAll via
+ * `ensureMultiPriceCatalog` (create-or-reuse + provider sync). S1 drives the
+ * toolbar sync button which surfaces `sync-result-products` /
+ * `sync-result-prices`; the real product is the master-detail fixture S2-S4 +
+ * protected-price + webhook-unresolved operate on.
  *
  * Assertion discipline: every assertion lands on persistent state — list/detail
  * panel structure, price-row count, shared-key chip presence, saved row values
@@ -53,15 +51,26 @@ import type { UnifiedLogger } from '../helpers/unified-logger'
 import { DEMO_ADMIN } from '../helpers/auth'
 import {
   MULTI_PRICE_PAYMENT_PROVIDER,
-  MULTI_PRICE_REALM_ID,
-  STRIPE_MULTI_PRO_PRODUCT_ID,
-  STRIPE_MULTI_PRO_POINTS_STRATEGY,
-  STRIPE_MULTI_PRO_SHARED_KEY,
-  STRIPE_PRO_ANNUAL_PRICE_ID,
-  STRIPE_PRO_MONTHLY_PRICE_ID,
 } from '../helpers/multi-price-seed-ids'
+import { secrets, hasStripePayment } from '../secrets/env'
+import { ensureMultiPriceCatalog } from '../helpers/resolve-mappings'
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
+
+// Real Stripe ids resolved in beforeAll (admin realm). Empty until the
+// multi-price product is ensured + synced. Replaces the removed placeholder
+// seed ids (prod_stripe_multi_pro / price_stripe_pro_monthly|annual).
+let STRIPE_MULTI_PRO_PRODUCT_ID = ''
+let STRIPE_PRO_ANNUAL_PRICE_ID = ''
+let STRIPE_PRO_MONTHLY_PRICE_ID = ''
+
+// Design-pinned constants (NOT seed ids): the shared entitlement key and the
+// per-price points strategies are load-bearing invariants of the multi-price
+// feature, independent of the product/price id source.
+const STRIPE_MULTI_PRO_POINTS_STRATEGY: Record<string, number> = {
+  // populated in beforeAll once STRIPE_PRO_*_PRICE_ID are known
+}
+const STRIPE_MULTI_PRO_SHARED_KEY = 'pro-plan'
 
 /**
  * `[Billing Admin] 多价格 Entitlement 映射同步与配置 (US-EM-007)` — the describe
@@ -69,6 +78,41 @@ const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
  */
 test.describe('[Billing Admin] 多价格 Entitlement 映射同步与配置 (US-EM-007)', () => {
   let testStartTime: number
+
+  test.beforeAll(async () => {
+    // Skip gracefully when Stripe credentials are absent (live dependency).
+    test.skip(!hasStripePayment(), 'Stripe credentials required (live test)')
+
+    // Resolve the real multi-price product in the ADMIN realm. Uses a throwaway
+    // browser context so the (per-test) admin login still carries a clean
+    // session. The sync requires an authenticated admin request, so we log in
+    // programmatically first.
+    const { chromium } = await import('@playwright/test')
+    const browser = await chromium.launch()
+    const context = await browser.newContext()
+    const page = await context.newPage()
+    try {
+      const { LoginPage } = await import('../pages/login-page')
+      const loginPage = new LoginPage(page)
+      await loginPage.loginAsAdmin(DEMO_ADMIN.email, 'password', DEMO_ADMIN.realmId)
+
+      const catalog = await ensureMultiPriceCatalog(page.request, {
+        baseUrl: BASE_URL,
+        realmId: DEMO_ADMIN.realmId,
+        stripeSecretKey: secrets.stripe.secretKey!,
+        stripePublishableKey: secrets.stripe.publishableKey!,
+        stripeWebhookSecret: secrets.stripe.webhookSecret!,
+      })
+      STRIPE_MULTI_PRO_PRODUCT_ID = catalog.product.productId
+      STRIPE_PRO_MONTHLY_PRICE_ID = catalog.product.monthlyPriceId
+      STRIPE_PRO_ANNUAL_PRICE_ID = catalog.product.annualPriceId
+      STRIPE_MULTI_PRO_POINTS_STRATEGY[STRIPE_PRO_MONTHLY_PRICE_ID] = 1000
+      STRIPE_MULTI_PRO_POINTS_STRATEGY[STRIPE_PRO_ANNUAL_PRICE_ID] = 12000
+    } finally {
+      await context.close()
+      await browser.close()
+    }
+  })
 
   test.beforeEach(async ({ page, demoLogger }) => {
     testStartTime = Date.now()
@@ -113,13 +157,10 @@ test.describe('[Billing Admin] 多价格 Entitlement 映射同步与配置 (US-E
     await test.step('Then: 断言同步结果 spans 为持久可见且 products ≥ 1（当 sync 命中真实 Stripe 价格时）', async () => {
       // The result spans are persistent DOM regions (not toasts). The frontend
       // renders them ONLY when the sync mutation returns syncStatus
-      // `completed`/`partial` (see provider-sync-button.tsx showCounts). Against
-      // the demo seed's placeholder product ids (`prod_stripe_multi_pro` is NOT
-      // a real Stripe product), a real-Stripe sync returns no products and the
-      // spans stay hidden — that is an EXPECTED demo-env outcome, not a
-      // contract regression. The load-bearing assertion for THIS scenario is the
-      // 2-row price-edit-row shape below (driven by the seed, not by Stripe).
-      // Here we only re-assert the spans when the sync DID surface counts.
+      // `completed`/`partial` (see provider-sync-button.tsx showCounts). The
+      // multi-price product is now a REAL Stripe product ensured in beforeAll,
+      // so a sync surfaces ≥ 1 product. The load-bearing assertion for THIS
+      // scenario is the 2-row price-edit-row shape below.
       if (productsSynced >= 1) {
         await expect(mappingsPage.syncResultProducts).toBeVisible()
         await expect(mappingsPage.syncResultPrices).toBeVisible()
@@ -136,8 +177,8 @@ test.describe('[Billing Admin] 多价格 Entitlement 映射同步与配置 (US-E
     })
 
     await test.step('Then: 多价格产品展开为两行 price-edit-row', async () => {
-      // The seeded multi-price product is pre-populated at seed time; selecting
-      // it mounts the detail panel with both price rows (one per price).
+      // The real multi-price product was synced in beforeAll; selecting it
+      // mounts the detail panel with both price rows (one per price).
       await mappingsPage.selectProduct(STRIPE_MULTI_PRO_PRODUCT_ID)
       await expect(mappingsPage.mappingDetailPanel).toBeVisible()
 
@@ -174,6 +215,36 @@ test.describe('[Billing Admin] 多价格 Entitlement 映射同步与配置 (US-E
     await test.step('Given: 选中多价格产品并展开详情面板', async () => {
       await mappingsPage.selectProduct(STRIPE_MULTI_PRO_PRODUCT_ID)
       await expect(mappingsPage.mappingDetailPanel).toBeVisible()
+    })
+
+    await test.step('When: 配置共享 entitlement_key 为 pro-plan', async () => {
+      // A freshly-synced multi-price product carries a DRAFT entitlement_key
+      // derived from the external_product_id (see
+      // provider_product_sync_service draft_entitlement_key), NOT the design-
+      // pinned shared key. The OPERATOR (this test's persona) overwrites the
+      // draft by setting both price rows' key to STRIPE_MULTI_PRO_SHARED_KEY and
+      // saving the batch — the intended flow (mirrors S3's rename-then-save).
+      // Only then does the shared-key-chip-pro-plan render.
+      await mappingsPage.fillPriceRow(STRIPE_PRO_MONTHLY_PRICE_ID, {
+        entitlementKey: STRIPE_MULTI_PRO_SHARED_KEY,
+      })
+      await mappingsPage.fillPriceRow(STRIPE_PRO_ANNUAL_PRICE_ID, {
+        entitlementKey: STRIPE_MULTI_PRO_SHARED_KEY,
+      })
+      const saveResponse = await Promise.all([
+        page.waitForResponse(
+          (resp) =>
+            resp.url().includes('/api/bill/') &&
+            resp.url().includes('/entitlement-mappings/batch') &&
+            resp.request().method() === 'PUT',
+          { timeout: 15000 },
+        ),
+        mappingsPage.saveChanges(),
+      ])
+      expect([200, 201]).toContain(saveResponse[0].status())
+      await demoLogger.testCode.log(
+        `Set both price rows entitlement_key=${STRIPE_MULTI_PRO_SHARED_KEY}; batch PUT ${saveResponse[0].status()}`,
+      )
     })
 
     await test.step('Then: 两个价格行均渲染共享 key 的 shared-key-chip', async () => {

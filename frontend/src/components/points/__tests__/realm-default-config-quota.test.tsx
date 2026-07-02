@@ -123,7 +123,7 @@ describe('Realm default-config — free-periodic quota editor integration', () =
 
     // Editor mounts for the realm-default context (testIdPrefix=realm-default-window).
     expect(await screen.findByTestId('realm-default-window-editor')).toBeInTheDocument()
-    expect(screen.getByTestId('realm-default-window-impact-alert')).toBeInTheDocument()
+    expect(screen.getByTestId('realm-default-window-impact-tooltip')).toBeInTheDocument()
 
     // Two pre-existing rows seeded; the empty-row marker must NOT be present.
     expect(screen.queryByTestId('realm-default-window-empty-row')).not.toBeInTheDocument()

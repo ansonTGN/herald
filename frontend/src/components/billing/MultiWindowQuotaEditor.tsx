@@ -4,7 +4,7 @@ import type { QuotaWindowInputDto } from '@/lib/api-generated/types.gen'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip'
 import {
   Select,
   SelectContent,
@@ -142,10 +142,25 @@ export function MultiWindowQuotaEditor({
 
   return (
     <div className="space-y-4" data-testid={`${testIdPrefix}-editor`}>
-      <Alert data-testid={`${testIdPrefix}-impact-alert`}>
-        <Info className="h-4 w-4" />
-        <AlertDescription>{impactText}</AlertDescription>
-      </Alert>
+      <div className="flex items-center justify-end gap-1">
+        <TooltipProvider delayDuration={200}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label={m['points.quota_editor_impact_label']()}
+                data-testid={`${testIdPrefix}-impact-tooltip`}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <Info className="h-3.5 w-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent data-testid={`${testIdPrefix}-impact-tooltip-content`}>
+              {impactText}
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      </div>
 
       <Table>
         <TableHeader>
@@ -204,13 +219,21 @@ export function MultiWindowQuotaEditor({
                     value={unit}
                     disabled={disabled}
                     onValueChange={(next) => {
-                      // Switching the display unit is purely a presentation
-                      // affordance: the absolute window length (in seconds)
-                      // must NOT change, so only the local override is updated
-                      // — `onChange` is never called for a unit switch.
+                      // Switching the unit reinterprets the displayed length
+                      // number in the new unit (so "5" stays "5"), recomputing
+                      // the absolute windowSeconds accordingly. This keeps the
+                      // number stable and predictable while the unit selector
+                      // acts as a true unit-conversion control.
+                      const nextUnit = next as WindowUnitValue
+                      const currentAmount = window.windowSeconds / unitFactor(unit)
+                      const nextSeconds = Math.max(
+                        0,
+                        Math.round(currentAmount) * unitFactor(nextUnit)
+                      )
+                      updateRow(index, { windowSeconds: nextSeconds })
                       setUnitOverrides((prev) => ({
                         ...prev,
-                        [index]: next as WindowUnitValue,
+                        [index]: nextUnit,
                       }))
                     }}
                   >

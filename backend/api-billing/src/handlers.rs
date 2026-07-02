@@ -169,6 +169,35 @@ pub async fn require_billing_permission(
     admin.require_permission(state, "billing", action).await
 }
 
+async fn require_client_app_in_realm(
+    state: &AppState,
+    realm_id: &str,
+    client_app_id: Uuid,
+) -> Result<(), ApiError> {
+    let exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM client_app WHERE id = $1 AND realm_id = $2)",
+    )
+    .bind(client_app_id)
+    .bind(realm_id)
+    .fetch_one(&state.pool)
+    .await
+    .map_err(|e| {
+        tracing::error!(
+            realm_id = %realm_id,
+            client_app_id = %client_app_id,
+            error = %e,
+            "Failed to validate client app realm ownership"
+        );
+        ApiError::internal("Failed to validate client app")
+    })?;
+
+    if !exists {
+        return Err(ApiError::not_found("Client app not found"));
+    }
+
+    Ok(())
+}
+
 // ============================================================================
 // Subscription Handlers
 // ============================================================================
@@ -322,6 +351,10 @@ pub async fn get_subscription_for_client_app(
         .await?
         .ok_or_else(|| CoreError::SubscriptionNotFound(client_app_id.to_string()))?;
 
+    if subscription.realm_id != realm_id {
+        return Err(ApiError::not_found("Subscription not found"));
+    }
+
     Ok(Json(subscription_to_response(&subscription)))
 }
 
@@ -364,6 +397,10 @@ pub async fn cancel_subscription_for_client_app(
         .find_subscription_by_client_app_id(client_app_id)
         .await?
         .ok_or_else(|| CoreError::SubscriptionNotFound(client_app_id.to_string()))?;
+
+    if subscription.realm_id != realm_id {
+        return Err(ApiError::not_found("Subscription not found"));
+    }
 
     let canceled_at = if request.cancel_at_period_end {
         subscription.current_period_end.unwrap_or_else(Utc::now)
@@ -426,6 +463,7 @@ pub async fn create_checkout_session(
     // out; no `billing.manage` required. Realm boundary is enforced here and
     // re-checked against the resolved mapping below.
     require_authenticated_user_in_realm(&identity, &realm_id, "checkout")?;
+    require_client_app_in_realm(&state, &realm_id, client_app_id).await?;
 
     // Resolve the price-level mapping by id (checkout target is
     // mapping_id). The mapping carries entitlement_key + external_price_id +
@@ -687,6 +725,7 @@ pub async fn list_purchase_options(
 
     // Purchase-page read is an authenticated-user action.
     require_authenticated_user_in_realm(&identity, &realm_id, "purchase-options")?;
+    require_client_app_in_realm(&state, &realm_id, client_app_id).await?;
 
     // List ALL enabled price-granularity mappings for the realm (recurring +
     // one_time). Page size is set high to return the full purchasable set in a

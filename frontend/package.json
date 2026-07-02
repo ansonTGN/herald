@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --port 3000",
     "build": "vite build && tsc --noEmit",
+    "api-generate": "npm run generate-api",
     "generate-api": "cargo run --manifest-path ../backend/app/Cargo.toml --bin herald-app -- --export-openapi api.json && openapi-ts",
     "preview": "vite preview",
     "start": "vite",
@@ -36,6 +37,7 @@
     "@radix-ui/react-switch": "^1.2.2",
     "@radix-ui/react-tabs": "^1.1.13",
     "@radix-ui/react-toast": "^1.2.15",
+    "@radix-ui/react-tooltip": "^1.2.8",
     "@redux-devtools/extension": "^3.3.0",
     "@tailwindcss/vite": "^4.2.1",
     "@tanstack/react-form": "^1.27.6",

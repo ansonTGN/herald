@@ -34,10 +34,9 @@
  *
  * Realm choice (load-bearing):
  * - Scenario #5 requires BOTH providers in one realm to prove narrowing + union
- *   restoration. `scripts/lib/demo_seed.py::_ensure_points_package_payment_demo_data`
- *   seeds Stripe AND Creem one-time mappings into `realm-001` (POINTS_REALM_ID).
- *   The admin realm only has Stripe, so #5 MUST run against realm-001.
- *   Login uses `REALM_ADMINS['realm-001']`.
+ *   restoration. The placeholder seed that planted Stripe AND Creem mappings
+ *   into realm-001 was removed; #5 now needs a provider sync first and is
+ *   skipped pending a live rewrite.
  * - Scenario #6 needs a DETERMINISTIC empty state without mutating the shared
  *   DB. The admin realm has NO Creem mappings → filtering by `creem` yields
  *   zero rows → `emptyState` renders with the toolbar still visible. This
@@ -53,10 +52,13 @@ import { verifyTestEnvironment } from '../helpers/environment-setup'
 import type { UnifiedLogger } from '../helpers/unified-logger'
 import { DEMO_ADMIN, REALM_ADMINS } from '../helpers/auth'
 import { SELECTORS } from '../selectors'
+import { hasStripePayment, hasCreemPayment } from '../secrets/env'
+
+const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
 
 /**
- * realm-001 hosts BOTH Stripe and Creem one-time mappings (see
- * `_ensure_points_package_payment_demo_data`); required for #5 narrowing.
+ * realm-001 hosts both providers' synced catalogs (synced per-test in #5);
+ * required for #5 narrowing.
  */
 const POINTS_REALM_ID = 'realm-001'
 
@@ -95,17 +97,43 @@ test.describe('[Billing Admin] Entitlement 映射 Provider 过滤与空状态工
   // US-EM-001 (provider-filter narrowing is the admin-side facet of the view
   // story).
   // ==========================================================================
+  // #5 requires BOTH Stripe and Creem product rows in realm-001. The
+  // placeholder seed was removed, so this scenario now syncs both providers'
+  // real catalogs before asserting. Skipped when either provider's credentials
+  // are absent. #6 below is unaffected (it relies on the admin realm's empty
+  // Creem state, which holds regardless of seed).
   test('#5 Provider 过滤精确性：Stripe/Creem 各自收敛，All 还原并集', async ({
     page,
     loginPage,
     demoLogger,
   }) => {
+    test.skip(
+      !hasStripePayment() || !hasCreemPayment(),
+      'Stripe + Creem credentials required (live test)',
+    )
     const mappingsPage = await setupRealmMappingsPage(
       page,
       loginPage,
       demoLogger,
       POINTS_REALM_ID,
     )
+
+    // Sync both providers so realm-001 has real Stripe + Creem catalog rows.
+    await test.step('Given: 同步 Stripe + Creem catalog 到 realm-001', async () => {
+      for (const provider of ['stripe', 'creem'] as const) {
+        const resp = await page.request.post(
+          `${BASE_URL}/api/bill/${POINTS_REALM_ID}/entitlement-mappings/sync`,
+          { data: { paymentProvider: provider } },
+        )
+        expect(
+          resp.ok(),
+          `${provider} sync failed: ${await resp.text().catch(() => '')}`,
+        ).toBeTruthy()
+      }
+      // Re-navigate so the list reflects the synced catalog.
+      await mappingsPage.goto(POINTS_REALM_ID)
+      await mappingsPage.waitForDataLoaded()
+    })
 
     // Baseline: 'All' must surface rows from BOTH providers. If the seed ever
     // drops one provider this branch fails loudly instead of silently passing.

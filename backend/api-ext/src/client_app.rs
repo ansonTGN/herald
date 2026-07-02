@@ -20,6 +20,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::authz::{require_principal_permission, require_realm_membership};
+use crate::client_app_scope::{ensure_client_app_scope, is_admin_api_key};
 
 // ============================================================================
 // Request DTOs
@@ -222,10 +223,22 @@ pub async fn list_client_apps(
     match state
         .service
         .client_service()
-        .list_client_apps(identity, realm_id.clone())
+        .list_client_apps(identity.clone(), realm_id.clone())
         .await
     {
-        Ok(client_apps) => {
+        Ok(mut client_apps) => {
+            let admin_api_key = match is_admin_api_key(&state, &identity).await {
+                Ok(value) => value,
+                Err(resp) => return resp,
+            };
+            if !admin_api_key
+                && let Some(bound_client_app_id) = identity
+                    .as_third_party()
+                    .and_then(|api_key| api_key.client_app_id)
+            {
+                client_apps.retain(|client_app| client_app.id == bound_client_app_id);
+            }
+
             let items: Vec<ClientAppListItem> = client_apps
                 .into_iter()
                 .map(client_app_to_list_item)
@@ -295,6 +308,10 @@ pub async fn get_client_app(
             return json_error(StatusCode::BAD_REQUEST, ErrorCode::InvalidClientAppIdFormat);
         }
     };
+
+    if let Err(resp) = ensure_client_app_scope(&state, &identity, client_app_uuid).await {
+        return resp;
+    }
 
     tracing::info!(
         realm_id = %realm_id,

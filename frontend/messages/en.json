@@ -1425,7 +1425,8 @@
     "field_currency": "Currency",
     "field_enabled": "Enabled",
     "billing_type_recurring": "Recurring",
-    "billing_type_one_time": "One-time"
+    "billing_type_one_time": "One-time",
+    "field_billing_type_sync_hint": "Synced from Stripe/Creem — use the Sync button above to populate."
   },
   "purchase": {
     "choose_plan": "Choose a plan",
@@ -1767,7 +1768,7 @@
     "purchase_page_title": "Purchase Points",
     "purchase_points_cta": "Purchase points",
     "purchase_points_description": "Top up or subscribe for more credits",
-    "purchase_step_select": "Select Package",
+    "purchase_step_select": "Select plan",
     "purchase_step_payment": "Payment",
     "purchase_step_processing": "Processing",
     "purchase_step_complete": "Complete",
@@ -1918,6 +1919,7 @@
     "quota_editor_window_unit": "Unit",
     "quota_editor_impact_mapping": "Changes only affect future granted quota entitlements; existing active entitlements are unaffected.",
     "quota_editor_impact_realm_default": "Only affects new registered users; existing users are unaffected.",
+    "quota_editor_impact_label": "Quota change scope",
     "quota_window_seconds_min": "Window length must be positive",
     "quota_window_limit_min": "Limit must be at least 0",
     "quota_window_max": "At most 8 windows allowed"

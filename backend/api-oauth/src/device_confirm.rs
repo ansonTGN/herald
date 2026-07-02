@@ -65,6 +65,11 @@ pub async fn device_confirm(
 ) -> Result<Json<DeviceConfirmResponse>, ApiError> {
     // Authenticate user session
     let (_token, sess) = require_session(&state, &headers).await?;
+    if sess.realm_id != realm_id {
+        return Err(ApiError::forbidden(
+            "Access denied: cannot confirm device code for a different realm",
+        ));
+    }
 
     let mut conn = state
         .redis_manager

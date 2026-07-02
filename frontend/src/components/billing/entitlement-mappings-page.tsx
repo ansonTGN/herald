@@ -509,29 +509,32 @@ function PriceEditRow({
         <Field
           label={m['billing.field_billing_type']()}
           required={isUnresolved && !row.billingType}
+          hint={!row.billingType ? m['billing.field_billing_type_sync_hint']() : undefined}
         >
-          <Select
-            value={row.billingType ?? ''}
-            onValueChange={(v) => onChange({ billingType: v || null })}
-            disabled={editDisabled}
-          >
-            <SelectTrigger className={isUnresolved && !row.billingType ? 'border-destructive' : ''}>
-              <SelectValue placeholder="—" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="recurring">{m['billing.billing_type_recurring']()}</SelectItem>
-              <SelectItem value="one_time">{m['billing.billing_type_one_time']()}</SelectItem>
-            </SelectContent>
-          </Select>
+          <Input
+            value={
+              row.billingType === 'recurring'
+                ? m['billing.billing_type_recurring']()
+                : row.billingType === 'one_time'
+                  ? m['billing.billing_type_one_time']()
+                  : ''
+            }
+            readOnly
+            placeholder="—"
+            className="bg-muted/40 text-sm text-muted-foreground"
+            data-testid={`price-billing-type-${price.externalPriceId ?? price.id}`}
+          />
         </Field>
 
-        <Field label={m['billing.field_period']()}>
+        <Field
+          label={m['billing.field_period']()}
+          hint={!row.billingPeriod ? m['billing.field_billing_type_sync_hint']() : undefined}
+        >
           <Input
             value={row.billingPeriod ?? ''}
-            onChange={(e) => onChange({ billingPeriod: e.target.value || null })}
-            disabled={editDisabled}
-            placeholder="month, year, …"
-            className="text-sm"
+            readOnly
+            placeholder="—"
+            className="bg-muted/40 text-sm text-muted-foreground"
           />
         </Field>
 
@@ -668,10 +671,12 @@ function PriceEditRow({
 function Field({
   label,
   required,
+  hint,
   children,
 }: {
   label: string
   required?: boolean
+  hint?: string
   children: React.ReactNode
 }) {
   return (
@@ -681,6 +686,7 @@ function Field({
         {required && <span className="ml-0.5 text-destructive">*</span>}
       </Label>
       {children}
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
     </div>
   )
 }

@@ -6,6 +6,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 use validator::Validate;
 
+use herald_api_base::application::http::common::auth_utils::SelfIdentity;
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
@@ -76,10 +77,8 @@ pub async fn handle_enable_totp(
     Extension(identity): Extension<Identity>,
     Valid(Json(req)): Valid<Json<EnableTotpRequest>>,
 ) -> Result<ApiResult<EnableTotpResponse>, ApiError> {
-    let user_id = Uuid::parse_str(&identity.user_id()).map_err(|e| {
-        tracing::error!("Invalid user_id format in identity: {}", e);
-        ApiError::internal("Invalid user_id format".to_string())
-    })?;
+    let self_identity = SelfIdentity::require(identity)?;
+    let user_id = self_identity.user_id();
 
     // 1. Verify current password
     let user_repo = PostgresUserRepository::new(state.db.clone());
@@ -224,10 +223,8 @@ pub async fn handle_verify_totp_setup(
     Extension(identity): Extension<Identity>,
     Valid(Json(req)): Valid<Json<VerifyTotpSetupRequest>>,
 ) -> Result<ApiResult<VerifyTotpSetupResponse>, ApiError> {
-    let user_id = Uuid::parse_str(&identity.user_id()).map_err(|e| {
-        tracing::error!("Invalid user_id format in identity: {}", e);
-        ApiError::internal("Invalid user_id format".to_string())
-    })?;
+    let self_identity = SelfIdentity::require(identity)?;
+    let user_id = self_identity.user_id();
 
     // 1. Retrieve and validate temp token
     let temp_key = format!("totp:setup:temp:{}", req.temp_token);
@@ -336,10 +333,8 @@ pub async fn handle_disable_totp(
     Extension(identity): Extension<Identity>,
     Valid(Json(req)): Valid<Json<DisableTotpRequest>>,
 ) -> Result<ApiResult<DisableTotpResponse>, ApiError> {
-    let user_id = Uuid::parse_str(&identity.user_id()).map_err(|e| {
-        tracing::error!("Invalid user_id format in identity: {}", e);
-        ApiError::internal("Invalid user_id format".to_string())
-    })?;
+    let self_identity = SelfIdentity::require(identity)?;
+    let user_id = self_identity.user_id();
 
     // 1. Verify current password
     let user_repo = PostgresUserRepository::new(state.db.clone());
@@ -420,10 +415,8 @@ pub async fn handle_regenerate_totp(
     Extension(identity): Extension<Identity>,
     Valid(Json(req)): Valid<Json<RegenerateTotpRequest>>,
 ) -> Result<ApiResult<RegenerateTotpResponse>, ApiError> {
-    let user_id = Uuid::parse_str(&identity.user_id()).map_err(|e| {
-        tracing::error!("Invalid user_id format in identity: {}", e);
-        ApiError::internal("Invalid user_id format".to_string())
-    })?;
+    let self_identity = SelfIdentity::require(identity)?;
+    let user_id = self_identity.user_id();
 
     // 1. Verify current password
     let user_repo = PostgresUserRepository::new(state.db.clone());
@@ -544,10 +537,8 @@ pub async fn handle_get_totp_status(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
 ) -> Result<ApiResult<TotpStatusResponse>, ApiError> {
-    let user_id = Uuid::parse_str(&identity.user_id()).map_err(|e| {
-        tracing::error!("Invalid user_id format in identity: {}", e);
-        ApiError::internal("Invalid user_id format".to_string())
-    })?;
+    let self_identity = SelfIdentity::require(identity)?;
+    let user_id = self_identity.user_id();
 
     let totp_repo = PostgresUserTotpRepository::new(state.db.clone());
     let totp_config = totp_repo.get_config_by_user_id(user_id).await?;

@@ -108,6 +108,11 @@ pub async fn device_verify(
 ) -> Result<Json<DeviceVerifyResponse>, ApiError> {
     // Authenticate user session
     let (_token, sess) = require_session(&state, &headers).await?;
+    if sess.realm_id != realm_id {
+        return Err(ApiError::forbidden(
+            "Access denied: cannot verify device code for a different realm",
+        ));
+    }
 
     let user_code = payload.user_code.to_uppercase();
 

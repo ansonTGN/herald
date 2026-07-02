@@ -35,27 +35,6 @@ export const Route = createFileRoute('/$realmId/user/purchase-points')({
 })
 
 type PurchaseStep = 'packages' | 'payment' | 'processing' | 'complete'
-type BillingPeriod = 'month' | 'year'
-
-/**
- * Filter the flat purchase-option list to the recurring cards visible in a
- * given period pane (the Subscriptions section).
- *
- * Contract (purchase-entry-optimization ui-spec §3.2):
- * - Only `recurring` items belong to a period pane; `one_time` packs live in
- *   the Credit packs section and are NOT period-agnostic duplicates here.
- * - A `recurring` item appears ONLY in the pane whose `billingPeriod` matches.
- *
- * Exported pure function so the filtering intent is unit-testable without
- * mounting the Route component.
- */
-// eslint-disable-next-line react-refresh/only-export-components -- exported for unit testing
-export function selectPeriodPane(
-  items: PurchaseOptionView[],
-  period: BillingPeriod
-): PurchaseOptionView[] {
-  return items.filter((item) => item.billingType === 'recurring' && item.billingPeriod === period)
-}
 
 /**
  * Reason a price card is not purchasable, or null when it is purchasable.
@@ -203,7 +182,6 @@ export function PurchasePointsPage({
   // derived from the selected option, not picked separately.
   const [currentStep, setCurrentStep] = useState<PurchaseStep>('packages')
   const [selectedMappingId, setSelectedMappingId] = useState<string | null>(null)
-  const [period, setPeriod] = useState<BillingPeriod>('month')
 
   // Store actions
   const { setPurchaseState, setPaymentAttempt, clearPurchaseState, canRecover } =
@@ -223,12 +201,11 @@ export function PurchasePointsPage({
     paymentProvidersQueryOptions(realmId)
   )
 
-  // Subscriptions section (recurring) is gated by the period toggle;
-  // Credit packs section (one_time) is always shown when present and is
-  // unaffected by the toggle (ui-spec §3.2).
+  // Subscriptions section (recurring) shows all recurring options together;
+  // Credit packs section (one_time) is always shown when present.
   const subscriptionOptions = useMemo(
-    () => selectPeriodPane(options ?? [], period),
-    [options, period]
+    () => (options ?? []).filter((o) => o.billingType === 'recurring'),
+    [options]
   )
   const creditPackOptions = useMemo(
     () => (options ?? []).filter((o) => o.billingType !== 'recurring'),
@@ -297,6 +274,17 @@ export function PurchasePointsPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paymentStatus])
 
+  // Whether the dedicated "Select Payment Method" step is reachable. When the
+  // selected price's provider resolves to at most one matching provider, the
+  // provider is fully determined and that step is redundant (we jump straight
+  // from selection to processing). Mirrors the branch in `handleNextStep` so
+  // the step indicator only lists steps the user can actually visit.
+  const paymentStepSkipped = useMemo(() => {
+    if (!selectedOption?.paymentProvider) return true
+    const matching = providers?.filter((p) => p.platform === selectedOption.paymentProvider) ?? []
+    return matching.length <= 1
+  }, [providers, selectedOption?.paymentProvider])
+
   // Create payment attempt. The targetType/targetId shape is unchanged from the
   // prior flow (entitlement_mapping + mappingId); only the selection model that
   // feeds mappingId changed (price-level vs entitlement-key-resolved).
@@ -358,7 +346,17 @@ export function PurchasePointsPage({
 
   const handleNextStep = () => {
     if (currentStep === 'packages' && selectedMappingId) {
-      setCurrentStep('payment')
+      const provider = selectedOption?.paymentProvider
+      const availableForOption = providers?.filter((p) => p.platform === provider) ?? []
+      // When the selected price determines exactly one (or no) provider, the
+      // provider is fully determined and the "Select Payment Method" step is
+      // redundant; proceed straight to creating the payment attempt. Only show
+      // the payment step when more than one provider actually matches.
+      if (provider && availableForOption.length <= 1) {
+        createPaymentMutation.mutate({ mappingId: selectedMappingId, provider })
+      } else {
+        setCurrentStep('payment')
+      }
     } else if (currentStep === 'payment' && selectedMappingId && selectedOption?.paymentProvider) {
       createPaymentMutation.mutate({
         mappingId: selectedMappingId,
@@ -376,18 +374,6 @@ export function PurchasePointsPage({
   const handleRetry = () => setCurrentStep('payment')
   const handleCancel = () => cancelPaymentMutation.mutate()
   const handleComplete = () => navigate({ to: `/${realmId}/user/points` })
-
-  // Switch the billing-period toggle. Only affects the Subscriptions section.
-  // A recurring selection only makes sense in its own pane: switching
-  // month<->year with a recurring card selected would otherwise leave Next
-  // enabled on a now-hidden card. one_time selections live in the Credit packs
-  // section and are unaffected by the toggle.
-  const switchPeriod = (next: BillingPeriod) => {
-    setPeriod(next)
-    if (selectedOption?.billingType === 'recurring' && selectedOption.billingPeriod !== next) {
-      setSelectedMappingId(null)
-    }
-  }
 
   const isNextDisabled = () => {
     if (currentStep === 'packages') return !selectedMappingId
@@ -420,9 +406,8 @@ export function PurchasePointsPage({
               </div>
             ) : (
               <>
-                {/* Subscriptions section — recurring only. The period toggle
-                    lives here (ui-spec §3.2); the whole section is hidden when
-                    no recurring options exist. */}
+                {/* Subscriptions section — recurring only. All recurring options
+                    are shown together (monthly + annual); no period toggle. */}
                 {hasRecurring && (
                   <section className="space-y-4" data-testid="purchase-section-subscriptions">
                     <div>
@@ -434,64 +419,19 @@ export function PurchasePointsPage({
                       </p>
                     </div>
 
-                    {/* Period toggle — only in the Subscriptions section.
-                        Annual has no Save pill (ui-spec §1, removed). */}
                     <div
-                      className="inline-flex items-center gap-1 rounded-lg border p-1"
-                      data-testid="purchase-period-toggle"
-                      role="group"
-                      aria-label="Billing period"
+                      className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3"
+                      data-testid="purchase-price-grid-subscriptions"
                     >
-                      <button
-                        type="button"
-                        onClick={() => switchPeriod('month')}
-                        className={`rounded-md px-4 py-1.5 text-sm font-medium transition-colors ${
-                          period === 'month'
-                            ? 'bg-primary text-primary-foreground'
-                            : 'hover:bg-accent'
-                        }`}
-                        data-testid="purchase-period-toggle-month"
-                        aria-pressed={period === 'month'}
-                      >
-                        {m['purchase.period_monthly']()}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => switchPeriod('year')}
-                        className={`rounded-md px-4 py-1.5 text-sm font-medium transition-colors ${
-                          period === 'year'
-                            ? 'bg-primary text-primary-foreground'
-                            : 'hover:bg-accent'
-                        }`}
-                        data-testid="purchase-period-toggle-year"
-                        aria-pressed={period === 'year'}
-                      >
-                        {m['purchase.period_annual']()}
-                      </button>
+                      {subscriptionOptions.map((option) => (
+                        <PriceCard
+                          key={option.mappingId}
+                          option={option}
+                          isSelected={selectedMappingId === option.mappingId}
+                          onSelect={() => setSelectedMappingId(option.mappingId)}
+                        />
+                      ))}
                     </div>
-
-                    {subscriptionOptions.length === 0 ? (
-                      <div
-                        className="rounded-lg border border-dashed p-8 text-center text-muted-foreground"
-                        data-testid={`purchase-empty-state-${period}`}
-                      >
-                        {m['points.purchase_no_mappings']()}
-                      </div>
-                    ) : (
-                      <div
-                        className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3"
-                        data-testid={`purchase-price-grid-${period}`}
-                      >
-                        {subscriptionOptions.map((option) => (
-                          <PriceCard
-                            key={option.mappingId}
-                            option={option}
-                            isSelected={selectedMappingId === option.mappingId}
-                            onSelect={() => setSelectedMappingId(option.mappingId)}
-                          />
-                        ))}
-                      </div>
-                    )}
                   </section>
                 )}
 
@@ -640,10 +580,18 @@ export function PurchasePointsPage({
                 {m['points.purchase_step_select']()}
               </span>
               <span>→</span>
-              <span className={currentStep === 'payment' ? 'font-bold text-primary' : ''}>
-                {m['points.purchase_step_payment']()}
-              </span>
-              <span>→</span>
+              {/* The "Payment" step only appears when more than one provider
+                  matches the selected price (see `paymentStepSkipped`). When
+                  skipped we omit it from the indicator so the trail reflects
+                  the steps the user will actually visit. */}
+              {!paymentStepSkipped && (
+                <>
+                  <span className={currentStep === 'payment' ? 'font-bold text-primary' : ''}>
+                    {m['points.purchase_step_payment']()}
+                  </span>
+                  <span>→</span>
+                </>
+              )}
               <span className={currentStep === 'processing' ? 'font-bold text-primary' : ''}>
                 {m['points.purchase_step_processing']()}
               </span>

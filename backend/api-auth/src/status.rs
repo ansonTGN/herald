@@ -37,7 +37,7 @@ pub struct StatusResponse {
   )
 )]
 pub async fn status(
-    Path(_realm_id): Path<String>,
+    Path(realm_id): Path<String>,
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<ApiResult<StatusResponse>, ApiError> {
@@ -58,6 +58,15 @@ pub async fn status(
             permissions: None,
         }));
     };
+
+    if sess.realm_id != realm_id {
+        return Ok(ApiResult::ok(StatusResponse {
+            authenticated: false,
+            realm_id: None,
+            user_id: None,
+            permissions: None,
+        }));
+    }
 
     // Get user's effective permissions via PermissionService
     let permissions = Some(

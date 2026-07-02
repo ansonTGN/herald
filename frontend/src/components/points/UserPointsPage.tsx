@@ -218,13 +218,7 @@ export function UserPointsPage({
             loading
           />
         </div>
-      ) : cards.length === 0 ? (
-        <Card data-testid="points-balance-empty">
-          <CardContent className="py-8 text-center text-muted-foreground">
-            {m['points.bucket_card_empty']()}
-          </CardContent>
-        </Card>
-      ) : (
+      ) : cards.length === 0 ? null : (
         <div className="space-y-4">
           {cards.map((card) => (
             <div key={card.bucketId || 'unnamed'} className="space-y-4">
@@ -235,50 +229,56 @@ export function UserPointsPage({
         </div>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <History className="h-4 w-4" />
-            {m['points.user_points_transaction_history']()}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <TransactionFilters
-            filters={effectiveFilters}
-            onChange={handleFiltersChange}
-            onClear={handleFiltersClear}
-            buckets={bucketOptions}
-            admin={false}
-            loading={transactionsLoading}
-          />
-          <TransactionHistoryTable
-            transactions={transactions}
-            loading={transactionsLoading && loadedPages === 1}
-            filters={effectiveFilters}
-            buckets={bucketOptions}
-            admin={false}
-          />
-          {reachedLimit && (
-            <p className="text-center text-sm text-muted-foreground">
-              {m['points.transaction_load_limit_reached']({
-                count: MAX_VISIBLE_TRANSACTIONS.toLocaleString(),
-              })}
-            </p>
-          )}
-          {canLoadMore && (
-            <div className="flex justify-center">
-              <Button
-                variant="outline"
-                onClick={() => setLoadedPages((pages) => pages + 1)}
-                disabled={transactionsLoading}
-                data-testid="transaction-load-more"
-              >
-                {m['points.transaction_load_more']()}
-              </Button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {/* Hide the entire transaction history card when the user has no
+          transactions and the query is not loading (e.g. a brand-new user
+          with no pools/activity). Keeps the page quiet instead of showing
+          an empty "Transaction History" section. */}
+      {!transactionsLoading && transactions.length === 0 ? null : (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <History className="h-4 w-4" />
+              {m['points.user_points_transaction_history']()}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <TransactionFilters
+              filters={effectiveFilters}
+              onChange={handleFiltersChange}
+              onClear={handleFiltersClear}
+              buckets={bucketOptions}
+              admin={false}
+              loading={transactionsLoading}
+            />
+            <TransactionHistoryTable
+              transactions={transactions}
+              loading={transactionsLoading && loadedPages === 1}
+              filters={effectiveFilters}
+              buckets={bucketOptions}
+              admin={false}
+            />
+            {reachedLimit && (
+              <p className="text-center text-sm text-muted-foreground">
+                {m['points.transaction_load_limit_reached']({
+                  count: MAX_VISIBLE_TRANSACTIONS.toLocaleString(),
+                })}
+              </p>
+            )}
+            {canLoadMore && (
+              <div className="flex justify-center">
+                <Button
+                  variant="outline"
+                  onClick={() => setLoadedPages((pages) => pages + 1)}
+                  disabled={transactionsLoading}
+                  data-testid="transaction-load-more"
+                >
+                  {m['points.transaction_load_more']()}
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

@@ -29,7 +29,9 @@ import { renderWithProviders } from '@/test/utils/render'
 //   - Root page:                  `user-points-page`
 //   - Cross-bucket total bar:     `user-points-cross-bucket-total` (only when
 //                                 the current user holds >= 2 buckets)
-//   - Empty state:                `points-balance-empty`
+//   - Empty state:                (none — empty pools render nothing; the
+//                                 Transaction History card is also hidden when
+//                                 there are no transactions)
 //   - Dashboard root:             `points-usage-dashboard-{bucketId}`
 //   - Dashboard loading root:     `points-usage-dashboard` (no suffix)
 //   - Spendable now (big number): `points-spendable-now`  == backend `bucketTotal`
@@ -415,10 +417,11 @@ describe('UserPointsPage — quota dashboard + pool cards (MSW integration)', ()
   })
 
   describe('empty state', () => {
-    it('GIVEN a user with no wallets WHEN rendered THEN shows the points-balance-empty state and no cards or total bar', async () => {
+    it('GIVEN a user with no wallets WHEN rendered THEN shows no cards, no total bar, and no empty placeholder', async () => {
       // INTENT: a brand-new user with no balance in any bucket must see a
-      // single clear empty state — not a stack of zero-balance cards that
-      // would imply they hold buckets they don't.
+      // quiet page — no stack of zero-balance cards, no "no pools yet"
+      // placeholder, and no Transaction History section (which would also
+      // be empty). The page should render only the header.
       server.use(
         ...walletsAndTransactionsHandlers({
           wallets: [],
@@ -428,11 +431,16 @@ describe('UserPointsPage — quota dashboard + pool cards (MSW integration)', ()
 
       renderPage()
 
-      const empty = await screen.findByTestId('points-balance-empty')
-      expect(empty).toBeInTheDocument()
+      // Let queries settle.
+      await screen.findByTestId('user-points-page')
+      expect(screen.queryByTestId('points-balance-empty')).not.toBeInTheDocument()
       expect(screen.queryByTestId(/^points-usage-dashboard-/)).not.toBeInTheDocument()
       expect(screen.queryByTestId(/^points-balance-card-/)).not.toBeInTheDocument()
       expect(screen.queryByTestId('user-points-cross-bucket-total')).not.toBeInTheDocument()
+      // Transaction history card is hidden when there are no transactions.
+      expect(
+        screen.queryByRole('heading', { name: /transaction history/i })
+      ).not.toBeInTheDocument()
     })
   })
 
@@ -472,8 +480,14 @@ describe('UserPointsPage — quota dashboard + pool cards (MSW integration)', ()
       expect(loadingDashboards.length).toBeGreaterThanOrEqual(1)
       expect(loadingPoolCards.length).toBeGreaterThanOrEqual(1)
 
-      // Once the (empty) response settles, the empty state takes over.
-      await waitFor(() => expect(screen.getByTestId('points-balance-empty')).toBeInTheDocument())
+      // Once the (empty) response settles, the page renders no cards and no
+      // transaction history (everything is empty).
+      await waitFor(() =>
+        expect(screen.queryByTestId(/^points-usage-dashboard-/)).not.toBeInTheDocument()
+      )
+      expect(
+        screen.queryByRole('heading', { name: /transaction history/i })
+      ).not.toBeInTheDocument()
     })
   })
 })

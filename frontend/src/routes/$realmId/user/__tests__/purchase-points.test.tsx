@@ -49,7 +49,7 @@ vi.mock('@/components/purchase/payment-method-selector', () => ({
   ),
 }))
 
-import { PurchasePointsPage, selectPeriodPane, disabledReason } from '../purchase-points'
+import { PurchasePointsPage, disabledReason } from '../purchase-points'
 
 // --- Fixtures --------------------------------------------------------------
 
@@ -107,30 +107,6 @@ beforeEach(() => {
 
 // --- Pure helper tests (pinned contract) ----------------------------------
 
-describe('selectPeriodPane', () => {
-  const items: PurchaseOptionView[] = [
-    makeOption({ mappingId: 'm-month', billingType: 'recurring', billingPeriod: 'month' }),
-    makeOption({ mappingId: 'm-year', billingType: 'recurring', billingPeriod: 'year' }),
-    makeOption({ mappingId: 'm-once', billingType: 'one_time', billingPeriod: null }),
-  ]
-
-  it('monthly pane shows only monthly recurring (one_time excluded)', () => {
-    const pane = selectPeriodPane(items, 'month')
-    const ids = pane.map((o) => o.mappingId)
-    expect(ids).toContain('m-month')
-    expect(ids).not.toContain('m-year')
-    expect(ids).not.toContain('m-once')
-  })
-
-  it('annual pane shows only annual recurring (one_time excluded)', () => {
-    const pane = selectPeriodPane(items, 'year')
-    const ids = pane.map((o) => o.mappingId)
-    expect(ids).toContain('m-year')
-    expect(ids).not.toContain('m-month')
-    expect(ids).not.toContain('m-once')
-  })
-})
-
 describe('disabledReason', () => {
   it('returns null for an enabled option with a provider', () => {
     expect(disabledReason(makeOption({ enabled: true, paymentProvider: 'stripe' }))).toBeNull()
@@ -150,8 +126,7 @@ describe('disabledReason', () => {
 // --- Component tests -------------------------------------------------------
 
 describe('PurchasePointsPage', () => {
-  it('renders price cards for the monthly pane and toggles to the annual pane', async () => {
-    const user = userEvent.setup()
+  it('renders all recurring cards together with no period toggle', async () => {
     renderPage([
       makeOption({
         mappingId: 'm-month',
@@ -167,15 +142,12 @@ describe('PurchasePointsPage', () => {
       }),
     ])
 
+    // Both recurring cards render in a single view — no period tab to toggle.
     expect(screen.getByTestId('purchase-price-card-price_monthly')).toBeTruthy()
-    expect(screen.queryByTestId('purchase-price-card-price_annual')).toBeNull()
-
-    await user.click(screen.getByTestId('purchase-period-toggle-year'))
-
-    await waitFor(() => {
-      expect(screen.getByTestId('purchase-price-card-price_annual')).toBeTruthy()
-    })
-    expect(screen.queryByTestId('purchase-price-card-price_monthly')).toBeNull()
+    expect(screen.getByTestId('purchase-price-card-price_annual')).toBeTruthy()
+    expect(screen.queryByTestId('purchase-period-toggle')).toBeNull()
+    expect(screen.queryByTestId('purchase-period-toggle-month')).toBeNull()
+    expect(screen.queryByTestId('purchase-period-toggle-year')).toBeNull()
   })
 
   it('shows a disabled reason and disabled CTA for a not-enabled price', () => {
@@ -193,7 +165,7 @@ describe('PurchasePointsPage', () => {
     expect(screen.getByTestId('purchase-next-button')).toBeDisabled()
   })
 
-  it('selects a card, advances, and submits the selected mappingId as the purchase target', async () => {
+  it('selects a card and submits the mappingId as the purchase target (single provider skips payment step)', async () => {
     const user = userEvent.setup()
     renderPage([
       makeOption({ mappingId: 'm-1', externalPriceId: 'price_m', billingPeriod: 'month' }),
@@ -204,12 +176,10 @@ describe('PurchasePointsPage', () => {
       expect(screen.getByTestId('purchase-next-button')).not.toBeDisabled()
     })
 
+    // With a single matching provider the payment-method step is skipped:
+    // Next creates the payment attempt directly.
     await user.click(screen.getByTestId('purchase-next-button'))
-    expect(screen.getByTestId('purchase-step-payment')).toBeTruthy()
-
-    // Submit (continue to checkout) creates the payment attempt with the
-    // selected mappingId as targetId.
-    await user.click(screen.getByTestId('purchase-next-button'))
+    expect(screen.queryByTestId('purchase-step-payment')).toBeNull()
     await waitFor(() => {
       expect(mockCreatePaymentAttempt).toHaveBeenCalledTimes(1)
     })

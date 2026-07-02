@@ -101,7 +101,6 @@ def ensure_demo_seed_data(logger: "Logger | None" = None) -> bool:
             POINTS_REALM_ADMIN_PASSWORD,
         )
         user_id = _ensure_points_user(realm_admin_opener, logger)
-        _ensure_realm001_user_subscription_permissions(logger)
         _seed_points_data(user_id, logger)
         # Re-bind bucket coverage now that `_seed_points_data` has created the
         # `points-demo-app` client app in realm-001. `_ensure_credit_buckets`
@@ -114,25 +113,10 @@ def ensure_demo_seed_data(logger: "Logger | None" = None) -> bool:
         # no-ops cleanly.)
         for realm_id in (POINTS_REALM_ID, ADMIN_REALM):
             _ensure_realm_bucket_directory(realm_id, logger)
-        _ensure_points_package_payment_demo_data(logger)
-
-        # Seed the multi-price Stripe product (prod_stripe_multi_pro: monthly
-        # 1000 + annual 12000 sharing 'pro-plan'). Runs AFTER the one-time
-        # mappings so the admin master-detail page and the user purchase page
-        # render it alongside the legacy catalog.
-        _ensure_multi_price_demo_data(logger)
-
-        # Ensure purchase history demo data (payment_attempts for the purchase-records page)
-        _info(logger, "Ensuring purchase history demo data...")
-        _ensure_purchase_history_demo_data(logger)
-
-        # Ensure subscription history demo data for admin realm
-        _info(logger, "Ensuring subscription history demo data...")
-        _ensure_subscription_history_demo_data(admin_opener, logger)
-
-        # Ensure subscription data for realm-001 (used by subscription timeline tests)
-        _info(logger, "Ensuring subscription data for realm-001...")
-        _ensure_realm001_subscription_data(user_id, logger)
+        # Ensure payment provider credentials (realm_config only). Entitlement
+        # mappings are NOT seeded as placeholders — the admin triggers a provider
+        # sync from the UI to pull the real Stripe/Creem catalog.
+        _ensure_payment_provider_config(logger)
 
         # Ensure realm default points config for admin realm
         _info(logger, "Ensuring admin realm default points config...")
@@ -862,11 +846,15 @@ def _sql_escape(value: str) -> str:
     return value.replace("'", "''")
 
 
-def _ensure_points_package_payment_demo_data(logger: "Logger | None") -> None:
-    """Ensure payment provider config and one-time entitlement mappings for demo."""
-    _info(logger, "Ensuring payment provider config and one-time mappings demo data...")
-    points_bucket = _default_bucket_id(POINTS_REALM_ID)
-    admin_bucket = _default_bucket_id(ADMIN_REALM)
+def _ensure_payment_provider_config(logger: "Logger | None") -> None:
+    """Ensure payment provider credentials (realm_config) for demo.
+
+    Only realm_config rows are seeded. Entitlement mappings are NOT seeded as
+    placeholders — the admin triggers a provider sync from the UI to pull the
+    real Stripe/Creem catalog. This avoids placeholder price ids (e.g.
+    ``price_stripe_admin_onetime_1000``) appearing as unresolved rows.
+    """
+    _info(logger, "Ensuring payment provider config demo data...")
     # Live provider credentials: prefer real keys from demo/.env.demo so live
     # E2E tests hit the real Stripe/Creem APIs; fall back to placeholder values
     # when .env.demo is absent or a key is empty (default demo behaviour).
@@ -876,12 +864,7 @@ def _ensure_points_package_payment_demo_data(logger: "Logger | None") -> None:
     stripe_webhook_secret = _sql_escape(env.get("STRIPE_WEBHOOK_SECRET") or "whsec_demo_points_package")
     creem_api_key = _sql_escape(env.get("CREEM_API_KEY") or "creem_test_demo_points_package")
     creem_webhook_secret = _sql_escape(env.get("CREEM_WEBHOOK_SECRET") or "creem_whsec_demo_points_package")
-    # Creem checkouts require a real product_id (unlike Stripe, which uses inline price_data),
-    # so the Creem one-time mapping must reference the real Creem product from .env.demo.
-    creem_product_id = _sql_escape(env.get("CREEM_PRODUCT_ID") or "prod_creem_onetime_500")
     sql = f"""
-DO $$
-BEGIN
     INSERT INTO realm_config (
         realm_id, config_type, config_key, config_value, is_secret, enabled, metadata
     ) VALUES
@@ -891,9 +874,9 @@ BEGIN
         ('{POINTS_REALM_ID}', 'stripe', 'timeout', '30', false, true, '{{}}'::jsonb),
         ('{POINTS_REALM_ID}', 'creem', 'api_key', '{creem_api_key}', true, true, '{{}}'::jsonb),
         ('{POINTS_REALM_ID}', 'creem', 'webhook_secret', '{creem_webhook_secret}', true, true, '{{}}'::jsonb),
-        ('{ADMIN_REALM}', 'stripe', 'api_key', 'sk_test_demo_admin_points_package', true, true, '{{}}'::jsonb),
-        ('{ADMIN_REALM}', 'stripe', 'publishable_key', 'pk_test_demo_admin_points_package', false, true, '{{}}'::jsonb),
-        ('{ADMIN_REALM}', 'stripe', 'webhook_secret', 'whsec_demo_admin_points_package', true, true, '{{}}'::jsonb),
+        ('{ADMIN_REALM}', 'stripe', 'api_key', '{stripe_api_key}', true, true, '{{}}'::jsonb),
+        ('{ADMIN_REALM}', 'stripe', 'publishable_key', '{stripe_publishable_key}', false, true, '{{}}'::jsonb),
+        ('{ADMIN_REALM}', 'stripe', 'webhook_secret', '{stripe_webhook_secret}', true, true, '{{}}'::jsonb),
         ('{ADMIN_REALM}', 'stripe', 'timeout', '30', false, true, '{{}}'::jsonb)
     ON CONFLICT (realm_id, config_type, config_key) DO UPDATE
         SET config_value = EXCLUDED.config_value,
@@ -901,181 +884,9 @@ BEGIN
             enabled = true,
             metadata = EXCLUDED.metadata,
             updated_at = now();
-
-    -- One-time entitlement mappings (used by one-time-mapping-purchase demo tests)
-    -- provider_product_info is required (NOT NULL filter in list_one_time_mappings query)
-    -- external_price_id added; ON CONFLICT targets the new 4-column unique key
-    -- `uq_pem_realm_provider_product_price` (the old 3-column clause throws on
-    -- conflict resolution).
-    --   - Stripe rows get an explicit placeholder `external_price_id` (Stripe is
-    --     price-aware per the new contract; a NULL Stripe price would collide and
-    --     is wrong shape). Placeholders are fine: these rows are NEVER driven
-    --     through real Stripe (live tests create their own real prices).
-    --   - The Creem row KEEPS external_price_id = NULL (Creem is price-less;
-    --     NULLS NOT DISTINCT lets it match on re-seed).
-    INSERT INTO provider_entitlement_mappings (
-        id, realm_id, payment_provider, external_product_id, external_price_id, bucket_id,
-        entitlement_key, billing_type, points_per_period, validity_days, enabled,
-        provider_product_info
-    ) VALUES
-        (uuidv7(), '{POINTS_REALM_ID}', 'stripe', 'prod_stripe_onetime_500',  'price_stripe_onetime_500',  '{points_bucket}', 'credits-500',  'one_time', 500,  365, TRUE,
-         '{{"name": "500 Credits", "price": 500, "currency": "USD"}}'::jsonb),
-        (uuidv7(), '{POINTS_REALM_ID}', 'creem',  '{creem_product_id}',   NULL, '{points_bucket}', 'credits-500',  'one_time', 500,  365, TRUE,
-         '{{"name": "500 Credits", "price": 500, "currency": "USD"}}'::jsonb),
-        (uuidv7(), '{POINTS_REALM_ID}', 'stripe', 'prod_stripe_onetime_1000', 'price_stripe_onetime_1000', '{points_bucket}', 'credits-1000', 'one_time', 1000, 365, TRUE,
-         '{{"name": "1000 Credits", "price": 900, "currency": "USD"}}'::jsonb),
-        (uuidv7(), '{POINTS_REALM_ID}', 'stripe', 'prod_stripe_onetime_2000', 'price_stripe_onetime_2000', '{points_bucket}', 'credits-2000', 'one_time', 2000, 365, TRUE,
-         '{{"name": "2000 Credits", "price": 1600, "currency": "USD"}}'::jsonb),
-        (uuidv7(), '{ADMIN_REALM}', 'stripe', 'prod_admin_stripe_onetime_500',  'price_stripe_admin_onetime_500',  '{admin_bucket}', 'credits-500',  'one_time', 500, 365, TRUE,
-         '{{"name": "500 Credits", "price": 500, "currency": "USD"}}'::jsonb),
-        (uuidv7(), '{ADMIN_REALM}', 'stripe', 'prod_admin_stripe_onetime_1000', 'price_stripe_admin_onetime_1000', '{admin_bucket}', 'credits-1000', 'one_time', 1000, 365, TRUE,
-         '{{"name": "1000 Credits", "price": 900, "currency": "USD"}}'::jsonb)
-    ON CONFLICT (realm_id, payment_provider, external_product_id, external_price_id) DO UPDATE
-        SET bucket_id = EXCLUDED.bucket_id,
-            entitlement_key = EXCLUDED.entitlement_key,
-            billing_type = EXCLUDED.billing_type,
-            points_per_period = EXCLUDED.points_per_period,
-            validity_days = EXCLUDED.validity_days,
-            enabled = TRUE,
-            provider_product_info = EXCLUDED.provider_product_info;
-END $$;
-"""
-    _sql_exec(sql)
-    _info(logger, "[OK] Payment provider config and one-time mappings demo data ready")
-
-
-def _ensure_multi_price_demo_data(logger: "Logger | None") -> None:
-    """Seed a multi-price Stripe product for support-multiple-price demos.
-
-    Inserts ONE Stripe product (`prod_stripe_multi_pro`) with TWO price rows
-    that SHARE `entitlement_key = 'pro-plan'` but carry DIFFERENT points
-    strategies:
-
-      - `price_stripe_pro_monthly`: recurring / month / 1000 points
-      - `price_stripe_pro_annual`:  recurring / year  / 12000 points
-
-    The 12000-vs-1000 distinction under one shared key is the load-bearing
-    invariant for US-EM-008/009 (the webhook grant MUST resolve price-level
-    strategy; a key-level resolver would collapse both to the same amount).
-
-    Both rows are enabled and assigned to the realm-001 registration-pool bucket
-    (`_default_bucket_id(POINTS_REALM_ID)`). Idempotent via
-    `ON CONFLICT (realm_id, payment_provider, external_product_id, external_price_id)
-     DO UPDATE` (the new 4-column unique key `uq_pem_realm_provider_product_price`).
-
-    LOUD-NOTE for sibling suites: this adds +2 rows to
-    `provider_entitlement_mappings` in realm-001. Suites that COUNT those rows
-    must adjust by +2.
     """
-    _info(logger, "Ensuring multi-price product demo data (support-multiple-price)...")
-    points_bucket = _default_bucket_id(POINTS_REALM_ID)
-    admin_bucket = _default_bucket_id(ADMIN_REALM)
-    # Seed the multi-price product in BOTH the realm-001 registration pool
-    # (consumed by the live multi-price purchase demo) AND the admin realm
-    # (consumed by the admin master-detail demo, which navigates as
-    # DEMO_ADMIN.realmId='admin'). The same external_product_id is reused across
-    # the two realms — uniqueness is scoped to (realm, provider, product, price),
-    # so per-realm rows do not collide. Mirrors the dual-realm seeding already
-    # used by the one-time mappings above.
-    sql = f"""
-INSERT INTO provider_entitlement_mappings (
-    id, realm_id, payment_provider, external_product_id, external_price_id, bucket_id,
-    entitlement_key, billing_type, billing_period, points_per_period, enabled
-) VALUES
-    (uuidv7(), '{POINTS_REALM_ID}', 'stripe', 'prod_stripe_multi_pro', 'price_stripe_pro_monthly', '{points_bucket}', 'pro-plan', 'recurring', 'month', 1000,  TRUE),
-    (uuidv7(), '{POINTS_REALM_ID}', 'stripe', 'prod_stripe_multi_pro', 'price_stripe_pro_annual',  '{points_bucket}', 'pro-plan', 'recurring', 'year',  12000, TRUE),
-    (uuidv7(), '{ADMIN_REALM}',     'stripe', 'prod_stripe_multi_pro', 'price_stripe_pro_monthly', '{admin_bucket}', 'pro-plan', 'recurring', 'month', 1000,  TRUE),
-    (uuidv7(), '{ADMIN_REALM}',     'stripe', 'prod_stripe_multi_pro', 'price_stripe_pro_annual',  '{admin_bucket}', 'pro-plan', 'recurring', 'year',  12000, TRUE)
-ON CONFLICT (realm_id, payment_provider, external_product_id, external_price_id) DO UPDATE
-    SET bucket_id = EXCLUDED.bucket_id,
-        entitlement_key = EXCLUDED.entitlement_key,
-        billing_type = EXCLUDED.billing_type,
-        billing_period = EXCLUDED.billing_period,
-        points_per_period = EXCLUDED.points_per_period,
-        enabled = TRUE;
-"""
     _sql_exec(sql)
-    _info(logger, "[OK] Multi-price product demo data ready (prod_stripe_multi_pro: monthly 1000 + annual 12000, shared pro-plan; realm-001 + admin)")
-
-
-def _ensure_purchase_history_demo_data(logger: "Logger | None") -> None:
-    """Seed purchase-history rows so the purchase-records page has data to show.
-
-    Matches the ``list_purchase_history`` filter exactly: ``status='Succeeded'``
-    and ``target_type='entitlement_mapping'``. Each ``target_id`` references a
-    one-time entitlement mapping seeded by ``_ensure_points_package_payment_demo_data``.
-    Rows use fixed UUIDs + ``ON CONFLICT (id)`` so re-seeding is idempotent.
-    Required users/mappings are resolved at seed time; any row whose dependency
-    is missing is skipped rather than failing the whole seed.
-    """
-    _info(logger, "Ensuring purchase history demo data...")
-
-    admin_bucket = _default_bucket_id(ADMIN_REALM)
-    points_bucket = _default_bucket_id(POINTS_REALM_ID)
-    bucket_by_realm = {ADMIN_REALM: admin_bucket, POINTS_REALM_ID: points_bucket}
-
-    admin_user = _sql_scalar(
-        "SELECT id::text FROM account "
-        f"WHERE realm_id = '{ADMIN_REALM}' AND email = '{ADMIN_EMAIL}' LIMIT 1;"
-    )
-    points_user = _sql_scalar(
-        "SELECT id::text FROM account "
-        f"WHERE realm_id = '{POINTS_REALM_ID}' AND email = '{POINTS_USER_EMAIL}' LIMIT 1;"
-    )
-
-    def _mapping_id(realm: str, external_product_id: str) -> str | None:
-        return _sql_scalar(
-            "SELECT id::text FROM provider_entitlement_mappings "
-            f"WHERE realm_id = '{realm}' AND external_product_id = '{external_product_id}' LIMIT 1;"
-        )
-
-    # (fixed_uuid, realm_id, user_id, mapping external_product_id, amount)
-    desired = [
-        ("00000000-0000-7000-8000-0000000000a1", ADMIN_REALM, admin_user, "prod_admin_stripe_onetime_500", 500),
-        ("00000000-0000-7000-8000-0000000000a2", ADMIN_REALM, admin_user, "prod_admin_stripe_onetime_1000", 900),
-        ("00000000-0000-7000-8000-0000000000b1", POINTS_REALM_ID, points_user, "prod_stripe_onetime_500", 500),
-        ("00000000-0000-7000-8000-0000000000b2", POINTS_REALM_ID, points_user, "prod_stripe_onetime_1000", 900),
-    ]
-
-    rows = []
-    for fixed_id, realm, user_id, external_product_id, amount in desired:
-        if not user_id:
-            continue
-        mapping_id = _mapping_id(realm, external_product_id)
-        if not mapping_id:
-            continue
-        rows.append((fixed_id, realm, user_id, mapping_id, amount))
-
-    if not rows:
-        _info(logger, "Skipping purchase history seed: required users/mappings not found")
-        return
-
-    values_sql = ",\n        ".join(
-        f"('{fixed_id}', '{realm}', '{user_id}'::uuid, 'stripe', 'entitlement_mapping', "
-        f"'{mapping_id}'::uuid, '{bucket_by_realm[realm]}'::uuid, {amount}, 'usd', 'Succeeded', 'cs_demo_{fixed_id[-3:]}', 'paid', "
-        f"NULL, now(), now() - interval '{idx + 1} days', now() - interval '{idx + 1} days', "
-        f"now() - interval '{idx + 1} days')"
-        for idx, (fixed_id, realm, user_id, mapping_id, amount) in enumerate(rows)
-    )
-
-    sql = f"""
-INSERT INTO payment_attempts (
-    id, realm_id, user_id, payment_provider, target_type, target_id, bucket_id,
-    amount, currency, status, provider_reference, provider_status,
-    metadata, expires_at, completed_at, created_at, updated_at
-) VALUES
-        {values_sql}
-ON CONFLICT (id) DO UPDATE SET
-    bucket_id = EXCLUDED.bucket_id,
-    status = EXCLUDED.status,
-    target_id = EXCLUDED.target_id,
-    amount = EXCLUDED.amount,
-    currency = EXCLUDED.currency,
-    completed_at = EXCLUDED.completed_at,
-    updated_at = now();
-"""
-    _sql_exec(sql)
-    _info(logger, f"[OK] Purchase history demo data ready ({len(rows)} rows)")
+    _info(logger, "[OK] Payment provider config demo data ready")
 
 
 def _ensure_admin_realm_points_config(logger: "Logger | None") -> None:
@@ -1680,7 +1491,7 @@ def _default_bucket_id(realm_id: str) -> str:
 
     Kept as a thin alias over `_bucket_id(realm_id, CREDIT_BUCKET_KEY_PRIMARY)`
     so existing seed call sites (`_seed_points_data`,
-    `_ensure_points_package_payment_demo_data`, etc.) keep compiling after the
+    `_ensure_subscription_history_demo_data`, etc.) keep compiling after the
     directory rename `default` -> `primary-pool`. The name is retained for
     minimal blast radius; the bucket it resolves is the registration pool.
     """

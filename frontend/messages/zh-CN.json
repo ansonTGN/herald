@@ -1425,7 +1425,8 @@
     "field_currency": "货币",
     "field_enabled": "启用",
     "billing_type_recurring": "订阅",
-    "billing_type_one_time": "一次性"
+    "billing_type_one_time": "一次性",
+    "field_billing_type_sync_hint": "从 Stripe/Creem 同步，请使用上方「同步」按钮获取。"
   },
   "purchase": {
     "choose_plan": "选择套餐",
@@ -1767,7 +1768,7 @@
     "purchase_page_title": "购买积分",
     "purchase_points_cta": "购买积分",
     "purchase_points_description": "充值或订阅获取更多积分",
-    "purchase_step_select": "选择套餐",
+    "purchase_step_select": "选择方案",
     "purchase_step_payment": "支付",
     "purchase_step_processing": "处理中",
     "purchase_step_complete": "完成",
@@ -1918,6 +1919,7 @@
     "quota_editor_window_unit": "单位",
     "quota_editor_impact_mapping": "修改仅影响后续授予的配额权益，不影响已授予的既有权益。",
     "quota_editor_impact_realm_default": "仅影响新注册用户，不影响现有用户。",
+    "quota_editor_impact_label": "配额变更范围",
     "quota_window_seconds_min": "时间窗长度必须为正",
     "quota_window_limit_min": "配额上限必须 ≥ 0",
     "quota_window_max": "最多允许 8 个时间窗"

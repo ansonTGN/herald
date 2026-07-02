@@ -36,9 +36,11 @@ import {
   QUOTA_DEMO_USER_EMAIL,
   QUOTA_DEMO_PASSWORD,
   QUOTA_DEMO_ADMIN_EMAIL,
-  QUOTA_DEMO_PRODUCT_ID,
-  DEMO_QUOTA_WINDOWS,
 } from '../fixtures/points-quota.fixtures'
+import { secrets, hasStripePayment } from '../secrets/env'
+import { ensureMultiPriceCatalog } from '../helpers/resolve-mappings'
+
+const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
 
 // ============================================================================
 // Constants
@@ -119,6 +121,8 @@ async function readTopUpBalance(page: Page): Promise<number> {
 // ============================================================================
 
 test.beforeAll(async ({ browser }) => {
+  // Skip gracefully when Stripe credentials are absent (live dependency).
+  test.skip(!hasStripePayment(), 'Stripe credentials required (live test)')
   setupStartTime = Date.now()
 
   const context = await browser.newContext()
@@ -129,6 +133,16 @@ test.beforeAll(async ({ browser }) => {
       realmId: TEST_REALM,
       email: ADMIN_EMAIL,
       password: ADMIN_PASSWORD,
+    })
+
+    // Sync the real multi-price catalog into Herald so the purchase flow has a
+    // real Stripe subscription product to check out.
+    await ensureMultiPriceCatalog(page.context().request, {
+      baseUrl: BASE_URL,
+      realmId: TEST_REALM,
+      stripeSecretKey: secrets.stripe.secretKey!,
+      stripePublishableKey: secrets.stripe.publishableKey!,
+      stripeWebhookSecret: secrets.stripe.webhookSecret!,
     })
 
     await page.evaluate(() => localStorage.removeItem('cas-purchase-flow'))

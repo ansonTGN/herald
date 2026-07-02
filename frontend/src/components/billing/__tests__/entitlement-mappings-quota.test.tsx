@@ -90,10 +90,10 @@ describe('EntitlementMappingsPage — quota-editor integration', () => {
     renderPage()
     await openMonthlyAdvancedPanel()
 
-    // The editor mounts and shows the impact-alert for the entitlement-mapping
+    // The editor mounts and shows the impact tooltip for the entitlement-mapping
     // context (this is the only context-driven difference in wording).
     expect(await screen.findByTestId('quota-window-editor')).toBeInTheDocument()
-    expect(screen.getByTestId('quota-window-impact-alert')).toBeInTheDocument()
+    expect(screen.getByTestId('quota-window-impact-tooltip')).toBeInTheDocument()
 
     // Two pre-existing windows were seeded (rows are index-based: row-0, row-1).
     // Empty-row marker must NOT be present.

@@ -32,16 +32,15 @@ export const QUOTA_DEMO_ADMIN_EMAIL = 'admin@realm-001.com'
 export const QUOTA_DEMO_PASSWORD = 'password'
 
 /**
- * Seeded multi-price subscription product in realm-001.
+ * Entitlement key for the multi-price subscription product used by quota demos.
  *
- * The seed (`scripts/lib/demo_seed.py`) creates two recurring prices under this
- * product sharing the `pro-plan` entitlement key:
- *   - price_stripe_pro_monthly (monthly)
- *   - price_stripe_pro_annual (annual)
+ * The placeholder product id (`prod_stripe_multi_pro`) was removed from the
+ * seed. Live quota demos resolve the REAL Stripe product id at runtime via
+ * `ensureMultiPriceProduct()` (see
+ * `demo/e2e/helpers/multi-price-live-product.ts`) and pass it to
+ * `createEntitlementMappingWithQuotaWindows`. The shared entitlement key
+ * remains stable across seed and live catalogs.
  */
-export const QUOTA_DEMO_PRODUCT_ID = 'prod_stripe_multi_pro'
-
-/** Seeded entitlement key for the quota demo product. */
 export const QUOTA_DEMO_ENTITLEMENT_KEY = 'pro-plan'
 
 /** Stable bucket hint used by points-quota demos (registration / primary pool). */
