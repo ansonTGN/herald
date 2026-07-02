@@ -59,15 +59,15 @@ test.describe('[Regular User] US-PU-006: One-Time Mapping Purchase Flow', () => 
 
     await test.step('Verify price-card grid contains at least one card', async () => {
       // `mapping-groups` grid + `mapping-card-*` cards were replaced by
-      // `purchase-price-grid-${period}` + `purchase-price-card-*`. The page
-      // boots in the Monthly pane; one_time cards render here too
-      // (period-agnostic), so the month grid is the canonical place to assert.
-      const monthGrid = page.locator(
-        SELECTORS.purchasePriceCard.priceGrid('month'),
+      // `purchase-price-grid-credit-packs` + `purchase-price-card-*`. one_time
+      // cards live exclusively in the Credit packs section under the
+      // section IA (no longer period-agnostic duplicates in a period grid).
+      const creditPacksGrid = page.locator(
+        SELECTORS.purchasePriceCard.creditPacksGrid,
       )
-      await expect(monthGrid).toBeVisible()
+      await expect(creditPacksGrid).toBeVisible()
 
-      const firstCard = monthGrid
+      const firstCard = creditPacksGrid
         .locator('[data-testid^="purchase-price-card-"]')
         .first()
       await expect(firstCard).toBeVisible()
@@ -85,11 +85,12 @@ test.describe('[Regular User] US-PU-006: One-Time Mapping Purchase Flow', () => 
       // Card testid changed from `mapping-card-{key}` to
       // `purchase-price-card-{priceId}`; the card still renders the entitlement
       // key as display text, so the textContent assertion still encodes the
-      // US-PU-006 S7 "user sees a purchasable pack" intent.
-      const monthGrid = page.locator(
-        SELECTORS.purchasePriceCard.priceGrid('month'),
+      // US-PU-006 S7 "user sees a purchasable pack" intent. one_time cards
+      // live in the Credit packs section under the section IA.
+      const creditPacksGrid = page.locator(
+        SELECTORS.purchasePriceCard.creditPacksGrid,
       )
-      const firstCard = monthGrid
+      const firstCard = creditPacksGrid
         .locator('[data-testid^="purchase-price-card-"]')
         .first()
       const cardText = await firstCard.textContent()

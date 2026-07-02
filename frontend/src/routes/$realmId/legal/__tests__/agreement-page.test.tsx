@@ -77,7 +77,7 @@ describe('LegalAgreementPage', () => {
     vi.clearAllMocks()
   })
 
-  it('renders title, effective date and body for a valid agreement', async () => {
+  it('renders body content for a valid agreement', async () => {
     setupAgreementHandler({
       agreement_type: 'terms_of_service',
       version_id: 'tos-v2',
@@ -89,12 +89,6 @@ describe('LegalAgreementPage', () => {
     renderAgreementPage()
 
     expect(await screen.findByTestId('agreement-card')).toBeInTheDocument()
-    expect(screen.getByTestId('agreement-title')).toHaveTextContent('Terms of Service')
-    expect(screen.queryByTestId('agreement-version')).not.toBeInTheDocument()
-    const effectiveDate = screen.getByTestId('agreement-effective-date')
-    expect(effectiveDate).toHaveTextContent('2026')
-    expect(effectiveDate).toHaveTextContent('6')
-    expect(effectiveDate).toHaveTextContent('30')
     expect(screen.getByTestId('agreement-body')).toHaveTextContent(
       'These are the terms of service.'
     )

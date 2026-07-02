@@ -98,8 +98,10 @@ pub async fn request(
         })?;
 
     // Send email (best effort: don't expose email failure to caller)
+    // Link points to the frontend reset-password page, which reads the code
+    // from the query string and POSTs to the confirm endpoint via the API client.
     let link = format!(
-        "{}/api/auth/{}/reset_password/confirm/{}",
+        "{}/{}/auth/reset-password?code={}",
         state.public_base_url.trim_end_matches('/'),
         realm_id,
         code

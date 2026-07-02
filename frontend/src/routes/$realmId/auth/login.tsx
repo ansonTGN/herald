@@ -352,7 +352,17 @@ export function LoginPage() {
             <form.Field name="password" validators={{ onChange: loginSchema.shape.password }}>
               {(field) => (
                 <div>
-                  <Label htmlFor="password">{m['auth.login.password']()}</Label>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="password">{m['auth.login.password']()}</Label>
+                    <Link
+                      to="/$realmId/auth/forgot-password"
+                      params={{ realmId }}
+                      className="text-sm font-medium text-primary hover:text-primary/80"
+                      data-testid="forgot-password-link"
+                    >
+                      {m['auth.forgot_password.forgot_link']()}
+                    </Link>
+                  </div>
                   <Input
                     id="password"
                     type="password"

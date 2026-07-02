@@ -1,6 +1,8 @@
 -- ====================================
--- Herald Database Schema Initialization
+-- Herald Core Schema (baseline)
 -- ====================================
+-- Consolidates identity, RBAC, TOTP, API keys, OAuth config, audit events,
+-- and email tables into a single baseline. Pre-launch squash: no ALTER/DROP.
 
 -- ====================================
 -- UUID v7 Support (PostgreSQL 18+)
@@ -23,6 +25,7 @@ CREATE TABLE account (
     password text,
     provider_ids uuid[] DEFAULT '{}'::uuid[],
     status smallint NOT NULL DEFAULT 0,
+    deleted_original_email_hash text,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamptz DEFAULT now()
 );
@@ -30,10 +33,17 @@ CREATE TABLE account (
 CREATE UNIQUE INDEX account_realm_id_email_index ON account(realm_id, email);
 CREATE UNIQUE INDEX account_realm_id_username_index ON account(realm_id, username) WHERE username IS NOT NULL;
 CREATE INDEX idx_account_realm_created ON account(realm_id, created_at DESC);
+-- One-way hash of original email kept after soft-delete so login with the
+-- original address can detect the deleted account and surface a Forbidden
+-- response, without exposing the original address.
+CREATE INDEX idx_account_deleted_email_hash
+    ON account (realm_id, deleted_original_email_hash)
+    WHERE deleted_original_email_hash IS NOT NULL;
 COMMENT ON TABLE account IS 'User accounts for authentication';
 COMMENT ON COLUMN account.status IS '0: wait verified, 1: normal, 2: forbid, 3: invalid';
 COMMENT ON COLUMN account.username IS 'Optional username for login, can be used instead of email';
 COMMENT ON COLUMN account.provider_ids IS 'Array of OAuth provider IDs linked to this account';
+COMMENT ON COLUMN account.deleted_original_email_hash IS 'One-way hash of original email retained after soft-delete for deleted-account detection';
 
 -- Profile table (user profiles)
 CREATE TABLE profile (
@@ -63,11 +73,45 @@ CREATE TABLE provider (
 CREATE UNIQUE INDEX provider_realm_id_type_open_id_index ON provider(realm_id, type, open_id);
 CREATE INDEX idx_provider_user_id ON provider(user_id);
 CREATE UNIQUE INDEX idx_provider_user_id_type ON provider(user_id, type) WHERE user_id IS NOT NULL;
+-- WeChat OAuth support: union_id lookup for cross-app user matching.
+CREATE INDEX idx_provider_union_id
+    ON provider(realm_id, union_id)
+    WHERE union_id IS NOT NULL;
 COMMENT ON TABLE provider IS 'OAuth provider account associations';
 COMMENT ON COLUMN provider.type IS 'OAuth provider type (google, github, facebook, apple)';
 COMMENT ON COLUMN provider.open_id IS 'OpenID from the OAuth provider';
 COMMENT ON COLUMN provider.union_id IS 'Union ID for cross-provider identity matching';
 COMMENT ON COLUMN provider.user_id IS 'Reference to the account (user) that owns this OAuth provider';
+
+-- OAuth user linking table
+CREATE TABLE user_oauth_providers (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL,
+    realm_id TEXT NOT NULL,
+    provider_type text NOT NULL,
+    provider_user_id TEXT NOT NULL,
+    open_id TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT user_oauth_providers_user_id_fkey
+        FOREIGN KEY (user_id) REFERENCES account(id) ON DELETE CASCADE,
+    CONSTRAINT user_oauth_providers_unique
+        UNIQUE (realm_id, provider_type, provider_user_id)
+);
+
+CREATE INDEX user_oauth_providers_user_id_idx
+    ON user_oauth_providers(user_id);
+
+CREATE INDEX user_oauth_providers_realm_provider_idx
+    ON user_oauth_providers(realm_id, provider_type);
+
+COMMENT ON TABLE user_oauth_providers IS 'Links user accounts to OAuth providers (GitHub, Google, etc.)';
+COMMENT ON COLUMN user_oauth_providers.id IS 'Unique identifier for the OAuth provider link';
+COMMENT ON COLUMN user_oauth_providers.user_id IS 'Reference to the user account';
+COMMENT ON COLUMN user_oauth_providers.realm_id IS 'Realm identifier';
+COMMENT ON COLUMN user_oauth_providers.provider_type IS 'OAuth provider type (github, google, facebook, apple, wechat)';
+COMMENT ON COLUMN user_oauth_providers.provider_user_id IS 'User ID from the OAuth provider';
+COMMENT ON COLUMN user_oauth_providers.open_id IS 'Open ID from the OAuth provider';
 
 -- Realm table (tenant/realm)
 CREATE TABLE realm (
@@ -386,66 +430,49 @@ CREATE TABLE email_verification_code (
 COMMENT ON TABLE email_verification_code IS 'Verification codes for email confirmation';
 
 -- ====================================
--- Billing Tables
+-- Audit Events Table
 -- ====================================
+-- Append-only audit log for security and compliance.
+-- No foreign keys (audit table doesn't reference business tables).
+-- No updated_at column (audit events are immutable).
 
--- Subscription table
-CREATE TABLE subscription (
+CREATE TABLE audit_events (
     id UUID PRIMARY KEY DEFAULT uuidv7(),
     realm_id TEXT NOT NULL,
-    user_id UUID NOT NULL REFERENCES account(id) ON DELETE RESTRICT,
-    external_subscription_id TEXT NOT NULL,
-    external_product_id TEXT NOT NULL,
-    external_price_id TEXT,
-    payment_provider text NOT NULL DEFAULT 'creem',
-    status text NOT NULL,
-    entitlement_key TEXT NOT NULL DEFAULT '',
-    provider_metadata JSONB,
-    synced_at TIMESTAMPTZ,
-    current_period_start TIMESTAMPTZ,
-    current_period_end TIMESTAMPTZ,
-    cancel_at_period_end BOOLEAN DEFAULT false,
-    client_app_id UUID UNIQUE,
-    cancel_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_subscription_client_app UNIQUE (client_app_id)
+    category TEXT NOT NULL,
+    action TEXT NOT NULL,
+    actor_id TEXT NOT NULL,
+    actor_type TEXT,
+    actor_name TEXT,
+    target_type TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    target_name TEXT,
+    result TEXT NOT NULL,
+    details JSONB,
+    ip_address TEXT,
+    user_agent TEXT,
+    trace_id TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_subscription_realm_id ON subscription(realm_id);
-CREATE INDEX idx_subscription_external_provider
-    ON subscription(external_subscription_id, payment_provider);
-CREATE INDEX idx_subscription_status ON subscription(status);
-CREATE INDEX idx_subscription_entitlement_key ON subscription(entitlement_key);
-CREATE INDEX idx_subscription_client_app_id ON subscription(client_app_id);
-CREATE INDEX idx_subscription_user_id ON subscription(user_id);
-CREATE INDEX idx_subscription_realm_user_id ON subscription(realm_id, user_id);
-COMMENT ON TABLE subscription IS 'Client app subscriptions mapped to entitlement keys';
+-- List query primary index (realm + time descending)
+CREATE INDEX idx_audit_events_realm_created ON audit_events(realm_id, created_at DESC);
 
--- Payment Event table
-CREATE TABLE payment_event (
-    id UUID PRIMARY KEY DEFAULT uuidv7(),
-    realm_id TEXT NOT NULL,
-    external_event_id TEXT NOT NULL,
-    payment_provider text NOT NULL DEFAULT 'creem',
-    event_type text NOT NULL,
-    subscription_id UUID,
-    payload JSONB,
-    processed BOOLEAN DEFAULT false,
-    processing_started_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT payment_event_unique_external_provider
-        UNIQUE (external_event_id, payment_provider)
-);
+-- Filter by event type
+CREATE INDEX idx_audit_events_realm_category_action ON audit_events(realm_id, category, action);
 
-CREATE INDEX idx_payment_event_realm_id ON payment_event(realm_id);
-CREATE INDEX idx_payment_event_event_type ON payment_event(event_type);
-CREATE INDEX idx_payment_event_processed ON payment_event(processed);
-CREATE INDEX idx_payment_event_provider ON payment_event(payment_provider);
-COMMENT ON TABLE payment_event IS 'Payment events from multiple providers (Creem, Stripe, etc.)';
-COMMENT ON COLUMN payment_event.external_event_id IS 'External event ID from payment provider (unique per provider)';
-COMMENT ON COLUMN payment_event.payment_provider IS 'Payment provider type (creem, stripe, etc.)';
-COMMENT ON COLUMN payment_event.processing_started_at IS 'When webhook processing last claimed the event for execution; null means idle';
+-- Filter by actor
+CREATE INDEX idx_audit_events_realm_actor ON audit_events(realm_id, actor_id);
+
+-- Filter by IP address (security forensics)
+CREATE INDEX idx_audit_events_realm_ip ON audit_events(realm_id, ip_address);
+
+COMMENT ON TABLE audit_events IS 'Append-only audit event log for security and compliance';
+COMMENT ON COLUMN audit_events.category IS 'Event category: user_management, rbac, realm_management, auth';
+COMMENT ON COLUMN audit_events.action IS 'Specific operation within category';
+COMMENT ON COLUMN audit_events.actor_type IS 'Actor classification: user, admin, system';
+COMMENT ON COLUMN audit_events.result IS 'Operation result: success, failure';
+COMMENT ON COLUMN audit_events.details IS 'Extensible JSONB payload (change diffs, failure reasons, etc.)';
 
 -- ====================================
 -- Initial Data

@@ -122,9 +122,10 @@ export async function deliverStripeCreditNoteWebhook(
   request: APIRequestContext,
   realmId: string,
   payload: StripeCreditNoteCreatedPayload | StripeCreditNoteVoidedPayload,
+  webhookSecret?: string,
 ): Promise<WebhookDeliveryResult> {
   const rawBody = Buffer.from(JSON.stringify(payload), 'utf8')
-  const signature = signStripeWebhook(rawBody)
+  const signature = signStripeWebhook(rawBody, webhookSecret)
 
   const response = await request.post(`${BASE_URL}/api/third/pay/${realmId}/stripe/webhooks`, {
     headers: {

@@ -454,6 +454,11 @@ export const SELECTORS = {
     balanceCard: '[data-testid="points-balance-card"]',
     balanceAmount: '[data-testid="points-balance"]',
     accountStatus: '[data-testid="points-wallet-status"]',
+    // Rendered when the user holds no points buckets at all (no wallets).
+    // Distinct from `pointsUsageDashboard.emptyState` (points-empty-state),
+    // which renders INSIDE a bucket card when the bucket exists but has no
+    // quota and no balance.
+    balanceEmpty: '[data-testid="points-balance-empty"]',
     // Credit-bucket: the bucket-aware UI renders one
     // `points-balance-card-${bucketId}` per held bucket (PointsBalanceCard.tsx).
     // The flat `points-balance-card` testid above only matches the loading
@@ -473,7 +478,6 @@ export const SELECTORS = {
     balanceType: (bucketId: string, typeKey: string) =>
       `[data-testid="points-balance-type-${bucketId}-${typeKey}"]`,
     crossBucketTotal: '[data-testid="user-points-cross-bucket-total"]',
-    balanceEmpty: '[data-testid="points-balance-empty"]',
     // Transaction bucket dimension (credit-bucket US-CB-006).
     // No header testid exists; only per-row bucket cells — assert on row cells.
     transactionBucketCell: (rowIndex: number) =>
@@ -821,13 +825,23 @@ export const SELECTORS = {
   /**
    * Multi-Price Purchase — price-card grid + period toggle
    *
-   * LOUD NOTE — period suffix:
-   * The price-card testid is `purchase-price-card-${priceId}` in the Monthly
-   * pane and `purchase-price-card-${priceId}-annual` in the Annual pane. Same
-   * priceId, different suffix. `priceCard(priceId, 'month')` produces the bare
-   * form; `priceCard(priceId, 'year')` appends `-annual`. `priceId` itself is
-   * `externalPriceId ?? mappingId` (Creem NULL-price rows fall back to mapping
-   * id, matching the master-detail row fallback).
+   * Section IA (purchase-entry-optimization):
+   * The page splits options into two sections by billing type:
+   * - **Subscriptions section** (`purchase-section-subscriptions`): recurring
+   *   options only, rendered under a period-aware grid
+   *   `purchase-price-grid-${period}` (period = `month` | `year`). The period
+   *   toggle lives INSIDE this section and is hidden entirely when no recurring
+   *   options exist.
+   * - **Credit packs section** (`purchase-section-credit-packs`): one_time
+   *   options only, rendered under `purchase-price-grid-credit-packs`. one_time
+   *   cards are NOT period-agnostic duplicates anymore — they live exclusively
+   *   in this grid.
+   *
+   * Price-card testid is period-invariant: always the bare
+   * `purchase-price-card-${priceId}` (NO `-annual` suffix). The same priceId
+   * never appears in two grids; disambiguation is by the containing grid.
+   * `priceId` is `externalPriceId ?? mappingId` (Creem NULL-price rows fall
+   * back to mapping id).
    */
   purchasePriceCard: {
     page: '[data-testid="purchase-points-page"]',
@@ -835,12 +849,21 @@ export const SELECTORS = {
     periodToggle: '[data-testid="purchase-period-toggle"]',
     periodToggleMonth: '[data-testid="purchase-period-toggle-month"]',
     periodToggleYear: '[data-testid="purchase-period-toggle-year"]',
+    /** Subscriptions-section grid for the given billing period. */
     priceGrid: (period: 'month' | 'year') =>
       `[data-testid="purchase-price-grid-${period}"]`,
-    priceCard: (priceId: string, period?: 'month' | 'year') =>
-      `[data-testid="purchase-price-card-${priceId}${period === 'year' ? '-annual' : ''}"]`,
-    priceCardReason: (priceId: string, period?: 'month' | 'year') =>
-      `[data-testid="purchase-price-card-${priceId}${period === 'year' ? '-annual' : ''}-reason"]`,
+    /** Credit-packs-section grid (one_time options). */
+    creditPacksGrid: '[data-testid="purchase-price-grid-credit-packs"]',
+    /**
+     * Price-card locator. `period` is kept for call-site compatibility but no
+     * longer affects the testid — the card is always the bare form. Callers
+     * targeting a recurring card should scope via `priceGrid(period)`; callers
+     * targeting a one_time card should scope via `creditPacksGrid`.
+     */
+    priceCard: (priceId: string) =>
+      `[data-testid="purchase-price-card-${priceId}"]`,
+    priceCardReason: (priceId: string) =>
+      `[data-testid="purchase-price-card-${priceId}-reason"]`,
     emptyState: '[data-testid="purchase-empty-state"]',
     nextButton: '[data-testid="purchase-next-button"]',
     backButton: '[data-testid="purchase-back-button"]',

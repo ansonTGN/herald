@@ -9,12 +9,12 @@ import type { PurchaseOptionView } from '@/lib/api-generated'
 // one_time pane placement and the disabled-cause predicate. No MSW, no render.
 
 describe('period pane selection', () => {
-  // Pinned decision: recurring items appear ONLY in the pane whose
-  // billingPeriod matches; one_time packs are period-agnostic and appear in
-  // BOTH panes. Hiding a one_time pack under either toggle is a regression
-  // vs. always listing it.
+  // Pinned decision (purchase-entry-optimization ui-spec §3.2): the period
+  // pane now scopes to the Subscriptions section (recurring only). one_time
+  // packs live in the separate Credit packs section and are NOT returned by
+  // selectPeriodPane — they are no longer period-agnostic duplicates.
 
-  it('selects the monthly recurring card and every one_time pack into the month pane', () => {
+  it('selects only the monthly recurring card into the month pane', () => {
     const items = purchaseOptionsList()
 
     const monthPane = selectPeriodPane(items, 'month')
@@ -24,11 +24,11 @@ describe('period pane selection', () => {
     expect(ids).toContain('map_pro_monthly')
     // Annual recurring must NOT leak into the month pane.
     expect(ids).not.toContain('map_pro_annual')
-    // one_time Creem pack is period-agnostic → present in BOTH panes.
-    expect(ids).toContain('map_starter')
+    // one_time Creem pack is NOT in a period pane — it lives in Credit packs.
+    expect(ids).not.toContain('map_starter')
   })
 
-  it('selects the annual recurring card and every one_time pack into the year pane', () => {
+  it('selects only the annual recurring card into the year pane', () => {
     const items = purchaseOptionsList()
 
     const yearPane = selectPeriodPane(items, 'year')
@@ -38,11 +38,11 @@ describe('period pane selection', () => {
     expect(ids).toContain('map_pro_annual')
     // Monthly recurring must NOT leak into the year pane.
     expect(ids).not.toContain('map_pro_monthly')
-    // The SAME one_time Creem pack also appears in the year pane.
-    expect(ids).toContain('map_starter')
+    // one_time Creem pack is NOT in a period pane.
+    expect(ids).not.toContain('map_starter')
   })
 
-  it('places a one_time pack in both panes (period-agnostic, pinned contract)', () => {
+  it('never returns a one_time pack from any period pane', () => {
     const items: PurchaseOptionView[] = [
       {
         mappingId: 'ot',
@@ -60,12 +60,9 @@ describe('period pane selection', () => {
       },
     ]
 
-    const month = selectPeriodPane(items, 'month')
-    const year = selectPeriodPane(items, 'year')
-
-    // The same single one_time pack is visible under both toggles.
-    expect(month.map((o) => o.mappingId)).toEqual(['ot'])
-    expect(year.map((o) => o.mappingId)).toEqual(['ot'])
+    // one_time packs are excluded from both panes (Credit packs section only).
+    expect(selectPeriodPane(items, 'month')).toEqual([])
+    expect(selectPeriodPane(items, 'year')).toEqual([])
   })
 
   it('excludes a recurring card whose billingPeriod does not match', () => {

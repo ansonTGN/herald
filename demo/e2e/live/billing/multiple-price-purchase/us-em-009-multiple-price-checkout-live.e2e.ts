@@ -423,8 +423,10 @@ test.describe('[Live][Billing Multiple-Price] US-EM-009 / US-EM-008 multi-price 
       await expect(page.locator(SELECTORS.purchasePriceCard.page)).toBeVisible({
         timeout: 15000,
       })
-      // The Annual pane must be selected so the annual card renders (the card
-      // testid carries the -annual suffix only in the Annual pane).
+      // The Annual period must be selected so the annual card renders in the
+      // Subscriptions section (under the section IA, the card testid is
+      // period-invariant — no `-annual` suffix; the period only controls which
+      // recurring grid mounts).
       await selectPeriod(page, 'year')
       await selectPriceCard(page, annualPriceId!, 'year')
     })

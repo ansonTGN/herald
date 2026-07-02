@@ -1,17 +1,107 @@
 -- ====================================
--- English default legal templates
+-- Herald Legal Consent Schema (baseline)
 -- ====================================
--- Replaces the platform default (realm_id IS NULL) Chinese templates with
--- English draft templates. This migration is idempotent: it only updates
--- rows that still contain the original zh-CN default content.
+-- Versioned legal agreements (Terms of Service / Privacy Policy) with a
+-- platform-default English template seed, and per-user current consent state.
+--
+-- Design ref: .ai/design/legal-consent-account-deletion.md §4.3.2 / §4.3.3.
+-- Pre-launch squash: the platform-default templates are seeded directly in
+-- English (the obsolete zh-CN default + later UPDATE-to-English are folded
+-- into a single English INSERT). No ALTER/DROP.
+--
+-- Notes:
+-- - legal_agreement_version is append-only: `realm_id IS NULL` = platform default
+--   template; non-NULL = per-realm custom override. `version_no` is monotonic
+--   within (scope, agreement_type).
+-- - The expression unique index folds NULL realm_id into '' via COALESCE so that
+--   platform-default rows participate in uniqueness and concurrent publish is
+--   guarded (BE-D03).
+-- - user_agreement_consent holds current consent state only (history is in
+--   audit_events). consented_version_id has a hard FK; user_id -> account(id) is
+--   a soft reference (no FK) so deletion keeps the account skeleton (no cascade).
+-- - No updated_at on either table (append-only / current-state).
+-- - account.deleted_original_email_hash is created with the account table in
+--   0001_core.sql, not here.
 
-UPDATE legal_agreement_version
-SET content = jsonb_build_object('en', $tos$# Herald Terms of Service
+-- (a) legal_agreement_version: append-only version + history for legal agreements.
+CREATE TABLE legal_agreement_version (
+    id UUID PRIMARY KEY DEFAULT uuidv7(),
+    realm_id TEXT,
+    agreement_type TEXT NOT NULL,
+    version_no INTEGER NOT NULL,
+    version_label TEXT,
+    content JSONB NOT NULL,
+    source TEXT NOT NULL DEFAULT 'custom',
+    published_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    published_by TEXT
+);
+
+-- Expression unique index: folds NULL realm_id into '' so the platform-default
+-- template rows (realm_id IS NULL) also participate in (scope, type, version_no)
+-- uniqueness. Guards concurrent publish (BE-D03) by enforcing one version_no per
+-- (scope, agreement_type).
+CREATE UNIQUE INDEX legal_agreement_version_scope_type_version_unique
+    ON legal_agreement_version ((COALESCE(realm_id, '')), agreement_type, version_no);
+
+-- Effective-resolution / history read path for a specific realm.
+CREATE INDEX legal_agreement_version_realm_type_version_idx
+    ON legal_agreement_version (realm_id, agreement_type, version_no DESC);
+
+-- Platform-default template resolution (realm_id IS NULL rows).
+CREATE INDEX legal_agreement_version_default_type_version_idx
+    ON legal_agreement_version ((realm_id IS NULL), agreement_type, version_no DESC);
+
+COMMENT ON TABLE legal_agreement_version IS 'Append-only versioned legal agreements (terms_of_service / privacy_policy); realm_id IS NULL = platform default template';
+COMMENT ON COLUMN legal_agreement_version.realm_id IS 'NULL = platform default template; non-NULL = per-realm custom override';
+COMMENT ON COLUMN legal_agreement_version.agreement_type IS 'terms_of_service | privacy_policy';
+COMMENT ON COLUMN legal_agreement_version.version_no IS 'Monotonic within (scope, agreement_type); used as effective-resolution tiebreaker';
+COMMENT ON COLUMN legal_agreement_version.content IS 'JSONB { [locale]: body } — at least the default locale body';
+COMMENT ON COLUMN legal_agreement_version.source IS 'default | custom (revert-to-default snapshots as custom)';
+COMMENT ON COLUMN legal_agreement_version.published_by IS 'Publishing user_id; platform default seed = system';
+
+-- (b) user_agreement_consent: per-user current consent state (one row per user/type).
+CREATE TABLE user_agreement_consent (
+    id UUID PRIMARY KEY DEFAULT uuidv7(),
+    user_id UUID NOT NULL,
+    realm_id TEXT NOT NULL,
+    agreement_type TEXT NOT NULL,
+    consented_version_id UUID NOT NULL REFERENCES legal_agreement_version(id) ON DELETE RESTRICT,
+    consented_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- One current-consent row per (user, agreement_type); upsert refreshes on re-consent.
+CREATE UNIQUE INDEX user_agreement_consent_user_type_unique
+    ON user_agreement_consent (user_id, agreement_type);
+
+-- Consent-gate read path.
+CREATE INDEX user_agreement_consent_user_idx
+    ON user_agreement_consent (user_id);
+
+COMMENT ON TABLE user_agreement_consent IS 'Per-user current consent state per agreement type (history lives in audit_events)';
+COMMENT ON COLUMN user_agreement_consent.user_id IS 'account.id — soft reference (no FK); account skeleton retained after deletion';
+COMMENT ON COLUMN user_agreement_consent.consented_version_id IS 'legal_agreement_version.id the user consented to; gate compares against current effective version id';
+
+-- ====================================
+-- Seed: platform default templates (English)
+-- ====================================
+-- Seeds the platform default (realm_id IS NULL) version_no=1 rows for both
+-- agreement types (draft, pending legal review). source='default',
+-- published_by='system'. Body text is dollar-quoted ($tos$ / $pp$) to avoid
+-- single-quote / backslash escaping issues; the JSONB content is built as
+-- { "en": <body> }. Idempotent guard: only insert if no platform-default row
+-- exists yet.
+
+INSERT INTO legal_agreement_version (realm_id, agreement_type, version_no, version_label, content, source, published_by)
+SELECT
+    NULL,
+    'terms_of_service',
+    1,
+    NULL,
+    jsonb_build_object('en', $tos$# Herald Terms of Service
 
 > **Draft date**: 2026-06-29
+>
 > **Status**: Platform default template (draft, pending legal review)
-> **Language**: English
-> **Audience**: Herald end users and realm administrators
 
 ---
 
@@ -227,19 +317,25 @@ You and we agree to keep confidential any non-public business or technical infor
 ---
 
 *These Terms are a platform default template (draft) published on 2026-06-29 and are subject to legal review before formal use.*
-$tos$)
-WHERE realm_id IS NULL
-  AND agreement_type = 'terms_of_service'
-  AND source = 'default'
-  AND content->>'zh-CN' IS NOT NULL;
+$tos$),
+    'default',
+    'system'
+WHERE NOT EXISTS (
+    SELECT 1 FROM legal_agreement_version
+    WHERE realm_id IS NULL AND agreement_type = 'terms_of_service'
+);
 
-UPDATE legal_agreement_version
-SET content = jsonb_build_object('en', $pp$# Herald Privacy Policy
+INSERT INTO legal_agreement_version (realm_id, agreement_type, version_no, version_label, content, source, published_by)
+SELECT
+    NULL,
+    'privacy_policy',
+    1,
+    NULL,
+    jsonb_build_object('en', $pp$# Herald Privacy Policy
 
 > **Draft date**: 2026-06-29
+>
 > **Status**: Platform default template (draft, pending legal review)
-> **Language**: English
-> **Audience**: Herald end users and realm administrators
 
 ---
 
@@ -429,8 +525,10 @@ We may update this Privacy Policy. Material changes will be notified in advance.
 ---
 
 *This Privacy Policy is a platform default template (draft) published on 2026-06-29 and is subject to legal review before formal use.*
-$pp$)
-WHERE realm_id IS NULL
-  AND agreement_type = 'privacy_policy'
-  AND source = 'default'
-  AND content->>'zh-CN' IS NOT NULL;
+$pp$),
+    'default',
+    'system'
+WHERE NOT EXISTS (
+    SELECT 1 FROM legal_agreement_version
+    WHERE realm_id IS NULL AND agreement_type = 'privacy_policy'
+);

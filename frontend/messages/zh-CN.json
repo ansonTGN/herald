@@ -195,6 +195,27 @@
       "generated_success": "TOTP 密钥已成功生成",
       "enabled_success": "TOTP 已成功启用"
     },
+    "forgot_password": {
+      "title": "找回密码",
+      "description": "请输入您的账号邮箱，我们将向您发送重置密码的链接。",
+      "email_label": "邮箱",
+      "submit": "发送重置链接",
+      "submitting": "发送中...",
+      "success": "如果该邮箱存在对应账号，重置链接已发送，请查收邮件。",
+      "back_to_login": "返回登录",
+      "forgot_link": "忘记密码？"
+    },
+    "reset_password": {
+      "title": "重置密码",
+      "description": "为您的账号设置新的密码。",
+      "new_password_label": "新密码",
+      "confirm_password_label": "确认新密码",
+      "submit": "重置密码",
+      "submitting": "重置中...",
+      "success": "密码已重置成功，您可以使用新密码登录了。",
+      "code_missing": "重置链接无效或不完整，请重新申请重置链接。",
+      "back_to_login": "返回登录"
+    },
     "email_required": "邮箱为必填项",
     "email_invalid": "邮箱地址无效",
     "password_min_length": "密码至少需要8个字符",
@@ -1313,6 +1334,8 @@
     "my_subscriptions_not_available": "不可用",
     "my_subscriptions_billing_period": "计费周期",
     "my_subscriptions_view_history": "查看历史",
+    "my_subscriptions_change_plan": "更换套餐",
+    "my_subscriptions_browse_plans": "浏览套餐",
     "subscription_select_title": "选择订阅",
     "subscription_history_timeline": "历史时间线",
     "subscription_showing_history_for": "正在显示",
@@ -1411,7 +1434,16 @@
     "save_percent": "节省 {percent}%",
     "not_enabled_reason": "未开放购买 — 请联系管理员",
     "continue_to_checkout": "前往结算",
-    "unavailable": "不可用"
+    "unavailable": "不可用",
+    "section_subscriptions": "订阅",
+    "section_subscriptions_meta": "周期性 · 每周期刷新积分",
+    "section_credit_packs": "积分包",
+    "section_credit_packs_meta": "一次性 · 立即计入余额，无续费",
+    "billing_type_subscription": "订阅",
+    "billing_type_one_time": "一次性",
+    "period_suffix_month": "/月",
+    "period_suffix_year": "/年",
+    "period_suffix_once": "一次性"
   },
   "points": {
     "validation_plan_required": "请选择计划",
@@ -1733,6 +1765,8 @@
     "validation_promo_end_time_required": "促销套餐必须填写结束时间",
     "validation_promo_end_after_start": "促销结束时间必须晚于开始时间",
     "purchase_page_title": "购买积分",
+    "purchase_points_cta": "购买积分",
+    "purchase_points_description": "充值或订阅获取更多积分",
     "purchase_step_select": "选择套餐",
     "purchase_step_payment": "支付",
     "purchase_step_processing": "处理中",

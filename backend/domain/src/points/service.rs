@@ -105,10 +105,9 @@ where
     /// balance. `analytics` (`total_recharged` / `total_consumed`) still come
     /// from the wallet Stored columns (lifetime totals, unaffected by
     /// `effective_at`). The active-entitlement
-    /// confirmation (`reconcile_due_for_user`) runs FIRST as a pure read —
-    /// availability is a function of the consume stream + entitlement
-    /// interval, so no write backstop is needed for correctness when the
-    /// worker never runs.
+    /// realization (`reconcile_due_for_user`) runs FIRST and writes already
+    /// due free-periodic schedule grants. Failure is fail-loud: callers must
+    /// see the write error instead of stale balance or `InsufficientBalance`.
     /// Window-quota availability for `subscription_credit` / `free_periodic_credit`
     /// is folded into the typed balances on top of the pool-side derived SUM,
     /// so the returned balance reflects both ledger (pool) and window-model
@@ -257,50 +256,59 @@ where
         }
     }
 
-    /// Read-path "active entitlement in place" confirmation
-    /// Replaces the legacy per-period chained pre-grant write
-    /// loop. Under the new window-quota model, availability is a pure function
-    /// of the consume stream + active entitlement effective interval — there is
-    /// nothing to pre-grant on the request path. This method performs a
-    /// lightweight read that confirms at least one active quota entitlement
-    /// covers `now` for the window credit types. It NEVER writes and NEVER
-    /// guesses paid-state to construct a subscription entitlement on the
-    /// request path (A4: subscription entitlements are granted by webhooks).
-    /// Correctness does not depend on the worker running: when no entitlement
-    /// is active this returns `Ok(())` (window side contributes nothing; the
-    /// pool side handles the rest inside `consume_points_atomic`).
-    /// Fail-loud: a read error is surfaced verbatim (caller surfaces 5xx); it
-    /// is NEVER rewritten to `InsufficientBalance` — masking a read fault as
-    /// "low balance" would hide system failure behind a user-visible business
-    /// error.
+    /// Read-path realization for already-due free-periodic schedules.
+    /// Subscription schedules are intentionally excluded: paid-state must come
+    /// from provider webhooks, not from request-time guessing. Each call is
+    /// bounded to a small batch so the request path cannot perform unbounded
+    /// catch-up work.
+    /// Fail-loud: any scan/write error is surfaced verbatim. Callers must not
+    /// degrade a realization fault into stale balance or `InsufficientBalance`.
     pub async fn reconcile_due_for_user(
         &self,
         realm_id: &str,
         user_id: Uuid,
         now: chrono::DateTime<chrono::Utc>,
     ) -> Result<(), CoreError> {
-        // Confirm an active subscription OR free-periodic quota entitlement
-        // covers `now` for this user. The bucket is intentionally left
-        // unscoped here — this is a coarse "entitlement in place" check, not
-        // the consume-time window calculation (which runs scoped to the
-        // target bucket inside `consume_points_atomic`).
-        for credit_type in [
-            CreditType::SubscriptionCredit,
-            CreditType::FreePeriodicCredit,
-        ] {
-            let entitlements = self
-                .repository
-                .find_active_quota_entitlements(realm_id, user_id, None, credit_type, now)
-                .await?;
-            if !entitlements.is_empty() {
-                return Ok(());
+        const READ_PATH_REALIZATION_LIMIT: u64 = 3;
+
+        let schedules = self
+            .repository
+            .find_due_free_grant_schedules_for_user(
+                realm_id,
+                user_id,
+                now,
+                READ_PATH_REALIZATION_LIMIT,
+            )
+            .await?;
+
+        for schedule in schedules {
+            if schedule.should_stop() {
+                continue;
             }
+
+            let period_number = (schedule.granted_periods + 1).try_into().map_err(|_| {
+                CoreError::InternalServerError(format!(
+                    "invalid grant period for schedule {}: {}",
+                    schedule.id,
+                    schedule.granted_periods + 1
+                ))
+            })?;
+            let effective_at = Some(schedule.next_grant_time);
+            let expires_at = schedule
+                .grant_period_type
+                .calculate_expiration(schedule.next_grant_time, schedule.validity_days);
+
+            self.repository
+                .pregrant_next_period_atomic(
+                    realm_id,
+                    &schedule,
+                    period_number,
+                    effective_at,
+                    expires_at,
+                )
+                .await?;
         }
 
-        // No active quota entitlement — window side contributes nothing; the
-        // pool side handles availability inside `consume_points_atomic`. This
-        // is a pure read path: no write transaction opened, no entitlement
-        // constructed (A4).
         Ok(())
     }
 
@@ -398,12 +406,12 @@ where
         // wallets are also created lazily inside the consume transaction via
         // `ensure_wallet_in_tx`, so no pre-created single wallet is needed.
 
-        // The request path no longer runs a reconcile
-        // WRITE. The legacy per-period pre-grant write loop was removed;
-        // availability under the window-quota model is a pure function of the
-        // consume stream + active entitlement interval, computed inside
-        // `consume_points_atomic`. `reconcile_due_for_user` is now a pure read
-        // confirmation (no writes) and is not needed on the consume path.
+        // Realize already-due free-periodic grants before opening the consume
+        // transaction. This is the worker-down correctness backstop; failures
+        // propagate as system errors instead of being masked as insufficient
+        // balance.
+        self.reconcile_due_for_user(realm_id, user_id, chrono::Utc::now())
+            .await?;
 
         let saved_transactions = self
             .repository
@@ -1900,15 +1908,15 @@ mod mixed_consume_tests {
     }
 }
 
-// reconcile-evolution unit tests.
-// These pin the contract of `reconcile_due_for_user`: it is a pure read
-// confirmation that (a) NEVER writes, (b) returns Ok when an active quota
-// entitlement covers `now`, (c) returns Ok (no-op) when none is active — it
-// must NOT construct a subscription entitlement on the request path (A4).
+// Read-path realization unit tests.
+// These pin the domain boundary for `reconcile_due_for_user`: scan only due
+// free-periodic schedules, realize a bounded batch through the pregrant port,
+// and propagate write failures instead of masking them as stale balance.
 #[cfg(test)]
 mod reconcile_evolution_tests {
     use super::*;
-    use crate::points::entities::{QuotaEntitlementStatus, QuotaSourceType, QuotaWindow};
+    use crate::points::entities::{CreditLedgerStatus, CreditSourceType, PointsCreditLedger};
+    use crate::points::grant_schedule::{GrantPeriodType, PointsGrantSchedule};
     use crate::points::policies::AllowAllPointsPolicy;
     use crate::points::ports::MockPointsRepository;
 
@@ -1918,39 +1926,99 @@ mod reconcile_evolution_tests {
             .with_timezone(&chrono::Utc)
     }
 
-    fn active_entitlement(credit_type: CreditType) -> PointsQuotaEntitlement {
-        PointsQuotaEntitlement {
+    fn due_free_schedule() -> PointsGrantSchedule {
+        PointsGrantSchedule {
             id: Uuid::nil(),
             user_id: Uuid::nil(),
             realm_id: "realm".to_string(),
             bucket_id: Uuid::nil(),
-            credit_type,
-            source_type: QuotaSourceType::SubscriptionInitial,
-            source_id: "src".to_string(),
-            quota_windows: vec![QuotaWindow {
-                window_seconds: 86_400,
-                limit: 100,
-                key: "day".to_string(),
-            }],
-            effective_from: now(),
-            effective_until: None,
-            status: QuotaEntitlementStatus::Active,
-            idempotency_key: "idem".to_string(),
+            subscription_id: None,
+            entitlement_key: None,
+            grant_period_type: GrantPeriodType::Daily,
+            base_time: now(),
+            next_grant_time: now(),
+            points_per_period: 100,
+            validity_days: 7,
+            granted_periods: 0,
+            max_periods: None,
+            active: true,
+            created_at: now(),
+            updated_at: now(),
+        }
+    }
+
+    fn realized_ledger(schedule: &PointsGrantSchedule) -> PointsCreditLedger {
+        PointsCreditLedger {
+            id: Uuid::nil(),
+            user_id: schedule.user_id,
+            realm_id: schedule.realm_id.clone(),
+            bucket_id: schedule.bucket_id,
+            credit_type: CreditType::FreePeriodicCredit,
+            source_type: CreditSourceType::FreePeriodicGrant,
+            source_id: format!("schedule:{}:period:1", schedule.id),
+            granted_amount: schedule.points_per_period,
+            used_amount: 0,
+            revoked_amount: 0,
+            remaining_amount: schedule.points_per_period,
+            expires_at: Some(now() + chrono::Duration::days(schedule.validity_days)),
+            effective_at: Some(schedule.next_grant_time),
+            status: CreditLedgerStatus::Active,
             created_at: now(),
             updated_at: now(),
         }
     }
 
     #[tokio::test]
-    async fn reconcile_returns_ok_when_active_subscription_entitlement_covers_now() {
-        // Active subscription entitlement present ⟹ Ok after a single read.
-        // No write port method is invoked.
+    async fn reconcile_returns_ok_no_op_when_no_due_free_schedule() {
+        // No due free schedule means the read path is a no-op; subscription
+        // state is not guessed by this method.
         let mut repo = MockPointsRepository::new();
-        repo.expect_find_active_quota_entitlements()
+        repo.expect_find_due_free_grant_schedules_for_user()
             .times(1)
-            .returning(|_, _, _, credit_type, _| {
-                assert_eq!(credit_type, CreditType::SubscriptionCredit);
-                Box::pin(async { Ok(vec![active_entitlement(CreditType::SubscriptionCredit)]) })
+            .withf(|realm_id, user_id, _, limit| {
+                realm_id == "realm" && *user_id == Uuid::nil() && *limit == 3
+            })
+            .returning(|_, _, _, _| Box::pin(async { Ok(Vec::new()) }));
+        repo.expect_pregrant_next_period_atomic().times(0);
+
+        let svc = PointsService::new(Arc::new(repo), Arc::new(AllowAllPointsPolicy));
+        let res = svc
+            .reconcile_due_for_user("realm", Uuid::nil(), now())
+            .await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn reconcile_realizes_due_free_schedule() {
+        let mut repo = MockPointsRepository::new();
+        let schedule = due_free_schedule();
+        let expected_schedule = schedule.clone();
+        repo.expect_find_due_free_grant_schedules_for_user()
+            .times(1)
+            .returning(move |_, _, _, _| {
+                Box::pin({
+                    let schedule = schedule.clone();
+                    async move { Ok(vec![schedule]) }
+                })
+            });
+        repo.expect_pregrant_next_period_atomic()
+            .times(1)
+            .withf(
+                move |realm_id, schedule, period_number, effective_at, expires_at| {
+                    realm_id == "realm"
+                        && schedule.id == expected_schedule.id
+                        && *period_number == 1
+                        && *effective_at == Some(expected_schedule.next_grant_time)
+                        && *expires_at
+                            == expected_schedule.grant_period_type.calculate_expiration(
+                                expected_schedule.next_grant_time,
+                                expected_schedule.validity_days,
+                            )
+                },
+            )
+            .returning(|_, schedule, _, _, _| {
+                let ledger = realized_ledger(schedule);
+                Box::pin(async move { Ok(ledger) })
             });
 
         let svc = PointsService::new(Arc::new(repo), Arc::new(AllowAllPointsPolicy));
@@ -1961,40 +2029,32 @@ mod reconcile_evolution_tests {
     }
 
     #[tokio::test]
-    async fn reconcile_returns_ok_no_op_when_no_active_entitlement() {
-        // No active entitlement on either side ⟹ Ok (window side contributes
-        // nothing). Critically: NO entitlement is constructed and NO write
-        // port is called (A4 — the request path never guesses paid state).
+    async fn reconcile_propagates_realization_write_failure() {
         let mut repo = MockPointsRepository::new();
-        // Both credit types are queried; both return empty.
-        repo.expect_find_active_quota_entitlements()
-            .times(2)
-            .returning(|_, _, _, _, _| Box::pin(async { Ok(Vec::new()) }));
-
-        let svc = PointsService::new(Arc::new(repo), Arc::new(AllowAllPointsPolicy));
-        let res = svc
-            .reconcile_due_for_user("realm", Uuid::nil(), now())
-            .await;
-        assert!(res.is_ok());
-    }
-
-    #[tokio::test]
-    async fn reconcile_short_circuits_on_first_active_side() {
-        // Subscription side active ⟹ free-periodic side is NOT queried
-        // (short-circuit). Pins the early-return and avoids the second read.
-        let mut repo = MockPointsRepository::new();
-        let mut seq = mockall::Sequence::new();
-        repo.expect_find_active_quota_entitlements()
+        let schedule = due_free_schedule();
+        repo.expect_find_due_free_grant_schedules_for_user()
             .times(1)
-            .in_sequence(&mut seq)
+            .returning(move |_, _, _, _| {
+                Box::pin({
+                    let schedule = schedule.clone();
+                    async move { Ok(vec![schedule]) }
+                })
+            });
+        repo.expect_pregrant_next_period_atomic()
+            .times(1)
             .returning(|_, _, _, _, _| {
-                Box::pin(async { Ok(vec![active_entitlement(CreditType::SubscriptionCredit)]) })
+                Box::pin(async {
+                    Err(CoreError::DatabaseError(
+                        "pregrant insert failed".to_string(),
+                    ))
+                })
             });
 
         let svc = PointsService::new(Arc::new(repo), Arc::new(AllowAllPointsPolicy));
-        let res = svc
+        let err = svc
             .reconcile_due_for_user("realm", Uuid::nil(), now())
-            .await;
-        assert!(res.is_ok());
+            .await
+            .expect_err("realization write errors must fail loud");
+        assert!(matches!(err, CoreError::DatabaseError(_)));
     }
 }

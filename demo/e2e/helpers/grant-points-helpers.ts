@@ -63,6 +63,7 @@ export interface GrantPointsExtApiBody {
   /** REQUIRED target Credit Bucket UUID. */
   bucketId: string
   validityDays?: number
+  idempotencyKey?: string
 }
 
 export interface ApiKeyWithPermission {

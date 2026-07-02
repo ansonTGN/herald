@@ -482,6 +482,7 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
                 .layer(from_fn_with_state((*state).clone(), inject_identity)),
         )
         .merge(billing::billing_public_routes())
+        .merge(routes::internal_public_routes())
         .merge(billing_routes.layer(from_fn_with_state((*state).clone(), inject_identity)))
         // Points endpoints - flexible authentication (session or API key)
         .nest(

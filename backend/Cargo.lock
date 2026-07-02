@@ -1724,7 +1724,6 @@ dependencies = [
  "chrono",
  "herald-api-base",
  "herald-core",
- "herald-infra-shopify",
  "hex",
  "hmac",
  "rsa",

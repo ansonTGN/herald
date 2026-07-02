@@ -13,24 +13,6 @@ export const Route = createFileRoute('/$realmId/legal/$agreementType')({
   component: LegalAgreementPage,
 })
 
-function formatEffectiveDate(isoDate: string): string {
-  try {
-    return new Date(isoDate).toLocaleDateString()
-  } catch {
-    return isoDate
-  }
-}
-
-function getAgreementTitle(agreementType: string): string {
-  if (agreementType === 'terms_of_service') {
-    return m['legal.terms_of_service']()
-  }
-  if (agreementType === 'privacy_policy') {
-    return m['legal.privacy_policy']()
-  }
-  return agreementType
-}
-
 function renderBody(content: LegalAgreementDetail['content']): React.ReactNode {
   if (typeof content === 'string') {
     return <MarkdownContent content={content} />
@@ -123,16 +105,8 @@ export function LegalAgreementPage() {
   }
 
   return (
-    <Card className="w-full max-w-2xl" data-testid="agreement-card">
-      <CardHeader className="space-y-2">
-        <CardTitle data-testid="agreement-title">{getAgreementTitle(agreementType)}</CardTitle>
-        <div className="text-sm text-muted-foreground space-y-1">
-          <p data-testid="agreement-effective-date">
-            {m['legal.effective_date_label']()}: {formatEffectiveDate(data.effective_at)}
-          </p>
-        </div>
-      </CardHeader>
-      <CardContent>{renderBody(data.content)}</CardContent>
+    <Card className="w-full max-w-3xl" data-testid="agreement-card">
+      <CardContent className="pt-6">{renderBody(data.content)}</CardContent>
     </Card>
   )
 }

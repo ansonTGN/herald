@@ -194,6 +194,8 @@ function InvoiceContent({
     invoice.status === 'paid' &&
     invoice.amountRemaining > 0 &&
     hasPermission('billing.manage')
+  const showRefundSummary = shouldRenderRefundDimension(provider, invoice.amountRefunded)
+  const showCreditNoteList = showCreditNotes && invoice.creditNotes.length > 0
 
   return (
     <div className="space-y-6">
@@ -276,7 +278,7 @@ function InvoiceContent({
 
       <AmountBreakdown invoice={invoice} fmt={fmt} />
 
-      {(canRecordRefund || shouldRenderRefundDimension(provider, invoice.amountRefunded)) && (
+      {(canRecordRefund || showRefundSummary || showCreditNoteList) && (
         <div className="space-y-4">
           {canRecordRefund && (
             <div className="flex justify-end">
@@ -290,7 +292,7 @@ function InvoiceContent({
               </Button>
             </div>
           )}
-          <InvoiceRefundSummary invoice={invoice} />
+          {showRefundSummary && <InvoiceRefundSummary invoice={invoice} />}
           <CreditNoteList invoice={invoice} showCreditNotes={showCreditNotes} />
         </div>
       )}

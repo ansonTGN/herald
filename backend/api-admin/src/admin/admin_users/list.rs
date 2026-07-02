@@ -48,13 +48,12 @@ pub async fn list_users(
     admin
         .require_permission(&state, "users", "view")
         .await
-        .map_err(|e| {
+        .inspect_err(|_e| {
             tracing::warn!(
                 realm_id = %realm_id,
                 user_id = %admin.user_id(),
                 "User list permission denied"
             );
-            e
         })?;
 
     // Debug logging to investigate UUID issue

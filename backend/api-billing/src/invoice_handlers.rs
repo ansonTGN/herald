@@ -1633,7 +1633,7 @@ mod tests {
     fn make_detail(provider: InvoiceProvider, external_pdf_url: Option<&str>) -> InvoiceDetail {
         InvoiceDetail {
             invoice: Invoice {
-                id: Uuid::new_v4(),
+                id: Uuid::now_v7(),
                 realm_id: "test-realm".to_string(),
                 invoice_number: "INV-001".to_string(),
                 source: InvoiceSource::AdminManual,

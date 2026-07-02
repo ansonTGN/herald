@@ -20,13 +20,14 @@
  * 5. `createPaymentAttempt` POSTs `{targetType:'entitlement_mapping',
  *    targetId:<selectedMappingId>, paymentProvider:<derived from option>}`.
  *
- * Period semantics (load-bearing — mirrors `multi-price-purchase.helpers.ts`):
- * `selectPeriodPane` renders `recurring` items ONLY in the pane whose
- * `billingPeriod` matches, and renders `one_time` items in BOTH panes
- * (period-agnostic). A one-time card therefore resolves identically under
- * either period; a recurring month card has NO Annual counterpart. This helper
- * defaults to the Monthly pane so it works for both one-time and month-recurring
- * products without callers pinning a period.
+ * Section IA (load-bearing — mirrors `multi-price-purchase.helpers.ts`):
+ * The page splits options into two sections by billing type. Recurring options
+ * live in the Subscriptions section under `purchase-price-grid-${period}`;
+ * one_time options live in the Credit packs section under
+ * `purchase-price-grid-credit-packs` (NOT a period-agnostic duplicate). The
+ * price-card testid is period-invariant (`purchase-price-card-${priceId}`,
+ * no `-annual` suffix). This helper searches BOTH grids so a single-price /
+ * one-time product resolves regardless of the requested period.
  *
  * Boundary:
  * - Uses ONLY `SELECTORS.purchasePriceCard.*` + `SELECTORS.purchasePoints.*` +
@@ -100,69 +101,65 @@ export async function extractPaymentAttemptId(page: Page): Promise<string> {
 }
 
 /**
- * Discover the first purchasable price card on the active period pane and
- * return its (priceId, period) tuple so the caller can target the exact DOM
- * node via `selectPriceCard`.
+ * Discover the first purchasable price card on the page and return its
+ * (priceId, period) tuple so the caller can target the exact DOM node via
+ * `selectPriceCard`.
  *
- * The rewritten page renders price cards as
- * `purchase-price-card-${priceId}` (Monthly) or
- * `purchase-price-card-${priceId}-annual` (Annual). There is no enumerating
- * grid child testid, so we read the testid attribute off the first card in the
- * active grid and reverse-engineer the priceId + period.
+ * Under the section IA the page renders two grids: the Subscriptions-section
+ * grid (`purchase-price-grid-${period}`, recurring only) and the Credit-packs
+ * grid (`purchase-price-grid-credit-packs`, one_time only). The card testid is
+ * period-invariant (`purchase-price-card-${priceId}`, no `-annual` suffix).
+ *
+ * We search the Subscriptions grid for the requested period first; if it has
+ * no purchasable card we fall back to the Credit-packs grid. This makes a
+ * single-price / one-time product resolve under the default `'month'` without
+ * callers pinning a section.
  *
  * Disabled cards (mapping disabled or no provider wired) render the SAME card
- * testid plus a sibling `-reason` row; they are skipped here so the helper
- * never attempts to click a card whose `onClick` is undefined.
+ * testid plus a child `-reason` row; they are skipped here so the helper never
+ * attempts to click a card whose `onClick` is undefined.
  *
- * Default period is `'month'`: the page boots in Monthly, and `one_time` cards
- * appear in both panes so a single-price/one-time product resolves under
- * either. Callers with a known annual-recurring product should pass `'year'`.
+ * Default period is `'month'` (page boots in Monthly). Callers with a known
+ * annual-recurring product should pass `'year'`.
  */
 async function discoverFirstPurchasablePriceCard(
   page: Page,
   period: PurchasePeriod = 'month',
 ): Promise<{ priceId: string; period: PurchasePeriod }> {
-  const grid = page.locator(SELECTORS.purchasePriceCard.priceGrid(period))
-  await expect(grid).toBeVisible({
-    timeout: TEST_DATA.TIMEOUTS.ELEMENT_VISIBLE,
-  })
+  // Candidate grids in priority order: the requested-period Subscriptions
+  // grid, then the Credit-packs grid (one_time). A grid may be absent (e.g.
+  // no recurring options → Subscriptions section not rendered).
+  const candidateGrids = [
+    SELECTORS.purchasePriceCard.priceGrid(period),
+    SELECTORS.purchasePriceCard.creditPacksGrid,
+  ]
 
-  // Enumerate the card testids in the active pane and pick the first that has
-  // no `-reason` sibling (i.e. is purchasable). Cards share the testid prefix
-  // `purchase-price-card-`; the grid only contains cards, so children are all
-  // cards.
-  const cards = grid.locator('[data-testid^="purchase-price-card-"]')
-  const count = await cards.count()
-  if (count === 0) {
-    throw new Error(
-      `No price cards rendered in the ${period} pane — purchase page seed empty?`,
-    )
-  }
+  for (const gridSelector of candidateGrids) {
+    const grid = page.locator(gridSelector)
+    // Skip grids that are not rendered (section hidden) rather than asserting
+    // visibility — the requested period's Subscriptions grid is legitimately
+    // absent for a one-time-only product.
+    if (!(await grid.isVisible().catch(() => false))) continue
 
-  for (let i = 0; i < count; i++) {
-    const card = cards.nth(i)
-    const testid = (await card.getAttribute('data-testid')) ?? ''
-    // Skip reason rows just in case (they live as children of cards, not the
-    // grid, so this is defensive).
-    if (testid.endsWith('-reason')) continue
-
-    // Recover priceId + detect annual suffix.
-    // testid shape: `purchase-price-card-<priceId>` or
-    // `purchase-price-card-<priceId>-annual`.
-    const stripped = testid.replace(/^purchase-price-card-/, '')
-    if (stripped.endsWith('-annual')) {
-      const priceId = stripped.slice(0, -'-annual'.length)
-      // Annual-pane cards are only recurring-year; respect the requested period.
-      if (period === 'year') {
-        return { priceId, period: 'year' }
-      }
-      continue
+    const cards = grid.locator('[data-testid^="purchase-price-card-"]')
+    const count = await cards.count()
+    for (let i = 0; i < count; i++) {
+      const card = cards.nth(i)
+      const testid = (await card.getAttribute('data-testid')) ?? ''
+      // Skip reason rows (defensive — they live as children of cards, not the
+      // grid).
+      if (testid.endsWith('-reason')) continue
+      const priceId = testid.replace(/^purchase-price-card-/, '')
+      // Confirm the card is not disabled (no `-reason` child row) before
+      // returning it.
+      const reason = card.locator(`[data-testid="${testid}-reason"]`)
+      if ((await reason.count()) > 0) continue
+      return { priceId, period }
     }
-    return { priceId: stripped, period }
   }
 
   throw new Error(
-    `No purchasable price card found in the ${period} pane (all cards disabled?).`,
+    `No purchasable price card found (Subscriptions ${period} + Credit packs; all disabled or seed empty?).`,
   )
 }
 
@@ -170,12 +167,13 @@ async function discoverFirstPurchasablePriceCard(
  * Selects the first available price card and proceeds to the payment step.
  *
  * Replaces the legacy `mappingCard.firstCard()` click. Defaults to the Monthly
- * pane so both one-time (period-agnostic) and month-recurring products resolve.
- * Pass `period: 'year'` for annual-recurring products.
+ * period so both one-time (Credit packs section) and month-recurring
+ * (Subscriptions section) products resolve. Pass `period: 'year'` for
+ * annual-recurring products.
  *
  * Internals:
- * - mapping-card testid → `purchase-price-card-${priceId}` (Monthly) /
- *   `purchase-price-card-${priceId}-annual` (Annual).
+ * - card testid → `purchase-price-card-${priceId}` (period-invariant; no
+ *   `-annual` suffix under the section IA).
  * - The page derives the checkout `mappingId` itself from the clicked option
  *   (`selectedMappingId = option.mappingId`), so this helper does NOT need to
  *   resolve mappingId — the click is the load-bearing act.
@@ -203,7 +201,7 @@ export async function selectFirstMappingAndProceed(
  * No current importer calls this; it is preserved for parity and any future
  * price-pinned caller. `priceId` is `externalPriceId ?? mappingId` (Creem
  * NULL-price rows use mappingId); targets `purchase-price-card-${priceId}`
- * (Monthly) or `purchase-price-card-${priceId}-annual` (Annual).
+ * (period-invariant under the section IA).
  */
 export async function selectMappingAndProceed(
   page: Page,

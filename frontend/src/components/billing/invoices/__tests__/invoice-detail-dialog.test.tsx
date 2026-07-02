@@ -569,11 +569,13 @@ describe('InvoiceDetailDialog', () => {
 
       setupDetailDialog({
         provider: 'stripe',
-        amountRefunded: 5000,
-        amountRemaining: 16000,
+        amountRefunded: 0,
+        amountRemaining: 21000,
         creditNotes: [voidedNote],
       })
 
+      await waitForInvoiceLoaded()
+      expect(screen.queryByTestId('invoice-refund-summary')).not.toBeInTheDocument()
       expect(await screen.findByTestId(`credit-note-voided-${voidedNote.id}`)).toBeInTheDocument()
     })
 

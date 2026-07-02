@@ -120,13 +120,16 @@ pub struct ApplyRouteVerdict {
 /// 1. `policy == "none"`     => `disabled` (Herald invoices off)
 /// 2. `provider == Some("creem")` => `disabled` (Creem acts as MoR; mirrors
 ///    `validate_not_creem_mor` in the write path)
-/// 3. `!has_seller_config`   => `disabled` (mirrors the `apply_invoice` 400 path)
-/// 4. `has_external_invoice` => `external_provider` (read-only — a provider
+/// 3. `provider == Some("stripe")` => `external_provider` (Stripe invoices are
+///    pushed via webhook; users must never apply manually. Read-only regardless
+///    of whether the webhook has landed yet, so users are pointed to
+///    "My Invoices" instead of a manual apply form.)
+/// 4. `!has_seller_config`   => `disabled` (mirrors the `apply_invoice` 400 path)
+/// 5. `has_external_invoice` => `external_provider` (read-only — a provider
 ///    invoice already exists; do not offer a duplicate Herald invoice)
-/// 5. otherwise              => `manual_fallback, canApply=true`
-///    (Stripe/Shopify/WeChat WITHOUT an external invoice still permit a manual
-///    Herald invoice — the manual fallback. This preserves today's apply
-///    behavior on non-Creem provider transactions.)
+/// 6. otherwise              => `manual_fallback, canApply=true`
+///    (Shopify/WeChat/no provider WITHOUT an external invoice still permit a
+///    manual Herald invoice — the manual fallback.)
 pub(crate) fn determine_invoice_apply_route(
     provider: Option<&str>,
     policy: &str,
@@ -154,7 +157,19 @@ pub(crate) fn determine_invoice_apply_route(
         };
     }
 
-    // Rule 3: no seller info configured — mirrors the `apply_invoice` 400 path.
+    // Rule 3: Stripe invoices are pushed via webhook — users must never apply
+    // manually. Surface as read-only external_provider regardless of whether
+    // the webhook has landed yet; the frontend shows "Managed by Stripe — see
+    // My Invoices." and points users to their invoice list.
+    if provider == Some("stripe") {
+        return ApplyRouteVerdict {
+            route: "external_provider".to_string(),
+            can_apply: false,
+            reason: None,
+        };
+    }
+
+    // Rule 4: no seller info configured — mirrors the `apply_invoice` 400 path.
     if !has_seller_config {
         return ApplyRouteVerdict {
             route: "disabled".to_string(),
@@ -166,7 +181,7 @@ pub(crate) fn determine_invoice_apply_route(
         };
     }
 
-    // Rule 4: an externally-synced invoice already exists for this resource —
+    // Rule 5: an externally-synced invoice already exists for this resource —
     // read-only. Do not offer a duplicate Herald invoice.
     if has_external_invoice {
         let provider_label = provider.unwrap_or("the provider");
@@ -180,9 +195,8 @@ pub(crate) fn determine_invoice_apply_route(
         };
     }
 
-    // Rule 5: non-Creem provider (Stripe/Shopify/WeChat) or no provider, with
-    // seller config and no external invoice. Manual fallback remains available
-    // — today users CAN apply for a manual Herald invoice on such transactions.
+    // Rule 6: non-MoR provider (Shopify/WeChat) or no provider, with seller
+    // config and no external invoice. Manual fallback remains available.
     ApplyRouteVerdict {
         route: "manual_fallback".to_string(),
         can_apply: true,
@@ -220,33 +234,37 @@ mod tests {
 
     #[test]
     fn missing_seller_config_disables_apply() {
-        let v = determine_invoice_apply_route(Some("stripe"), "provider_first", false, false);
+        // Use no provider so the verdict reaches the seller-config rule. (A
+        // Stripe provider would short-circuit to external_provider earlier.)
+        let v = determine_invoice_apply_route(None, "provider_first", false, false);
         assert_eq!(v.route, "disabled");
         assert!(!v.can_apply);
         assert!(v.reason.as_deref().unwrap().contains("seller"));
     }
 
     #[test]
-    fn stripe_with_seller_and_no_external_is_manual_fallback() {
-        // CRITICAL behavior-preservation: a Stripe resource with seller config
-        // and NO external-sync invoice must remain applyable as a manual
-        // Herald invoice (the manual fallback).
-        let v = determine_invoice_apply_route(Some("stripe"), "provider_first", true, false);
-        assert_eq!(v.route, "manual_fallback");
-        assert!(v.can_apply);
-        assert!(v.reason.is_none());
-    }
-
-    #[test]
-    fn stripe_with_external_invoice_is_external_provider_readonly() {
-        // Same resource, but an external_sync invoice already exists — read-only.
-        let v = determine_invoice_apply_route(Some("stripe"), "provider_first", true, true);
-        assert_eq!(v.route, "external_provider");
-        assert!(!v.can_apply);
-        let reason = v.reason.as_deref().unwrap();
-        // Provider values are lowercase strings (matches DB column values).
-        assert!(reason.contains("stripe"), "reason: {}", reason);
-        assert!(reason.contains("already exists"));
+    fn stripe_is_external_provider_regardless_of_external_invoice() {
+        // CRITICAL invariant: Stripe invoices are pushed via webhook, so users
+        // must NEVER be offered a manual apply — regardless of whether the
+        // webhook has landed yet. Stripe always routes to external_provider
+        // (read-only) for any non-`none` policy, with or without an existing
+        // external invoice.
+        for policy in ["provider_first", "manual_only"] {
+            for has_external in [false, true] {
+                let v = determine_invoice_apply_route(Some("stripe"), policy, true, has_external);
+                assert_eq!(
+                    v.route, "external_provider",
+                    "policy={policy} has_external={has_external}"
+                );
+                assert!(!v.can_apply, "policy={policy} has_external={has_external}");
+                // The frontend renders the generic "Managed by Stripe — see
+                // My Invoices." text from the route+provider; reason is null.
+                assert!(
+                    v.reason.is_none(),
+                    "policy={policy} has_external={has_external}"
+                );
+            }
+        }
     }
 
     #[test]

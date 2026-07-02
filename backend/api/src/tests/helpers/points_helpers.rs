@@ -1427,36 +1427,38 @@ pub async fn create_credit_ledger_entry_with_effective_at(
 }
 
 /// Derived available balance for one `(user, realm, credit_type)` pool.
-/// Mirrors production `compute_available_balance` verbatim — does NOT
-/// read `points_wallets.total_balance`. Future-effective and expired active
-/// rows are excluded by the shared predicate.
+/// Mirrors production balance assembly: ledger-derived availability plus
+/// quota-window availability for window-model credit types. Does NOT read
+/// `points_wallets.total_balance`. Future-effective and expired active rows
+/// are excluded by the shared predicate.
 pub async fn get_derived_balance_by_credit_type(
     ctx: &SchemaTestContext,
     user_id: Uuid,
     realm_id: &str,
     credit_type: herald_core::domain::points::entities::CreditType,
 ) -> i64 {
-    // Window-quota model: subscription/free_periodic availability is computed
-    // from active entitlements + consume transactions, not ledger rows.
-    if credit_type == CreditType::SubscriptionCredit
-        || credit_type == CreditType::FreePeriodicCredit
-    {
-        let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, realm_id).await;
-        return compute_window_available(ctx, realm_id, user_id, bucket_id, credit_type).await;
-    }
-
     let sql = format!(
         "SELECT COALESCE(SUM(remaining_amount), 0)::BIGINT FROM points_credit_ledger
          WHERE user_id = $1 AND realm_id = $2 AND credit_type = $3 AND ({pred})",
         pred = DERIVED_AVAILABLE_PREDICATE
     );
-    sqlx::query_scalar(&sql)
+    let ledger_total: i64 = sqlx::query_scalar(&sql)
         .bind(user_id)
         .bind(realm_id)
         .bind(credit_type.to_string())
         .fetch_one(&ctx.app_state.pool)
         .await
-        .expect("Failed to compute derived balance by credit_type")
+        .expect("Failed to compute derived balance by credit_type");
+
+    if credit_type == CreditType::SubscriptionCredit
+        || credit_type == CreditType::FreePeriodicCredit
+    {
+        let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, realm_id).await;
+        return ledger_total
+            + compute_window_available(ctx, realm_id, user_id, bucket_id, credit_type).await;
+    }
+
+    ledger_total
 }
 
 /// Derived available balance summed across all credit types for a user.

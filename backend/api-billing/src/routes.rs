@@ -1,9 +1,6 @@
 use axum::{
     Router,
-    extract::Request,
-    http::StatusCode,
-    middleware::{Next, from_fn},
-    response::{IntoResponse, Response},
+    middleware::from_fn,
     routing::{get, post, put},
 };
 
@@ -37,27 +34,8 @@ use crate::purchase_handlers::{
 };
 use crate::stripe_webhook_handlers::handle_stripe_webhook;
 use crate::webhook_handlers::handle_creem_webhook;
+use herald_api_base::application::http::internal_auth::internal_api_key_middleware;
 use herald_api_base::application::http::state::AppState;
-use herald_infra_shopify::constant_time_compare;
-
-async fn internal_api_key_middleware(req: Request, next: Next) -> Response {
-    let provided_key = req
-        .headers()
-        .get("X-Internal-API-Key")
-        .and_then(|value| value.to_str().ok())
-        .map(str::trim);
-
-    let expected_key = std::env::var("INTERNAL_API_KEY")
-        .ok()
-        .filter(|key| !key.trim().is_empty());
-
-    match (provided_key, expected_key) {
-        (Some(provided), Some(expected)) if constant_time_compare(provided, &expected) => {
-            next.run(req).await
-        }
-        _ => StatusCode::UNAUTHORIZED.into_response(),
-    }
-}
 
 pub fn billing_public_routes() -> Router<AppState> {
     Router::new()

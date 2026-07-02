@@ -25,8 +25,9 @@ interface PurchaseHistoryListProps {
   /**
    * Render a per-row Invoice button gated by the apply-eligibility API.
    * Only rendered when the outer realm-level `invoicesVisible` gate is open
-   * (caller passes this through); the button itself reflects per-resource
-   * eligibility (P1-3/P1-4).
+   * AND the purchase is not a Stripe transaction (Stripe invoices are pushed
+   * via webhook — users apply through "My Invoices", never manually). The
+   * button itself reflects per-resource eligibility (P1-3/P1-4).
    */
   realmId?: string
   onApplyInvoice?: (attemptId: string) => void
@@ -85,7 +86,7 @@ const HistoryTableRow = memo(
         </TableCell>
         <TableCell className="text-right">
           <div className="flex justify-end gap-1">
-            {onApplyInvoice && realmId && (
+            {onApplyInvoice && realmId && purchase.paymentProvider !== 'stripe' && (
               <InvoiceApplyRowButton
                 realmId={realmId}
                 referenceType="payment_attempt"

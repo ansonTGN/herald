@@ -5,6 +5,7 @@
  */
 
 import { Page, expect, type Response } from '@playwright/test'
+import { SELECTORS } from '../selectors'
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
 
@@ -108,6 +109,8 @@ export async function loginWithCredentials(
     throw new Error(`Login failed: API returned ${loginResponse.status()}`)
   }
 
+  await acceptLoginReconsentIfPresent(page, realmId)
+
   // 验证导航
   if (waitNavigation) {
     await verifyPostLoginNavigation(page, { expectedRoute: 'dashboard', realmId })
@@ -194,6 +197,8 @@ export async function loginAsAdmin(
     console.error(`[Auth] Login API failed: ${loginResponse.status()} - ${errorBody}`)
     throw new Error(`Login failed: API returned ${loginResponse.status()}`)
   }
+
+  await acceptLoginReconsentIfPresent(page, realmId)
 
   // 检查是否需要 TOTP 验证
   const totpInput = page.getByTestId('totp-verification-code-input')
@@ -356,6 +361,24 @@ async function waitForLoginResponse(page: Page): Promise<Response | null> {
   }
 
   return loginResponse
+}
+
+async function acceptLoginReconsentIfPresent(page: Page, realmId: string): Promise<void> {
+  const reconsentView = page.locator(SELECTORS.legalConsent.loginReconsentView)
+  const needsReconsent = await reconsentView.isVisible({ timeout: 3000 }).catch(() => false)
+
+  if (!needsReconsent) {
+    return
+  }
+
+  console.log('[Auth] Login-time re-consent required; agreeing to current agreements')
+  const agreeButton = page.locator(SELECTORS.legalConsent.loginAgreeAndContinueButton)
+  await Promise.all([
+    page.waitForURL((url) => !url.pathname.endsWith(`/${realmId}/auth/login`), {
+      timeout: 15000,
+    }),
+    agreeButton.click(),
+  ])
 }
 
 /**

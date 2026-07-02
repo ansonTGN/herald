@@ -25,6 +25,10 @@ describe('hasAdminPermission', () => {
     expect(hasAdminPermission([PERMISSION.POINTS_VIEW, PERMISSION.REALM_MANAGE])).toBe(true)
   })
 
+  it('returns true for backend colon-formatted admin permissions', () => {
+    expect(hasAdminPermission(['points:view', 'billing:manage'])).toBe(true)
+  })
+
   it('returns false for an array of random non-permission strings', () => {
     expect(hasAdminPermission(['foo', 'bar', 'baz'])).toBe(false)
   })

@@ -149,7 +149,6 @@ export async function createEntitlementMappingWithQuotaWindows(
   const prefix = 'quota-window'
   await expect(page.locator(SELECTORS.pointsQuotaEditor.editor(prefix))).toBeVisible()
 
-  await fillRealmDefaultRequiredFields(page)
   await clearQuotaEditorRows(page, prefix)
   await fillQuotaEditorRows(page, prefix, windows)
 
@@ -306,6 +305,36 @@ export async function getSpendableNow(page: Page): Promise<number> {
   await expect(el).toBeVisible()
   const text = (await el.textContent()) || ''
   return parseAmount(text)
+}
+
+/**
+ * Read the demo user's `spendable_from_pool` (topup + registration + granted
+ * balances) for a bucket directly from the wallets API.
+ *
+ * Used by the total-formula test to assert `spendableNow === smallestRemaining
+ * + pool` without hard-coding the pool value, which accumulates across demo
+ * runs because the ext grant API has no idempotency key.
+ */
+export async function getSpendableFromPool(
+  page: Page,
+  realmId: string,
+  bucketId: string,
+): Promise<number> {
+  const baseUrl =
+    process.env.API_BASE_URL ||
+    process.env.BASE_URL?.replace(/:\d+/, ':8080') ||
+    'http://localhost:8080'
+  const resp = await page.context().request.get(
+    `${baseUrl}/api/points/${realmId}/wallets`,
+  )
+  if (!resp.ok()) return 0
+  const body = await resp.json()
+  const items = (body?.items ?? []) as {
+    bucketId?: string
+    spendableFromPool?: number | null
+  }[]
+  const match = items.find((i) => i.bucketId === bucketId)
+  return match?.spendableFromPool ?? 0
 }
 
 function parseAmount(text: string | undefined | null): number {

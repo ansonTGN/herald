@@ -14,15 +14,17 @@
  *   admin master-detail page are separate routes.
  * - Does NOT hardcode selector strings — every locator flows from `selectors.ts`.
  *
- * Period semantics (load-bearing):
- * The rewritten page renders two panes via `selectPeriodPane`: Monthly shows
- * `recurring` month + all `one_time`; Annual shows `recurring` year + all
- * `one_time`. The price-card testid carries an `-annual` suffix ONLY in the
- * Annual pane. `selectPriceCard(page, priceId, 'year')` therefore targets a
- * different DOM node than `selectPriceCard(page, priceId, 'month')` even for
- * the same priceId — and a `recurring` month card has no Annual counterpart
- * (it is filtered out of the Annual pane), so callers MUST pass the period
- * matching the card's billing_period for recurring prices.
+ * Section IA (purchase-entry-optimization, load-bearing):
+ * The page renders two sections by billing type. **Subscriptions section**
+ * holds recurring options under a period-aware grid
+ * (`purchase-price-grid-${period}`, toggle lives inside this section and is
+ * hidden when no recurring options exist). **Credit packs section** holds
+ * one_time options under `purchase-price-grid-credit-packs`; one_time cards
+ * are NOT period-agnostic duplicates — they live only there. The price-card
+ * testid is period-invariant (`purchase-price-card-${priceId}`, no `-annual`
+ * suffix), so `selectPriceCard` ignores the `period` argument (kept only for
+ * call-site compatibility). Callers that need to scope by section should use
+ * `SELECTORS.purchasePriceCard.priceGrid(period)` / `.creditPacksGrid`.
  */
 
 import { expect, type Locator, type Page, type Response } from '@playwright/test'
@@ -37,10 +39,10 @@ export type PurchasePeriod = 'month' | 'year'
 /**
  * Switch the period toggle and wait for the corresponding pane grid to mount.
  *
- * The toggle is always visible on the packages step; switching re-renders the
- * grid (`purchase-price-grid-${period}`). Waiting on the target grid (rather
- * than a fixed timeout) is resilient to the one_time cards that appear in both
- * panes — they do not uniquely signal the switch completed.
+ * The toggle lives inside the Subscriptions section and is hidden when no
+ * recurring options exist; switching re-renders that section's grid
+ * (`purchase-price-grid-${period}`). Waiting on the target grid (rather than a
+ * fixed timeout) makes the switch deterministic.
  */
 export async function selectPeriod(
   page: Page,
@@ -62,18 +64,17 @@ export async function selectPeriod(
  * Click a price card to select it. The `priceId` is the card's
  * `externalPriceId ?? mappingId` (Creem NULL-price rows use mappingId).
  *
- * For `recurring` prices the `period` MUST match the card's billing_period
- * (a month card is absent from the Annual pane and vice versa). For `one_time`
- * cards either period is valid (they render in both panes).
+ * The `period` argument is accepted for call-site compatibility but no longer
+ * affects the testid — the card testid is period-invariant
+ * (`purchase-price-card-${priceId}`). The same priceId never renders in two
+ * grids, so scoping is unnecessary for a unique click.
  */
 export async function selectPriceCard(
   page: Page,
   priceId: string,
-  period?: PurchasePeriod,
+  _period?: PurchasePeriod,
 ): Promise<void> {
-  await page
-    .locator(SELECTORS.purchasePriceCard.priceCard(priceId, period))
-    .click()
+  await page.locator(SELECTORS.purchasePriceCard.priceCard(priceId)).click()
 }
 
 /**
@@ -81,15 +82,16 @@ export async function selectPriceCard(
  * is only rendered when the card is NOT purchasable (mapping disabled or no
  * payment provider wired). Returns a Locator so the caller can choose
  * `expect(...).toBeVisible()` (disabled) or `.toBeHidden()` (purchasable).
+ *
+ * `period` is accepted for compatibility but ignored (card testid is
+ * period-invariant under the section IA).
  */
 export function priceCardReasonLocator(
   page: Page,
   priceId: string,
-  period?: PurchasePeriod,
+  _period?: PurchasePeriod,
 ): Locator {
-  return page.locator(
-    SELECTORS.purchasePriceCard.priceCardReason(priceId, period),
-  )
+  return page.locator(SELECTORS.purchasePriceCard.priceCardReason(priceId))
 }
 
 /**
@@ -98,14 +100,17 @@ export function priceCardReasonLocator(
  * the reason row is present — the reason row is the persistent, stable signal
  * (the card has no `aria-disabled`; the reason testid is the load-bearing
  * marker). Does NOT rely on auto-dismissing toasts.
+ *
+ * `period` is accepted for compatibility but ignored (card testid is
+ * period-invariant under the section IA).
  */
 export async function expectDisabledPriceCard(
   page: Page,
   priceId: string,
-  period?: PurchasePeriod,
+  _period?: PurchasePeriod,
 ): Promise<void> {
   await expect(
-    page.locator(SELECTORS.purchasePriceCard.priceCardReason(priceId, period)),
+    page.locator(SELECTORS.purchasePriceCard.priceCardReason(priceId)),
   ).toBeVisible()
 }
 

@@ -114,21 +114,20 @@ describe('selectPeriodPane', () => {
     makeOption({ mappingId: 'm-once', billingType: 'one_time', billingPeriod: null }),
   ]
 
-  it('monthly pane shows only monthly recurring + one_time packs', () => {
+  it('monthly pane shows only monthly recurring (one_time excluded)', () => {
     const pane = selectPeriodPane(items, 'month')
     const ids = pane.map((o) => o.mappingId)
     expect(ids).toContain('m-month')
-    expect(ids).toContain('m-once')
     expect(ids).not.toContain('m-year')
+    expect(ids).not.toContain('m-once')
   })
 
-  it('annual pane shows only annual recurring + one_time packs (one_time is period-agnostic)', () => {
+  it('annual pane shows only annual recurring (one_time excluded)', () => {
     const pane = selectPeriodPane(items, 'year')
     const ids = pane.map((o) => o.mappingId)
     expect(ids).toContain('m-year')
-    // one_time appears in BOTH panes — pinned behavior.
-    expect(ids).toContain('m-once')
     expect(ids).not.toContain('m-month')
+    expect(ids).not.toContain('m-once')
   })
 })
 
@@ -168,19 +167,14 @@ describe('PurchasePointsPage', () => {
       }),
     ])
 
-    // Monthly pane shows the monthly card (no -annual suffix).
     expect(screen.getByTestId('purchase-price-card-price_monthly')).toBeTruthy()
-    // Annual card is NOT in the monthly pane.
-    expect(screen.queryByTestId('purchase-price-card-price_annual-annual')).toBeNull()
+    expect(screen.queryByTestId('purchase-price-card-price_annual')).toBeNull()
 
-    // Switch to Annual.
     await user.click(screen.getByTestId('purchase-period-toggle-year'))
 
-    // Annual pane shows the annual card WITH the -annual suffix.
     await waitFor(() => {
-      expect(screen.getByTestId('purchase-price-card-price_annual-annual')).toBeTruthy()
+      expect(screen.getByTestId('purchase-price-card-price_annual')).toBeTruthy()
     })
-    // Monthly card (no suffix) is gone from the annual pane.
     expect(screen.queryByTestId('purchase-price-card-price_monthly')).toBeNull()
   })
 
@@ -195,9 +189,7 @@ describe('PurchasePointsPage', () => {
 
     const card = screen.getByTestId('purchase-price-card-price_disabled')
     expect(card).toBeTruthy()
-    // Reason row is rendered.
     expect(screen.getByTestId('purchase-price-card-price_disabled-reason')).toBeTruthy()
-    // Next button stays disabled until a purchasable card is selected.
     expect(screen.getByTestId('purchase-next-button')).toBeDisabled()
   })
 
@@ -207,14 +199,11 @@ describe('PurchasePointsPage', () => {
       makeOption({ mappingId: 'm-1', externalPriceId: 'price_m', billingPeriod: 'month' }),
     ])
 
-    // Select the card.
     await user.click(screen.getByTestId('purchase-price-card-price_m'))
-    // Next becomes enabled.
     await waitFor(() => {
       expect(screen.getByTestId('purchase-next-button')).not.toBeDisabled()
     })
 
-    // Advance to the payment step.
     await user.click(screen.getByTestId('purchase-next-button'))
     expect(screen.getByTestId('purchase-step-payment')).toBeTruthy()
 

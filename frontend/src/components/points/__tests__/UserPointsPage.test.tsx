@@ -6,8 +6,15 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { userEvent } from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import type { ReactNode } from 'react'
 import type { ListWalletsByBucketResponse, PointsTransactionResponse } from '@/lib/api-generated'
 import { UserPointsPage } from '../UserPointsPage'
+
+// Mock Link so the inline purchase CTA renders without a TanStack Router
+// provider (matches the profile-sidebar test pattern).
+vi.mock('@tanstack/react-router', () => ({
+  Link: ({ children, ...props }: { children: ReactNode }) => <a {...props}>{children}</a>,
+}))
 
 // Mock the query-options module so we can seed the wallets + transactions
 // responses without standing up MSW routes. This locks the user-view contract:
@@ -16,9 +23,14 @@ import { UserPointsPage } from '../UserPointsPage'
 vi.mock('@/data/query-options', () => ({
   walletsByBucketQueryOptions: vi.fn(),
   pointsTransactionsQueryOptions: vi.fn(),
+  featureAvailabilityQueryOptions: vi.fn(),
 }))
 
-import { walletsByBucketQueryOptions, pointsTransactionsQueryOptions } from '@/data/query-options'
+import {
+  walletsByBucketQueryOptions,
+  pointsTransactionsQueryOptions,
+  featureAvailabilityQueryOptions,
+} from '@/data/query-options'
 
 function createTestQueryClient() {
   return new QueryClient({
@@ -91,6 +103,10 @@ function mockQueryOptions() {
     queryKey: ['txns', REALM_ID],
     queryFn: async () => transactionsResponse,
   } as never)
+  vi.mocked(featureAvailabilityQueryOptions).mockReturnValue({
+    queryKey: ['feature-availability', REALM_ID],
+    queryFn: async () => ({ user: { pointsPurchaseVisible: false } }),
+  } as never)
 }
 
 function renderPage(overrides: { queryClient?: QueryClient } = {}) {
@@ -134,5 +150,34 @@ describe('UserPointsPage bucket option derivation', () => {
 
     const bucketCell = await screen.findByTestId('transaction-bucket-0')
     expect(bucketCell).toHaveTextContent('Primary Pool')
+  })
+})
+
+describe('UserPointsPage inline purchase block', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockQueryOptions()
+  })
+
+  it('GIVEN pointsPurchaseVisible=true WHEN rendering THEN shows the inline purchase CTA', async () => {
+    vi.mocked(featureAvailabilityQueryOptions).mockReturnValue({
+      queryKey: ['feature-availability', REALM_ID],
+      queryFn: async () => ({ user: { pointsPurchaseVisible: true } }),
+    } as never)
+
+    renderPage()
+
+    await waitFor(() =>
+      expect(screen.getByTestId('points-purchase-inline-block')).toBeInTheDocument()
+    )
+    expect(screen.getByTestId('points-purchase-cta')).toBeInTheDocument()
+  })
+
+  it('GIVEN pointsPurchaseVisible=false WHEN rendering THEN hides the inline purchase block', async () => {
+    renderPage()
+
+    await waitFor(() => expect(screen.getByTestId('transaction-history-table')).toBeInTheDocument())
+    expect(screen.queryByTestId('points-purchase-inline-block')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('points-purchase-cta')).not.toBeInTheDocument()
   })
 })

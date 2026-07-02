@@ -1,11 +1,13 @@
 // Points API routes
 
-use axum::{Router, routing};
+use axum::{Router, middleware::from_fn, routing};
 
+use herald_api_base::application::http::internal_auth::internal_api_key_middleware;
 use herald_api_base::application::http::state::AppState;
 
 use super::{
     grant::grant_points,
+    internal_quota::{grant_quota_entitlement, revoke_quota_entitlement},
     realm_configs::{
         create_realm_default_config, get_realm_default_config, update_realm_default_config,
     },
@@ -46,4 +48,26 @@ pub fn points_router() -> Router<AppState> {
             routing::get(get_user_points_config),
         )
         .route("/grant", routing::post(grant_points))
+}
+
+/// Internal (demo/test-only) points routes.
+///
+/// These routes bypass normal user authentication and are guarded solely by
+/// `internal_api_key_middleware` (the shared `X-Internal-API-Key` /
+/// `INTERNAL_API_KEY` secret). Mounted without the identity-injection layer, so
+/// handlers receive no `Identity` and must not assume one.
+///
+/// Routes (absolute paths, since this router is `.merge`-d, not nested):
+/// - POST /api/internal/points/{realmId}/quota-entitlement/grant
+/// - POST /api/internal/points/{realmId}/quota-entitlement/revoke
+pub fn internal_public_routes() -> Router<AppState> {
+    Router::new()
+        .route(
+            "/api/internal/points/{realmId}/quota-entitlement/grant",
+            routing::post(grant_quota_entitlement).layer(from_fn(internal_api_key_middleware)),
+        )
+        .route(
+            "/api/internal/points/{realmId}/quota-entitlement/revoke",
+            routing::post(revoke_quota_entitlement).layer(from_fn(internal_api_key_middleware)),
+        )
 }

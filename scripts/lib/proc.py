@@ -140,6 +140,12 @@ def _get_pids_by_port_windows_netstat(port: int) -> set[str]:
     if result.returncode != 0:
         return set()
 
+    # `text=True` decodes stdout as UTF-8; on locales where netstat emits
+    # non-UTF-8 bytes (e.g. GBK on zh-CN Windows) the reader thread raises
+    # UnicodeDecodeError and stdout comes back as None. Treat as "no PIDs".
+    if not result.stdout:
+        return set()
+
     pids: set[str] = set()
     for raw_line in result.stdout.splitlines():
         line = raw_line.strip()

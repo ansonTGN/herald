@@ -17,8 +17,8 @@
 //   - creem provider               => disabled
 //   - no seller config             => disabled
 //   - manual_only + no provider + seller + no external => manual_fallback (canApply=true)
-//   - provider_first + stripe + seller + NO external invoice  => manual_fallback (canApply=true)
-//     (CRITICAL: preserves today's Stripe manual-apply behavior)
+//   - provider_first + stripe + seller + NO external invoice  => external_provider (canApply=false)
+//     (Stripe invoices are pushed via webhook; users never apply manually)
 //   - provider_first + stripe + WITH an external_sync invoice => external_provider (canApply=false)
 //   - resource owned by another user => 403
 //   - subscription with no user owner => 403 (not a database decode error)
@@ -418,22 +418,21 @@ mod tests {
     }
 
     // =========================================================================
-    // Test: provider_first + stripe + seller + NO external invoice => manual_fallback
+    // Test: provider_first + stripe + seller + NO external invoice => external_provider
     // =========================================================================
-    // CRITICAL behavior-preservation (per spec): a Stripe resource WITH seller
-    // config and NO external-sync invoice MUST yield manual_fallback/canApply=true.
-    // This preserves today's ability to apply for a manual Herald invoice on a
-    // non-Creem provider transaction (the manual fallback). Do NOT block manual
-    // apply merely because a non-Creem provider is present.
+    // Stripe invoices are pushed via webhook — users must never apply manually.
+    // Stripe routes to read-only external_provider regardless of whether the
+    // webhook has landed yet; the frontend hides the button and points users to
+    // "My Invoices".
     //
     // Given: default policy (provider_first), seller config present,
     //        a payment_attempt with payment_provider='stripe', no external invoice
     // When:  GET apply-eligibility
-    // Then:  route == "manual_fallback", canApply == true
+    // Then:  route == "external_provider", canApply == false
 
     #[test_context(ApplyEligibilityTestContext)]
     #[tokio::test]
-    async fn test_apply_eligibility_stripe_without_external_is_manual_fallback(
+    async fn test_apply_eligibility_stripe_without_external_is_external_provider(
         ctx: &mut ApplyEligibilityTestContext,
     ) {
         let app = ctx.create_unified_test_router();
@@ -454,8 +453,8 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let body = parse_body(response.into_body()).await;
 
-        assert_eq!(body["route"], "manual_fallback");
-        assert_eq!(body["canApply"], true);
+        assert_eq!(body["route"], "external_provider");
+        assert_eq!(body["canApply"], false);
         assert!(body["reason"].is_null());
         assert_eq!(body["provider"], "stripe");
     }
@@ -464,7 +463,8 @@ mod tests {
     // Test: provider_first + stripe + external_sync invoice => external_provider
     // =========================================================================
     // Covers: P0-2 Phase B -- an externally-synced invoice already exists for
-    // this resource; the route is read-only external_provider.
+    // this resource; the route is read-only external_provider. Stripe always
+    // routes here regardless of webhook state (see test above).
     //
     // Given: stripe payment_attempt WITH an external_sync invoice tied to it,
     //        seller config present, default policy
@@ -496,12 +496,9 @@ mod tests {
 
         assert_eq!(body["route"], "external_provider");
         assert_eq!(body["canApply"], false);
-        let reason = body["reason"].as_str().unwrap_or("");
-        assert!(
-            reason.contains("already exists"),
-            "expected 'already exists', got: {}",
-            reason
-        );
+        // reason is null at the eligibility layer; the frontend renders the
+        // generic "Managed by Stripe — see My Invoices." text from the route.
+        assert!(body["reason"].is_null());
     }
 
     // =========================================================================

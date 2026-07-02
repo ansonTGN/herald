@@ -244,6 +244,7 @@ export async function issueInvoice(
 
   await expect(page.getByTestId('issue-confirm-dialog')).toBeHidden({ timeout: 10000 })
   await page.waitForLoadState('networkidle')
+  await expect(row.getByText('Issued', { exact: true })).toBeVisible({ timeout: 10000 })
   // Technical delay: allow table to refresh
   await page.waitForTimeout(300)
 }

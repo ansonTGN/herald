@@ -195,6 +195,27 @@
       "generated_success": "TOTP secret generated successfully",
       "enabled_success": "TOTP enabled successfully"
     },
+    "forgot_password": {
+      "title": "Forgot Password",
+      "description": "Enter your account email and we'll send you a link to reset your password.",
+      "email_label": "Email",
+      "submit": "Send Reset Link",
+      "submitting": "Sending...",
+      "success": "If an account exists for that email, a reset link has been sent. Please check your inbox.",
+      "back_to_login": "Back to Login",
+      "forgot_link": "Forgot password?"
+    },
+    "reset_password": {
+      "title": "Reset Password",
+      "description": "Enter a new password for your account.",
+      "new_password_label": "New Password",
+      "confirm_password_label": "Confirm New Password",
+      "submit": "Reset Password",
+      "submitting": "Resetting...",
+      "success": "Password reset successfully. You can now log in with your new password.",
+      "code_missing": "The reset link is invalid or incomplete. Please request a new reset link.",
+      "back_to_login": "Back to Login"
+    },
     "email_required": "Email is required",
     "email_invalid": "Invalid email address",
     "password_min_length": "Password must be at least 8 characters",
@@ -1313,6 +1334,8 @@
     "my_subscriptions_not_available": "Not available",
     "my_subscriptions_billing_period": "Billing Period",
     "my_subscriptions_view_history": "View History",
+    "my_subscriptions_change_plan": "Change plan",
+    "my_subscriptions_browse_plans": "Browse plans",
     "subscription_select_title": "Select Subscription",
     "subscription_history_timeline": "History Timeline",
     "subscription_showing_history_for": "Showing history for",
@@ -1411,7 +1434,16 @@
     "save_percent": "Save {percent}%",
     "not_enabled_reason": "Not enabled for purchase — contact admin",
     "continue_to_checkout": "Continue to checkout",
-    "unavailable": "Unavailable"
+    "unavailable": "Unavailable",
+    "section_subscriptions": "Subscriptions",
+    "section_subscriptions_meta": "Recurring · credits refresh each period",
+    "section_credit_packs": "Credit packs",
+    "section_credit_packs_meta": "One-time · added to balance immediately, no renewal",
+    "billing_type_subscription": "Subscription",
+    "billing_type_one_time": "One-time",
+    "period_suffix_month": "/mo",
+    "period_suffix_year": "/yr",
+    "period_suffix_once": "once"
   },
   "points": {
     "validation_plan_required": "Plan is required",
@@ -1733,6 +1765,8 @@
     "validation_promo_end_time_required": "Promo end time is required for promotional packages",
     "validation_promo_end_after_start": "Promo end time must be after start time",
     "purchase_page_title": "Purchase Points",
+    "purchase_points_cta": "Purchase points",
+    "purchase_points_description": "Top up or subscribe for more credits",
     "purchase_step_select": "Select Package",
     "purchase_step_payment": "Payment",
     "purchase_step_processing": "Processing",

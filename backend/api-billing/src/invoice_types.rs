@@ -741,7 +741,7 @@ mod tests {
 
     fn make_summary(external_invoice_id: Option<&str>) -> InvoiceSummary {
         InvoiceSummary {
-            id: Uuid::new_v4(),
+            id: Uuid::now_v7(),
             realm_id: "admin".to_string(),
             invoice_number: "INV-1".to_string(),
             source: InvoiceSource::ExternalSync,

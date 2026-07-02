@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -8,7 +9,11 @@ import { PointsUsageDashboard } from './PointsUsageDashboard'
 import { TransactionHistoryTable } from './TransactionHistoryTable'
 import { TransactionFilters } from './TransactionFilters'
 import { deriveUserPointsView } from './user-points-view'
-import { walletsByBucketQueryOptions, pointsTransactionsQueryOptions } from '@/data/query-options'
+import {
+  walletsByBucketQueryOptions,
+  pointsTransactionsQueryOptions,
+  featureAvailabilityQueryOptions,
+} from '@/data/query-options'
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants'
 import type { TransactionFilters as TransactionFiltersType } from '@/lib/schemas/points-forms'
 import { m } from '@/paraglide/messages'
@@ -56,6 +61,11 @@ export function UserPointsPage({
   const { data: walletsData, isLoading: walletsLoading } = useQuery(
     walletsByBucketQueryOptions(realmId)
   )
+
+  // Feature visibility drives the inline purchase block. Mirrors the
+  // featureAvailabilityQueryOptions usage in profile-sidebar.tsx.
+  const { data: features } = useQuery(featureAvailabilityQueryOptions(realmId))
+  const pointsPurchaseVisible = features?.user?.pointsPurchaseVisible === true
 
   // Bucket name lookup for the Bucket Select + Bucket column. The admin-only
   // credit-buckets directory (`/billing/credit-buckets`) 403s for regular users
@@ -128,6 +138,27 @@ export function UserPointsPage({
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">{m['points.user_points_page_title']()}</h1>
       </div>
+
+      {pointsPurchaseVisible && (
+        <Card data-testid="points-purchase-inline-block">
+          <CardContent className="flex flex-col items-start justify-between gap-4 py-4 sm:flex-row sm:items-center">
+            <div className="space-y-1">
+              <div className="text-sm font-medium">{m['points.purchase_points_cta']()}</div>
+              <p className="text-sm text-muted-foreground">
+                {m['points.purchase_points_description']()}
+              </p>
+            </div>
+            {/* TODO(ui-spec §8.3): add quick-pack chips (one_time packs) that
+                deep-link to the purchase page with a preselected price once the
+                purchase-page preselect interaction is finalized by /t-design. */}
+            <Button asChild data-testid="points-purchase-cta">
+              <Link to="/$realmId/user/purchase-points" params={{ realmId }}>
+                {m['points.purchase_points_cta']()}
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Cross-bucket total bar — only when the user holds >= 2 buckets */}
       {showTotalBar && (
