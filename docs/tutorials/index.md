@@ -18,7 +18,7 @@
 - [架构](architecture.md) — 项目结构、技术选型，以及用户协议/隐私政策版本化、账户注销等合规机制
 - [配置](configuration.md) — 配置项说明，含 Realm 用户协议与隐私政策配置
 - [部署](deployment.md) — Docker 生产环境部署
-- [计费架构](billing-overview.md) — Credit Bucket、Entitlement Mapping、订阅投影、Metadata 契约、积分策略
+- [计费架构](billing-overview.md) — 积分账户、Entitlement Mapping、订阅投影、Metadata 契约、积分策略
 - [Stripe 支付对接](billing-stripe-payment.md) — Stripe 支付方配置和 Webhook 处理
 - [Creem 支付对接](billing-creem-payment.md) — Creem 支付方配置和 Webhook 处理
 - [发票管理](billing-invoice.md) — 发票创建、开票、PDF 生成

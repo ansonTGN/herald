@@ -42,11 +42,6 @@ export class EntitlementMappingsPage extends BasePage {
   readonly webhookPriceUnresolvedBanner: Locator
   readonly emptyState: Locator
 
-  // Toolbar filters
-  readonly providerFilterSelect: Locator
-  readonly productFilterSelect: Locator
-  readonly entitlementKeyFilterSelect: Locator
-
   // Master list (left pane)
   readonly mappingProductList: Locator
 
@@ -77,12 +72,6 @@ export class EntitlementMappingsPage extends BasePage {
       SELECTORS.multiPriceMapping.webhookPriceUnresolvedBanner,
     )
     this.emptyState = page.locator(SELECTORS.multiPriceMapping.emptyState)
-
-    this.providerFilterSelect = page.locator(SELECTORS.multiPriceMapping.providerFilterSelect)
-    this.productFilterSelect = page.locator(SELECTORS.multiPriceMapping.productFilterSelect)
-    this.entitlementKeyFilterSelect = page.locator(
-      SELECTORS.multiPriceMapping.entitlementKeyFilterSelect,
-    )
 
     this.mappingProductList = page.locator(SELECTORS.multiPriceMapping.mappingProductList)
 
@@ -189,14 +178,6 @@ export class EntitlementMappingsPage extends BasePage {
     return current === 'true'
   }
 
-  /**
-   * Filter mappings by payment provider using the Radix Select dropdown.
-   */
-  async filterByProvider(provider: string): Promise<void> {
-    await this.selectRadixOption(this.providerFilterSelect, provider)
-    await this.page.waitForLoadState('domcontentloaded')
-  }
-
   // ==================== Detail panel ====================
 
   /**
@@ -253,17 +234,6 @@ export class EntitlementMappingsPage extends BasePage {
 
   async getBillingPeriodValue(priceKey: string): Promise<string> {
     return this.getReadonlyFieldValue(priceKey, 'Period')
-  }
-
-  async getProductFilterOptionLabels(): Promise<string[]> {
-    await this.smartClick(this.productFilterSelect)
-    const options = this.page.getByRole('option')
-    await expect(options.first()).toBeVisible({ timeout: 3000 })
-    const labels = await options
-      .evaluateAll((nodes) => nodes.map((node) => node.textContent?.trim() ?? ''))
-    await this.page.keyboard.press('Escape')
-    await expect(options.first()).toBeHidden({ timeout: 3000 })
-    return labels.filter(Boolean)
   }
 
   /**

@@ -4,14 +4,6 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-/// Response from checkout session creation
-#[derive(Debug, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateCheckoutResponse {
-    pub checkout_url: String,
-    pub checkout_id: Uuid,
-}
-
 /// Structured view of the `provider_product_info` JSONB synced from the
 /// provider (design §5.7).
 ///
@@ -267,17 +259,6 @@ pub struct CancelSubscriptionResponse {
 
 /// Request to create checkout session.
 ///
-/// Purchase target is price-level: callers pass the entitlement **mapping** id.
-/// The checkout handler resolves the mapping to its
-/// entitlement key / provider product / price and routes to the payment
-/// provider. Replaces the former `entitlement_key`-only contract.
-#[derive(Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateCheckoutSessionRequest {
-    pub mapping_id: Uuid,
-    pub payment_provider: String,
-}
-
 /// Input for one quota window in a mapping batch save (design §4.3.2).
 ///
 /// Carries only the editable fields; the stable display `key` is derived by

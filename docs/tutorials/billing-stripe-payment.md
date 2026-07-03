@@ -138,7 +138,7 @@ Herald 使用 Stripe 的 inline pricing 创建 Checkout Session，不需要在 S
 - External Product ID（如 `prod_xxxx`）
 - External Price ID（如 `price_xxxx`）
 - 自动生成的 Entitlement Key（格式为 `stripe-{normalized_product_id}`）
-- 归属的 Credit Bucket（新同步的映射默认挂在 Realm 的注册接收池）
+- 归属的积分账户（新同步的映射默认挂在 Realm 的注册接收池）
 - 积分策略状态
 
 列表的主标签是 Stripe 商品的产品名（Product name）。产品名缺失时回退到 External Product ID，再不行给占位，不会出现空标签。产品过滤器按产品名匹配，外部 ID 命中也算。
@@ -165,11 +165,11 @@ Herald 使用 Stripe 的 inline pricing 创建 Checkout Session，不需要在 S
    - **Enabled**：是否启用。禁用后 Webhook 仍更新订阅投影，但不触发积分发放
 3. 点击保存
 
-### 归属 Credit Bucket
+### 归属积分账户
 
-每条映射必须挂在某个 Credit Bucket 上。同步进来的映射默认挂在本 Realm 的注册接收池 Bucket。如果这个套餐属于某条独立业务线，去 **Credit Buckets** 页面把它挪到对应的 Bucket。
+每条映射必须挂在某个积分账户上。同步进来的映射默认挂在本 Realm 的注册接收池账户。如果这个套餐属于某条独立业务线，去 **积分账户** 页面把它挪到对应的积分账户。
 
-Bucket 决定了两件事：用户购买后积分进哪个池、哪些 Client App 能消费这些积分。Bucket 的概念见[计费架构](billing-overview.md#credit-bucket)。
+积分账户决定了两件事：用户购买后积分进哪个池、哪些 Client App 能消费这些积分。积分账户的概念见[计费架构](billing-overview.md#积分账户)。
 
 ### Stripe Metadata 导入（可选）
 

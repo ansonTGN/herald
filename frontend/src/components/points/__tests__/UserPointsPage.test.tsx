@@ -136,7 +136,9 @@ describe('UserPointsPage bucket option derivation', () => {
     // Wait for wallets query to settle so the bucket Select renders.
     await waitFor(() => expect(screen.getByTestId('transaction-history-table')).toBeInTheDocument())
 
-    const bucketSelect = screen.getByRole('combobox', { name: /bucket/i })
+    // The bucket Select's accessible name comes from `points.filter_bucket_label`
+    // (now "Account"); match the current copy rather than a stale literal.
+    const bucketSelect = screen.getByRole('combobox', { name: /account/i })
     await user.click(bucketSelect)
 
     // Both wallet-derived names must be selectable. The admin credit-buckets

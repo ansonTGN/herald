@@ -24,6 +24,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { formatInvoiceAmount } from '@/lib/invoice-utils'
 import { deriveSharedKeyColor } from '@/components/billing/shared-key-color'
 import { toast } from 'sonner'
+import { purchasePointsSearchSchema } from '@/lib/schemas/search-params'
 
 export const Route = createFileRoute('/$realmId/user/purchase-points')({
   beforeLoad: ({ context, params }) =>
@@ -31,6 +32,7 @@ export const Route = createFileRoute('/$realmId/user/purchase-points')({
       to: '/$realmId/user/points',
       params: { realmId: params.realmId },
     }),
+  validateSearch: purchasePointsSearchSchema,
   component: PurchasePointsRoute,
 })
 
@@ -57,6 +59,11 @@ export function disabledReason(
 
 function PurchasePointsRoute() {
   const { realmId } = Route.useParams()
+  // The provider bounces the user back here with `attemptId` (+ `status`) in
+  // the query string after a checkout. This is a UX bounce only — payment
+  // status is confirmed via webhook + the polling in PurchasePointsPage. See
+  // purchasePointsSearchSchema.
+  const { attemptId: queryAttemptId, status: queryStatus } = Route.useSearch()
 
   // clientAppId is not in useAuthStore or the route param; resolve it by listing
   // the realm's client apps and taking the first (same pattern as the
@@ -76,7 +83,14 @@ function PurchasePointsRoute() {
     )
   }
 
-  return <PurchasePointsPage realmId={realmId} clientAppId={clientAppId} />
+  return (
+    <PurchasePointsPage
+      realmId={realmId}
+      clientAppId={clientAppId}
+      queryAttemptId={queryAttemptId}
+      queryStatus={queryStatus}
+    />
+  )
 }
 
 function PriceCard({
@@ -169,9 +183,16 @@ function PriceCard({
 export function PurchasePointsPage({
   realmId,
   clientAppId,
+  queryAttemptId,
+  queryStatus,
 }: {
   realmId: string
   clientAppId: string
+  // Carried from the route's validated search params on a provider redirect
+  // bounce. `queryAttemptId` resumes polling; `queryStatus: 'cancel'` steps
+  // back to payment. Undefined on normal navigation.
+  queryAttemptId?: string
+  queryStatus?: 'success' | 'cancel'
 }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -253,6 +274,36 @@ export function PurchasePointsPage({
     checkRecovery()
   }, [attemptId, canRecover])
 
+  // Resume from a provider redirect bounce. When the user returns with
+  // `?attemptId=...`, sync the store so the polling effect above picks it up
+  // — this works even if localStorage was cleared (query is the source of
+  // truth, persist is only a same-browser fallback). A `cancel` bounce means
+  // the user abandoned checkout at Stripe, so drop the attempt and step back.
+  useEffect(() => {
+    if (!queryAttemptId) return
+    if (queryStatus === 'cancel') {
+      clearPurchaseState()
+      setCurrentStep('payment')
+      return
+    }
+    // success or no status: ensure the store carries this attemptId so polling
+    // (gated on `attemptId`) fires. Skip if the store already tracks it — the
+    // webhook/polling will have updated status and we must not clobber it.
+    // The paymentContext is empty on bounce: the user already paid, so the
+    // checkout URL is irrelevant and PaymentAttemptStatus won't render a
+    // redirect prompt once status leaves Pending.
+    if (queryAttemptId !== attemptId) {
+      setPaymentAttempt(
+        queryAttemptId,
+        'Pending',
+        {},
+        new Date(Date.now() + 15 * 60 * 1000).toISOString()
+      )
+      setCurrentStep('processing')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queryAttemptId, queryStatus])
+
   useEffect(() => {
     if (paymentStatus) {
       if (paymentStatus.status === 'Succeeded') {
@@ -318,8 +369,26 @@ export function PurchasePointsPage({
           data.expiresAt || new Date(Date.now() + 15 * 60 * 1000).toISOString()
         )
 
-        setCurrentStep('processing')
         queryClient.invalidateQueries({ queryKey: ['payment-attempt-status', realmId, data.id] })
+
+        // Same-tab redirect to the provider's checkout page — no "processing"
+        // interstitial, no new tab. The provider bounces the user back to this
+        // route with `?attemptId=...`, which re-enters the processing step
+        // solely to poll for the webhook-confirmed final status. When no
+        // checkout URL was returned (degraded), fall back to the processing
+        // step so its degraded UI can offer retry/cancel.
+        const provider = selectedOption?.paymentProvider ?? null
+        const checkoutUrl =
+          provider === 'stripe'
+            ? (data.paymentContext?.stripeCheckoutUrl ?? null)
+            : provider === 'creem'
+              ? (data.paymentContext?.creemCheckoutUrl ?? null)
+              : null
+        if (checkoutUrl) {
+          window.location.href = checkoutUrl
+          return
+        }
+        setCurrentStep('processing')
       }
     },
     onError: (error: Error) => {

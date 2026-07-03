@@ -888,6 +888,13 @@ async fn handle_checkout_completed(
             external_payload: Some(event.clone()),
             tax_details,
             account_id: resolved_account_id,
+            // Creem buyer-snapshot extraction is out of scope; left None and
+            // COALESCE-preserved on upsert.
+            applicant_user_id: None,
+            billing_name: None,
+            billing_email: None,
+            billing_phone: None,
+            billing_address: None,
             currency: resolved_currency,
             total: resolved_amount,
             status: InvoiceStatus::Paid,
@@ -1286,6 +1293,12 @@ async fn handle_subscription_paid(
                     external_payload: Some(event.clone()),
                     tax_details: extract_creem_tax_details(object),
                     account_id: Some(user_id),
+                    // Creem buyer-snapshot extraction is out of scope; left None.
+                    applicant_user_id: None,
+                    billing_name: None,
+                    billing_email: None,
+                    billing_phone: None,
+                    billing_address: None,
                     currency: currency.clone(),
                     total: amount,
                     status: InvoiceStatus::Paid,

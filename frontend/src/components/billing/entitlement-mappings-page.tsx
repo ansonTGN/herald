@@ -4,13 +4,6 @@ import { format } from 'date-fns'
 import { toast } from 'sonner'
 import { Plug2, AlertTriangle } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Input } from '@/components/ui/input'
@@ -57,26 +50,16 @@ import type {
   PriceMappingUpdate,
 } from '@/lib/api-generated'
 
-const PROVIDER_FILTER_OPTIONS = [
-  { value: 'all', label: 'All' },
-  { value: 'stripe', label: 'Stripe' },
-  { value: 'creem', label: 'Creem' },
-] as const
-
 interface EntitlementMappingsPageProps {
   realmId: string
-  search: { page?: number; pageSize?: number; provider?: string }
 }
 
-export function EntitlementMappingsPage({ realmId, search }: EntitlementMappingsPageProps) {
+export function EntitlementMappingsPage({ realmId }: EntitlementMappingsPageProps) {
   const queryClient = useQueryClient()
   const { hasPermission } = usePermission()
   const canManage = hasPermission('billing.manage')
   const canManagePoints = hasPermission('points.manage')
 
-  const [providerFilter, setProviderFilter] = useState<string>(search.provider ?? 'all')
-  const [productFilter, setProductFilter] = useState<string>('all')
-  const [entitlementKeyFilter, setEntitlementKeyFilter] = useState<string>('all')
   const [selectedProductKey, setSelectedProductKey] = useState<string | null>(null)
 
   // Protected-price 409 confirmation state: surfaces the active-sub count for
@@ -86,12 +69,8 @@ export function EntitlementMappingsPage({ realmId, search }: EntitlementMappings
     activeSubscriptions: number
   } | null>(null)
 
-  const filters = {
-    paymentProvider: providerFilter !== 'all' ? providerFilter : undefined,
-  }
-
   const { data, isLoading } = useQuery({
-    ...entitlementMappingsQueryOptions(realmId, filters),
+    ...entitlementMappingsQueryOptions(realmId, {}),
     select: (rawData) => rawData as EntitlementMappingListResponse | undefined,
   })
 
@@ -99,58 +78,19 @@ export function EntitlementMappingsPage({ realmId, search }: EntitlementMappings
 
   const productGroups = useMemo(() => groupByProduct(allMappings), [allMappings])
 
-  // Unique product id list for the product filter dropdown.
-  const productFilterOptions = useMemo(() => {
-    const seen = new Map<string, { value: string; label: string }>()
-    for (const g of productGroups) {
-      const value = productKeyOf(g)
-      if (!seen.has(value)) {
-        seen.set(value, {
-          value,
-          label: `${formatProviderName(g.paymentProvider)} · ${g.productName ?? g.externalProductId}`,
-        })
-      }
-    }
-    return Array.from(seen.values())
-  }, [productGroups])
-
-  // Unique entitlement key list (across all loaded mappings) for the key filter.
-  const entitlementKeyOptions = useMemo(() => {
-    const seen = new Set<string>()
-    for (const item of allMappings) seen.add(item.entitlementKey)
-    return Array.from(seen).sort()
-  }, [allMappings])
-
-  // Apply provider (server) + product + entitlement_key (client) filters.
-  const filteredGroups = useMemo(() => {
-    let groups = productGroups
-    if (productFilter !== 'all') {
-      groups = groups.filter((g) => productKeyOf(g) === productFilter)
-    }
-    if (entitlementKeyFilter !== 'all') {
-      groups = groups
-        .map((g) => ({
-          ...g,
-          prices: g.prices.filter((p) => p.entitlementKey === entitlementKeyFilter),
-        }))
-        .filter((g) => g.prices.length > 0)
-    }
-    return groups
-  }, [productGroups, productFilter, entitlementKeyFilter])
-
   // Derive the EFFECTIVE selected product key without a setState effect:
-  // if the user's selection still exists in the filtered list, keep it;
-  // otherwise fall back to the first product (or null when empty). This
-  // avoids cascading renders from a setState-in-effect.
+  // if the user's selection still exists in the list, keep it; otherwise
+  // fall back to the first product (or null when empty). This avoids
+  // cascading renders from a setState-in-effect.
   const effectiveSelectedProductKey: string | null = useMemo(() => {
-    if (filteredGroups.length === 0) return null
-    const exists = filteredGroups.some((g) => productKeyOf(g) === selectedProductKey)
-    return exists ? selectedProductKey : productKeyOf(filteredGroups[0])
-  }, [filteredGroups, selectedProductKey])
+    if (productGroups.length === 0) return null
+    const exists = productGroups.some((g) => productKeyOf(g) === selectedProductKey)
+    return exists ? selectedProductKey : productKeyOf(productGroups[0])
+  }, [productGroups, selectedProductKey])
 
   const selectedGroup = useMemo(
-    () => filteredGroups.find((g) => productKeyOf(g) === effectiveSelectedProductKey) ?? null,
-    [filteredGroups, effectiveSelectedProductKey]
+    () => productGroups.find((g) => productKeyOf(g) === effectiveSelectedProductKey) ?? null,
+    [productGroups, effectiveSelectedProductKey]
   )
 
   const handleSyncComplete = useCallback(() => {
@@ -192,51 +132,8 @@ export function EntitlementMappingsPage({ realmId, search }: EntitlementMappings
         </div>
       )}
 
-      {/* Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <Select value={providerFilter} onValueChange={setProviderFilter}>
-            <SelectTrigger className="w-[160px]" data-testid="provider-filter-select">
-              <SelectValue placeholder="All Providers" />
-            </SelectTrigger>
-            <SelectContent>
-              {PROVIDER_FILTER_OPTIONS.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select value={productFilter} onValueChange={setProductFilter}>
-            <SelectTrigger className="w-[220px]" data-testid="product-filter-select">
-              <SelectValue placeholder="All Products" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Products</SelectItem>
-              {productFilterOptions.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select value={entitlementKeyFilter} onValueChange={setEntitlementKeyFilter}>
-            <SelectTrigger className="w-[180px]" data-testid="entitlement-key-filter-select">
-              <SelectValue placeholder="All Keys" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Keys</SelectItem>
-              {entitlementKeyOptions.map((k) => (
-                <SelectItem key={k} value={k}>
-                  {k}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
+      {/* Toolbar: provider sync only (filters removed — the product list is the navigation). */}
+      <div className="flex justify-end">
         <ProviderSyncButton realmId={realmId} onSyncComplete={handleSyncComplete} />
       </div>
 
@@ -253,7 +150,7 @@ export function EntitlementMappingsPage({ realmId, search }: EntitlementMappings
             </CardHeader>
             <CardContent className="p-0">
               <ul className="divide-y" data-testid="mapping-product-list">
-                {filteredGroups.map((g) => {
+                {productGroups.map((g) => {
                   const key = productKeyOf(g)
                   const isSelected = key === effectiveSelectedProductKey
                   const primaryColor = deriveSharedKeyColor(g.prices[0]?.entitlementKey ?? '')
@@ -594,7 +491,6 @@ function PriceEditRow({
               })
             }
             disabled={pointsDisabled}
-            placeholder="1000"
             className={isUnresolved && row.pointsPerPeriod == null ? 'border-destructive' : ''}
           />
         </Field>

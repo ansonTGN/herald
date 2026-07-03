@@ -142,16 +142,11 @@ export function UserPointsPage({
       {pointsAreaVisible && (
         <Card data-testid="points-purchase-inline-block">
           <CardContent className="flex flex-col items-start justify-between gap-4 py-4 sm:flex-row sm:items-center">
-            <div className="space-y-1">
-              <div className="text-sm font-medium">{m['points.purchase_points_cta']()}</div>
-              <p className="text-sm text-muted-foreground">
-                {m['points.purchase_points_description']()}
-              </p>
-            </div>
+            <div className="text-sm font-medium">{m['points.purchase_points_cta']()}</div>
             {/* TODO(ui-spec §8.3): add quick-pack chips (one_time packs) that
                 deep-link to the purchase page with a preselected price once the
                 purchase-page preselect interaction is finalized by /t-design. */}
-            <Button asChild data-testid="points-purchase-cta">
+            <Button asChild size="sm" data-testid="points-purchase-cta">
               <Link to="/$realmId/user/purchase-points" params={{ realmId }}>
                 {m['points.purchase_points_cta']()}
               </Link>

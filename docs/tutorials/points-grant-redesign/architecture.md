@@ -72,7 +72,7 @@ CREATE INDEX idx_points_transactions_window_agg
 ```text
 BEGIN
 锁定 points_wallets 行（FOR UPDATE）
-window_avail = 该 bucket 的窗口可用额度
+window_avail = 该账户的窗口可用额度
 pool_avail   = 池子类型可用额度（topup/registration/granted）
 if amount > window_avail + pool_avail: ROLLBACK, 返回 InsufficientBalance
 window_part = min(amount, window_avail)
@@ -101,9 +101,9 @@ COMMIT
 
 页面结构：
 
-1. 跨 bucket 合计区（当用户持有 >=2 个 bucket 时显示）
-2. 每个 bucket 的 `PointsUsageDashboard`（窗口模型）
-3. 每个 bucket 的 `PointsBalanceCard`（池子模型）
+1. 跨账户合计区（当用户持有 >=2 个账户时显示）
+2. 每个账户的 `PointsUsageDashboard`（窗口模型）
+3. 每个账户的 `PointsBalanceCard`（池子模型）
 4. 交易历史
 
 `PointsUsageDashboard` 展示：

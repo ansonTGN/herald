@@ -953,24 +953,24 @@ fn auth_json_request(
 /// Price reference handed to Stripe.
 ///
 /// Covers:
-/// - `mappingId` input contract: the handler resolves
-///   the mapping by `mapping_id` (NOT `entitlementKey`, which was deleted). We
-///   prove the lookup path by resolving via the SAME repository method the
-///   handler uses (`find_entitlement_mapping_by_id`) and asserting the row
-///   carries the real `external_price_id`.
+/// - `mappingId` input contract: the purchase service resolves
+///   the mapping by `target_id` (a mapping id; NOT `entitlementKey`, which was
+///   deleted). We prove the lookup path by resolving via the SAME repository
+///   method the service uses (`find_entitlement_mapping_by_id`) and asserting
+///   the row carries the real `external_price_id`.
 /// - Real-price reference: `mapping.external_price_id` is
-///   exactly the value the handler clones into `StripeCreateCheckoutRequest.
-///   price_id` (handler: `price_id: mapping.external_price_id.clone()`), which
-///   the Stripe client turns into `line_items[0][price]` (and emits NO
-///   `price_data` fields — unit-tested in `infra-stripe`). A regression that
-///   passes `None` (price-less fallback) or drops the field makes the assertion
-///   fail.
+///   exactly the value the service clones into `StripeCreateCheckoutRequest.
+///   price_id` (purchase_service: `price_id: target.provider_external_price_id.
+///   clone()`), which the Stripe client turns into `line_items[0][price]` (and
+///   emits NO `price_data` fields — unit-tested in `infra-stripe`). A regression
+///   that passes `None` (price-less fallback) or drops the field makes the
+///   assertion fail.
 ///
-/// PRODUCTION-GAP: the real checkout HTTP route cannot be driven end-to-end
-/// here because `get_stripe_client_for_realm` hard-codes the Stripe base URL
-/// (no mock injection). See the group header note. The `line_items[0][price]`
-/// form assertion lives in `infra-stripe` unit tests; this scenario pins the
-/// data substrate that drives it.
+/// PRODUCTION-GAP: the real checkout path cannot be driven end-to-end here
+/// because `get_stripe_client_for_realm` hard-codes the Stripe base URL (no
+/// mock injection). See the group header note. The `line_items[0][price]` form
+/// assertion lives in `infra-stripe` unit tests; this scenario pins the data
+/// substrate that drives it.
 #[test_context(SchemaTestContext)]
 #[tokio::test]
 async fn checkout_references_real_stripe_price(ctx: &mut SchemaTestContext) {
@@ -978,7 +978,7 @@ async fn checkout_references_real_stripe_price(ctx: &mut SchemaTestContext) {
     let bucket_id =
         herald_test_support::helpers::ensure_registration_pool_bucket(ctx, &realm_id).await;
 
-    // A price-level mapping carrying a REAL Stripe Price id. The handler reads
+    // A price-level mapping carrying a REAL Stripe Price id. The service reads
     // `mapping.external_price_id` and passes it as `price_id`.
     let mapping_id = herald_test_support::helpers::setup_test_price_mapping(
         ctx,
@@ -994,8 +994,8 @@ async fn checkout_references_real_stripe_price(ctx: &mut SchemaTestContext) {
     )
     .await;
 
-    // The SAME lookup the checkout handler issues
-    // (`state.billing_repository.find_entitlement_mapping_by_id(request.mapping_id)`).
+    // The SAME lookup the purchase service issues
+    // (`find_entitlement_mapping_by_id(target_id)`).
     // Asserting here is asserting the input to `StripeCreateCheckoutRequest.price_id`.
     let mapping = ctx
         .app_state
@@ -1006,7 +1006,7 @@ async fn checkout_references_real_stripe_price(ctx: &mut SchemaTestContext) {
         .expect("the seeded price mapping must resolve by id");
 
     // The WHY: the resolved mapping carries the REAL Stripe Price id, which the
-    // handler wires as `price_id` (-> `line_items[0][price]` in the Stripe
+    // service wires as `price_id` (-> `line_items[0][price]` in the Stripe
     // client). A product-level collapse or a `None` price_id regression would
     // make this `None` (or a synthesized placeholder) and the real Price would
     // NOT be referenced — silently breaking Stripe-side analytics, coupons, and
@@ -1015,18 +1015,18 @@ async fn checkout_references_real_stripe_price(ctx: &mut SchemaTestContext) {
         mapping.external_price_id.as_deref(),
         Some("price_real_abc"),
         "checkout target mapping MUST carry the real external_price_id that \
-         the handler passes as Stripe price_id (line_items[0][price]); got {:?} \
+         the service passes as Stripe price_id (line_items[0][price]); got {:?} \
          — a None here means checkout would fall back to price_data and lose the \
          real Price reference",
         mapping.external_price_id
     );
-    // The mapping is enabled (the handler rejects disabled mappings with 400
-    // before reaching the Stripe call); pinning this proves the checkout path
-    // would proceed past the enabled gate.
+    // The mapping is enabled (the service rejects disabled mappings before
+    // reaching the Stripe call); pinning this proves the checkout path would
+    // proceed past the enabled gate.
     assert!(
         mapping.enabled,
-        "checkout target mapping must be enabled, else the handler returns 400 \
-         and the real-price reference path is not exercised"
+        "checkout target mapping must be enabled, else the real-price reference \
+         path is not exercised"
     );
 }
 

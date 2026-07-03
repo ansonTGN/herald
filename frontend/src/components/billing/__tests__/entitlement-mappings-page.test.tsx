@@ -97,7 +97,7 @@ function renderPage(items: EntitlementMappingResponse[] = [], client?: QueryClie
     new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   seedData(qc, items)
   const wrapper = makeWrapper(qc)
-  const view = render(<EntitlementMappingsPage realmId="realm-1" search={{}} />, { wrapper })
+  const view = render(<EntitlementMappingsPage realmId="realm-1" />, { wrapper })
   return { qc, ...view }
 }
 

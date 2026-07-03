@@ -102,7 +102,7 @@ Herald 不会自动知道你在 Creem 创建了什么商品。下一步需要同
 3. 选择支付方 **Creem**
 4. 等待同步完成
 
-同步完成后你会看到从 Creem 拉取的商品列表。每条记录包含 External Product ID、自动生成的 Entitlement Key（格式为 `creem-{normalized_product_id}`），以及它默认归属的 Credit Bucket（Realm 的注册接收池）。列表的主标签用产品名，缺失时回退到 External Product ID。
+同步完成后你会看到从 Creem 拉取的商品列表。每条记录包含 External Product ID、自动生成的 Entitlement Key（格式为 `creem-{normalized_product_id}`），以及它默认归属的积分账户（Realm 的注册接收池）。列表的主标签用产品名，缺失时回退到 External Product ID。
 
 Creem 价格按原值展示。Creem 返回的价格本身就是显示值（字符串如 `"9.99"`），展示时直接用，不做 Stripe 那种最小货币单位整数（分）的除以 100 换算。币种跟随 Creem 返回值。两条换算分支（Stripe 与 Creem）是分开的，不会互相污染。
 
@@ -122,11 +122,11 @@ Creem 价格按原值展示。Creem 返回的价格本身就是显示值（字�
    - **Enabled**：是否启用。禁用后 Webhook 仍更新订阅投影，但不触发积分发放
 3. 点击保存
 
-### 归属 Credit Bucket
+### 归属积分账户
 
-每条映射必须挂在某个 Credit Bucket 上。同步进来的映射默认挂在本 Realm 的注册接收池 Bucket。如果这个套餐属于某条独立业务线，去 **Credit Buckets** 页面把它挪到对应的 Bucket。
+每条映射必须挂在某个积分账户上。同步进来的映射默认挂在本 Realm 的注册接收池账户。如果这个套餐属于某条独立业务线，去 **积分账户** 页面把它挪到对应的积分账户。
 
-Bucket 决定了两件事：用户购买后积分进哪个池、哪些 Client App 能消费这些积分。Bucket 的概念见[计费架构](billing-overview.md#credit-bucket)。
+积分账户决定了两件事：用户购买后积分进哪个池、哪些 Client App 能消费这些积分。积分账户的概念见[计费架构](billing-overview.md#积分账户)。
 
 ## Step 5: 用户支付流程
 

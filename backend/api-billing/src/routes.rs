@@ -14,8 +14,8 @@ use crate::entitlement_mapping_handlers::{
 };
 use crate::feature_availability::get_feature_availability;
 use crate::handlers::{
-    cancel_subscription_for_client_app, create_checkout_session, get_subscription,
-    get_subscription_for_client_app, list_purchase_options, list_subscriptions,
+    cancel_subscription_for_client_app, get_subscription, get_subscription_for_client_app,
+    list_purchase_options, list_subscriptions,
 };
 use crate::handlers_history::{
     get_my_subscription_history, get_subscription_history, list_my_subscription_history,
@@ -117,10 +117,6 @@ pub fn billing_routes() -> Router<AppState> {
         .route(
             "/api/bill/{realmId}/client/{clientAppId}/subscription/cancel",
             post(cancel_subscription_for_client_app),
-        )
-        .route(
-            "/api/bill/{realmId}/client/{clientAppId}/checkout",
-            post(create_checkout_session),
         )
         .route(
             "/api/bill/{realmId}/client/{clientAppId}/purchase-options",

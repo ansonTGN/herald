@@ -10,7 +10,7 @@ Herald 积分系统把 `subscription_credit`（订阅积分）和 `free_periodic
 
 ## 前置知识
 
-- 了解 Herald 的 Realm、Credit Bucket、Entitlement Mapping 基本概念
+- 了解 Herald 的 Realm、积分账户、Entitlement Mapping 基本概念
 - 熟悉 JSON 和 REST API 调用
 
 ## 解决了什么问题

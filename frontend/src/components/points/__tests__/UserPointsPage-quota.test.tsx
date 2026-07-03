@@ -266,12 +266,13 @@ describe('UserPointsPage — quota dashboard + pool cards (MSW integration)', ()
       expect(screen.getByTestId('points-balance-card-bucket-quota')).toBeInTheDocument()
       expect(screen.getByTestId('points-balance-card-bucket-pool')).toBeInTheDocument()
 
-      // spendable-now renders the BACKEND bucketTotal verbatim per bucket.
-      // (FE-T03 pinned this at the dashboard layer; here we pin it end-to-end
-      // through the query → derive → render pipeline.)
-      expect(within(quotaDashboard).getByTestId('points-spendable-now')).toHaveTextContent('120')
+      // The "current spendable total" big number was removed from the dashboard
+      // card, so spendable-now is no longer rendered end-to-end. Pin its absence
+      // here so the removal intent survives through the query → derive → render
+      // pipeline.
+      expect(within(quotaDashboard).queryByTestId('points-spendable-now')).not.toBeInTheDocument()
       const poolDashboard = screen.getByTestId('points-usage-dashboard-bucket-pool')
-      expect(within(poolDashboard).getByTestId('points-spendable-now')).toHaveTextContent('80')
+      expect(within(poolDashboard).queryByTestId('points-spendable-now')).not.toBeInTheDocument()
     })
 
     it('GIVEN a quota bucket WHEN rendered THEN the dashboard surfaces its window row AND the pool card big number is spendableFromPool (not bucketTotal)', async () => {
@@ -379,7 +380,9 @@ describe('UserPointsPage — quota dashboard + pool cards (MSW integration)', ()
       expect(screen.getByTestId('transaction-bucket-0')).toHaveTextContent('Subscription Bucket')
 
       // Bucket Select options come from wallet rows.
-      const bucketSelect = screen.getByRole('combobox', { name: /^bucket$/i })
+      // The bucket Select's accessible name comes from `points.filter_bucket_label`
+      // (now "Account"); match the current copy rather than a stale literal.
+      const bucketSelect = screen.getByRole('combobox', { name: /^account$/i })
       await user.click(bucketSelect)
       expect(screen.getByRole('option', { name: 'Subscription Bucket' })).toBeInTheDocument()
       expect(screen.getByRole('option', { name: 'Topup Bucket' })).toBeInTheDocument()

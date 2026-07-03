@@ -10,8 +10,8 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::webhook_common::{
-    create_placeholder_transaction, metadata_value, parse_attempt_id, parse_event_id,
-    parse_optional_uuid_field, parse_uuid_field,
+    create_placeholder_transaction, metadata_user_id, metadata_value, parse_attempt_id,
+    parse_event_id, parse_optional_uuid_field, parse_uuid_field,
 };
 use crate::webhook_subscription_helpers::{
     ResolvedEntitlement, SyncSubscriptionInput, resolve_bucket_id_for_entitlement,
@@ -1063,6 +1063,15 @@ async fn link_one_time_payment_intent_to_invoice(
         external_payload: None,
         tax_details: None,
         account_id,
+        // The Checkout Session object is not passed into this helper, so the
+        // buyer snapshot cannot be extracted here. The buyer columns are left
+        // None and get COALESCE-backfilled by the subsequent `invoice.*` events,
+        // which carry `customer_name` / `customer_email` / `customer_address`.
+        applicant_user_id: None,
+        billing_name: None,
+        billing_email: None,
+        billing_phone: None,
+        billing_address: None,
         currency: currency.to_string(),
         total,
         // Use Paid so a missing subsequent invoice.paid (rare race) still leaves the
@@ -1121,9 +1130,12 @@ async fn handle_checkout_session_completed(
             session["payment_intent"].as_str(),
             session["invoice"].as_str(),
         ) {
-            // Best-effort: resolve account_id from metadata userId so the row is
-            // attributable; falls back to None like the invoice.* handler does.
-            let account_id = parse_optional_uuid_field(&session["metadata"]["userId"]);
+            // Best-effort: resolve account_id from session metadata so the row
+            // is attributable; falls back to None like the invoice.* handler.
+            // `metadata_user_id` tries all three key variants (`heraldUserId`,
+            // `herald_user_id`, `userId`) because Stripe metadata key naming is
+            // inconsistent across write paths.
+            let account_id = metadata_user_id(&session["metadata"]);
             // Resolve the one-time payment attempt id from metadata so the invoice
             // row is attributed to the attempt that drove this checkout.
             let attempt_id = parse_attempt_id(&session["metadata"][metadata_keys::ATTEMPT_ID]);
@@ -2905,6 +2917,71 @@ async fn handle_invoice_payment_succeeded(
     ))
 }
 
+/// Buyer snapshot extracted from a provider payload.
+struct StripeBuyerInfo {
+    billing_name: Option<String>,
+    billing_email: Option<String>,
+    billing_phone: Option<String>,
+    billing_address: Option<String>,
+}
+
+/// Extract buyer snapshot fields from a Stripe object.
+///
+/// Stripe surfaces buyer info differently across object types:
+/// - **Invoice** objects carry `customer_name` / `customer_email` /
+///   `customer_phone` / `customer_address` (the latter as a structured object).
+/// - **Checkout Session** objects carry `customer_details.{name,email,phone,address}`
+///   and a top-level `customer_email`.
+///
+/// We prefer the Invoice-level fields (richer, present on `invoice.*` events) and
+/// fall back to Checkout-Session `customer_details` so the helper works for both
+/// event shapes. The structured `customer_address` is flattened into a single
+/// comma-joined line to match the `billing_address TEXT` column.
+fn extract_stripe_buyer(object: &Value) -> StripeBuyerInfo {
+    let details = &object["customer_details"];
+    let billing_name = object["customer_name"]
+        .as_str()
+        .or_else(|| details["name"].as_str())
+        .map(str::to_string);
+    let billing_email = object["customer_email"]
+        .as_str()
+        .or_else(|| details["email"].as_str())
+        .map(str::to_string);
+    let billing_phone = object["customer_phone"]
+        .as_str()
+        .or_else(|| details["phone"].as_str())
+        .map(str::to_string);
+    let billing_address = flatten_stripe_address(&object["customer_address"])
+        .or_else(|| flatten_stripe_address(&details["address"]));
+
+    StripeBuyerInfo {
+        billing_name,
+        billing_email,
+        billing_phone,
+        billing_address,
+    }
+}
+
+/// Flatten a Stripe structured address object ({line1, line2, city, state,
+/// postal_code, country}) into a single non-empty line string. Returns None for
+/// an absent/empty address so COALESCE on upsert preserves any prior value.
+fn flatten_stripe_address(addr: &Value) -> Option<String> {
+    if !addr.is_object() {
+        return None;
+    }
+    let parts = ["line1", "line2", "city", "state", "postal_code", "country"]
+        .iter()
+        .filter_map(|k| addr.get(k).and_then(|v| v.as_str()))
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(", "))
+    }
+}
+
 /// Build the `ExternalInvoiceData` for a Stripe invoice upsert.
 ///
 /// Shared by:
@@ -2931,6 +3008,7 @@ fn build_stripe_invoice_external_data(
     let status = map_stripe_invoice_status(stripe_status)?;
     let total = object["total"].as_i64().unwrap_or(0);
     let currency = object["currency"].as_str().unwrap_or("usd").to_string();
+    let buyer = extract_stripe_buyer(object);
 
     Ok(ExternalInvoiceData {
         realm_id: realm_id.to_string(),
@@ -2944,6 +3022,11 @@ fn build_stripe_invoice_external_data(
         external_payload: Some(object.clone()),
         tax_details: None,
         account_id,
+        applicant_user_id: None,
+        billing_name: buyer.billing_name,
+        billing_email: buyer.billing_email,
+        billing_phone: buyer.billing_phone,
+        billing_address: buyer.billing_address,
         currency,
         total,
         status,
@@ -2990,7 +3073,7 @@ async fn handle_stripe_invoice_event(
     }
 
     if account_id.is_none() {
-        account_id = parse_optional_uuid_field(&object["metadata"]["userId"]);
+        account_id = metadata_user_id(&object["metadata"]);
     }
 
     if account_id.is_none() {

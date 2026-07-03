@@ -37,8 +37,8 @@ SDK/第三方应用通过 API Key 消费积分。请求/响应契约不变，内
 |---|---|---|
 | `userId` | string | 用户 ID |
 | `amount` | i64 | 消费数量 |
-| `correlationId` | string | 跨 bucket 消费分组键 |
-| `transactions` | array | 每个 bucket 产生一条交易 |
+| `correlationId` | string | 跨账户消费分组键 |
+| `transactions` | array | 每个账户产生一条交易 |
 | `allocations` | array | 实际扣减的 ledger/类型分配 |
 
 **错误码**：
@@ -51,7 +51,7 @@ SDK/第三方应用通过 API Key 消费积分。请求/响应契约不变，内
 
 ### GET `/api/points/{realmId}/wallets`
 
-列出 Realm 内钱包，按 `(user, bucket)` 分组返回。普通用户只看到自己；管理员（`points.manage`）可查看全租户。
+列出 Realm 内钱包，按 `(user, 账户)` 分组返回。普通用户只看到自己；管理员（`points.manage`）可查看全租户。
 
 **查询参数**（`backend/api-points/src/wallets.rs`）：
 
@@ -59,7 +59,7 @@ SDK/第三方应用通过 API Key 消费积分。请求/响应契约不变，内
 |---|---|---|
 | `status` | string | 按钱包状态筛选 |
 | `search` | string | 按用户 ID 搜索（管理员有效） |
-| `bucketId` | string | 按 Credit Bucket 筛选 |
+| `bucketId` | string | 按积分账户筛选 |
 | `page` | u64 | 页码，0 起，默认 0 |
 | `pageSize` | u64 | 默认 20，最大 100 |
 
@@ -67,20 +67,20 @@ SDK/第三方应用通过 API Key 消费积分。请求/响应契约不变，内
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| `items` | `WalletByBucketResponse[]` | 按 bucket 分组的钱包列表 |
-| `crossBucketTotal` | i64 | 所有 bucket 的 `bucketTotal` 之和 |
+| `items` | `WalletByBucketResponse[]` | 按账户分组的钱包列表 |
+| `crossBucketTotal` | i64 | 所有账户的 `bucketTotal` 之和 |
 
 `WalletByBucketResponse` 字段：
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| `bucketId` | UUID \| null | Credit Bucket ID；聚合行可能为 null |
-| `name` | string \| null | Bucket 显示名 |
-| `enabled` | boolean \| null | Bucket 是否启用 |
+| `bucketId` | UUID \| null | 积分账户 ID；聚合行可能为 null |
+| `name` | string \| null | 账户显示名 |
+| `enabled` | boolean \| null | 账户是否启用 |
 | `userId` | UUID | 钱包归属用户 |
 | `balancesByType` | `BalancesByType` | 五类积分余额 |
 | `bucketTotal` | i64 | 当前可消费总额 = 窗口可用 + 池子余额 |
-| `quotaWindows` | `QuotaWindowViewDto[]` \| null | 窗口视图，纯池子 bucket 为 null |
+| `quotaWindows` | `QuotaWindowViewDto[]` \| null | 窗口视图，纯池子账户为 null |
 | `spendableFromQuota` | i64 \| null | 各窗口剩余最小值 |
 | `spendableFromPool` | i64 \| null | topup + registration + granted 余额 |
 

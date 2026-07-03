@@ -36,7 +36,7 @@ docs/user-stories/
 │   ├── invoice-fallback.md # 发票 Fallback
 │   ├── payment-invoice-mapping.md # 支付-发票强制映射
 │   ├── entitlement-mapping.md # Entitlement 映射
-│   └── credit-bucket.md # Credit Bucket 积分桶
+│   └── credit-bucket.md # 积分账户
 └── integration/          # 集成扩展
     └── sdk.md            # SDK 资源管理
 ```
@@ -175,14 +175,14 @@ docs/user-stories/
 | US-BL-SYNC-002 | 列表展示产品名便于识别 | Admin Realm | P0 | [billing/entitlement-mapping](billing/entitlement-mapping.md#故事-11在-mapping-列表里看到产品名便于识别-us-bl-sync-002) |
 | US-BL-SYNC-003 | Stripe/Creem 价格单位正确展示 | Admin Realm | P0 | [billing/entitlement-mapping](billing/entitlement-mapping.md#故事-12产品价格按-provider-单位正确展示不混淆-stripe-与-creem-us-bl-sync-003) |
 | US-BL-SYNC-004 | 计费周期以 Stripe 为准、只读且不被人工覆盖 | Admin Realm | P0 | [billing/entitlement-mapping](billing/entitlement-mapping.md#故事-13计费周期以-stripe-为准只读且不被人工覆盖-us-bl-sync-004) |
-| US-CB-001 | 管理 Credit Bucket 目录 | Realm Admin | P0 | [billing/credit-bucket](billing/credit-bucket.md#故事-1管理-credit-bucket-目录-us-cb-001) |
-| US-CB-002 | 为 Bucket 绑定 Client App 覆盖集 | Realm Admin | P0 | [billing/credit-bucket](billing/credit-bucket.md#故事-2为-bucket-绑定-client-app-覆盖集-us-cb-002) |
-| US-CB-003 | 将套餐/积分包归属到 Bucket | Realm Admin | P0 | [billing/credit-bucket](billing/credit-bucket.md#故事-3将套餐积分包归属到-bucket-us-cb-003) |
-| US-CB-004 | 购买 Bucket 套餐/积分包 | Regular User | P0 | [billing/credit-bucket](billing/credit-bucket.md#故事-4购买-bucket-套餐积分包-us-cb-004) |
-| US-CB-005 | 查看按 Bucket 分组的积分余额 | Regular User | P0 | [billing/credit-bucket](billing/credit-bucket.md#故事-5查看按-bucket-分组的积分余额-us-cb-005) |
-| US-CB-006 | 查看 Bucket 维度的交易历史 | Regular User | P1 | [billing/credit-bucket](billing/credit-bucket.md#故事-6查看-bucket-维度的交易历史-us-cb-006) |
-| US-CB-007 | SDK 按 Client App 跨 Bucket 消费 | Third-Party App | P0 | [billing/credit-bucket](billing/credit-bucket.md#故事-7sdk-按-client-app-跨-bucket-消费-us-cb-007) |
-| US-CB-008 | 订阅生命周期按 Bucket 池发放与回收 | System | P0 | [billing/credit-bucket](billing/credit-bucket.md#故事-8订阅生命周期按-bucket-池发放与回收-us-cb-008) |
+| US-CB-001 | 管理积分账户目录 | Realm Admin | P0 | [billing/credit-bucket](billing/credit-bucket.md#故事-1管理积分账户目录-us-cb-001) |
+| US-CB-002 | 为积分账户绑定 Client App 覆盖集 | Realm Admin | P0 | [billing/credit-bucket](billing/credit-bucket.md#故事-2为积分账户绑定-client-app-覆盖集-us-cb-002) |
+| US-CB-003 | 将套餐/积分包归属到积分账户 | Realm Admin | P0 | [billing/credit-bucket](billing/credit-bucket.md#故事-3将套餐积分包归属到积分账户-us-cb-003) |
+| US-CB-004 | 购买积分账户套餐/积分包 | Regular User | P0 | [billing/credit-bucket](billing/credit-bucket.md#故事-4购买积分账户套餐积分包-us-cb-004) |
+| US-CB-005 | 查看按账户分组的积分余额 | Regular User | P0 | [billing/credit-bucket](billing/credit-bucket.md#故事-5查看按账户分组的积分余额-us-cb-005) |
+| US-CB-006 | 查看积分账户维度的交易历史 | Regular User | P1 | [billing/credit-bucket](billing/credit-bucket.md#故事-6查看积分账户维度的交易历史-us-cb-006) |
+| US-CB-007 | SDK 按 Client App 跨积分账户消费 | Third-Party App | P0 | [billing/credit-bucket](billing/credit-bucket.md#故事-7sdk-按-client-app-跨积分账户消费-us-cb-007) |
+| US-CB-008 | 订阅生命周期按账户池发放与回收 | System | P0 | [billing/credit-bucket](billing/credit-bucket.md#故事-8订阅生命周期按账户池发放与回收-us-cb-008) |
 | US-PM-001 | 订阅续费记录每一次支付 | System | P0 | [billing/payment-invoice-mapping](billing/payment-invoice-mapping.md#故事-1订阅续费记录每一次支付-us-pm-001) |
 | US-PM-002 | Creem 订阅续费同步发票 | System | P0 | [billing/payment-invoice-mapping](billing/payment-invoice-mapping.md#故事-2creem-订阅续费同步发票-us-pm-002) |
 | US-PM-003 | 外部发票归属本地支付或订阅 | System | P1 | [billing/payment-invoice-mapping](billing/payment-invoice-mapping.md#故事-3外部发票归属本地支付或订阅-us-pm-003) |
@@ -245,7 +245,7 @@ docs/user-stories/
 | Invoice Fallback | [billing/invoice-fallback.md](billing/invoice-fallback.md) | [Invoice PRD](/docs/prd/billing/invoice.md) |
 | Payment Invoice Mapping | [billing/payment-invoice-mapping.md](billing/payment-invoice-mapping.md) | [支付-发票强制映射 PRD](/docs/prd/billing/payment-invoice-mapping.md) |
 | Entitlement Mapping | [billing/entitlement-mapping.md](billing/entitlement-mapping.md) | [Subscription PRD](/docs/prd/billing/subscription.md) |
-| Credit Bucket | [billing/credit-bucket.md](billing/credit-bucket.md) | [Points PRD](/docs/prd/billing/points.md) |
+| 积分账户 | [billing/credit-bucket.md](billing/credit-bucket.md) | [Points PRD](/docs/prd/billing/points.md) |
 
 ### Integration 集成
 

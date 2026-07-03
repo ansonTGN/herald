@@ -1,7 +1,6 @@
 import { http, HttpResponse } from 'msw'
 import type {
   BatchUpdateEntitlementMappingsResponse,
-  CreateCheckoutResponse,
   EntitlementMappingResponse,
   PurchaseOptionView,
   SyncProviderResponse,
@@ -9,7 +8,6 @@ import type {
 import {
   batchUpdateOkBody,
   batch400Body,
-  checkoutSuccessBody,
   multiPriceMappingList,
   protectedPrice409Body,
   purchaseOptionsList,
@@ -28,11 +26,6 @@ import {
  * do not receive surprise multi-price data. Feature tests that need multi-price
  * data override via `server.use(...)` with a handler built from
  * `multiPriceMappingList()`.
- *
- * Checkout boundary: `stripe.ts` still owns its own checkout handlers (keyed
- * on the legacy `entitlementKey`, may serve unrelated checkout tests). This
- * feature's tests use `checkoutCaptureHandler` via `server.use(...)`; the
- * stripe.ts handlers are intentionally NOT deleted.
  */
 
 const API_BASE_URL = 'http://localhost:3000'
@@ -76,8 +69,7 @@ export function batchUpdateOkHandler(body?: BatchUpdateEntitlementMappingsRespon
  * Override: `PUT .../entitlement-mappings/batch` → 200 with the product's full
  * latest price set, CAPTURING the request body into `capture` so tests assert
  * the `updates[*].quotaWindows` payload by observing the MSW request (per the
- * testing guide — do NOT mock the internal API function). Mirrors the capture
- * ergonomics of `checkoutCaptureHandler`.
+ * testing guide — do NOT mock the internal API function).
  */
 export function batchUpdateOkCaptureHandler(
   capture: { body: unknown },
@@ -123,31 +115,5 @@ export function syncHandler(result?: Partial<SyncProviderResponse>) {
 export function purchaseOptionsHandler(items?: PurchaseOptionView[]) {
   return http.get(`${API_BASE_URL}/api/bill/:realmId/client/:clientAppId/purchase-options`, () =>
     HttpResponse.json({ items: items ?? purchaseOptionsList() })
-  )
-}
-
-/**
- * Override: `POST .../client/:clientAppId/checkout` that CAPTURES the request
- * body into `capture` so tests assert the `{ mappingId, paymentProvider }`
- * payload by observing the MSW request (per the testing guide — do NOT mock
- * the internal API function). Success returns a contract-shaped
- * `CreateCheckoutResponse`.
- *
- * `capture` may be a single object (last-write-wins) or an array (appends
- * every received body). Both are supported so tests can pick the ergonomics.
- */
-export function checkoutCaptureHandler(capture: { body: unknown } | unknown[]) {
-  return http.post(
-    `${API_BASE_URL}/api/bill/:realmId/client/:clientAppId/checkout`,
-    async ({ request }) => {
-      const body = (await request.json()) as unknown
-      if (Array.isArray(capture)) {
-        capture.push(body)
-      } else {
-        capture.body = body
-      }
-      const success: CreateCheckoutResponse = checkoutSuccessBody()
-      return HttpResponse.json(success)
-    }
   )
 }

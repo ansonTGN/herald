@@ -14,7 +14,6 @@
 
 import type {
   BatchUpdateEntitlementMappingsResponse,
-  CreateCheckoutResponse,
   EntitlementMappingResponse,
   MappingActiveSubscriptionLockErrorBody,
   PurchaseOptionView,
@@ -319,16 +318,4 @@ export function purchaseOptionsList(): PurchaseOptionView[] {
       pointsPerPeriod: null,
     },
   ]
-}
-
-/**
- * Checkout success body. Matches the generated `CreateCheckoutResponse`
- * (`{ checkoutId, checkoutUrl }`) — note BOTH fields exist on the DTO; the
- * feature only consumes `checkoutUrl` but the body must be contract-shaped.
- */
-export function checkoutSuccessBody(): CreateCheckoutResponse {
-  return {
-    checkoutId: 'cs_test_1234567890',
-    checkoutUrl: 'https://checkout.stripe.com/pay/cs_test_1234567890',
-  }
 }

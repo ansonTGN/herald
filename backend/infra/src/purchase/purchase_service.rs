@@ -388,7 +388,15 @@ where
         let session = client
             .create_checkout_session(&CreemCreateCheckoutRequest {
                 product_id,
-                success_url: Some(format!("{}/billing/success", self.public_base_url)),
+                // Redirect the user back to the purchase page (this is a UX
+                // bounce only — payment status is confirmed via webhook). The
+                // `public_base_url` field holds the frontend base URL (set from
+                // `config.frontend.url`), and `attemptId` lets the page resume
+                // its processing-step polling. Creem has no cancel_url.
+                success_url: Some(format!(
+                    "{}/{}/user/purchase-points?attemptId={}&status=success",
+                    self.public_base_url, realm_id, attempt_id
+                )),
                 customer: herald_infra_creem::CreemCheckoutCustomer {
                     email: Some(
                         user_email
@@ -451,8 +459,18 @@ where
                         .expect("validated in prepare_payment_attempt")
                         .to_owned(),
                 ),
-                success_url: format!("{}/billing/success", self.public_base_url),
-                cancel_url: format!("{}/billing/cancel", self.public_base_url),
+                // Redirect the user back to the purchase page (UX bounce only;
+                // payment status is confirmed via webhook). `public_base_url`
+                // holds the frontend base URL (set from `config.frontend.url`),
+                // and `attemptId` lets the page resume processing-step polling.
+                success_url: format!(
+                    "{}/{}/user/purchase-points?attemptId={}&status=success",
+                    self.public_base_url, realm_id, attempt_id
+                ),
+                cancel_url: format!(
+                    "{}/{}/user/purchase-points?attemptId={}&status=cancel",
+                    self.public_base_url, realm_id, attempt_id
+                ),
                 billing_period: target
                     .billing_period
                     .clone()

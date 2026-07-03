@@ -104,6 +104,26 @@ mod tests {
         .unwrap()
     }
 
+    /// Read the buyer attribution/snapshot fields for an invoice matched by
+    /// `external_invoice_id`. Returns
+    /// `(account_id, applicant_user_id, billing_name, billing_email)`.
+    async fn find_invoice_buyer(
+        ctx: &AttributionTestContext,
+        realm_id: &str,
+        external_invoice_id: &str,
+    ) -> Option<(Option<Uuid>, Option<Uuid>, Option<String>, Option<String>)> {
+        sqlx::query_as(
+            "SELECT account_id, applicant_user_id, billing_name, billing_email
+             FROM invoice
+             WHERE realm_id = $1 AND external_invoice_id = $2",
+        )
+        .bind(realm_id)
+        .bind(external_invoice_id)
+        .fetch_optional(&ctx.app_state.pool)
+        .await
+        .unwrap()
+    }
+
     /// Set the Creem webhook secret for the test realm.
     async fn set_creem_webhook_secret(ctx: &AttributionTestContext, webhook_secret: &str) {
         ctx.with_creem_config(
@@ -517,6 +537,11 @@ mod tests {
             external_payload: None,
             tax_details: None,
             account_id: None,
+            applicant_user_id: None,
+            billing_name: None,
+            billing_email: None,
+            billing_phone: None,
+            billing_address: None,
             currency: "usd".to_string(),
             total: 2500,
             status: InvoiceStatus::Issued,
@@ -543,6 +568,11 @@ mod tests {
             external_payload: None,
             tax_details: None,
             account_id: None,
+            applicant_user_id: None,
+            billing_name: None,
+            billing_email: None,
+            billing_phone: None,
+            billing_address: None,
             currency: "usd".to_string(),
             total: 2500,
             status: InvoiceStatus::Paid,
@@ -602,6 +632,11 @@ mod tests {
             external_payload: None,
             tax_details: None,
             account_id: None,
+            applicant_user_id: None,
+            billing_name: None,
+            billing_email: None,
+            billing_phone: None,
+            billing_address: None,
             currency: "usd".to_string(),
             total: 2500,
             status: InvoiceStatus::Paid,
@@ -629,6 +664,11 @@ mod tests {
             external_payload: None,
             tax_details: None,
             account_id: None,
+            applicant_user_id: None,
+            billing_name: None,
+            billing_email: None,
+            billing_phone: None,
+            billing_address: None,
             currency: "usd".to_string(),
             total: 2500,
             status: InvoiceStatus::Paid,
@@ -846,6 +886,193 @@ mod tests {
         assert!(
             row.2.is_none() && row.3.is_none(),
             "manual invoice attribution columns must be nullable (Design §1.3: manual invoices may have no corresponding payment)"
+        );
+    }
+
+    /// User Story: US-PM-003 (buyer identity must be attributed to the purchaser)
+    /// Covers: one-time Checkout flow — `account_id` + buyer snapshot must land
+    ///         on the invoice row even though the buyer info arrives across two
+    ///         webhook events (checkout.session.completed then invoice.*).
+    ///
+    /// Given: An external invoice is seeded (mirrors checkout.session.completed
+    ///        landing first) with account_id resolved but NO buyer snapshot.
+    /// When: The same external_invoice_id is re-upserted (mirrors the
+    ///        subsequent invoice.* event) carrying the buyer snapshot.
+    /// Then: account_id is preserved AND the buyer snapshot (billing_name/email)
+    ///       is filled — both via COALESCE.
+    #[test_context(AttributionTestContext)]
+    #[tokio::test]
+    async fn test_upsert_backfills_buyer_snapshot(ctx: &mut AttributionTestContext) {
+        let realm_id = ctx._realm_id.clone();
+        let external_invoice_id = format!("in_buyer_{}", Uuid::now_v7());
+        let user_id = Uuid::now_v7();
+
+        // Seed: account_id resolved, buyer snapshot absent (exactly the
+        // checkout.session.completed state before invoice.* arrives).
+        let seed = ExternalInvoiceData {
+            realm_id: realm_id.clone(),
+            provider: InvoiceProvider::Stripe,
+            payment_provider: Some("stripe".to_string()),
+            external_invoice_id: Some(external_invoice_id.clone()),
+            external_order_id: None,
+            external_status: None,
+            external_hosted_url: None,
+            external_pdf_url: None,
+            external_payload: None,
+            tax_details: None,
+            account_id: Some(user_id),
+            applicant_user_id: None,
+            billing_name: None,
+            billing_email: None,
+            billing_phone: None,
+            billing_address: None,
+            currency: "usd".to_string(),
+            total: 5000,
+            status: InvoiceStatus::Paid,
+            subscription_id: None,
+            payment_attempt_id: None,
+        };
+        ctx.app_state
+            .invoice_repository
+            .upsert_external_invoice(seed)
+            .await
+            .expect("seed upsert must succeed");
+
+        // Re-upsert: buyer snapshot arrives (mirrors invoice.* event carrying
+        // customer_name/customer_email), account_id now None on this carrier.
+        let re_upsert = ExternalInvoiceData {
+            realm_id: realm_id.clone(),
+            provider: InvoiceProvider::Stripe,
+            payment_provider: Some("stripe".to_string()),
+            external_invoice_id: Some(external_invoice_id.clone()),
+            external_order_id: None,
+            external_status: None,
+            external_hosted_url: None,
+            external_pdf_url: None,
+            external_payload: None,
+            tax_details: None,
+            account_id: None, // must NOT clobber the seeded user_id
+            applicant_user_id: None,
+            billing_name: Some("Alice".to_string()),
+            billing_email: Some("alice@example.com".to_string()),
+            billing_phone: None,
+            billing_address: None,
+            currency: "usd".to_string(),
+            total: 5000,
+            status: InvoiceStatus::Paid,
+            subscription_id: None,
+            payment_attempt_id: None,
+        };
+        ctx.app_state
+            .invoice_repository
+            .upsert_external_invoice(re_upsert)
+            .await
+            .expect("re-upsert must succeed");
+
+        let buyer = find_invoice_buyer(ctx, &realm_id, &external_invoice_id)
+            .await
+            .expect("row must exist");
+
+        assert_eq!(
+            buyer.0,
+            Some(user_id),
+            "account_id must be preserved by COALESCE when the re-upsert carrier is None"
+        );
+        assert_eq!(
+            buyer.2.as_deref(),
+            Some("Alice"),
+            "billing_name must be backfilled from the re-upsert (previously-NULL slot)"
+        );
+        assert_eq!(
+            buyer.3.as_deref(),
+            Some("alice@example.com"),
+            "billing_email must be backfilled from the re-upsert (previously-NULL slot)"
+        );
+    }
+
+    /// User Story: US-PM-003 (buyer snapshot must not be silently overwritten)
+    /// Covers: COALESCE must preserve an existing buyer snapshot when a
+    ///         re-upsert passes None — symmetric to the attribution COALESCE.
+    #[test_context(AttributionTestContext)]
+    #[tokio::test]
+    async fn test_upsert_preserves_existing_buyer_snapshot(ctx: &mut AttributionTestContext) {
+        let realm_id = ctx._realm_id.clone();
+        let external_invoice_id = format!("in_buyer_keep_{}", Uuid::now_v7());
+
+        // Seed WITH a buyer snapshot.
+        let seed = ExternalInvoiceData {
+            realm_id: realm_id.clone(),
+            provider: InvoiceProvider::Stripe,
+            payment_provider: Some("stripe".to_string()),
+            external_invoice_id: Some(external_invoice_id.clone()),
+            external_order_id: None,
+            external_status: None,
+            external_hosted_url: None,
+            external_pdf_url: None,
+            external_payload: None,
+            tax_details: None,
+            account_id: None,
+            applicant_user_id: None,
+            billing_name: Some("Bob".to_string()),
+            billing_email: Some("bob@example.com".to_string()),
+            billing_phone: None,
+            billing_address: None,
+            currency: "usd".to_string(),
+            total: 5000,
+            status: InvoiceStatus::Paid,
+            subscription_id: None,
+            payment_attempt_id: None,
+        };
+        ctx.app_state
+            .invoice_repository
+            .upsert_external_invoice(seed)
+            .await
+            .expect("seed upsert must succeed");
+
+        // Re-upsert with buyer snapshot = None (mirrors an event that lacks
+        // customer_name/email). Must NOT clobber the seeded values.
+        let re_upsert = ExternalInvoiceData {
+            realm_id: realm_id.clone(),
+            provider: InvoiceProvider::Stripe,
+            payment_provider: Some("stripe".to_string()),
+            external_invoice_id: Some(external_invoice_id.clone()),
+            external_order_id: None,
+            external_status: None,
+            external_hosted_url: None,
+            external_pdf_url: None,
+            external_payload: None,
+            tax_details: None,
+            account_id: None,
+            applicant_user_id: None,
+            billing_name: None,
+            billing_email: None,
+            billing_phone: None,
+            billing_address: None,
+            currency: "usd".to_string(),
+            total: 5000,
+            status: InvoiceStatus::Paid,
+            subscription_id: None,
+            payment_attempt_id: None,
+        };
+        ctx.app_state
+            .invoice_repository
+            .upsert_external_invoice(re_upsert)
+            .await
+            .expect("re-upsert must succeed");
+
+        let buyer = find_invoice_buyer(ctx, &realm_id, &external_invoice_id)
+            .await
+            .expect("row must exist");
+
+        assert_eq!(
+            buyer.2.as_deref(),
+            Some("Bob"),
+            "billing_name must survive a None re-upsert (COALESCE preserves it)"
+        );
+        assert_eq!(
+            buyer.3.as_deref(),
+            Some("bob@example.com"),
+            "billing_email must survive a None re-upsert (COALESCE preserves it)"
         );
     }
 }

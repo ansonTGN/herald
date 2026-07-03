@@ -160,23 +160,12 @@ test.describe('[Billing Admin] 支付产品同步增强 (US-BL-SYNC-001/002/003/
     })
 
     // US-BL-SYNC-002 S1/S2
-    await test.step('Then: 列表和详情以产品名作为可识别主标签，产品过滤器 option 命中产品名', async () => {
+    await test.step('Then: 列表和详情以产品名作为可识别主标签', async () => {
       await mappingsPage.selectProduct(stripeMetadataProductId)
       expect(await mappingsPage.getProductRowLabel(stripeMetadataProductId)).toContain(
         METADATA_PRODUCT_NAME,
       )
       expect(await mappingsPage.getDetailHeadLabel()).toContain(METADATA_PRODUCT_NAME)
-
-      const optionLabels = await mappingsPage.getProductFilterOptionLabels()
-      expect(optionLabels.some((label) => label.includes(METADATA_PRODUCT_NAME))).toBe(true)
-      await mappingsPage.productFilterSelect.click()
-      await page.getByRole('option', { name: new RegExp(METADATA_PRODUCT_NAME) }).click()
-      await expect(page.locator(SELECTORS.multiPriceMapping.mappingProductRow(stripeMetadataProductId))).toBeVisible()
-      await expect(
-        mappingsPage.mappingProductList.locator(
-          SELECTORS.multiPriceMapping.firstMappingProductRow(),
-        ),
-      ).toHaveCount(1)
     })
 
     // US-BL-SYNC-003 S1 + US-BL-SYNC-004 S1

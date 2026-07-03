@@ -167,10 +167,10 @@ describe('Credit Bucket destructive-confirm states', () => {
       await user.click(screen.getByTestId('credit-bucket-editor-submit'))
       const conflictAlert = await screen.findByTestId('credit-bucket-editor-registration-conflict')
       expect(conflictAlert).toHaveAttribute('role', 'alert')
-      // The copy instructs the admin to unset the OTHER bucket first
-      // (no silent override).
+      // The copy instructs the admin to unset the OTHER account first
+      // (no silent override). Matches `credit_buckets.registration_pool_conflict`.
       expect(conflictAlert).toHaveTextContent(
-        /another bucket already receives registration credits/i
+        /another account already receives registration credits/i
       )
 
       // The real PUT went to the right bucket endpoint.

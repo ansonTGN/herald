@@ -8,7 +8,7 @@
  * Consumed infra (AUTHORITATIVE — do not duplicate surface here):
  * - POM: `demo/e2e/pages/entitlement-mappings-page.ts`
  *     goto / waitForReady / waitForDataLoaded / selectProduct / selectFirstProduct
- *     / isProductSelected / filterByProvider / isListEmpty
+ *     / isProductSelected / isListEmpty
  *     / getPriceEditRow / getPriceEnabledToggle / getSharedKeyChip
  *     / fillPriceRow / togglePriceEnabled / saveChanges
  *     / expectProtectedPriceDialog / getProtectedPriceActiveSubs / cancelProtectedPrice

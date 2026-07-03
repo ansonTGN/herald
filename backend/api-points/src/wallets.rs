@@ -230,11 +230,13 @@ async fn group_wallets_by_bucket(
         let (quota_windows, spendable_from_quota) =
             compute_bucket_window_view(state, realm_id, user_id, bucket_id, now).await?;
 
-        // Pool side = topup + registration + granted. Only surfaced when
-        // non-zero OR when there is a window view (so a mixed bucket still
-        // breaks down both sides); pool-only buckets leave it `None`.
+        // Pool side = topup + registration + granted. Surfaced when there is
+        // any pool balance (the common pool-only case — without this a
+        // topup-only bucket reports its real balance) OR when there is a
+        // window view (so a mixed bucket still breaks down both sides). Both
+        // sides zero → `None`, matching `quota_windows` / `spendable_from_quota`.
         let pool_sum = pool_balance_sum(&balances_by_type);
-        let spendable_from_pool = if quota_windows.is_some() {
+        let spendable_from_pool = if pool_sum > 0 || quota_windows.is_some() {
             Some(pool_sum)
         } else {
             None

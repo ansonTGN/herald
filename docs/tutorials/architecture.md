@@ -15,7 +15,7 @@ backend/
 ├── core/                # 组装层 — 依赖注入、ApplicationService Builder
 ├── api/                 # 主 API crate（Axum 路由注册、中间件、AppState）
 ├── api-base/            # 共享 API 工具（AppState 定义、通用 HTTP 工具）
-├── api-billing/         # 计费相关 handler（Credit Bucket、Entitlement 映射、订阅、支付、发票、webhook）
+├── api-billing/         # 计费相关 handler（积分账户、Entitlement 映射、订阅、支付、发票、webhook）
 ├── api-admin/           # 管理后台 handler（用户管理、角色、权限定义）
 ├── api-auth/            # 认证 handler（注册、登录、密码重置）
 ├── api-ext/             # 外部 API handler（API Key 认证，供第三方调用）
@@ -83,8 +83,8 @@ SeaORM 自动生成的实体定义。覆盖用户、角色、权限、订阅、�
 | `authentication` | 登录、注册、session 管理 |
 | `authorization` | RBAC 权限模型（角色、策略、权限定义） |
 | `audit` | 审计事件模型、事件采集（用户管理、RBAC 变更、认证事件） |
-| `billing` | Credit Bucket 目录、Entitlement 映射、订阅投影、支付 webhook 处理 |
-| `points` | 积分账户（按 Credit Bucket 分池）、充值、消费、过期、幂等 |
+| `billing` | 积分账户目录、Entitlement 映射、订阅投影、支付 webhook 处理 |
+| `points` | 积分账户（按积分账户分池）、充值、消费、过期、幂等 |
 | `payment_attempt` | 统一支付尝试（抽象不同支付渠道） |
 | `purchase` | 购买履约（一次性充值 or 订阅开通） |
 | `realm` | 租户管理 |
@@ -132,7 +132,7 @@ domain 层 trait 的具体实现。`PostgresXxxRepository` 命名，一个 trait
 | `api-base` | `AppState` 定义（共享给所有 api 子 crate） | — |
 | `api-auth` | 注册、登录、密码重置、邮箱验证 | session |
 | `api-admin` | 用户 CRUD、角色管理、权限定义管理 | session + inject_identity |
-| `api-billing` | Credit Bucket 目录、Entitlement 映射、订阅投影、支付 webhook（Stripe/Creem）、发票、一次性购买 | 混合 |
+| `api-billing` | 积分账户目录、Entitlement 映射、订阅投影、支付 webhook（Stripe/Creem）、发票、一次性购买 | 混合 |
 | `api-oauth` | OAuth 登录（GitHub/Google/微信）、Device Code Grant（RFC 8628）、OAuth 配置管理 | 混合 |
 | `api-ext` | 第三方 API：权限检查、订阅查询、积分余额和消费，按 API Key 绑定的 Client App 隔离 | API Key |
 | `api-points` | 积分余额、交易历史、消费、充值 | session 或 API Key |

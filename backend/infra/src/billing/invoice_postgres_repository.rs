@@ -1051,6 +1051,14 @@ impl InvoiceRepository for PostgresInvoiceRepository {
 
         // The two branches share the same INSERT + VALUES + bind sequence.
         // Only the ON CONFLICT clause differs.
+        //
+        // The buyer attribution/snapshot fields (account_id, applicant_user_id,
+        // billing_name/email/phone/address) are COALESCE-preserved on update so
+        // the first event to resolve them wins. This matters for one-time
+        // Checkout purchases: `checkout.session.completed` lands first and
+        // resolves account_id from session metadata, but the buyer snapshot
+        // (customer_name/email/...) only arrives with the subsequent
+        // `invoice.*` events — both must be merged onto the same row.
         let on_conflict = if data.external_invoice_id.is_some() {
             // Branch A: match on (realm_id, external_invoice_id)
             //
@@ -1072,6 +1080,12 @@ impl InvoiceRepository for PostgresInvoiceRepository {
                 tax_details = EXCLUDED.tax_details,
                 subscription_id = COALESCE(EXCLUDED.subscription_id, invoice.subscription_id),
                 payment_attempt_id = COALESCE(EXCLUDED.payment_attempt_id, invoice.payment_attempt_id),
+                account_id = COALESCE(EXCLUDED.account_id, invoice.account_id),
+                applicant_user_id = COALESCE(EXCLUDED.applicant_user_id, invoice.applicant_user_id),
+                billing_name = COALESCE(EXCLUDED.billing_name, invoice.billing_name),
+                billing_email = COALESCE(EXCLUDED.billing_email, invoice.billing_email),
+                billing_phone = COALESCE(EXCLUDED.billing_phone, invoice.billing_phone),
+                billing_address = COALESCE(EXCLUDED.billing_address, invoice.billing_address),
                 status = EXCLUDED.status,
                 updated_at = NOW()"
         } else {
@@ -1090,14 +1104,28 @@ impl InvoiceRepository for PostgresInvoiceRepository {
                 tax_details = EXCLUDED.tax_details,
                 subscription_id = COALESCE(EXCLUDED.subscription_id, invoice.subscription_id),
                 payment_attempt_id = COALESCE(EXCLUDED.payment_attempt_id, invoice.payment_attempt_id),
+                account_id = COALESCE(EXCLUDED.account_id, invoice.account_id),
+                applicant_user_id = COALESCE(EXCLUDED.applicant_user_id, invoice.applicant_user_id),
+                billing_name = COALESCE(EXCLUDED.billing_name, invoice.billing_name),
+                billing_email = COALESCE(EXCLUDED.billing_email, invoice.billing_email),
+                billing_phone = COALESCE(EXCLUDED.billing_phone, invoice.billing_phone),
+                billing_address = COALESCE(EXCLUDED.billing_address, invoice.billing_address),
                 status = EXCLUDED.status,
                 updated_at = NOW()"
         };
 
+        // Bind order follows the column order exactly ($1..$26). Literal
+        // amount columns (subtotal/discount/tax/shipping/amount_refunded = 0,
+        // total = amount_remaining = $22) are inlined to keep the parameter
+        // list linear and avoid the prior out-of-order placeholder trick.
         let sql = format!(
             "INSERT INTO invoice (
-                id, realm_id, invoice_number, source, account_id, status, currency,
-                provider, payment_provider, external_invoice_id, external_order_id,
+                id, realm_id, invoice_number, source,
+                account_id, applicant_user_id,
+                billing_name, billing_email, billing_phone, billing_address,
+                status, currency,
+                provider, payment_provider,
+                external_invoice_id, external_order_id,
                 external_status, external_hosted_url, external_pdf_url,
                 external_payload, tax_details,
                 subtotal, discount_amount, tax_amount, shipping_amount, total,
@@ -1105,14 +1133,18 @@ impl InvoiceRepository for PostgresInvoiceRepository {
                 subscription_id, payment_attempt_id,
                 created_at, updated_at
             ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7,
-                $8, $9, $10, $11,
-                $12, $13, $14,
+                $1, $2, $3, $4,
+                $5, $6,
+                $7, $8, $9, $10,
+                $11, $12,
+                $13, $14,
                 $15, $16,
-                0, 0, 0, 0, $17,
-                0, $17,
+                $17, $18, $19,
                 $20, $21,
-                $18, $19
+                0, 0, 0, 0, $22,
+                0, $22,
+                $23, $24,
+                $25, $26
             )
             {on_conflict}
             RETURNING {cols}",
@@ -1120,27 +1152,32 @@ impl InvoiceRepository for PostgresInvoiceRepository {
         );
 
         let row = sqlx::query_as::<_, InvoiceRow>(&sql)
-            .bind(id)
-            .bind(&data.realm_id)
-            .bind(&invoice_number)
-            .bind(source)
-            .bind(data.account_id)
-            .bind(status)
-            .bind(&data.currency)
-            .bind(provider)
-            .bind(payment_provider)
-            .bind(&data.external_invoice_id)
-            .bind(&data.external_order_id)
-            .bind(&data.external_status)
-            .bind(&data.external_hosted_url)
-            .bind(&data.external_pdf_url)
-            .bind(&data.external_payload)
-            .bind(&data.tax_details)
-            .bind(data.total)
-            .bind(now)
-            .bind(now)
-            .bind(data.subscription_id)
-            .bind(data.payment_attempt_id)
+            .bind(id) // $1  id
+            .bind(&data.realm_id) // $2  realm_id
+            .bind(&invoice_number) // $3  invoice_number
+            .bind(source) // $4  source
+            .bind(data.account_id) // $5  account_id
+            .bind(data.applicant_user_id) // $6  applicant_user_id
+            .bind(&data.billing_name) // $7  billing_name
+            .bind(&data.billing_email) // $8  billing_email
+            .bind(&data.billing_phone) // $9  billing_phone
+            .bind(&data.billing_address) // $10 billing_address
+            .bind(status) // $11 status
+            .bind(&data.currency) // $12 currency
+            .bind(provider) // $13 provider
+            .bind(payment_provider) // $14 payment_provider
+            .bind(&data.external_invoice_id) // $15 external_invoice_id
+            .bind(&data.external_order_id) // $16 external_order_id
+            .bind(&data.external_status) // $17 external_status
+            .bind(&data.external_hosted_url) // $18 external_hosted_url
+            .bind(&data.external_pdf_url) // $19 external_pdf_url
+            .bind(&data.external_payload) // $20 external_payload
+            .bind(&data.tax_details) // $21 tax_details
+            .bind(data.total) // $22 total (+ amount_remaining)
+            .bind(data.subscription_id) // $23 subscription_id
+            .bind(data.payment_attempt_id) // $24 payment_attempt_id
+            .bind(now) // $25 created_at
+            .bind(now) // $26 updated_at
             .fetch_one(self.db.get_postgres_connection_pool())
             .await
             .map_err(|e| {

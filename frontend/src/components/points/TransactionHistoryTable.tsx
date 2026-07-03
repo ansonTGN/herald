@@ -181,28 +181,32 @@ export function TransactionHistoryTable({
             },
           ]
         : []),
-      {
-        accessorKey: 'externalRefId',
-        header: m['points.transaction_col_ref_id'](),
-        cell: ({ row }) => {
-          const externalRefId = row.getValue('externalRefId') as string | null
-          return (
-            <div
-              className="text-xs text-muted-foreground"
-              data-testid={`transaction-ref-${row.index}`}
-            >
-              {externalRefId ? (
-                <div className="flex items-center gap-1">
-                  <ExternalLink className="h-3 w-3" />
-                  <span className="font-mono">{String(externalRefId).slice(0, 12)}...</span>
-                </div>
-              ) : (
-                '-'
-              )}
-            </div>
-          )
-        },
-      },
+      ...(admin
+        ? [
+            {
+              accessorKey: 'externalRefId',
+              header: m['points.transaction_col_ref_id'](),
+              cell: ({ row }: { row: { getValue: (key: string) => unknown; index: number } }) => {
+                const externalRefId = row.getValue('externalRefId') as string | null
+                return (
+                  <div
+                    className="text-xs text-muted-foreground"
+                    data-testid={`transaction-ref-${row.index}`}
+                  >
+                    {externalRefId ? (
+                      <div className="flex items-center gap-1">
+                        <ExternalLink className="h-3 w-3" />
+                        <span className="font-mono">{String(externalRefId).slice(0, 12)}...</span>
+                      </div>
+                    ) : (
+                      '-'
+                    )}
+                  </div>
+                )
+              },
+            },
+          ]
+        : []),
     ],
     [admin, clientAppsMap, buckets, bucketsMap]
   )

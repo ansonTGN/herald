@@ -533,6 +533,15 @@ pub struct ExternalInvoiceData {
     pub external_payload: Option<serde_json::Value>,
     pub tax_details: Option<serde_json::Value>,
     pub account_id: Option<Uuid>,
+    /// Buyer attribution: the user who applied for / drove this purchase.
+    /// COALESCE-preserved on upsert so the first resolver wins.
+    pub applicant_user_id: Option<Uuid>,
+    /// Buyer snapshot filled from the provider payload (e.g. Stripe
+    /// `customer_name` / `customer_email`). All COALESCE-preserved.
+    pub billing_name: Option<String>,
+    pub billing_email: Option<String>,
+    pub billing_phone: Option<String>,
+    pub billing_address: Option<String>,
     pub currency: String,
     pub total: i64,
     pub status: InvoiceStatus,

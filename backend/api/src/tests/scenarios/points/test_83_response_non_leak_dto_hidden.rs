@@ -594,6 +594,23 @@ async fn test_admin_list_wallets_excludes_future_effective(ctx: &mut TestContext
         "user_now typed topup balance should equal the immediately-available row"
     );
 
+    // spendableFromPool regression guard: a pool-only bucket (topup_credit, no
+    // quota entitlement) MUST surface its real pool balance, not null. The
+    // gating predicate is "non-zero OR has window view"; a zero-pool bucket
+    // with no windows (user_future below) stays null. Without this guard,
+    // user_now would render "充值余额 0" in the UI despite holding 3_000 topup.
+    assert_eq!(
+        row_now["spendableFromPool"].as_i64(),
+        Some(3_000),
+        "user_now (pool-only bucket, active topup) must surface spendableFromPool=3000, \
+         not null — pool-only buckets report their real pool balance"
+    );
+    assert!(
+        row_future["spendableFromPool"].is_null(),
+        "user_future (zero active pool balance, no quota windows) must keep \
+         spendableFromPool null — both sides zero omits the field"
+    );
+
     println!(
         "\n✅ Scenario #3 完成：管理员 list_wallets 跨用户批量派生不泄漏 future-effective \
          (user_future bucketTotal=0, user_now bucketTotal=3000)"
