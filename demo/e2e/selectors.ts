@@ -806,6 +806,12 @@ export const SELECTORS = {
     // Per-price edit row. `priceKey` is external_price_id for Stripe, mapping id
     // for Creem (NULL price) — see the loud note above.
     priceEditRow: (priceKey: string) => `[data-testid="price-edit-row-${priceKey}"]`,
+    priceMetadataBlock: (priceKey: string) =>
+      `[data-testid="price-metadata-block-${priceKey}"]`,
+    metadataEntry: (scope: 'product' | 'price', key: string) =>
+      `[data-testid="metadata-entry-${scope}-${key}"]`,
+    priceBillingType: (priceKey: string) =>
+      `[data-testid="price-billing-type-${priceKey}"]`,
     priceEnabledToggle: (priceKey: string) =>
       `[data-testid="price-enabled-toggle-${priceKey}"]`,
     // Save (batch PUT). Rendered only when canManage.

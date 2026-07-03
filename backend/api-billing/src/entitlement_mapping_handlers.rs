@@ -11,8 +11,8 @@ use crate::handlers::require_billing_permission;
 use crate::types::{
     BatchUpdateEntitlementMappingsRequest, BatchUpdateEntitlementMappingsResponse,
     EntitlementMappingListResponse, EntitlementMappingQuery, EntitlementMappingResponse,
-    EntitlementQuotaWindowDto, OneTimeMappingItem, OneTimeMappingListResponse, PartialSyncErrorDto,
-    ProviderProductInfoDto, SyncProviderRequest, SyncProviderResponse,
+    EntitlementQuotaWindowResponse, OneTimeMappingItem, OneTimeMappingListResponse,
+    PartialSyncError, ProviderProductInfo, SyncProviderRequest, SyncProviderResponse,
     UpdateEntitlementMappingRequest,
 };
 use herald_api_base::application::http::server::api_entities::ApiError;
@@ -49,11 +49,11 @@ fn mapping_to_response(m: EntitlementMapping) -> EntitlementMappingResponse {
         grant_on_subscribe: m.grant_on_subscribe,
         max_periods: m.max_periods,
         enabled: m.enabled,
-        provider_product_info: to_provider_product_info_dto(m.provider_product_info),
+        provider_product_info: to_provider_product_info(m.provider_product_info),
         quota_windows: m.quota_windows.map(|windows| {
             windows
                 .into_iter()
-                .map(|w| EntitlementQuotaWindowDto {
+                .map(|w| EntitlementQuotaWindowResponse {
                     window_seconds: w.window_seconds,
                     limit: w.limit,
                     key: w.key,
@@ -67,18 +67,18 @@ fn mapping_to_response(m: EntitlementMapping) -> EntitlementMappingResponse {
 }
 
 /// Leniently deserialize the stored `provider_product_info` JSONB into the
-/// typed [`ProviderProductInfoDto`]. Returns `None` (and logs) if the stored
-/// value does not match the DTO — e.g. a legacy row whose metadata predates
+/// typed [`ProviderProductInfo`]. Returns `None` (and logs) if the stored
+/// value does not match the shape — e.g. a legacy row whose metadata predates
 /// the string→string sync coercion — so a malformed row degrades to "no
 /// provider info" instead of failing the whole response.
-fn to_provider_product_info_dto(v: Option<serde_json::Value>) -> Option<ProviderProductInfoDto> {
+fn to_provider_product_info(v: Option<serde_json::Value>) -> Option<ProviderProductInfo> {
     let v = v?;
-    match serde_json::from_value::<ProviderProductInfoDto>(v) {
-        Ok(dto) => Some(dto),
+    match serde_json::from_value::<ProviderProductInfo>(v) {
+        Ok(info) => Some(info),
         Err(e) => {
             tracing::warn!(
                 error = %e,
-                "provider_product_info JSONB did not match ProviderProductInfoDto; dropping to None"
+                "provider_product_info JSONB did not match ProviderProductInfo; dropping to None"
             );
             None
         }
@@ -393,7 +393,7 @@ pub async fn list_one_time_mappings(
             id: m.id.to_string(),
             entitlement_key: m.entitlement_key,
             bucket_id: m.bucket_id,
-            provider_product_info: to_provider_product_info_dto(m.provider_product_info),
+            provider_product_info: to_provider_product_info(m.provider_product_info),
             points_per_period: m.points_per_period,
             payment_provider: m.payment_provider,
             validity_days: m.validity_days,
@@ -456,7 +456,7 @@ pub async fn sync_provider_products(
         partial_errors: result
             .partial_errors
             .into_iter()
-            .map(|error| PartialSyncErrorDto {
+            .map(|error| PartialSyncError {
                 external_id: error.external_id,
                 reason: error.reason,
             })

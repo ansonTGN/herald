@@ -8,12 +8,12 @@ use uuid::Uuid;
 
 use crate::billing::entities::EntitlementMapping;
 
-/// Billing-side input DTO for one quota window in a mapping batch update.
+/// Billing-side input for one quota window in a mapping batch update.
 ///
 /// Carries only the editable fields (`window_seconds`, `limit`); the stable
 /// display `key` is derived by the API layer (via `derive_window_key`) before
 /// persistence, so callers cannot drift window identity. Mirrors the
-/// points-domain request shape (`api-points::types::QuotaWindowInputDto`) — kept
+/// points-domain request shape (`api-points::types::QuotaWindowInput`) — kept
 /// local to billing so api-billing does not depend on api-points.
 #[derive(Debug, Clone)]
 pub struct QuotaWindowInput {

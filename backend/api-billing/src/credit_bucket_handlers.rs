@@ -2,8 +2,8 @@
 //!
 //! Implements the directory endpoints over `PostgresBillingRepository`'s inherent
 //! bucket directory methods. Permission gate: Realm Admin `points.manage`
-//! (Realm Admin gate). DTOs follow the crate's camelCase convention and match
-//! the response contracts (includes `receivesRegistrationCredits`, NO
+//! (Realm Admin gate). HTTP contracts follow the crate's camelCase convention
+//! and match the response contracts (includes `receivesRegistrationCredits`, NO
 //! `isDefault`).
 
 use axum::{
@@ -150,7 +150,7 @@ pub(crate) async fn require_points_manage_permission(
     admin.require_permission(state, "points", "manage").await
 }
 
-// ===== Response DTOs =====
+// ===== Response Types =====
 
 /// Reference to a Client App covered by a Credit Bucket (detail view).
 ///
@@ -340,7 +340,7 @@ pub async fn get_credit_bucket_handler(
     Ok(Json(bucket_detail_to_response(detail)))
 }
 
-// ===== Request DTOs =====
+// ===== Request Types =====
 
 /// Request body for creating a Credit Bucket.
 ///
@@ -386,7 +386,7 @@ pub struct UpdateCreditBucketRequest {
     pub receives_registration_credits: bool,
 }
 
-// ===== Overview response DTOs =====
+// ===== Overview Response Types =====
 
 /// Per-credit-type balance totals surfaced in the overview matrix.
 #[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]

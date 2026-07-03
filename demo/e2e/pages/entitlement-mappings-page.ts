@@ -209,6 +209,63 @@ export class EntitlementMappingsPage extends BasePage {
     return this.mappingDetailPanel.locator(SELECTORS.multiPriceMapping.priceEditRow(priceKey))
   }
 
+  getMetadataBlock(priceKey: string): Locator {
+    return this.mappingDetailPanel.locator(
+      SELECTORS.multiPriceMapping.priceMetadataBlock(priceKey),
+    )
+  }
+
+  getMetadataEntry(scope: 'product' | 'price', key: string): Locator {
+    return this.mappingDetailPanel.locator(
+      SELECTORS.multiPriceMapping.metadataEntry(scope, key),
+    )
+  }
+
+  async getMetadataEntryValue(scope: 'product' | 'price', key: string): Promise<string> {
+    return (await this.getMetadataEntry(scope, key).textContent())?.trim() ?? ''
+  }
+
+  async getProductRowLabel(productId: string): Promise<string> {
+    return (
+      await this.page
+        .locator(SELECTORS.multiPriceMapping.mappingProductRow(productId))
+        .textContent()
+    )?.trim() ?? ''
+  }
+
+  async getDetailHeadLabel(): Promise<string> {
+    return (await this.detailHead.textContent())?.trim() ?? ''
+  }
+
+  getBillingTypeInput(priceKey: string): Locator {
+    return this.getPriceEditRow(priceKey).locator(
+      SELECTORS.multiPriceMapping.priceBillingType(priceKey),
+    )
+  }
+
+  getBillingPeriodInput(priceKey: string): Locator {
+    return this.getReadonlyFieldInput(priceKey, 'Period')
+  }
+
+  async getPriceDisplayValue(priceKey: string): Promise<string> {
+    return this.getReadonlyFieldValue(priceKey, 'Price')
+  }
+
+  async getBillingPeriodValue(priceKey: string): Promise<string> {
+    return this.getReadonlyFieldValue(priceKey, 'Period')
+  }
+
+  async getProductFilterOptionLabels(): Promise<string[]> {
+    await this.smartClick(this.productFilterSelect)
+    const options = this.page.getByRole('option')
+    await expect(options.first()).toBeVisible({ timeout: 3000 })
+    const labels = await options
+      .evaluateAll((nodes) => nodes.map((node) => node.textContent?.trim() ?? ''))
+    await this.page.keyboard.press('Escape')
+    await expect(options.first()).toBeHidden({ timeout: 3000 })
+    return labels.filter(Boolean)
+  }
+
   /**
    * Get the enabled-toggle locator for a single price.
    */
@@ -284,6 +341,20 @@ export class EntitlementMappingsPage extends BasePage {
       const periodInput = periodField.locator('input').first()
       await this.fillField(periodInput, fields.billingPeriod)
     }
+  }
+
+  private async getReadonlyFieldValue(priceKey: string, label: string): Promise<string> {
+    const input = this.getReadonlyFieldInput(priceKey, label)
+    await expect(input).toBeVisible()
+    return await input.inputValue()
+  }
+
+  private getReadonlyFieldInput(priceKey: string, label: string): Locator {
+    const row = this.getPriceEditRow(priceKey)
+    const field = row
+      .locator(`xpath=./div[1]//label[normalize-space()='${label}']`)
+      .locator('xpath=ancestor::div[starts-with(@class,"space-y-1")][1]')
+    return field.locator('input').first()
   }
 
   /**

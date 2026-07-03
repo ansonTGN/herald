@@ -102,9 +102,11 @@ Herald 不会自动知道你在 Creem 创建了什么商品。下一步需要同
 3. 选择支付方 **Creem**
 4. 等待同步完成
 
-同步完成后你会看到从 Creem 拉取的商品列表。每条记录包含 External Product ID、自动生成的 Entitlement Key（格式为 `creem-{normalized_product_id}`），以及它默认归属的 Credit Bucket（Realm 的注册接收池）。
+同步完成后你会看到从 Creem 拉取的商品列表。每条记录包含 External Product ID、自动生成的 Entitlement Key（格式为 `creem-{normalized_product_id}`），以及它默认归属的 Credit Bucket（Realm 的注册接收池）。列表的主标签用产品名，缺失时回退到 External Product ID。
 
-因为 Creem 没有 Product metadata，同步只能拉取商品 ID 和基本信息。entitlement_key 和积分策略需要手动配置。
+Creem 价格按原值展示。Creem 返回的价格本身就是显示值（字符串如 `"9.99"`），展示时直接用，不做 Stripe 那种最小货币单位整数（分）的除以 100 换算。币种跟随 Creem 返回值。两条换算分支（Stripe 与 Creem）是分开的，不会互相污染。
+
+因为 Creem 没有 Product metadata，同步只能拉取商品 ID 和基本信息。entitlement_key 和积分策略需要手动配置。Creem Product 对象在 `/v1/products/search` 响应里没有原生 `metadata` 字段（Creem 的 `metadata` 是 checkout 会话级，不是 Product 级），所以 Herald 不为 Creem 同步 metadata，mapping 详情里 metadata 一栏按空处理，不伪造。计费周期如果 Creem 响应里有 `billing_period`（形如 `every-month`），前端做文案映射展示，缺失时显示"—"。
 
 ## Step 4: 配置 Entitlement Mapping
 

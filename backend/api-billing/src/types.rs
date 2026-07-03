@@ -23,7 +23,7 @@ pub struct CreateCheckoutResponse {
 /// maps (coerced at sync time in the provider adapter), matching how Stripe
 /// and Creem model metadata.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct ProviderProductInfoDto {
+pub struct ProviderProductInfo {
     pub name: Option<String>,
     pub description: Option<String>,
     pub price: Option<i64>,
@@ -61,23 +61,23 @@ pub struct EntitlementMappingResponse {
     pub max_periods: Option<i64>,
     pub enabled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub provider_product_info: Option<ProviderProductInfoDto>,
+    pub provider_product_info: Option<ProviderProductInfo>,
     /// Subscription quota window config (design §4.3.2). `None` ⟺ no
     /// window-model grant. Each window carries the stable display `key`
     /// (derived from `windowSeconds`), the limit, and the window length.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub quota_windows: Option<Vec<EntitlementQuotaWindowDto>>,
+    pub quota_windows: Option<Vec<EntitlementQuotaWindowResponse>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub synced_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
 
-/// Read-side quota window view (response DTO). Mirrors the domain `QuotaWindow`
+/// Read-side quota window view. Mirrors the domain `QuotaWindow`
 /// snapshot carried on an entitlement mapping.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct EntitlementQuotaWindowDto {
+pub struct EntitlementQuotaWindowResponse {
     /// Sliding window length in seconds.
     pub window_seconds: i64,
     /// Quota limit.
@@ -130,7 +130,7 @@ pub struct UpdateEntitlementMappingRequest {
     /// stored value untouched; `Some([])` ⟺ clear (no window grant);
     /// `Some([...])` ⟺ replace. Same validation as batch update.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub quota_windows: Option<Vec<QuotaWindowInputDto>>,
+    pub quota_windows: Option<Vec<QuotaWindowInput>>,
 }
 
 /// Request to sync provider products
@@ -150,13 +150,13 @@ pub struct SyncProviderResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub partial_errors: Vec<PartialSyncErrorDto>,
+    pub partial_errors: Vec<PartialSyncError>,
 }
 
 /// Partial sync error detail
 #[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct PartialSyncErrorDto {
+pub struct PartialSyncError {
     pub external_id: String,
     pub reason: String,
 }
@@ -170,7 +170,7 @@ pub struct OneTimeMappingItem {
     /// Bound credit bucket (non-null; matches domain entity).
     pub bucket_id: Uuid,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub provider_product_info: Option<ProviderProductInfoDto>,
+    pub provider_product_info: Option<ProviderProductInfo>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub points_per_period: Option<i64>,
     pub payment_provider: String,
@@ -286,16 +286,16 @@ pub struct CreateCheckoutSessionRequest {
     pub payment_provider: String,
 }
 
-/// Input DTO for one quota window in a mapping batch save (design §4.3.2).
+/// Input for one quota window in a mapping batch save (design §4.3.2).
 ///
 /// Carries only the editable fields; the stable display `key` is derived by
 /// the backend from `windowSeconds` (via `derive_window_key`) before
 /// persistence, so callers cannot drift window identity. Mirrors the
-/// points-domain `QuotaWindowInputDto` shape; kept local to billing so
+/// points-domain quota-window input shape; kept local to billing so
 /// api-billing does not depend on api-points.
 #[derive(Debug, Deserialize, ToSchema, validator::Validate)]
 #[serde(rename_all = "camelCase")]
-pub struct QuotaWindowInputDto {
+pub struct QuotaWindowInput {
     /// Sliding window length in seconds. Must be > 0.
     #[validate(range(min = 1))]
     pub window_seconds: i64,
@@ -333,7 +333,7 @@ pub struct PriceMappingUpdate {
     /// `Some([])` ⟺ clear (no window grant); `Some(non-empty)` ⟺ set.
     /// Non-empty triggers the `points.manage` credit-field permission gate.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub quota_windows: Option<Vec<QuotaWindowInputDto>>,
+    pub quota_windows: Option<Vec<QuotaWindowInput>>,
 }
 
 /// PUT `/api/bill/{realmId}/entitlement-mappings/batch` request body.

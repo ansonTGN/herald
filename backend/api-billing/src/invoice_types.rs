@@ -763,7 +763,7 @@ mod tests {
         }
     }
 
-    /// The list/summary DTO MUST surface external_invoice_id so callers can
+    /// The list/summary response MUST surface external_invoice_id so callers can
     /// discover Stripe invoices by their `in_...` id. This is the field the
     /// live E2E `waitForStripeInvoice` filter depends on, so a regression here
     /// would silently break invoice discovery.

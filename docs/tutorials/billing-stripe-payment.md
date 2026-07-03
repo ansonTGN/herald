@@ -141,6 +141,14 @@ Herald 使用 Stripe 的 inline pricing 创建 Checkout Session，不需要在 S
 - 归属的 Credit Bucket（新同步的映射默认挂在 Realm 的注册接收池）
 - 积分策略状态
 
+列表的主标签是 Stripe 商品的产品名（Product name）。产品名缺失时回退到 External Product ID，再不行给占位，不会出现空标签。产品过滤器按产品名匹配，外部 ID 命中也算。
+
+价格展示按 Stripe 单位换算。Stripe 同步的价格是最小货币单位整数（例如 999 表示 9.99），列表和详情会换算成主货币单位（9.99）。这条换算分支只对 Stripe 生效，Creem 不会走到这里。
+
+同步会把 Stripe `Product.metadata` 和 `Price.metadata`（你在 Stripe 后台填的商户自定义键值对）一起拉过来，写进 mapping 详情的展示信息里，只读。重新同步以 Stripe 当前值为准覆盖。Herald 不回写 Stripe metadata，权威源是 Stripe 后台。
+
+计费周期（订阅周期）取自 Stripe `Price.recurring.interval`（day/week/month/year），前端只读，不接受人工输入。保存 / 更新时即使提交了周期值，后端也不会用它覆盖同步值。
+
 自动生成的 Entitlement Key 通常不是你想要的。下一步来调整。
 
 ## Step 5: 配置 Entitlement Mapping

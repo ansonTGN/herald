@@ -65,7 +65,7 @@ impl BalancesByType {
 /// constraint); `exhausted` flags `remaining == 0`.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct QuotaWindowViewDto {
+pub struct QuotaWindowViewResponse {
     /// Stable display key (config-derived, not row ordinal).
     pub key: String,
     pub limit: i64,
@@ -84,10 +84,10 @@ pub struct QuotaWindowViewDto {
     pub exhausted: bool,
 }
 
-impl QuotaWindowViewDto {
-    /// Map a domain `QuotaWindowView` into the HTTP DTO (1:1; the only job is
-    /// crossing the domain↔API boundary so the API contract is not bound to
-    /// the domain entity).
+impl QuotaWindowViewResponse {
+    /// Map a domain `QuotaWindowView` into the HTTP response (1:1; the only
+    /// job is crossing the domain/API boundary so the API contract is not
+    /// bound to the domain entity).
     pub fn from_domain(view: herald_core::domain::points::QuotaWindowView) -> Self {
         Self {
             key: view.key,
@@ -109,7 +109,7 @@ impl QuotaWindowViewDto {
 /// cannot drift the stable window identity.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, validator::Validate)]
 #[serde(rename_all = "camelCase")]
-pub struct QuotaWindowInputDto {
+pub struct QuotaWindowInput {
     /// Sliding window length in seconds. Must be > 0.
     #[validate(range(min = 1))]
     pub window_seconds: i64,
@@ -149,7 +149,7 @@ pub struct WalletByBucketResponse {
     /// `None` for a pool-only bucket (no active subscription / free-periodic
     /// quota entitlement). `Some([])` is avoided — pool-only stays `None`.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub quota_windows: Option<Vec<QuotaWindowViewDto>>,
+    pub quota_windows: Option<Vec<QuotaWindowViewResponse>>,
     /// Window-quota available amount = minimum `remaining` across
     /// `quota_windows` (the tightest constraint). `None` for pool-only buckets.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -328,7 +328,7 @@ pub struct RealmDefaultConfigResponse {
     /// `None` ⟺ no window-model free-periodic grant (the registration path
     /// skips it, fail-safe). Mirrors the stored JSONB column.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub free_periodic_quota_windows: Option<Vec<QuotaWindowInputDto>>,
+    pub free_periodic_quota_windows: Option<Vec<QuotaWindowInput>>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -350,7 +350,7 @@ pub struct CreateRealmConfigRequest {
     /// handler (the `validator` derive covers the per-window ranges; the count
     /// cap is checked explicitly because `validator` has no built-in for
     /// `Option<Vec<_>>` length on the outer Option).
-    pub free_periodic_quota_windows: Option<Vec<QuotaWindowInputDto>>,
+    pub free_periodic_quota_windows: Option<Vec<QuotaWindowInput>>,
 }
 
 /// Update realm config request
@@ -368,7 +368,7 @@ pub struct UpdateRealmConfigRequest {
     /// Free-periodic quota windows (design §4.2.2). `None` ⟺ leave the stored
     /// value untouched (partial-update semantics); `Some([])` ⟺ clear;
     /// `Some([...])` ⟺ replace. Same validation as create.
-    pub free_periodic_quota_windows: Option<Vec<QuotaWindowInputDto>>,
+    pub free_periodic_quota_windows: Option<Vec<QuotaWindowInput>>,
 }
 
 /// User points config response

@@ -171,6 +171,10 @@ docs/user-stories/
 | US-EM-004 | 基于 Entitlement 应用积分策略 | System | P0 | [billing/entitlement-mapping](billing/entitlement-mapping.md#故事-4基于-entitlement-应用积分策略-us-em-004) |
 | US-EM-005 | SDK 通过 Entitlement 查询订阅状态 | Third-Party App | P0 | [billing/entitlement-mapping](billing/entitlement-mapping.md#故事-5sdk-通过-entitlement-查询订阅状态-us-em-005) |
 | US-EM-006 | 查看订阅投影列表 | Realm Admin | P0 | [billing/entitlement-mapping](billing/entitlement-mapping.md#故事-6查看订阅投影列表-us-em-006) |
+| US-BL-SYNC-001 | 同步携带 Stripe 商户自定义 metadata 并可查看 | Admin Realm | P1 | [billing/entitlement-mapping](billing/entitlement-mapping.md#故事-10同步时携带-stripe-商户自定义-metadata并在管理端可见-us-bl-sync-001) |
+| US-BL-SYNC-002 | 列表展示产品名便于识别 | Admin Realm | P0 | [billing/entitlement-mapping](billing/entitlement-mapping.md#故事-11在-mapping-列表里看到产品名便于识别-us-bl-sync-002) |
+| US-BL-SYNC-003 | Stripe/Creem 价格单位正确展示 | Admin Realm | P0 | [billing/entitlement-mapping](billing/entitlement-mapping.md#故事-12产品价格按-provider-单位正确展示不混淆-stripe-与-creem-us-bl-sync-003) |
+| US-BL-SYNC-004 | 计费周期以 Stripe 为准、只读且不被人工覆盖 | Admin Realm | P0 | [billing/entitlement-mapping](billing/entitlement-mapping.md#故事-13计费周期以-stripe-为准只读且不被人工覆盖-us-bl-sync-004) |
 | US-CB-001 | 管理 Credit Bucket 目录 | Realm Admin | P0 | [billing/credit-bucket](billing/credit-bucket.md#故事-1管理-credit-bucket-目录-us-cb-001) |
 | US-CB-002 | 为 Bucket 绑定 Client App 覆盖集 | Realm Admin | P0 | [billing/credit-bucket](billing/credit-bucket.md#故事-2为-bucket-绑定-client-app-覆盖集-us-cb-002) |
 | US-CB-003 | 将套餐/积分包归属到 Bucket | Realm Admin | P0 | [billing/credit-bucket](billing/credit-bucket.md#故事-3将套餐积分包归属到-bucket-us-cb-003) |

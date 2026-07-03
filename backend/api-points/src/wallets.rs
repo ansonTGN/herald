@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::types::{
     BalancesByType, ListWalletsByBucketResponse, ListWalletsQuery, PointsWalletResponse,
-    QuotaWindowViewDto, WalletByBucketResponse,
+    QuotaWindowViewResponse, WalletByBucketResponse,
 };
 use herald_api_base::application::http::common::auth_utils::require_authenticated_user_in_realm;
 use herald_api_base::application::http::common::error_codes::POINTS_UNIT;
@@ -61,7 +61,7 @@ async fn compute_bucket_window_view(
     user_id: Uuid,
     bucket_id: Option<Uuid>,
     now: chrono::DateTime<chrono::Utc>,
-) -> Result<(Option<Vec<QuotaWindowViewDto>>, Option<i64>), ApiError> {
+) -> Result<(Option<Vec<QuotaWindowViewResponse>>, Option<i64>), ApiError> {
     let Some(bucket_id) = bucket_id else {
         // Aggregate user-total row has no single bucket to compute windows
         // against — window enrichment applies per concrete bucket only.
@@ -79,11 +79,11 @@ async fn compute_bucket_window_view(
         return Ok((None, None));
     }
     let spendable_from_quota = views.iter().map(|v| v.remaining).min().unwrap_or(0);
-    let dto = views
+    let response_windows = views
         .into_iter()
-        .map(QuotaWindowViewDto::from_domain)
+        .map(QuotaWindowViewResponse::from_domain)
         .collect();
-    Ok((Some(dto), Some(spendable_from_quota)))
+    Ok((Some(response_windows), Some(spendable_from_quota)))
 }
 
 /// Sum the pool-side credit-type balances (topup + registration + granted).

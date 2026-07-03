@@ -72,6 +72,21 @@ Entitlement Mapping 是一张映射表，把支付方的外部商品 ID 映射�
 | `validity_days` | 积分有效期（天） |
 | `enabled` | 是否启用。禁用后 webhook 仍更新订阅投影，但不触发积分发放 |
 
+映射里还带一份从支付方同步过来的展示信息（`provider_product_info`），只读，用来在管理后台展示商品原貌，不参与计费：
+
+| 字段 | 说明 |
+|------|------|
+| 产品名 | 列表和分组的主标签优先用它。缺失时回退到外部产品 id，再不行给占位，不显示空标签 |
+| 价格 | 展示时按支付方区分单位。Stripe 同步的是最小货币单位整数（例如 999 表示 9.99），换算成主货币单位展示；Creem 直接用原值（字符串如 `"9.99"`），不再统一除以 100。单位换算由支付方来源驱动，不跨支付方共用同一条换算分支 |
+| 币种 | 商品币种，跟随同步覆盖 |
+| 计费类型 | recurring / one_time，来自支付方 |
+| 计费周期 | Stripe 取 `Price.recurring.interval`（day/week/month/year），只读，不接受人工输入，重新同步以 Stripe 当前值为准。Creem 取其产品响应里的 `billing_period`（形如 `every-month`，前端做文案映射），缺失时显示"—"，不伪造 |
+| metadata | 同步 Stripe `Product.metadata` 和 `Price.metadata`（商户自定义键值对），只读展示。Creem Product 无原生 metadata，按空处理，不伪造 |
+
+展示信息每次重新同步以支付方当前值为准覆盖本地；`entitlement_key`、`points`、`grant` 策略、`quota_windows` 等业务字段不被同步覆盖。
+
+计费周期（来自 Stripe）和额度滚动窗口（`quota_windows`，如 5 小时 / 周）是两个独立概念，刻意解耦。计费周期决定 Stripe 何时扣款、何时发续费 webhook；额度窗口决定用户在滚动窗口内可用多少额度，两者不要求相等、不要求整除、不做对齐。长计费周期（年付）里仍可配滚动限额（月窗 / 周窗）。额度授予由续费 webhook 事件驱动，按 provider 返回的 `(period_start, period_end)` 锚定一期权益，不预发整周期总额、不按日历固定日清零。
+
 映射通过两种方式产生：
 
 1. **管理员手动同步**：调用支付方 Product API，拉取所有商品，自动创建或更新映射。新建的映射先绑定到本 Realm 的注册接收池，之后管理员可以把它挪到别的 Bucket。
@@ -115,7 +130,7 @@ Checkout 创建时验证这些 metadata，缺失则拒绝创建。Webhook 收到
 
 ### 积分策略
 
-积分策略的 source of truth 是 Herald 本地的 Entitlement Mapping，不是支付方的 metadata。Stripe Product/Price metadata 可以作为导入来源，但 Creem 无 metadata 功能，必须在 Herald 中配置。
+积分策略的 source of truth 是 Herald 本地的 Entitlement Mapping，不是支付方的 metadata。Stripe 的 `Product.metadata` 和 `Price.metadata` 会跟随产品同步进入展示信息（仅 Stripe 适用），Herald 端只读，不回写、不编辑。Creem 无原生 metadata 功能，必须在 Herald 中手动配置。
 
 策略按 `entitlement_key` 查询，覆盖：首次订阅发放、续费发放、取消回收、退款回收、升降级处理。发放和回收都定位到订阅绑定的 Bucket 池，按上面五种 credit_type 分别入账。
 

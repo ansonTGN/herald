@@ -117,7 +117,7 @@ pub async fn list_transactions(
             // it. Probe `points.manage` non-erroringly — deny resolves to
             // `false`, which forces `effective_at = None` for every row below.
             // Combined with `#[serde(skip_serializing_if = "Option::is_none")]`
-            // on the DTO, this guarantees the key is absent from regular-user
+            // on the response type, this guarantees the key is absent from regular-user
             // JSON. A `false` here means "not a points manager" (view-only or
             // self-view).
             let can_manage = check_permission_with_timeout(

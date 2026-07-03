@@ -5,7 +5,7 @@ use axum::{
 use validator::Validate;
 
 use crate::types::{
-    CreateRealmConfigRequest, QuotaWindowInputDto, RealmDefaultConfigResponse,
+    CreateRealmConfigRequest, QuotaWindowInput, RealmDefaultConfigResponse,
     UpdateRealmConfigRequest,
 };
 use herald_api_base::application::http::common::auth_utils::AdminIdentity;
@@ -19,7 +19,7 @@ use herald_core::domain::points::{
 
 /// Convert domain `RealmDefaultConfig` to API response. The stored
 /// `free_periodic_quota_windows` (domain `Vec<QuotaWindow>`) maps to
-/// `Option<Vec<QuotaWindowInputDto>>`: empty ⟹ `None` (no window grant).
+/// `Option<Vec<QuotaWindowInput>>`: empty ⟹ `None` (no window grant).
 fn realm_config_to_response(
     config: herald_core::domain::points::RealmDefaultConfig,
 ) -> RealmDefaultConfigResponse {
@@ -30,11 +30,11 @@ fn realm_config_to_response(
             config
                 .free_periodic_quota_windows
                 .into_iter()
-                .map(|w| QuotaWindowInputDto {
+                .map(|w| QuotaWindowInput {
                     // Re-derive the key from the canonical length so the
                     // response always carries the stable identity (the stored
                     // key is the snapshot, but the response is the editable
-                    // config view — `QuotaWindowInputDto` carries no key, so
+                    // config view — `QuotaWindowInput` carries no key, so
                     // this round-trip keeps the editor length-driven).
                     window_seconds: w.window_seconds,
                     limit: w.limit,
@@ -54,7 +54,7 @@ fn realm_config_to_response(
     }
 }
 
-/// Materialize the request-side `QuotaWindowInputDto` list into the domain
+/// Materialize the request-side `QuotaWindowInput` list into the domain
 /// `Vec<QuotaWindow>` (deriving the stable `key` per window) with edge
 /// validation (design §4.2.2 / §4.4.3):
 /// - each window's `validate()` runs (`windowSeconds > 0`, `limit >= 0`);
@@ -67,7 +67,7 @@ fn realm_config_to_response(
 /// so this is defense-in-depth at the API edge (cheaper, surfaces 400 before
 /// the service boundary).
 fn materialize_quota_windows(
-    windows: Option<Vec<QuotaWindowInputDto>>,
+    windows: Option<Vec<QuotaWindowInput>>,
 ) -> Result<Option<Vec<QuotaWindow>>, ApiError> {
     let Some(windows) = windows else {
         return Ok(None);

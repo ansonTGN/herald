@@ -52,13 +52,13 @@ pub struct CreatePaymentAttemptResponse {
     pub currency: String,
     pub status: String,
     pub expires_at: String,
-    pub payment_context: PaymentContextDto,
+    pub payment_context: PaymentContextResponse,
     pub created_at: String,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct PaymentContextDto {
+pub struct PaymentContextResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stripe_checkout_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -81,14 +81,14 @@ pub struct PaymentAttemptStatusResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub completed_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub fulfillment: Option<FulfillmentResultDto>,
+    pub fulfillment: Option<FulfillmentResultResponse>,
     pub created_at: String,
     pub expires_at: String,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct FulfillmentResultDto {
+pub struct FulfillmentResultResponse {
     #[serde(rename = "type")]
     pub fulfillment_type: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -130,13 +130,13 @@ pub struct PurchaseHistoryQuery {
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PurchaseHistoryResponse {
-    pub items: Vec<PurchaseHistoryItemDto>,
+    pub items: Vec<PurchaseHistoryItem>,
     pub total: i64,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct PurchaseHistoryItemDto {
+pub struct PurchaseHistoryItem {
     pub attempt_id: Uuid,
     pub target_mapping_id: Uuid,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -184,10 +184,10 @@ fn validate_payment_provider(payment_provider: &str) -> Result<(), validator::Va
 // Conversion Helpers
 // ============================================================================
 
-fn payment_context_to_dto(
+fn payment_context_to_response(
     context: herald_core::domain::payment_attempt::PaymentContext,
-) -> PaymentContextDto {
-    PaymentContextDto {
+) -> PaymentContextResponse {
+    PaymentContextResponse {
         stripe_checkout_url: context.stripe_checkout_url,
         creem_checkout_url: context.creem_checkout_url,
         client_secret: context.client_secret,
@@ -275,7 +275,7 @@ pub async fn create_payment_attempt(
         currency: created.attempt.currency,
         status: created.attempt.status.to_string(),
         expires_at: created.attempt.expires_at.to_rfc3339(),
-        payment_context: payment_context_to_dto(created.context),
+        payment_context: payment_context_to_response(created.context),
         created_at: created.attempt.created_at.to_rfc3339(),
     };
 
@@ -456,9 +456,9 @@ pub async fn get_purchase_history(
             ApiError::internal("Failed to fetch purchase history")
         })?;
 
-    let items: Vec<PurchaseHistoryItemDto> = rows
+    let items: Vec<PurchaseHistoryItem> = rows
         .into_iter()
-        .map(|row| PurchaseHistoryItemDto {
+        .map(|row| PurchaseHistoryItem {
             attempt_id: row.attempt_id,
             target_mapping_id: row.target_mapping_id,
             product_name: row.product_name,
