@@ -7,7 +7,7 @@ import { screen, waitFor } from '@testing-library/react'
 import { userEvent } from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { PurchaseHistoryList } from '../purchase-history-list'
-import type { PurchaseHistoryItemDto } from '@/lib/api-generated'
+import type { PurchaseHistoryItem } from '@/lib/api-generated'
 import { server } from '@/test/mocks/server'
 import { renderWithProviders } from '@/test/utils/render'
 
@@ -15,7 +15,7 @@ const REALM_ID = 'test-realm'
 const BASE_URL = 'http://localhost:3000'
 const ATTEMPT_ID = 'attempt-1'
 
-const purchase: PurchaseHistoryItemDto = {
+const purchase: PurchaseHistoryItem = {
   attemptId: ATTEMPT_ID,
   targetMappingId: 'mapping-1',
   productName: 'Test Product',
@@ -31,7 +31,7 @@ const purchase: PurchaseHistoryItemDto = {
   createdAt: '2025-01-01T00:00:00Z',
 }
 
-const stripePurchase: PurchaseHistoryItemDto = {
+const stripePurchase: PurchaseHistoryItem = {
   ...purchase,
   attemptId: 'attempt-stripe',
   paymentProvider: 'stripe',

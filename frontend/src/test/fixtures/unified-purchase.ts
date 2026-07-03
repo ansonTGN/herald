@@ -4,7 +4,7 @@
  * Provides mock data for payment attempts
  */
 
-import type { PaymentAttemptStatusResponse, PaymentContextDto } from '@/lib/api-generated'
+import type { PaymentAttemptStatusResponse, PaymentContextResponse } from '@/lib/api-generated'
 
 /**
  * Mock payment attempts with different statuses
@@ -118,9 +118,11 @@ export function getMockPaymentAttemptById(attemptId: string): PaymentAttemptStat
 }
 
 /**
- * Factory for PaymentContextDto test data
+ * Factory for PaymentContextResponse test data
  */
-export function makePaymentContext(overrides?: Partial<PaymentContextDto>): PaymentContextDto {
+export function makePaymentContext(
+  overrides?: Partial<PaymentContextResponse>
+): PaymentContextResponse {
   return {
     wechatCodeUrl: null,
     stripeCheckoutUrl: null,

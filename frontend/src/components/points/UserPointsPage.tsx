@@ -65,7 +65,7 @@ export function UserPointsPage({
   // Feature visibility drives the inline purchase block. Mirrors the
   // featureAvailabilityQueryOptions usage in profile-sidebar.tsx.
   const { data: features } = useQuery(featureAvailabilityQueryOptions(realmId))
-  const pointsPurchaseVisible = features?.user?.pointsPurchaseVisible === true
+  const pointsAreaVisible = features?.user?.pointsVisible === true
 
   // Bucket name lookup for the Bucket Select + Bucket column. The admin-only
   // credit-buckets directory (`/billing/credit-buckets`) 403s for regular users
@@ -139,7 +139,7 @@ export function UserPointsPage({
         <h1 className="text-xl font-semibold">{m['points.user_points_page_title']()}</h1>
       </div>
 
-      {pointsPurchaseVisible && (
+      {pointsAreaVisible && (
         <Card data-testid="points-purchase-inline-block">
           <CardContent className="flex flex-col items-start justify-between gap-4 py-4 sm:flex-row sm:items-center">
             <div className="space-y-1">

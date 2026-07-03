@@ -6,7 +6,7 @@ import {
   paymentProvidersQueryOptions,
 } from '@/data/query-options'
 import { QUERY_KEYS } from '@/lib/constants'
-import type { PurchaseHistoryItemDto } from '@/lib/api-generated'
+import type { PurchaseHistoryItem } from '@/lib/api-generated'
 
 // Mock SDK functions used by query options under test
 vi.mock('@/lib/api-generated/sdk.gen', async (importOriginal) => {
@@ -27,9 +27,7 @@ import {
 
 // ==================== Factory functions ====================
 
-function makePurchaseHistoryItem(
-  overrides?: Partial<PurchaseHistoryItemDto>
-): PurchaseHistoryItemDto {
+function makePurchaseHistoryItem(overrides?: Partial<PurchaseHistoryItem>): PurchaseHistoryItem {
   return {
     attemptId: 'attempt-001',
     targetMappingId: 'mapping-001',
@@ -46,7 +44,7 @@ function makePurchaseHistoryItem(
 }
 
 function makePurchaseHistoryResponse(
-  overrides?: Partial<{ items: PurchaseHistoryItemDto[]; total: number }>
+  overrides?: Partial<{ items: PurchaseHistoryItem[]; total: number }>
 ) {
   return {
     items: [makePurchaseHistoryItem()],

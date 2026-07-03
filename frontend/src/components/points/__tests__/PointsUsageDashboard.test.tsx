@@ -2,7 +2,7 @@ import { render, screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { PointsUsageDashboard } from '../PointsUsageDashboard'
 import type { DerivedBucketCard } from '../user-points-view'
-import type { QuotaWindowViewDto, WalletByBucketResponse } from '@/lib/api-generated/types.gen'
+import type { QuotaWindowViewResponse, WalletByBucketResponse } from '@/lib/api-generated/types.gen'
 
 /**
  * Factory for a single backend-precomputed quota window (design §4.2.2).
@@ -11,7 +11,9 @@ import type { QuotaWindowViewDto, WalletByBucketResponse } from '@/lib/api-gener
  * one place. The dashboard MUST consume these verbatim (no client recompute —
  * FE-T01 pins the pass-through intent one layer up).
  */
-function makeWindow(overrides: Partial<QuotaWindowViewDto> & { key: string }): QuotaWindowViewDto {
+function makeWindow(
+  overrides: Partial<QuotaWindowViewResponse> & { key: string }
+): QuotaWindowViewResponse {
   return {
     limit: 100,
     used: 0,

@@ -47,8 +47,6 @@ export function makeMapping(
     enabled: true,
     bucketId: 'bucket-default',
     grantOnSubscribe: true,
-    grantPeriodType: null,
-    maxPeriods: null,
     pointsPerPeriod: null,
     validityDays: null,
     providerProductInfo: null,

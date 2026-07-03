@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Plus, Trash2, Info } from 'lucide-react'
-import type { QuotaWindowInputDto } from '@/lib/api-generated/types.gen'
+import type { QuotaWindowInput } from '@/lib/api-generated/types.gen'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -32,9 +32,9 @@ export interface QuotaWindowFieldError {
 
 export interface MultiWindowQuotaEditorProps {
   /** Controlled array of quota windows. */
-  value: QuotaWindowInputDto[]
+  value: QuotaWindowInput[]
   /** Emits the next full array on any edit / add / remove. */
-  onChange: (value: QuotaWindowInputDto[]) => void
+  onChange: (value: QuotaWindowInput[]) => void
   /** Disables all controls (inputs, select, add, delete). */
   disabled?: boolean
   /** Drives only the impact-alert wording; no behavioral difference. */
@@ -97,7 +97,7 @@ function unitFactor(unit: WindowUnitValue): number {
  * Embeddable in the entitlement-mapping page (`context="entitlement-mapping"`)
  * and the realm-default free-period page (`context="realm-default"`). The only
  * `context`-driven difference is the impact-alert wording. Behavior is driven
- * purely by props. Accepts and emits `QuotaWindowInputDto[]`; per-window
+ * purely by props. Accepts and emits `QuotaWindowInput[]`; per-window
  * validation rules (`windowSeconds > 0`, `limit >= 0`, max 8 windows) are
  * declared in `quotaWindowSchema` / `quotaWindowsSchema` in
  * `@/lib/schemas/points-forms`; pages compose those schemas for their save
@@ -121,7 +121,7 @@ export function MultiWindowQuotaEditor({
   // it lives in local state and never flows through `onChange`.
   const [unitOverrides, setUnitOverrides] = useState<Record<number, WindowUnitValue>>({})
 
-  const updateRow = (index: number, next: Partial<QuotaWindowInputDto>) => {
+  const updateRow = (index: number, next: Partial<QuotaWindowInput>) => {
     onChange(value.map((window, i) => (i === index ? { ...window, ...next } : window)))
   }
 

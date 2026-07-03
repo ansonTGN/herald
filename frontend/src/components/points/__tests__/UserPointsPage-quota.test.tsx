@@ -9,7 +9,7 @@ import { http, HttpResponse } from 'msw'
 import type {
   ListWalletsByBucketResponse,
   PointsTransactionResponse,
-  QuotaWindowViewDto,
+  QuotaWindowViewResponse,
   WalletByBucketResponse,
 } from '@/lib/api-generated'
 import { UserPointsPage } from '../UserPointsPage'
@@ -54,7 +54,9 @@ const OTHER_USER = 'user-other'
 
 // ---------- Factory helpers ----------
 
-function makeWindow(overrides: Partial<QuotaWindowViewDto> & { key: string }): QuotaWindowViewDto {
+function makeWindow(
+  overrides: Partial<QuotaWindowViewResponse> & { key: string }
+): QuotaWindowViewResponse {
   return {
     limit: 100,
     used: 0,

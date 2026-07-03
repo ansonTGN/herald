@@ -27,7 +27,7 @@ import { toast } from 'sonner'
 
 export const Route = createFileRoute('/$realmId/user/purchase-points')({
   beforeLoad: ({ context, params }) =>
-    requireFeature(context.queryClient, params.realmId, (f) => f.user.pointsPurchaseVisible, {
+    requireFeature(context.queryClient, params.realmId, (f) => f.user.pointsVisible, {
       to: '/$realmId/user/points',
       params: { realmId: params.realmId },
     }),

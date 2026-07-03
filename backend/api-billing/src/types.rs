@@ -53,12 +53,8 @@ pub struct EntitlementMappingResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub points_per_period: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub grant_period_type: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub validity_days: Option<i64>,
     pub grant_on_subscribe: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_periods: Option<i64>,
     pub enabled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provider_product_info: Option<ProviderProductInfo>,
@@ -119,13 +115,9 @@ pub struct UpdateEntitlementMappingRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub points_per_period: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub grant_period_type: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub validity_days: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub grant_on_subscribe: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_periods: Option<i64>,
     /// Subscription quota window config (design §4.3.2). `None` ⟺ leave the
     /// stored value untouched; `Some([])` ⟺ clear (no window grant);
     /// `Some([...])` ⟺ replace. Same validation as batch update.
@@ -314,19 +306,14 @@ pub struct QuotaWindowInput {
 #[serde(rename_all = "camelCase")]
 pub struct PriceMappingUpdate {
     pub mapping_id: Uuid,
-    pub entitlement_key: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub billing_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub points_per_period: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub grant_period_type: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub validity_days: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub grant_on_subscribe: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_periods: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
     /// Quota window config (design §4.3.2). `None` ⟺ leave unchanged;

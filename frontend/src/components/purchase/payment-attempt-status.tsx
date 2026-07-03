@@ -1,6 +1,6 @@
 import { m } from '@/paraglide/messages'
 import { useEffect, useState, useMemo } from 'react'
-import { type PaymentAttemptStatusResponse, type PaymentContextDto } from '@/lib/api-generated'
+import { type PaymentAttemptStatusResponse, type PaymentContextResponse } from '@/lib/api-generated'
 import { Button } from '@/components/ui/button'
 import { AlertCircle, CheckCircle2, Clock, XCircle, RefreshCw, X, ExternalLink } from 'lucide-react'
 
@@ -11,7 +11,7 @@ interface PaymentAttemptStatusProps {
   isRetrying?: boolean
   isCancelling?: boolean
   paymentProvider?: string | null
-  paymentContext?: PaymentContextDto | null
+  paymentContext?: PaymentContextResponse | null
 }
 
 function CancelButton({

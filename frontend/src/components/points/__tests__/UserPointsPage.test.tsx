@@ -105,7 +105,7 @@ function mockQueryOptions() {
   } as never)
   vi.mocked(featureAvailabilityQueryOptions).mockReturnValue({
     queryKey: ['feature-availability', REALM_ID],
-    queryFn: async () => ({ user: { pointsPurchaseVisible: false } }),
+    queryFn: async () => ({ user: { pointsVisible: false } }),
   } as never)
 }
 
@@ -159,10 +159,10 @@ describe('UserPointsPage inline purchase block', () => {
     mockQueryOptions()
   })
 
-  it('GIVEN pointsPurchaseVisible=true WHEN rendering THEN shows the inline purchase CTA', async () => {
+  it('GIVEN pointsVisible=true WHEN rendering THEN shows the inline purchase CTA', async () => {
     vi.mocked(featureAvailabilityQueryOptions).mockReturnValue({
       queryKey: ['feature-availability', REALM_ID],
-      queryFn: async () => ({ user: { pointsPurchaseVisible: true } }),
+      queryFn: async () => ({ user: { pointsVisible: true } }),
     } as never)
 
     renderPage()
@@ -173,7 +173,7 @@ describe('UserPointsPage inline purchase block', () => {
     expect(screen.getByTestId('points-purchase-cta')).toBeInTheDocument()
   })
 
-  it('GIVEN pointsPurchaseVisible=false WHEN rendering THEN hides the inline purchase block', async () => {
+  it('GIVEN pointsVisible=false WHEN rendering THEN hides the inline purchase block', async () => {
     renderPage()
 
     await waitFor(() => expect(screen.getByTestId('transaction-history-table')).toBeInTheDocument())

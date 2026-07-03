@@ -3,7 +3,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { m } from '@/paraglide/messages'
-import type { QuotaWindowViewDto } from '@/lib/api-generated'
+import type { QuotaWindowViewResponse } from '@/lib/api-generated'
 import type { DerivedBucketCard } from './user-points-view'
 
 interface PointsUsageDashboardProps {
@@ -42,7 +42,7 @@ function formatResetsDuration(resetsAt?: string | null): string | null {
 }
 
 function windowBarColor(
-  window: QuotaWindowViewDto
+  window: QuotaWindowViewResponse
 ): 'bg-primary' | 'bg-amber-500' | 'bg-destructive' {
   if (window.exhausted) {
     return 'bg-destructive'

@@ -1865,6 +1865,7 @@ impl BillingRepository for PostgresBillingRepository {
                 EXISTS (SELECT 1 FROM provider_entitlement_mappings WHERE realm_id = $1) AS has_entitlement_mappings,
                 EXISTS (SELECT 1 FROM provider_entitlement_mappings WHERE realm_id = $1 AND enabled = true) AS has_enabled_mappings,
                 EXISTS (SELECT 1 FROM provider_entitlement_mappings WHERE realm_id = $1 AND billing_type = 'one_time' AND enabled = true) AS has_one_time_mappings,
+                EXISTS (SELECT 1 FROM provider_entitlement_mappings WHERE realm_id = $1 AND billing_type = 'recurring' AND enabled = true) AS has_recurring_mappings,
                 EXISTS (SELECT 1 FROM invoice_seller_config WHERE realm_id = $1) AS has_invoice_seller_config,
                 EXISTS (SELECT 1 FROM invoice WHERE realm_id = $1) AS has_invoices,
                 EXISTS (SELECT 1 FROM subscription_history WHERE realm_id = $1) AS has_subscription_history
@@ -1882,6 +1883,7 @@ impl BillingRepository for PostgresBillingRepository {
             has_entitlement_mappings: row.get("has_entitlement_mappings"),
             has_enabled_mappings: row.get("has_enabled_mappings"),
             has_one_time_mappings: row.get("has_one_time_mappings"),
+            has_recurring_mappings: row.get("has_recurring_mappings"),
             has_invoice_seller_config: row.get("has_invoice_seller_config"),
             has_invoices: row.get("has_invoices"),
             has_subscription_history: row.get("has_subscription_history"),
@@ -1894,18 +1896,13 @@ impl BillingRepository for PostgresBillingRepository {
     /// 1. `SELECT ... FOR UPDATE` the mappings named in `updates` (lock the
     ///    group) and verify every `mapping_id` belongs to the
     ///    `(realm, provider, product)` group — else `MappingNotInGroup` (400).
-    /// 2. Shared-key rename cross-product leak check: if the batch would rename
-    ///    the group's `entitlement_key` to a value that OTHER products in this
-    ///    realm already use under a different key, reject with
-    ///    `CrossProductSharedKeyRename` (400). Same-product rows are renamed
-    ///    atomically as a group.
-    /// 3. Active-subscription lock: for every row transitioning
+    /// 2. Active-subscription lock: for every row transitioning
     ///    `enabled` true→false, count access-granting subscriptions anchored to
     ///    that mapping's `(realm, provider, product, external_price_id)`. Any >0
     ///    → roll back the whole tx and return `ActiveSubscriptionLock` (409).
-    /// 4. Upsert each row (UPDATE existing in place; the batch is scoped to
+    /// 3. Upsert each row (UPDATE existing in place; the batch is scoped to
     ///    already-synced price rows, so no INSERT path is exercised here).
-    /// 5. Re-read the product's full latest price-row set and return it.
+    /// 4. Re-read the product's full latest price-row set and return it.
     async fn batch_update_mappings(
         &self,
         input: BatchUpdateMappingsInput,
@@ -1936,7 +1933,7 @@ impl BillingRepository for PostgresBillingRepository {
         // 1. Lock + ownership check for every requested mapping_id.
         let requested_ids: Vec<Uuid> = input.updates.iter().map(|u| u.mapping_id).collect();
         let rows = sqlx::query(
-            "SELECT id, external_price_id, entitlement_key, enabled \
+            "SELECT id, external_price_id, enabled \
              FROM provider_entitlement_mappings \
              WHERE realm_id = $1 AND payment_provider = $2 AND external_product_id = $3 \
                AND id = ANY($4) FOR UPDATE",
@@ -1968,64 +1965,19 @@ impl BillingRepository for PostgresBillingRepository {
         }
 
         // Index current state by id for diffing.
-        let mut current_by_id: std::collections::HashMap<Uuid, (String, Option<String>, bool)> =
+        let mut current_by_id: std::collections::HashMap<Uuid, (Option<String>, bool)> =
             std::collections::HashMap::with_capacity(input.updates.len());
         for r in rows {
             current_by_id.insert(
                 r.get::<Uuid, _>("id"),
                 (
-                    r.get::<String, _>("entitlement_key"),
                     r.get::<Option<String>, _>("external_price_id"),
                     r.get::<bool, _>("enabled"),
                 ),
             );
         }
 
-        // 2. Shared-key rename cross-product leak check.
-        // The batch is single-product; the group's entitlement_key is renamed
-        // atomically. If the NEW key collides with mappings of OTHER products in
-        // this realm that already use it (different external_product_id), the
-        // rename would silently retarget those subscriptions' projection —
-        // reject with an error response.
-        let new_keys: std::collections::HashSet<&str> = input
-            .updates
-            .iter()
-            .map(|u| u.entitlement_key.as_str())
-            .collect();
-        if new_keys.len() == 1 {
-            let new_key = input.updates[0].entitlement_key.as_str();
-            let old_keys: std::collections::HashSet<&str> =
-                current_by_id.values().map(|(k, _, _)| k.as_str()).collect();
-            let is_rename = !old_keys.contains(new_key);
-            if is_rename {
-                let leaked: i64 = sqlx::query_scalar(
-                    "SELECT COUNT(*) FROM provider_entitlement_mappings \
-                     WHERE realm_id = $1 AND entitlement_key = $2 \
-                       AND external_product_id <> $3",
-                )
-                .bind(&input.realm_id)
-                .bind(new_key)
-                .bind(&input.external_product_id)
-                .fetch_one(&mut *tx)
-                .await
-                .map_err(|e| {
-                    CoreError::DatabaseError(format!(
-                        "Failed to check cross-product shared-key rename: {}",
-                        e
-                    ))
-                })?;
-                if leaked > 0 {
-                    let _ = tx.rollback().await;
-                    return Err(BatchMappingError::CrossProductSharedKeyRename {
-                        provider: input.payment_provider.clone(),
-                        product: input.external_product_id.clone(),
-                        affected_count: leaked,
-                    });
-                }
-            }
-        }
-
-        // 3. Active-subscription lock: sum access-granting subscriptions across
+        // 2. Active-subscription lock: sum access-granting subscriptions across
         // every row that transitions enabled true→false. Any >0 rolls back the
         // WHOLE batch.
         // Collect both the non-null price ids (Stripe) and whether any
@@ -2038,7 +1990,7 @@ impl BillingRepository for PostgresBillingRepository {
             let Some(false) = u.enabled else {
                 continue;
             };
-            let Some((_, price_id, was_enabled)) = current_by_id.get(&u.mapping_id) else {
+            let Some((price_id, was_enabled)) = current_by_id.get(&u.mapping_id) else {
                 continue;
             };
             if *was_enabled {
@@ -2087,7 +2039,7 @@ impl BillingRepository for PostgresBillingRepository {
             }
         }
 
-        // 4. Upsert (UPDATE) each row in tx order. Fields the client omits
+        // 3. Upsert (UPDATE) each row in tx order. Fields the client omits
         // (`None`) are preserved via COALESCE — matches the single-PATCH contract
         // (entitlement_mapping_handlers.rs `update_entitlement_mapping`).
         // `quota_windows` is the exception: it is NOT COALESCE'd because the
@@ -2127,29 +2079,23 @@ impl BillingRepository for PostgresBillingRepository {
             let result = if let Some(qw) = quota_windows_value {
                 sqlx::query(
                     "UPDATE provider_entitlement_mappings SET \
-                       entitlement_key = $4, \
-                       billing_type = COALESCE($5, billing_type), \
-                       points_per_period = COALESCE($6, points_per_period), \
-                       grant_period_type = COALESCE($7, grant_period_type), \
-                       validity_days = COALESCE($8, validity_days), \
-                       grant_on_subscribe = COALESCE($9, grant_on_subscribe), \
-                       max_periods = COALESCE($10, max_periods), \
-                       enabled = COALESCE($11, enabled), \
-                       quota_windows = $12, \
-                       updated_at = $13 \
+                       billing_type = COALESCE($4, billing_type), \
+                       points_per_period = COALESCE($5, points_per_period), \
+                       validity_days = COALESCE($6, validity_days), \
+                       grant_on_subscribe = COALESCE($7, grant_on_subscribe), \
+                       enabled = COALESCE($8, enabled), \
+                       quota_windows = $9, \
+                       updated_at = $10 \
                      WHERE realm_id = $1 AND payment_provider = $2 \
-                       AND external_product_id = $3 AND id = $14",
+                       AND external_product_id = $3 AND id = $11",
                 )
                 .bind(&input.realm_id)
                 .bind(&input.payment_provider)
                 .bind(&input.external_product_id)
-                .bind(&u.entitlement_key)
                 .bind(billing_type_str)
                 .bind(u.points_per_period.map(|v| v as i32))
-                .bind(&u.grant_period_type)
                 .bind(u.validity_days.map(|v| v as i32))
                 .bind(u.grant_on_subscribe)
-                .bind(u.max_periods)
                 .bind(u.enabled)
                 .bind(qw)
                 .bind(now)
@@ -2159,28 +2105,22 @@ impl BillingRepository for PostgresBillingRepository {
             } else {
                 sqlx::query(
                     "UPDATE provider_entitlement_mappings SET \
-                       entitlement_key = $4, \
-                       billing_type = COALESCE($5, billing_type), \
-                       points_per_period = COALESCE($6, points_per_period), \
-                       grant_period_type = COALESCE($7, grant_period_type), \
-                       validity_days = COALESCE($8, validity_days), \
-                       grant_on_subscribe = COALESCE($9, grant_on_subscribe), \
-                       max_periods = COALESCE($10, max_periods), \
-                       enabled = COALESCE($11, enabled), \
-                       updated_at = $12 \
+                       billing_type = COALESCE($4, billing_type), \
+                       points_per_period = COALESCE($5, points_per_period), \
+                       validity_days = COALESCE($6, validity_days), \
+                       grant_on_subscribe = COALESCE($7, grant_on_subscribe), \
+                       enabled = COALESCE($8, enabled), \
+                       updated_at = $9 \
                      WHERE realm_id = $1 AND payment_provider = $2 \
-                       AND external_product_id = $3 AND id = $13",
+                       AND external_product_id = $3 AND id = $10",
                 )
                 .bind(&input.realm_id)
                 .bind(&input.payment_provider)
                 .bind(&input.external_product_id)
-                .bind(&u.entitlement_key)
                 .bind(billing_type_str)
                 .bind(u.points_per_period.map(|v| v as i32))
-                .bind(&u.grant_period_type)
                 .bind(u.validity_days.map(|v| v as i32))
                 .bind(u.grant_on_subscribe)
-                .bind(u.max_periods)
                 .bind(u.enabled)
                 .bind(now)
                 .bind(u.mapping_id)

@@ -9,11 +9,11 @@ import {
 import { format } from 'date-fns'
 import { CreditCard, Package } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import type { PurchaseHistoryItemDto } from '@/lib/api-generated'
+import type { PurchaseHistoryItem } from '@/lib/api-generated'
 import { formatInvoiceAmount, getPaymentStatusBadgeVariant } from '@/lib/invoice-utils'
 
 interface PurchaseDetailsDialogProps {
-  purchase: PurchaseHistoryItemDto | null
+  purchase: PurchaseHistoryItem | null
   open: boolean
   onOpenChange: (open: boolean) => void
 }

@@ -264,6 +264,7 @@ pub struct FeatureFacts {
     pub has_entitlement_mappings: bool,
     pub has_enabled_mappings: bool,
     pub has_one_time_mappings: bool,
+    pub has_recurring_mappings: bool,
     pub has_invoice_seller_config: bool,
     pub has_invoices: bool,
     pub has_subscription_history: bool,

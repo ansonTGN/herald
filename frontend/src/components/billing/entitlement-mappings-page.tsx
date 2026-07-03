@@ -493,9 +493,9 @@ function PriceEditRow({
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const editDisabled = !canManage
   const pointsDisabled = !canManage || !canManagePoints
-  // One-time mappings hide the four subscription-only advanced fields and null
-  // them out of the batch payload (design §4.5.4). `null`/`undefined` → false
-  // → full recurring field set (the recurring default).
+  // One-time mappings keep validityDays because one-time fulfillment uses it
+  // for topup_credit expiration. Recurring mappings rely on provider period
+  // boundaries for validity and only expose the active subscription controls.
   const isOneTime = isOneTimeMapping(row.billingType)
 
   // Per-price synced provider info (JSONB typed `unknown` upstream) — narrowed
@@ -517,14 +517,10 @@ function PriceEditRow({
 
         <Field label="Entitlement Key">
           <Input
-            value={row.entitlementKey}
-            onChange={(e) => onChange({ entitlementKey: e.target.value })}
-            disabled={editDisabled}
-            className="font-mono text-sm"
+            value={price.entitlementKey}
+            readOnly
+            className="bg-muted/40 font-mono text-sm text-muted-foreground"
           />
-          <p className="text-xs text-muted-foreground">
-            {m['billing.editing_key_renames_group']()}
-          </p>
         </Field>
 
         <Field
@@ -566,20 +562,26 @@ function PriceEditRow({
           />
         </Field>
 
-        <Field
-          label={m['billing.field_period']()}
-          hint={!row.billingPeriod ? m['billing.field_billing_type_sync_hint']() : undefined}
-        >
-          <Input
-            value={mapBillingPeriodLabel(row.billingPeriod)}
-            readOnly
-            placeholder="—"
-            className="bg-muted/40 text-sm text-muted-foreground"
-          />
-        </Field>
+        {!isOneTime && (
+          <Field
+            label={m['billing.field_period']()}
+            hint={!row.billingPeriod ? m['billing.field_billing_type_sync_hint']() : undefined}
+          >
+            <Input
+              value={mapBillingPeriodLabel(row.billingPeriod)}
+              readOnly
+              placeholder="—"
+              className="bg-muted/40 text-sm text-muted-foreground"
+            />
+          </Field>
+        )}
 
         <Field
-          label={m['billing.field_points_per_period']()}
+          label={
+            isOneTime
+              ? m['billing.field_one_time_points']()
+              : m['billing.field_points_per_period']()
+          }
           required={isUnresolved && row.pointsPerPeriod == null}
         >
           <Input
@@ -657,63 +659,19 @@ function PriceEditRow({
         </CollapsibleTrigger>
         <CollapsibleContent>
           <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {!isOneTime && (
-              <Field label={m['billing.field_grant_period_type']()}>
-                <Select
-                  value={row.grantPeriodType ?? ''}
-                  onValueChange={(v) =>
-                    onChange({
-                      grantPeriodType: (v || null) as
-                        | 'once'
-                        | 'daily'
-                        | 'weekly'
-                        | 'monthly'
-                        | null,
-                    })
-                  }
-                  disabled={pointsDisabled}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="—" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="once">Once</SelectItem>
-                    <SelectItem value="daily">Daily</SelectItem>
-                    <SelectItem value="weekly">Weekly</SelectItem>
-                    <SelectItem value="monthly">Monthly</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Field>
-            )}
-
-            <Field label={m['billing.field_validity_days']()}>
-              <Input
-                type="number"
-                min={1}
-                value={row.validityDays ?? ''}
-                onChange={(e) =>
-                  onChange({
-                    validityDays: e.target.value === '' ? null : Number(e.target.value),
-                  })
-                }
-                disabled={pointsDisabled}
-                placeholder="30"
-              />
-            </Field>
-
-            {!isOneTime && (
-              <Field label={m['billing.field_max_periods']()}>
+            {isOneTime && (
+              <Field label={m['billing.field_validity_days']()}>
                 <Input
                   type="number"
                   min={1}
-                  value={row.maxPeriods ?? ''}
+                  value={row.validityDays ?? ''}
                   onChange={(e) =>
                     onChange({
-                      maxPeriods: e.target.value === '' ? null : Number(e.target.value),
+                      validityDays: e.target.value === '' ? null : Number(e.target.value),
                     })
                   }
                   disabled={pointsDisabled}
-                  placeholder="12"
+                  placeholder="30"
                 />
               </Field>
             )}
@@ -858,37 +816,27 @@ function buildMetadataEntries(
 function seedRows(prices: EntitlementMappingResponse[]): PriceMappingUpdateFormData[] {
   return prices.map((p) => ({
     mappingId: p.id,
-    entitlementKey: p.entitlementKey,
     billingType: p.billingType ?? null,
     billingPeriod: p.billingPeriod ?? null,
     enabled: p.enabled,
     pointsPerPeriod: p.pointsPerPeriod ?? null,
-    grantPeriodType: (p.grantPeriodType as 'once' | 'daily' | 'weekly' | 'monthly' | null) ?? null,
     validityDays: p.validityDays ?? null,
     grantOnSubscribe: p.grantOnSubscribe,
-    maxPeriods: p.maxPeriods ?? null,
     quotaWindows: p.quotaWindows ?? null,
   }))
 }
 
 function toPriceMappingUpdate(row: PriceMappingUpdateFormData): PriceMappingUpdate {
   const isOneTime = isOneTimeMapping(row.billingType)
-  return {
+  const update = {
     mappingId: row.mappingId,
-    entitlementKey: row.entitlementKey,
     billingType: row.billingType ?? undefined,
     enabled: row.enabled ?? undefined,
     pointsPerPeriod: row.pointsPerPeriod ?? undefined,
-    // For one_time mappings these four are hidden (design §4.5.4) and MUST NOT
-    // be written: the one-time fulfillment path never reads them, and the
-    // backend performs no combo-validation, so stale seeded values would
-    // silently leak onto the wire.
-    grantPeriodType: isOneTime ? undefined : (row.grantPeriodType ?? undefined),
-    validityDays: row.validityDays ?? undefined,
+    validityDays: isOneTime ? (row.validityDays ?? undefined) : undefined,
     grantOnSubscribe: isOneTime ? undefined : (row.grantOnSubscribe ?? undefined),
-    maxPeriods: isOneTime ? undefined : (row.maxPeriods ?? undefined),
     // Strip the read-side `key` (EntitlementQuotaWindowDto) before sending: the
-    // save payload's element shape is `QuotaWindowInputDto` ({windowSeconds,
+    // save payload's element shape is `QuotaWindowInput` ({windowSeconds,
     // limit}). The seeded rows carry `key` straight from the GET response; if
     // forwarded verbatim it would leak an excess property onto the wire.
     quotaWindows: isOneTime
@@ -896,6 +844,7 @@ function toPriceMappingUpdate(row: PriceMappingUpdateFormData): PriceMappingUpda
       : (row.quotaWindows?.map((w) => ({ windowSeconds: w.windowSeconds, limit: w.limit })) ??
         undefined),
   }
+  return update as PriceMappingUpdate
 }
 
 function latestSyncedAt(prices: EntitlementMappingResponse[]): string | null {

@@ -205,6 +205,30 @@ describe('EntitlementMappingsPage (master-detail)', () => {
     expect(screen.getByTestId('protected-price-active-subs').textContent).toContain('28')
   })
 
+  it('renders entitlement key as read-only and omits it from the batch save payload', async () => {
+    renderPage([
+      makeMapping({
+        id: 'm-1',
+        externalProductId: 'prod_pro',
+        externalPriceId: 'price_monthly',
+        entitlementKey: 'pro-plan',
+        billingType: 'recurring',
+        pointsPerPeriod: 1000,
+      }),
+    ])
+
+    const row = await screen.findByTestId('price-edit-row-price_monthly')
+    expect(within(row).getByDisplayValue('pro-plan')).toHaveAttribute('readonly')
+
+    await userEvent.click(screen.getByTestId('save-mapping-button'))
+
+    const payload = mockBatchMutate.mock.calls[0]?.[0] as {
+      updates: Array<{ mappingId: string; entitlementKey?: unknown }>
+    }
+    expect(payload.updates[0]).toEqual(expect.objectContaining({ mappingId: 'm-1' }))
+    expect(payload.updates[0]?.entitlementKey).toBeUndefined()
+  })
+
   it('renders the webhook-unresolved banner when an enabled synced row lacks billingType/points', async () => {
     // price_webhook_only: enabled + externalProductId set + no billingType/points → unresolved.
     renderPage([
@@ -457,7 +481,7 @@ describe('EntitlementMappingsPage — one_time field hiding', () => {
 
     const row = await openAdvancedPanel('price-edit-row-price_once')
 
-    // The four subscription-only advanced fields are NOT rendered. The page's
+    // Subscription-only advanced fields are NOT rendered. The page's
     // `Field` wrapper renders the label text and control as siblings (no
     // htmlFor/id association), so presence is asserted via the rendered label
     // text rather than `getByLabelText`.
@@ -467,10 +491,15 @@ describe('EntitlementMappingsPage — one_time field hiding', () => {
     // quotaWindows renders the MultiWindowQuotaEditor (testid quota-window-editor).
     expect(within(row).queryByTestId('quota-window-editor')).toBeNull()
 
-    // validityDays + pointsPerPeriod stay visible for one-time mappings.
+    // One-time mappings do not have a billing period. The stored
+    // pointsPerPeriod value is still used, but the UI labels it by one-time
+    // purchase semantics instead of recurring-period semantics.
+    expect(within(row).queryByText(m['billing.field_period']())).toBeNull()
+    expect(within(row).queryByText(m['billing.field_points_per_period']())).toBeNull()
+    expect(within(row).getByText(m['billing.field_one_time_points']())).toBeInTheDocument()
+
+    // validityDays stays visible for one-time mappings.
     expect(within(row).getByText(m['billing.field_validity_days']())).toBeInTheDocument()
-    // pointsPerPeriod is a top-level (non-advanced) field, always present.
-    expect(within(row).getByText(m['billing.field_points_per_period']())).toBeInTheDocument()
   })
 
   it('renders the full field set for billingType recurring', async () => {
@@ -487,8 +516,11 @@ describe('EntitlementMappingsPage — one_time field hiding', () => {
 
     const row = await openAdvancedPanel('price-edit-row-price_monthly')
 
-    expect(within(row).getByText(m['billing.field_grant_period_type']())).toBeInTheDocument()
-    expect(within(row).getByText(m['billing.field_max_periods']())).toBeInTheDocument()
+    expect(within(row).getByText(m['billing.field_period']())).toBeInTheDocument()
+    expect(within(row).getByText(m['billing.field_points_per_period']())).toBeInTheDocument()
+    expect(within(row).queryByText(m['billing.field_grant_period_type']())).toBeNull()
+    expect(within(row).queryByText(m['billing.field_validity_days']())).toBeNull()
+    expect(within(row).queryByText(m['billing.field_max_periods']())).toBeNull()
     expect(within(row).getByText(m['billing.field_grant_on_subscribe']())).toBeInTheDocument()
     expect(within(row).getByTestId('quota-window-editor')).toBeInTheDocument()
   })
@@ -507,8 +539,9 @@ describe('EntitlementMappingsPage — one_time field hiding', () => {
 
     const row = await openAdvancedPanel('price-edit-row-price_unknown')
 
-    expect(within(row).getByText(m['billing.field_grant_period_type']())).toBeInTheDocument()
-    expect(within(row).getByText(m['billing.field_max_periods']())).toBeInTheDocument()
+    expect(within(row).queryByText(m['billing.field_grant_period_type']())).toBeNull()
+    expect(within(row).queryByText(m['billing.field_validity_days']())).toBeNull()
+    expect(within(row).queryByText(m['billing.field_max_periods']())).toBeNull()
     expect(within(row).getByText(m['billing.field_grant_on_subscribe']())).toBeInTheDocument()
     expect(within(row).getByTestId('quota-window-editor')).toBeInTheDocument()
   })

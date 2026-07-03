@@ -300,7 +300,6 @@ export type FeatureAvailabilityResponse = {
   }
   user: {
     pointsVisible: boolean
-    pointsPurchaseVisible: boolean
     subscriptionVisible: boolean
     invoicesVisible: boolean
   }

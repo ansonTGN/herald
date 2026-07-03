@@ -70,14 +70,19 @@ export function RealmConfigPage() {
   const effectiveConfig = config ?? null
 
   const updateMutation = useMutation({
-    mutationFn: (data: PointsDefaultConfigFormData) =>
-      updatePointsDefaultConfigMutation(realmId, {
+    mutationFn: (data: PointsDefaultConfigFormData) => {
+      const isOneTime = data.freePeriodicGrantPeriodType === 'once'
+      return updatePointsDefaultConfigMutation(realmId, {
         registrationBonusPoints: data.registrationBonusPoints,
         freePeriodicPointsAmount: data.freePeriodicPointsAmount,
         freePeriodicGrantPeriodType: data.freePeriodicGrantPeriodType,
-        freePeriodicValidityDays: data.freePeriodicValidityDays,
-        freePeriodicQuotaWindows: data.freePeriodicQuotaWindows,
-      }),
+        // In the window-quota model, recurring free-periodic validity is not
+        // configurable: quota entitlements stay active until revoked. The
+        // backend still requires a positive compatibility value for non-once.
+        freePeriodicValidityDays: isOneTime ? data.freePeriodicValidityDays : 1,
+        freePeriodicQuotaWindows: isOneTime ? [] : data.freePeriodicQuotaWindows,
+      })
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.pointsDefaultConfig(realmId) })
       toast.success(m['points.default_config_saved']())
@@ -300,64 +305,75 @@ export function RealmConfigPage() {
                 )}
               </form.Field>
 
-              <form.Field name="freePeriodicValidityDays">
-                {(field) => (
-                  <div className="space-y-2">
-                    <Label htmlFor={field.name} id={`${field.name}-label`}>
-                      {m['points.default_config_validity_days_label']()}
-                    </Label>
-                    <Input
-                      id={field.name}
-                      type="number"
-                      min="0"
-                      step="1"
-                      value={field.state.value}
-                      onChange={(e) => field.handleChange(parseInt(e.target.value) || 0)}
-                      placeholder="1"
-                      data-testid="free-periodic-validity-days-input"
-                      aria-labelledby={`${field.name}-label`}
-                      aria-describedby={`${field.name}-description ${field.state.meta.errors.length > 0 ? `${field.name}-error` : ''}`}
-                      aria-invalid={field.state.meta.errors.length > 0}
-                      aria-required="true"
-                      disabled={!canManageConfig || updateMutation.isPending}
-                    />
-                    <p id={`${field.name}-description`} className="text-xs text-muted-foreground">
-                      {m['points.default_config_validity_days_help']()}
-                    </p>
-                    {field.state.meta.errors.length > 0 && (
-                      <p
-                        id={`${field.name}-error`}
-                        className="text-sm text-destructive"
-                        data-testid="free-periodic-validity-days-error"
-                        role="alert"
-                      >
-                        {(field.state.meta.errors[0] as { message?: string })?.message ||
-                          String(field.state.meta.errors[0])}
-                      </p>
-                    )}
-                  </div>
-                )}
-              </form.Field>
-
-              <form.Field name="freePeriodicQuotaWindows">
-                {(field) => (
-                  <div className="space-y-2">
-                    <Label
-                      id={`${field.name}-label`}
-                      className="text-xs font-medium text-muted-foreground"
-                    >
-                      {m['points.quota_editor_title']()}
-                    </Label>
-                    <MultiWindowQuotaEditor
-                      value={field.state.value ?? []}
-                      onChange={(next) => field.handleChange(next)}
-                      disabled={!canManageConfig || updateMutation.isPending}
-                      context="realm-default"
-                      testIdPrefix="realm-default-window"
-                    />
-                  </div>
-                )}
-              </form.Field>
+              <form.Subscribe
+                selector={(state) => state.values.freePeriodicGrantPeriodType === 'once'}
+              >
+                {(isOneTime) =>
+                  isOneTime ? (
+                    <form.Field name="freePeriodicValidityDays">
+                      {(field) => (
+                        <div className="space-y-2">
+                          <Label htmlFor={field.name} id={`${field.name}-label`}>
+                            {m['points.default_config_validity_days_label']()}
+                          </Label>
+                          <Input
+                            id={field.name}
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={field.state.value}
+                            onChange={(e) => field.handleChange(parseInt(e.target.value) || 0)}
+                            placeholder="0"
+                            data-testid="free-periodic-validity-days-input"
+                            aria-labelledby={`${field.name}-label`}
+                            aria-describedby={`${field.name}-description ${field.state.meta.errors.length > 0 ? `${field.name}-error` : ''}`}
+                            aria-invalid={field.state.meta.errors.length > 0}
+                            aria-required="true"
+                            disabled={!canManageConfig || updateMutation.isPending}
+                          />
+                          <p
+                            id={`${field.name}-description`}
+                            className="text-xs text-muted-foreground"
+                          >
+                            {m['points.default_config_validity_days_help']()}
+                          </p>
+                          {field.state.meta.errors.length > 0 && (
+                            <p
+                              id={`${field.name}-error`}
+                              className="text-sm text-destructive"
+                              data-testid="free-periodic-validity-days-error"
+                              role="alert"
+                            >
+                              {(field.state.meta.errors[0] as { message?: string })?.message ||
+                                String(field.state.meta.errors[0])}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </form.Field>
+                  ) : (
+                    <form.Field name="freePeriodicQuotaWindows">
+                      {(field) => (
+                        <div className="space-y-2">
+                          <Label
+                            id={`${field.name}-label`}
+                            className="text-xs font-medium text-muted-foreground"
+                          >
+                            {m['points.quota_editor_title']()}
+                          </Label>
+                          <MultiWindowQuotaEditor
+                            value={field.state.value ?? []}
+                            onChange={(next) => field.handleChange(next)}
+                            disabled={!canManageConfig || updateMutation.isPending}
+                            context="realm-default"
+                            testIdPrefix="realm-default-window"
+                          />
+                        </div>
+                      )}
+                    </form.Field>
+                  )
+                }
+              </form.Subscribe>
 
               {/* Action Buttons */}
               <div className="flex justify-end pt-4">

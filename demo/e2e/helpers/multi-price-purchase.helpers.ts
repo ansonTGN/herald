@@ -14,17 +14,20 @@
  *   admin master-detail page are separate routes.
  * - Does NOT hardcode selector strings — every locator flows from `selectors.ts`.
  *
- * Section IA (purchase-entry-optimization, load-bearing):
- * The page renders two sections by billing type. **Subscriptions section**
- * holds recurring options under a period-aware grid
- * (`purchase-price-grid-${period}`, toggle lives inside this section and is
- * hidden when no recurring options exist). **Credit packs section** holds
- * one_time options under `purchase-price-grid-credit-packs`; one_time cards
- * are NOT period-agnostic duplicates — they live only there. The price-card
- * testid is period-invariant (`purchase-price-card-${priceId}`, no `-annual`
- * suffix), so `selectPriceCard` ignores the `period` argument (kept only for
- * call-site compatibility). Callers that need to scope by section should use
- * `SELECTORS.purchasePriceCard.priceGrid(period)` / `.creditPacksGrid`.
+ * Section IA (purchase-entry-optimization, load-bearing — current frontend):
+ * The page renders two sections by billing type and there is NO period toggle.
+ * **Subscriptions section** holds ALL recurring options (both monthly and
+ * annual) together under a single grid `purchase-price-grid-subscriptions`.
+ * **Credit packs section** holds one_time options under
+ * `purchase-price-grid-credit-packs`. The price-card testid is
+ * period-invariant (`purchase-price-card-${priceId}`, no `-annual` suffix), so
+ * `selectPriceCard` ignores the `period` argument (kept only for call-site
+ * compatibility) and selecting an annual recurring card is a direct click — no
+ * period switch is needed. `selectPeriod` is therefore a no-op that only waits
+ * for the Subscriptions grid to attach (kept for call-site compatibility).
+ * Callers that need to scope by section should use
+ * `SELECTORS.purchasePriceCard.subscriptionsGrid` / `.creditPacksGrid`
+ * (`priceGrid(period)` still resolves to the Subscriptions grid).
  */
 
 import { expect, type Locator, type Page, type Response } from '@playwright/test'
@@ -37,26 +40,21 @@ import { SELECTORS } from '../selectors'
 export type PurchasePeriod = 'month' | 'year'
 
 /**
- * Switch the period toggle and wait for the corresponding pane grid to mount.
+ * Wait for the Subscriptions grid to mount.
  *
- * The toggle lives inside the Subscriptions section and is hidden when no
- * recurring options exist; switching re-renders that section's grid
- * (`purchase-price-grid-${period}`). Waiting on the target grid (rather than a
- * fixed timeout) makes the switch deterministic.
+ * The current frontend purchase page has NO period toggle: all recurring
+ * options (monthly + annual) render together under a single grid
+ * (`purchase-price-grid-subscriptions`). This function is therefore a no-op
+ * with respect to the former toggle click — it only waits for that grid to
+ * attach so a subsequent price-card click does not race the render. The
+ * `period` argument is accepted (and ignored) for call-site compatibility.
  */
 export async function selectPeriod(
   page: Page,
-  period: PurchasePeriod,
+  _period: PurchasePeriod,
 ): Promise<void> {
-  const toggle =
-    period === 'month'
-      ? page.locator(SELECTORS.purchasePriceCard.periodToggleMonth)
-      : page.locator(SELECTORS.purchasePriceCard.periodToggleYear)
-  await toggle.click()
-  // The grid testid is keyed by the active period; wait for it to attach so a
-  // subsequent price-card click does not race the re-render.
   await page
-    .locator(SELECTORS.purchasePriceCard.priceGrid(period))
+    .locator(SELECTORS.purchasePriceCard.subscriptionsGrid)
     .waitFor({ state: 'attached' })
 }
 
@@ -120,22 +118,25 @@ export async function expectDisabledPriceCard(
  * Flow:
  * 1. Ensure a price card is already selected (caller selects via
  *    `selectPriceCard` first — this helper does NOT pick a card, it drives the
- *    Next → payment → submit sequence).
- * 2. Click Next (packages → payment).
- * 3. Click Next again on the payment step. The frontend `createPaymentAttempt`
- *    mutation POSTs `{targetType:'entitlement_mapping',
- *    targetId:<selectedMappingId>, paymentProvider:<derived from option>}` —
- *    equivalent to the documented `{mappingId, paymentProvider}` contract.
+ *    Next → (payment?) → submit sequence).
+ * 2. Register a `waitForResponse` against the create-payment-attempt POST
+ *    BEFORE clicking Next, so the response is captured regardless of whether
+ *    the payment step is shown.
+ * 3. Click Next (packages → payment OR packages → submit).
+ *
+ * Payment-step-skip branch (current frontend `handleNextStep`): when the
+ * selected price's `paymentProvider` resolves to at most one matching provider,
+ * the dedicated "Select Payment Method" step is redundant and the frontend
+ * calls `createPaymentAttempt` directly from the packages step. In that case
+ * there is NO `purchase-step-payment` to wait for — the single Next click IS
+ * the submit. When more than one provider matches, the payment step renders and
+ * a second Next click submits. This helper handles both branches by waiting
+ * for EITHER the payment step to mount (then clicking Next again) OR the
+ * checkout response to arrive (skip branch, already submitted).
  *
  * Returns the API `Response` for the checkout POST so the caller can assert on
- * status / body shape (callers own those business assertions). Captures via
- * `page.waitForResponse` against the create-payment-attempt endpoint so the
- * helper does not depend on the post-submit UI state (which may transition to
- * processing/complete asynchronously).
- *
- * The helper does NOT assert on the response — it only captures it. Business
- * assertions (status, redirect URL, payment context) belong to the consuming
- * test so this stays assertion-light per the module boundary.
+ * status / body shape (callers own those business assertions). The helper does
+ * NOT assert on the response — it only captures it.
  *
  * NOTE: the mappingId is passed for response-matching context only; the actual
  * `targetId` is whatever the page holds in `selectedMappingId` after
@@ -146,18 +147,34 @@ export async function initiateMultiPriceCheckout(
   page: Page,
   _options: { mappingId: string; paymentProvider: string },
 ): Promise<Response> {
-  // Packages → payment.
-  await page.locator(SELECTORS.purchasePriceCard.nextButton).click()
-  // Wait for the payment step container so the second Next is the submit, not a
-  // re-entry into the packages step.
-  await page.waitForSelector('[data-testid="purchase-step-payment"]')
-
+  // Register the response listener BEFORE clicking Next so the checkout POST is
+  // captured whether or not the payment step is shown (the skip branch submits
+  // directly from the packages step on the first Next click).
   const checkoutResponsePromise = page.waitForResponse(
     (resp) =>
       resp.url().includes('/payment-attempts') &&
       resp.request().method() === 'POST',
   )
-  // Payment → submit (createPaymentAttempt mutation fires here).
+
+  // Packages → payment (or packages → submit on the skip branch).
   await page.locator(SELECTORS.purchasePriceCard.nextButton).click()
+
+  // If the payment step mounts, a second Next click is the submit. If the
+  // payment step is skipped, the first Next already submitted and the response
+  // is in flight — racing the payment-step selector against the response wait
+  // resolves either branch without a fixed timeout.
+  const paymentStep = page.locator('[data-testid="purchase-step-payment"]')
+  const steppedToPayment = await Promise.race([
+    paymentStep
+      .waitFor({ state: 'visible' })
+      .then(() => true)
+      .catch(() => false),
+    checkoutResponsePromise.then(() => false),
+  ])
+
+  if (steppedToPayment) {
+    // Payment → submit (createPaymentAttempt mutation fires here).
+    await page.locator(SELECTORS.purchasePriceCard.nextButton).click()
+  }
   return checkoutResponsePromise
 }

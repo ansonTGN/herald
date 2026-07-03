@@ -230,6 +230,90 @@ describe('Realm default-config — free-periodic quota editor integration', () =
     // The existing periodic fields coexist alongside the windows.
     expect(body.registrationBonusPoints).toBe(1000)
     expect(body.freePeriodicGrantPeriodType).toBe('daily')
+    expect(body.freePeriodicValidityDays).toBe(1)
+  })
+
+  it('renders periodic mode without validity days and submits the compatibility validity value', async () => {
+    const captured: { body: unknown } = { body: null }
+    server.use(
+      http.put(
+        'http://localhost:3000/api/points/test-realm/default-config',
+        async ({ request }) => {
+          captured.body = await request.json()
+          return HttpResponse.json({
+            realmId: 'test-realm',
+            registrationBonusPoints: 1000,
+            freePeriodicPointsAmount: 50,
+            freePeriodicGrantPeriodType: 'daily',
+            freePeriodicValidityDays: 1,
+            freePeriodicQuotaWindows: SEEDED_WINDOWS,
+            updatedAt: '2026-03-24T00:00:00Z',
+          })
+        }
+      )
+    )
+
+    renderPage()
+    await screen.findByTestId('realm-default-window-editor')
+
+    expect(screen.queryByTestId('free-periodic-validity-days-input')).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByTestId('save-config-button'))
+
+    await waitFor(() => {
+      expect(captured.body).not.toBeNull()
+    })
+    const body = captured.body as {
+      freePeriodicValidityDays: number
+      freePeriodicQuotaWindows?: Array<{ windowSeconds: number; limit: number }>
+    }
+    expect(body.freePeriodicValidityDays).toBe(1)
+    expect(body.freePeriodicQuotaWindows).toEqual(SEEDED_WINDOWS)
+  })
+
+  it('renders one-time mode without quota windows and clears windows on save', async () => {
+    const captured: { body: unknown } = { body: null }
+    server.use(
+      http.put(
+        'http://localhost:3000/api/points/test-realm/default-config',
+        async ({ request }) => {
+          captured.body = await request.json()
+          return HttpResponse.json({
+            realmId: 'test-realm',
+            registrationBonusPoints: 1000,
+            freePeriodicPointsAmount: 50,
+            freePeriodicGrantPeriodType: 'once',
+            freePeriodicValidityDays: 0,
+            freePeriodicQuotaWindows: [],
+            updatedAt: '2026-03-24T00:00:00Z',
+          })
+        }
+      )
+    )
+
+    renderPage()
+    await screen.findByTestId('realm-default-window-editor')
+    await userEvent.click(screen.getByTestId('grant-period-type-select'))
+    await userEvent.click(await screen.findByRole('option', { name: 'One-time grant' }))
+    const validityInput = await screen.findByTestId('free-periodic-validity-days-input')
+    await userEvent.clear(validityInput)
+    await userEvent.type(validityInput, '0')
+
+    expect(screen.queryByTestId('realm-default-window-editor')).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByTestId('save-config-button'))
+
+    await waitFor(() => {
+      expect(captured.body).not.toBeNull()
+    })
+    const body = captured.body as {
+      freePeriodicGrantPeriodType: string
+      freePeriodicValidityDays: number
+      freePeriodicQuotaWindows?: Array<{ windowSeconds: number; limit: number }>
+    }
+    expect(body.freePeriodicGrantPeriodType).toBe('once')
+    expect(body.freePeriodicValidityDays).toBe(0)
+    expect(body.freePeriodicQuotaWindows).toEqual([])
   })
 
   it('invalidates the pointsDefaultConfig query and shows success toast on save', async () => {

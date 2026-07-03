@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { userEvent } from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { MultiWindowQuotaEditor, type MultiWindowQuotaEditorProps } from '../MultiWindowQuotaEditor'
-import type { QuotaWindowInputDto } from '@/lib/api-generated/types.gen'
+import type { QuotaWindowInput } from '@/lib/api-generated/types.gen'
 
 /**
  * Factory for a single quota window. Centralised so test intent reads as
@@ -10,7 +10,7 @@ import type { QuotaWindowInputDto } from '@/lib/api-generated/types.gen'
  * and so the payload shape (`{ windowSeconds, limit }`) is asserted in one
  * place rather than scattered as hardcoded fixtures.
  */
-function windowSeconds(windowSeconds: number, limit: number): QuotaWindowInputDto {
+function windowSeconds(windowSeconds: number, limit: number): QuotaWindowInput {
   return { windowSeconds, limit }
 }
 
@@ -28,7 +28,7 @@ function defaultProps(
 
 /**
  * MultiWindowQuotaEditor is the single source of truth for assembling the
- * `QuotaWindowInputDto[]` payload consumed by both the entitlement-mapping and
+ * `QuotaWindowInput[]` payload consumed by both the entitlement-mapping and
  * realm-default pages. Its invariants matter because pages trust whatever
  * array it emits and persist it nearly verbatim — a wrong payload, a lost row,
  * or a silently-violated 8-window cap would corrupt stored quota config.
@@ -144,8 +144,8 @@ describe('MultiWindowQuotaEditor', () => {
     })
 
     it('switching unit keeps the length number stable and recomputes windowSeconds in the new unit', async () => {
-      let current: QuotaWindowInputDto[] = [windowSeconds(86400, 0)]
-      const onChange = vi.fn((next: QuotaWindowInputDto[]) => {
+      let current: QuotaWindowInput[] = [windowSeconds(86400, 0)]
+      const onChange = vi.fn((next: QuotaWindowInput[]) => {
         current = next
       })
       const user = userEvent.setup()
@@ -256,7 +256,7 @@ describe('MultiWindowQuotaEditor', () => {
     // 9-window array that the schema then rejects on save, a confusing
     // mismatch between UI and persistence.
 
-    function eightWindows(): QuotaWindowInputDto[] {
+    function eightWindows(): QuotaWindowInput[] {
       return Array.from({ length: 8 }, (_, i) => windowSeconds(3600 * (i + 1), i * 10))
     }
 
@@ -372,7 +372,7 @@ describe('MultiWindowQuotaEditor', () => {
 
       await user.click(screen.getByTestId('quota-window-add-button'))
 
-      const emitted = onChange.mock.calls[0][0] as QuotaWindowInputDto[]
+      const emitted = onChange.mock.calls[0][0] as QuotaWindowInput[]
       expect(emitted).toHaveLength(1)
       // Pin the wire shape callers depend on: no stray keys, both fields
       // present, both numbers.

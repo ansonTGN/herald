@@ -260,10 +260,10 @@ where
                         .and_then(|s: &str| s.parse().ok()),
                     billing_period: price.billing_period.clone(),
                     points_per_period: draft.points_per_period,
-                    grant_period_type: draft.grant_period_type,
                     validity_days: draft.validity_days,
                     grant_on_subscribe: draft.grant_on_subscribe,
-                    max_periods: draft.max_periods,
+                    grant_period_type: existing.as_ref().and_then(|m| m.grant_period_type.clone()),
+                    max_periods: existing.as_ref().and_then(|m| m.max_periods),
                     enabled: draft.enabled,
                     provider_product_info: Some(build_provider_product_info(&product, price)),
                     // Provider sync never carries quota config; preserve an
@@ -338,10 +338,8 @@ where
 #[derive(Debug, Clone, Default)]
 struct DraftDefaults {
     points_per_period: Option<i64>,
-    grant_period_type: Option<String>,
     validity_days: Option<i64>,
     grant_on_subscribe: bool,
-    max_periods: Option<i64>,
     enabled: bool,
 }
 

@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import type { QuotaWindowViewDto, WalletByBucketResponse } from '@/lib/api-generated'
+import type { QuotaWindowViewResponse, WalletByBucketResponse } from '@/lib/api-generated'
 import { deriveUserPointsView } from '@/components/points/user-points-view'
 
 /**
@@ -37,8 +37,8 @@ function makeWalletByBucket(
 
 /** Factory for a single backend-precomputed quota window (design §4.2.2). */
 function makeQuotaWindow(
-  overrides: Partial<QuotaWindowViewDto> & { key: string }
-): QuotaWindowViewDto {
+  overrides: Partial<QuotaWindowViewResponse> & { key: string }
+): QuotaWindowViewResponse {
   return {
     limit: 100,
     used: 0,
@@ -115,12 +115,12 @@ describe('deriveUserPointsView — quota-window pass-through (§4.2.2)', () => {
   describe('single window: backend-precomputed fields pass through verbatim', () => {
     it('carries the window limit/used/remaining/resetsAt/isTightest/exhausted untouched', () => {
       // INTENT: the dashboard (FE-D03) renders `remaining`, `isTightest`,
-      // `resetsAt` etc. directly from the backend `QuotaWindowViewDto`.
+      // `resetsAt` etc. directly from the backend `QuotaWindowViewResponse`.
       // `deriveUserPointsView` MUST NOT recompute the tightest constraint or
       // reset time client-side — doing so would desync from the authoritative
       // backend computation. This test pins the pass-through so any future
       // client-side recomputation surfaces as a regression.
-      const window: QuotaWindowViewDto = makeQuotaWindow({
+      const window: QuotaWindowViewResponse = makeQuotaWindow({
         key: 'monthly',
         limit: 100,
         used: 30,
@@ -162,7 +162,7 @@ describe('deriveUserPointsView — quota-window pass-through (§4.2.2)', () => {
       // in things beyond raw remaining). Here the second window has the
       // smaller remaining but the backend flagged the first as tightest — the
       // pass-through must preserve the backend's authoritative flag exactly.
-      const windows: QuotaWindowViewDto[] = [
+      const windows: QuotaWindowViewResponse[] = [
         makeQuotaWindow({
           key: 'daily',
           remaining: 40,

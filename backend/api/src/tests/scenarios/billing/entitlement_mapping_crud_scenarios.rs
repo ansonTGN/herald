@@ -397,9 +397,7 @@ mod tests {
         let payload = json!({
             "pointsPerPeriod": 1000,
             "grantOnSubscribe": true,
-            "validityDays": 30,
-            "grantPeriodType": "monthly",
-            "maxPeriods": 12
+            "validityDays": 30
         });
 
         let response = app
@@ -420,8 +418,6 @@ mod tests {
         assert_eq!(json["pointsPerPeriod"], 1000);
         assert_eq!(json["grantOnSubscribe"], true);
         assert_eq!(json["validityDays"], 30);
-        assert_eq!(json["grantPeriodType"], "monthly");
-        assert_eq!(json["maxPeriods"], 12);
     }
 
     /// User Story: US-EM-004

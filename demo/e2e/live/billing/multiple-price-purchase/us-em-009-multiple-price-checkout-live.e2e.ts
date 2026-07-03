@@ -263,10 +263,11 @@ test.describe('[Live][Billing Multiple-Price] US-EM-009 / US-EM-008 multi-price 
       await expect(page.locator(SELECTORS.purchasePriceCard.page)).toBeVisible({
         timeout: 15000,
       })
-      // The Annual period must be selected so the annual card renders in the
-      // Subscriptions section (under the section IA, the card testid is
-      // period-invariant — no `-annual` suffix; the period only controls which
-      // recurring grid mounts).
+      // The purchase page has no period toggle: all recurring options (monthly
+      // + annual) render together under the Subscriptions grid
+      // (`purchase-price-grid-subscriptions`). `selectPeriod` is now a no-op
+      // that only waits for that grid to attach; the annual card is selected
+      // directly by its priceId.
       await selectPeriod(page, 'year')
       await selectPriceCard(page, annualPriceId!, 'year')
     })
@@ -287,10 +288,15 @@ test.describe('[Live][Billing Multiple-Price] US-EM-009 / US-EM-008 multi-price 
     let checkoutSessionId: string | null = null
     await test.step('Then the checkout response references a real Stripe session', async () => {
       const checkoutBody = await checkoutResponse!.json()
-      // The response carries the Stripe checkout URL and (depending on the
-      // backend serialization) a checkout id. We accept either shape the
-      // backend emits for the redirect target.
-      checkoutUrl = checkoutBody.checkoutUrl ?? checkoutBody.stripeCheckoutUrl ?? null
+      // The create-payment-attempt response (CreatePaymentAttemptResponse)
+      // carries the redirect URL nested under `paymentContext.stripeCheckoutUrl`
+      // (Stripe) / `paymentContext.creemCheckoutUrl` (Creem), not at the top
+      // level. The top-level `checkoutUrl` shape belongs to a different
+      // backend type (CreateCheckoutResponse) not used by this flow.
+      checkoutUrl =
+        checkoutBody?.paymentContext?.stripeCheckoutUrl ??
+        checkoutBody?.paymentContext?.creemCheckoutUrl ??
+        null
       expect(checkoutUrl, 'expected a checkout URL in the response').toBeTruthy()
       // Extract the Stripe session id (cs_live_... or cs_test_...) from the
       // checkout URL. The backend returns Stripe's session `url` verbatim
@@ -325,11 +331,14 @@ test.describe('[Live][Billing Multiple-Price] US-EM-009 / US-EM-008 multi-price 
         `https://api.stripe.com/v1/checkout/sessions/${checkoutSessionId}?expand[]=line_items`,
         { headers: { Authorization: `Bearer ${secrets.stripe.secretKey}` } },
       )
+      // Read the body exactly once; an eagerly-evaluated message in
+      // `expect(msg)` would otherwise consume the stream before `.json()`.
+      const sessionBody = await sessionResp.text()
       expect(
         sessionResp.ok,
-        `Stripe retrieve session failed: ${sessionResp.status} ${await sessionResp.text().catch(() => '')}`,
+        `Stripe retrieve session failed: ${sessionResp.status} ${sessionBody}`,
       ).toBeTruthy()
-      const session = (await sessionResp.json()) as {
+      const session = JSON.parse(sessionBody) as {
         line_items?: {
           data: Array<{ price?: { id: string } | null }>
         }

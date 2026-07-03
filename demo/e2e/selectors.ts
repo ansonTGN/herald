@@ -829,42 +829,47 @@ export const SELECTORS = {
   },
 
   /**
-   * Multi-Price Purchase — price-card grid + period toggle
+   * Multi-Price Purchase — price-card grid (section IA, no period toggle)
    *
-   * Section IA (purchase-entry-optimization):
-   * The page splits options into two sections by billing type:
-   * - **Subscriptions section** (`purchase-section-subscriptions`): recurring
-   *   options only, rendered under a period-aware grid
-   *   `purchase-price-grid-${period}` (period = `month` | `year`). The period
-   *   toggle lives INSIDE this section and is hidden entirely when no recurring
-   *   options exist.
+   * Section IA (purchase-entry-optimization — current frontend
+   * `frontend/src/routes/$realmId/user/purchase-points.tsx`):
+   * The page splits options into two sections by billing type, and there is NO
+   * period toggle. Monthly + annual recurring options are shown together:
+   * - **Subscriptions section** (`purchase-section-subscriptions`): ALL
+   *   recurring options (both monthly and annual) rendered together under the
+   *   single grid `purchase-price-grid-subscriptions`.
    * - **Credit packs section** (`purchase-section-credit-packs`): one_time
-   *   options only, rendered under `purchase-price-grid-credit-packs`. one_time
-   *   cards are NOT period-agnostic duplicates anymore — they live exclusively
-   *   in this grid.
+   *   options only, rendered under `purchase-price-grid-credit-packs`.
    *
    * Price-card testid is period-invariant: always the bare
    * `purchase-price-card-${priceId}` (NO `-annual` suffix). The same priceId
    * never appears in two grids; disambiguation is by the containing grid.
    * `priceId` is `externalPriceId ?? mappingId` (Creem NULL-price rows fall
    * back to mapping id).
+   *
+   * `priceGrid(period)` is retained for call-site compatibility but now points
+   * at the single Subscriptions grid regardless of `period` (there is no
+   * period-keyed grid anymore). New code should prefer `subscriptionsGrid`.
    */
   purchasePriceCard: {
     page: '[data-testid="purchase-points-page"]',
     noClientAppMessage: '[data-testid="no-client-app-message"]',
-    periodToggle: '[data-testid="purchase-period-toggle"]',
-    periodToggleMonth: '[data-testid="purchase-period-toggle-month"]',
-    periodToggleYear: '[data-testid="purchase-period-toggle-year"]',
-    /** Subscriptions-section grid for the given billing period. */
-    priceGrid: (period: 'month' | 'year') =>
-      `[data-testid="purchase-price-grid-${period}"]`,
+    /** Subscriptions-section grid (all recurring options, both periods). */
+    subscriptionsGrid: '[data-testid="purchase-price-grid-subscriptions"]',
+    /**
+     * Subscriptions-section grid. The `period` argument is accepted for
+     * call-site compatibility but is IGNORED — the current frontend renders a
+     * single Subscriptions grid with all recurring options; there is no
+     * period-keyed grid. Equivalent to `subscriptionsGrid`.
+     */
+    priceGrid: (_period: 'month' | 'year') =>
+      '[data-testid="purchase-price-grid-subscriptions"]',
     /** Credit-packs-section grid (one_time options). */
     creditPacksGrid: '[data-testid="purchase-price-grid-credit-packs"]',
     /**
-     * Price-card locator. `period` is kept for call-site compatibility but no
-     * longer affects the testid — the card is always the bare form. Callers
-     * targeting a recurring card should scope via `priceGrid(period)`; callers
-     * targeting a one_time card should scope via `creditPacksGrid`.
+     * Price-card locator. `priceId` is `externalPriceId ?? mappingId`. The card
+     * testid is period-invariant (no `-annual` suffix); select an annual
+     * recurring card directly by its priceId — no period switch is required.
      */
     priceCard: (priceId: string) =>
       `[data-testid="purchase-price-card-${priceId}"]`,

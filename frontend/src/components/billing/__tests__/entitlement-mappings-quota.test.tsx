@@ -171,6 +171,7 @@ describe('EntitlementMappingsPage — quota-editor integration', () => {
       externalProductId: string
       updates: Array<{
         mappingId: string
+        entitlementKey?: unknown
         quotaWindows?: Array<{ windowSeconds: number; limit: number }> | null
       }>
     }
@@ -178,6 +179,7 @@ describe('EntitlementMappingsPage — quota-editor integration', () => {
     expect(body.externalProductId).toBe('prod_pro')
     const monthly = body.updates.find((u) => u.mappingId === 'map_pro_monthly')
     expect(monthly).toBeDefined()
+    expect(monthly?.entitlementKey).toBeUndefined()
     expect(monthly?.quotaWindows).toEqual([
       { windowSeconds: 3600, limit: 100 },
       { windowSeconds: 86_400, limit: 1000 },
@@ -225,7 +227,7 @@ describe('EntitlementMappingsPage — quota-editor integration', () => {
 // WITHOUT mocking the internal API function.
 
 describe('EntitlementMappingsPage — one_time batch payload null-out', () => {
-  it('omits grantPeriodType/maxPeriods/grantOnSubscribe/quotaWindows from the batch payload for a one_time row', async () => {
+  it('omits subscription-only fields from the batch payload for a one_time row', async () => {
     // Seed a product whose single price is one_time AND carries NON-EMPTY
     // values for the four fields that must be nulled out — so the assertion is
     // meaningful (a regression that forwards the seed would leak them).
@@ -241,8 +243,6 @@ describe('EntitlementMappingsPage — one_time batch payload null-out', () => {
         enabled: true,
         pointsPerPeriod: 500,
         validityDays: 30,
-        grantPeriodType: 'once',
-        maxPeriods: 12,
         grantOnSubscribe: true,
         quotaWindows: [{ key: '1h', windowSeconds: 3600, limit: 100 }],
       }),
@@ -269,8 +269,7 @@ describe('EntitlementMappingsPage — one_time batch payload null-out', () => {
     const body = captured.body as {
       updates: Array<{
         mappingId: string
-        grantPeriodType?: unknown
-        maxPeriods?: unknown
+        entitlementKey?: unknown
         grantOnSubscribe?: unknown
         quotaWindows?: unknown
         validityDays?: unknown
@@ -279,11 +278,10 @@ describe('EntitlementMappingsPage — one_time batch payload null-out', () => {
     }
     const row = body.updates.find((u) => u.mappingId === 'map_once')
     expect(row).toBeDefined()
+    expect(row?.entitlementKey).toBeUndefined()
 
-    // The four subscription-only fields MUST be absent (undefined/omitted) for
+    // The subscription-only fields MUST be absent (undefined/omitted) for
     // a one_time row, even though the seed populated them.
-    expect(row?.grantPeriodType).toBeUndefined()
-    expect(row?.maxPeriods).toBeUndefined()
     expect(row?.grantOnSubscribe).toBeUndefined()
     expect(row?.quotaWindows).toBeUndefined()
 
