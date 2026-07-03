@@ -294,8 +294,6 @@ pub struct PriceMappingUpdate {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub billing_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub billing_period: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub points_per_period: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub grant_period_type: Option<String>,

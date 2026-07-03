@@ -34,7 +34,6 @@ pub struct PriceMappingUpdateInput {
     pub mapping_id: Uuid,
     pub entitlement_key: String,
     pub billing_type: Option<String>,
-    pub billing_period: Option<String>,
     pub points_per_period: Option<i64>,
     pub grant_period_type: Option<String>,
     pub validity_days: Option<i64>,

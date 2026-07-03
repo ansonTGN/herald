@@ -16,6 +16,12 @@
 // New entitlement mapping CRUD + sync scenario tests
 pub mod entitlement_mapping_crud_scenarios;
 
+// Provider product sync metadata scenario tests (sync-payment feature)
+// User Story: US-BL-SYNC-001
+// Covers: Stripe product/price metadata propagation into provider_product_info
+//         JSONB; re-sync takes the latest metadata.
+pub mod provider_product_sync_scenarios;
+
 // Webhook entitlement scenarios
 pub mod webhook_entitlement_scenarios;
 

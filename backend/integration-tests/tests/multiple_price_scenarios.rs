@@ -236,6 +236,7 @@ async fn sync_creates_one_mapping_per_price(ctx: &mut SchemaTestContext) {
         external_product_id: "prod_multi_price".to_string(),
         name: "Multi-Price Product".to_string(),
         description: None,
+        product_metadata: None,
         prices: vec![
             ProviderPrice {
                 external_price_id: Some("price_monthly".to_string()),
@@ -243,6 +244,7 @@ async fn sync_creates_one_mapping_per_price(ctx: &mut SchemaTestContext) {
                 currency: Some("usd".to_string()),
                 billing_type: Some("recurring".to_string()),
                 billing_period: Some("month".to_string()),
+                price_metadata: None,
             },
             ProviderPrice {
                 external_price_id: Some("price_yearly".to_string()),
@@ -250,6 +252,7 @@ async fn sync_creates_one_mapping_per_price(ctx: &mut SchemaTestContext) {
                 currency: Some("usd".to_string()),
                 billing_type: Some("recurring".to_string()),
                 billing_period: Some("year".to_string()),
+                price_metadata: None,
             },
         ],
     };
@@ -319,12 +322,14 @@ async fn sync_single_price_product_one_mapping(ctx: &mut SchemaTestContext) {
         external_product_id: "prod_single_price".to_string(),
         name: "Single-Price Product".to_string(),
         description: None,
+        product_metadata: None,
         prices: vec![ProviderPrice {
             external_price_id: Some("price_only".to_string()),
             price: Some(500),
             currency: Some("usd".to_string()),
             billing_type: Some("recurring".to_string()),
             billing_period: Some("month".to_string()),
+            price_metadata: None,
         }],
     };
     let provider_api = MockProviderApi::new(vec![product]);
@@ -400,6 +405,7 @@ async fn creem_single_price_uses_null_external_price(ctx: &mut SchemaTestContext
         external_product_id: "prod_creem_null".to_string(),
         name: "Creem Price-less Product".to_string(),
         description: None,
+        product_metadata: None,
         prices: vec![],
     };
     let provider_api = MockProviderApi::new(vec![product]);

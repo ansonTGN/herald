@@ -2129,24 +2129,22 @@ impl BillingRepository for PostgresBillingRepository {
                     "UPDATE provider_entitlement_mappings SET \
                        entitlement_key = $4, \
                        billing_type = COALESCE($5, billing_type), \
-                       billing_period = COALESCE($6, billing_period), \
-                       points_per_period = COALESCE($7, points_per_period), \
-                       grant_period_type = COALESCE($8, grant_period_type), \
-                       validity_days = COALESCE($9, validity_days), \
-                       grant_on_subscribe = COALESCE($10, grant_on_subscribe), \
-                       max_periods = COALESCE($11, max_periods), \
-                       enabled = COALESCE($12, enabled), \
-                       quota_windows = $13, \
-                       updated_at = $14 \
+                       points_per_period = COALESCE($6, points_per_period), \
+                       grant_period_type = COALESCE($7, grant_period_type), \
+                       validity_days = COALESCE($8, validity_days), \
+                       grant_on_subscribe = COALESCE($9, grant_on_subscribe), \
+                       max_periods = COALESCE($10, max_periods), \
+                       enabled = COALESCE($11, enabled), \
+                       quota_windows = $12, \
+                       updated_at = $13 \
                      WHERE realm_id = $1 AND payment_provider = $2 \
-                       AND external_product_id = $3 AND id = $15",
+                       AND external_product_id = $3 AND id = $14",
                 )
                 .bind(&input.realm_id)
                 .bind(&input.payment_provider)
                 .bind(&input.external_product_id)
                 .bind(&u.entitlement_key)
                 .bind(billing_type_str)
-                .bind(&u.billing_period)
                 .bind(u.points_per_period.map(|v| v as i32))
                 .bind(&u.grant_period_type)
                 .bind(u.validity_days.map(|v| v as i32))
@@ -2163,23 +2161,21 @@ impl BillingRepository for PostgresBillingRepository {
                     "UPDATE provider_entitlement_mappings SET \
                        entitlement_key = $4, \
                        billing_type = COALESCE($5, billing_type), \
-                       billing_period = COALESCE($6, billing_period), \
-                       points_per_period = COALESCE($7, points_per_period), \
-                       grant_period_type = COALESCE($8, grant_period_type), \
-                       validity_days = COALESCE($9, validity_days), \
-                       grant_on_subscribe = COALESCE($10, grant_on_subscribe), \
-                       max_periods = COALESCE($11, max_periods), \
-                       enabled = COALESCE($12, enabled), \
-                       updated_at = $13 \
+                       points_per_period = COALESCE($6, points_per_period), \
+                       grant_period_type = COALESCE($7, grant_period_type), \
+                       validity_days = COALESCE($8, validity_days), \
+                       grant_on_subscribe = COALESCE($9, grant_on_subscribe), \
+                       max_periods = COALESCE($10, max_periods), \
+                       enabled = COALESCE($11, enabled), \
+                       updated_at = $12 \
                      WHERE realm_id = $1 AND payment_provider = $2 \
-                       AND external_product_id = $3 AND id = $14",
+                       AND external_product_id = $3 AND id = $13",
                 )
                 .bind(&input.realm_id)
                 .bind(&input.payment_provider)
                 .bind(&input.external_product_id)
                 .bind(&u.entitlement_key)
                 .bind(billing_type_str)
-                .bind(&u.billing_period)
                 .bind(u.points_per_period.map(|v| v as i32))
                 .bind(&u.grant_period_type)
                 .bind(u.validity_days.map(|v| v as i32))

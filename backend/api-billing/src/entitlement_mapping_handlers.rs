@@ -574,7 +574,6 @@ pub async fn batch_update_entitlement_mappings(
                 mapping_id: u.mapping_id,
                 entitlement_key: u.entitlement_key,
                 billing_type: u.billing_type,
-                billing_period: u.billing_period,
                 points_per_period: u.points_per_period,
                 grant_period_type: u.grant_period_type,
                 validity_days: u.validity_days,
