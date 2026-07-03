@@ -1426,7 +1426,11 @@
     "field_enabled": "启用",
     "billing_type_recurring": "订阅",
     "billing_type_one_time": "一次性",
-    "field_billing_type_sync_hint": "从 Stripe/Creem 同步，请使用上方「同步」按钮获取。"
+    "field_billing_type_sync_hint": "从 Stripe/Creem 同步，请使用上方「同步」按钮获取。",
+    "product_name_empty": "未命名产品",
+    "field_price": "价格",
+    "billing_period_month": "月",
+    "billing_period_year": "年"
   },
   "purchase": {
     "choose_plan": "选择套餐",

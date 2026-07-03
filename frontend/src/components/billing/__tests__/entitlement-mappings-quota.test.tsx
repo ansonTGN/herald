@@ -12,6 +12,7 @@ import {
 import {
   multiPriceWithQuotaWindowsList,
   batchUpdateOkBody,
+  makeMapping,
 } from '@/test/fixtures/entitlement-mappings'
 import { EntitlementMappingsPage } from '../entitlement-mappings-page'
 
@@ -212,5 +213,82 @@ describe('EntitlementMappingsPage — quota-editor integration', () => {
     })
     // Active-subscription count surfaced from the 409 body.
     expect(screen.getByTestId('protected-price-active-subs').textContent).toContain('28')
+  })
+})
+
+// --- FE-T02: batch payload null-out for one_time rows (§4.5.4 / §5.6) ------
+//
+// Real MSW integration: the real generated client fires a real PUT, and we
+// observe the wire payload via `batchUpdateOkCaptureHandler`. This asserts the
+// CONTRACT of `toPriceMappingUpdate` — the four subscription-only fields are
+// omitted for a one_time row even when the seeded values are non-empty —
+// WITHOUT mocking the internal API function.
+
+describe('EntitlementMappingsPage — one_time batch payload null-out', () => {
+  it('omits grantPeriodType/maxPeriods/grantOnSubscribe/quotaWindows from the batch payload for a one_time row', async () => {
+    // Seed a product whose single price is one_time AND carries NON-EMPTY
+    // values for the four fields that must be nulled out — so the assertion is
+    // meaningful (a regression that forwards the seed would leak them).
+    const oneTimeItems = [
+      makeMapping({
+        id: 'map_once',
+        entitlementKey: 'pro-plan',
+        externalProductId: 'prod_pro',
+        externalPriceId: 'price_once',
+        paymentProvider: 'stripe',
+        billingType: 'one_time',
+        billingPeriod: null,
+        enabled: true,
+        pointsPerPeriod: 500,
+        validityDays: 30,
+        grantPeriodType: 'once',
+        maxPeriods: 12,
+        grantOnSubscribe: true,
+        quotaWindows: [{ key: '1h', windowSeconds: 3600, limit: 100 }],
+      }),
+    ]
+    server.use(entitlementMappingListHandler(oneTimeItems))
+
+    const captured: { body: unknown } = { body: null }
+    const okBody = batchUpdateOkBody({ prices: oneTimeItems, saved: 1 })
+    server.use(batchUpdateOkCaptureHandler(captured, okBody))
+
+    renderPage()
+
+    // Wait for the product list + auto-selected detail panel, then save.
+    await screen.findByTestId('mapping-product-row-prod_pro')
+    await screen.findByTestId('mapping-detail-panel')
+
+    const save = await screen.findByTestId('save-mapping-button')
+    await userEvent.click(save)
+
+    await waitFor(() => {
+      expect(captured.body).not.toBeNull()
+    })
+
+    const body = captured.body as {
+      updates: Array<{
+        mappingId: string
+        grantPeriodType?: unknown
+        maxPeriods?: unknown
+        grantOnSubscribe?: unknown
+        quotaWindows?: unknown
+        validityDays?: unknown
+        pointsPerPeriod?: unknown
+      }>
+    }
+    const row = body.updates.find((u) => u.mappingId === 'map_once')
+    expect(row).toBeDefined()
+
+    // The four subscription-only fields MUST be absent (undefined/omitted) for
+    // a one_time row, even though the seed populated them.
+    expect(row?.grantPeriodType).toBeUndefined()
+    expect(row?.maxPeriods).toBeUndefined()
+    expect(row?.grantOnSubscribe).toBeUndefined()
+    expect(row?.quotaWindows).toBeUndefined()
+
+    // validityDays + pointsPerPeriod ARE forwarded for one_time rows.
+    expect(row?.validityDays).toBe(30)
+    expect(row?.pointsPerPeriod).toBe(500)
   })
 })

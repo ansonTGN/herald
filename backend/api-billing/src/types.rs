@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
@@ -8,6 +10,28 @@ use uuid::Uuid;
 pub struct CreateCheckoutResponse {
     pub checkout_url: String,
     pub checkout_id: Uuid,
+}
+
+/// Structured view of the `provider_product_info` JSONB synced from the
+/// provider (design §5.7).
+///
+/// Field names are intentionally snake_case (no `rename_all`) so they match
+/// the stored JSONB keys written by `build_provider_product_info` — the value
+/// round-trips through `serde_json::from_value` without renaming. Every field
+/// is optional because the backend stores the union of what each provider
+/// exposes. `product_metadata` / `price_metadata` are strict string→string
+/// maps (coerced at sync time in the provider adapter), matching how Stripe
+/// and Creem model metadata.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ProviderProductInfoDto {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub price: Option<i64>,
+    pub currency: Option<String>,
+    pub billing_type: Option<String>,
+    pub billing_period: Option<String>,
+    pub product_metadata: Option<HashMap<String, String>>,
+    pub price_metadata: Option<HashMap<String, String>>,
 }
 
 /// Response for a single entitlement mapping
@@ -37,7 +61,7 @@ pub struct EntitlementMappingResponse {
     pub max_periods: Option<i64>,
     pub enabled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub provider_product_info: Option<serde_json::Value>,
+    pub provider_product_info: Option<ProviderProductInfoDto>,
     /// Subscription quota window config (design §4.3.2). `None` ⟺ no
     /// window-model grant. Each window carries the stable display `key`
     /// (derived from `windowSeconds`), the limit, and the window length.
@@ -146,7 +170,7 @@ pub struct OneTimeMappingItem {
     /// Bound credit bucket (non-null; matches domain entity).
     pub bucket_id: Uuid,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub provider_product_info: Option<serde_json::Value>,
+    pub provider_product_info: Option<ProviderProductInfoDto>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub points_per_period: Option<i64>,
     pub payment_provider: String,

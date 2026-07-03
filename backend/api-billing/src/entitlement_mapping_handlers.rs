@@ -12,7 +12,8 @@ use crate::types::{
     BatchUpdateEntitlementMappingsRequest, BatchUpdateEntitlementMappingsResponse,
     EntitlementMappingListResponse, EntitlementMappingQuery, EntitlementMappingResponse,
     EntitlementQuotaWindowDto, OneTimeMappingItem, OneTimeMappingListResponse, PartialSyncErrorDto,
-    SyncProviderRequest, SyncProviderResponse, UpdateEntitlementMappingRequest,
+    ProviderProductInfoDto, SyncProviderRequest, SyncProviderResponse,
+    UpdateEntitlementMappingRequest,
 };
 use herald_api_base::application::http::server::api_entities::ApiError;
 use herald_api_base::application::http::state::AppState;
@@ -48,7 +49,7 @@ fn mapping_to_response(m: EntitlementMapping) -> EntitlementMappingResponse {
         grant_on_subscribe: m.grant_on_subscribe,
         max_periods: m.max_periods,
         enabled: m.enabled,
-        provider_product_info: m.provider_product_info,
+        provider_product_info: to_provider_product_info_dto(m.provider_product_info),
         quota_windows: m.quota_windows.map(|windows| {
             windows
                 .into_iter()
@@ -62,6 +63,25 @@ fn mapping_to_response(m: EntitlementMapping) -> EntitlementMappingResponse {
         synced_at: m.synced_at.map(|dt| dt.to_rfc3339()),
         created_at: m.created_at.to_rfc3339(),
         updated_at: m.updated_at.to_rfc3339(),
+    }
+}
+
+/// Leniently deserialize the stored `provider_product_info` JSONB into the
+/// typed [`ProviderProductInfoDto`]. Returns `None` (and logs) if the stored
+/// value does not match the DTO — e.g. a legacy row whose metadata predates
+/// the string→string sync coercion — so a malformed row degrades to "no
+/// provider info" instead of failing the whole response.
+fn to_provider_product_info_dto(v: Option<serde_json::Value>) -> Option<ProviderProductInfoDto> {
+    let v = v?;
+    match serde_json::from_value::<ProviderProductInfoDto>(v) {
+        Ok(dto) => Some(dto),
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                "provider_product_info JSONB did not match ProviderProductInfoDto; dropping to None"
+            );
+            None
+        }
     }
 }
 
@@ -373,7 +393,7 @@ pub async fn list_one_time_mappings(
             id: m.id.to_string(),
             entitlement_key: m.entitlement_key,
             bucket_id: m.bucket_id,
-            provider_product_info: m.provider_product_info,
+            provider_product_info: to_provider_product_info_dto(m.provider_product_info),
             points_per_period: m.points_per_period,
             payment_provider: m.payment_provider,
             validity_days: m.validity_days,

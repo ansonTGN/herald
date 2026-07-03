@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 
@@ -5,6 +6,37 @@ use herald_domain::billing::{ProviderApiPort, ProviderPrice, ProviderProduct};
 use herald_domain::common::entities::app_errors::CoreError;
 use serde_json::Value;
 use sqlx::PgPool;
+
+/// Coerce a provider `metadata` JSON value into a strict string→string map.
+///
+/// Both Stripe and Creem model metadata as `HashMap<String, String>`, and
+/// Stripe coerces every value to a string server-side. This mirrors that: a
+/// non-object / empty value → `None`; string values pass through; numbers /
+/// bools / null become their string form; nested objects / arrays become a
+/// compact JSON string (lossless). The result is what flows into the
+/// `provider_product_info` JSONB, so the JSONB is guaranteed string→string.
+fn coerce_metadata_to_string_map(raw: &Value) -> Option<HashMap<String, String>> {
+    let obj = raw.as_object()?;
+    if obj.is_empty() {
+        return None;
+    }
+    let mut out = HashMap::with_capacity(obj.len());
+    for (k, v) in obj {
+        out.insert(k.clone(), coerce_value_to_string(v));
+    }
+    Some(out)
+}
+
+/// Render a single metadata value as a display string (see
+/// [`coerce_metadata_to_string_map`]).
+fn coerce_value_to_string(v: &Value) -> String {
+    match v {
+        Value::String(s) => s.clone(),
+        Value::Null => String::new(),
+        // serde_json renders numbers/bools bare and containers as compact JSON.
+        other => other.to_string(),
+    }
+}
 
 #[derive(Clone)]
 pub struct ConfiguredProviderProductApi {
@@ -110,11 +142,7 @@ impl ConfiguredProviderProductApi {
                         .flatten()
                         .map(|price| {
                             let is_recurring = price["recurring"].is_object();
-                            let price_metadata = if price["metadata"].is_object() {
-                                Some(price["metadata"].clone())
-                            } else {
-                                None
-                            };
+                            let price_metadata = coerce_metadata_to_string_map(&price["metadata"]);
                             ProviderPrice {
                                 external_price_id: price["id"].as_str().map(str::to_string),
                                 price: price["unit_amount"].as_i64(),
@@ -142,11 +170,7 @@ impl ConfiguredProviderProductApi {
                 external_product_id: product_id.to_string(),
                 name: product["name"].as_str().unwrap_or(product_id).to_string(),
                 description: product["description"].as_str().map(str::to_string),
-                product_metadata: if product["metadata"].is_object() {
-                    Some(product["metadata"].clone())
-                } else {
-                    None
-                },
+                product_metadata: coerce_metadata_to_string_map(&product["metadata"]),
                 prices,
             });
         }

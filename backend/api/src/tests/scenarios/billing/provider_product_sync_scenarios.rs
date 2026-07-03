@@ -35,6 +35,7 @@ mod tests {
     use herald_core::domain::common::entities::app_errors::CoreError;
     use herald_core::infrastructure::authorization::policies::PermissionBasedBillingPolicy;
     use serde_json::{Value, json};
+    use std::collections::HashMap;
     use std::sync::Arc;
     use test_context::test_context;
 
@@ -203,14 +204,20 @@ mod tests {
             external_product_id: "prod_meta_1".to_string(),
             name: "Pro Plan".to_string(),
             description: Some("Pro tier".to_string()),
-            product_metadata: Some(json!({"tier": "pro", "internal_id": "abc"})),
+            product_metadata: Some(HashMap::from([
+                ("tier".to_string(), "pro".to_string()),
+                ("internal_id".to_string(), "abc".to_string()),
+            ])),
             prices: vec![ProviderPrice {
                 external_price_id: Some("price_1".to_string()),
                 price: Some(1999),
                 currency: Some("usd".to_string()),
                 billing_type: Some("recurring".to_string()),
                 billing_period: Some("month".to_string()),
-                price_metadata: Some(json!({"recurring": {"interval": "month"}})),
+                price_metadata: Some(HashMap::from([(
+                    "nickname".to_string(),
+                    "Monthly".to_string(),
+                )])),
             }],
         };
 
@@ -238,7 +245,7 @@ mod tests {
         );
         assert_eq!(
             info["price_metadata"],
-            json!({"recurring": {"interval": "month"}}),
+            json!({"nickname": "Monthly"}),
             "price_metadata must propagate into JSONB"
         );
 
@@ -329,12 +336,12 @@ mod tests {
             )
             .await;
 
-        // First sync: product_metadata = {"v": 1}.
+        // First sync: product_metadata = {"v": "1"}.
         let first_product = ProviderProduct {
             external_product_id: "prod_resync_1".to_string(),
             name: "Resync Plan".to_string(),
             description: None,
-            product_metadata: Some(json!({"v": 1})),
+            product_metadata: Some(HashMap::from([("v".to_string(), "1".to_string())])),
             prices: vec![ProviderPrice {
                 external_price_id: Some("price_resync_1".to_string()),
                 price: Some(999),
@@ -354,14 +361,14 @@ mod tests {
         let info_after_first =
             fetch_single_product_info(ctx, &realm_id, "prod_resync_1", Some("price_resync_1"))
                 .await;
-        assert_eq!(info_after_first["product_metadata"], json!({"v": 1}));
+        assert_eq!(info_after_first["product_metadata"], json!({"v": "1"}));
 
-        // Second sync: same external ids, updated product_metadata = {"v": 2}.
+        // Second sync: same external ids, updated product_metadata = {"v": "2"}.
         let second_product = ProviderProduct {
             external_product_id: "prod_resync_1".to_string(),
             name: "Resync Plan".to_string(),
             description: None,
-            product_metadata: Some(json!({"v": 2})),
+            product_metadata: Some(HashMap::from([("v".to_string(), "2".to_string())])),
             prices: vec![ProviderPrice {
                 external_price_id: Some("price_resync_1".to_string()),
                 price: Some(999),
@@ -390,7 +397,7 @@ mod tests {
                 .await;
         assert_eq!(
             info_after_second["product_metadata"],
-            json!({"v": 2}),
+            json!({"v": "2"}),
             "re-sync must update product_metadata to the latest value"
         );
     }

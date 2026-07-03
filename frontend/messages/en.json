@@ -1426,7 +1426,11 @@
     "field_enabled": "Enabled",
     "billing_type_recurring": "Recurring",
     "billing_type_one_time": "One-time",
-    "field_billing_type_sync_hint": "Synced from Stripe/Creem — use the Sync button above to populate."
+    "field_billing_type_sync_hint": "Synced from Stripe/Creem — use the Sync button above to populate.",
+    "product_name_empty": "Unnamed product",
+    "field_price": "Price",
+    "billing_period_month": "Month",
+    "billing_period_year": "Year"
   },
   "purchase": {
     "choose_plan": "Choose a plan",

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import { userEvent } from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
@@ -311,5 +311,205 @@ describe('grouping helpers', () => {
     // test). Only assert the hue stays in the valid `[0, 360)` range.
     expect(c.hue).toBeGreaterThanOrEqual(0)
     expect(c.hue).toBeLessThan(360)
+  })
+})
+
+// --- FE-T02: name-first primary label with i18n placeholder fallback -------
+
+describe('EntitlementMappingsPage — primary label', () => {
+  it('renders productName as the primary label when present (list row + detail head)', async () => {
+    // snake_case JSONB: `readProviderProductInfo` narrows `name` → camelCase.
+    renderPage([
+      makeMapping({
+        id: 'm-1',
+        externalProductId: 'prod_pro',
+        externalPriceId: 'price_monthly',
+        entitlementKey: 'pro-plan',
+        billingType: 'recurring',
+        providerProductInfo: { name: 'Pro Plan' },
+      }),
+    ])
+
+    // The product row label (id-keyed testid, unchanged) carries the synced name.
+    const row = await screen.findByTestId('mapping-product-row-prod_pro')
+    expect(row.textContent).toContain('Pro Plan')
+
+    // The auto-selected detail panel head shows the SAME label.
+    const head = await screen.findByTestId('detail-head')
+    expect(head.textContent).toContain('Pro Plan')
+  })
+
+  it('falls back to externalProductId when productName is missing', async () => {
+    // `providerProductInfo: null` → `readProviderProductInfo` returns `{}` → no
+    // name → `primaryProductLabel` falls back to the externalProductId.
+    renderPage([
+      makeMapping({
+        id: 'm-1',
+        externalProductId: 'prod_pro',
+        externalPriceId: 'price_monthly',
+        entitlementKey: 'pro-plan',
+        billingType: 'recurring',
+        providerProductInfo: null,
+      }),
+    ])
+
+    const row = await screen.findByTestId('mapping-product-row-prod_pro')
+    expect(row.textContent).toContain('prod_pro')
+    // And the detail head mirrors the fallback.
+    const head = await screen.findByTestId('detail-head')
+    expect(head.textContent).toContain('prod_pro')
+  })
+})
+
+// --- FE-T02: read-only provider metadata block presence/absence -----------
+
+describe('EntitlementMappingsPage — provider metadata block', () => {
+  it('renders the metadata block when productMetadata has keys', async () => {
+    // snake_case JSONB key `product_metadata` is narrowed to productMetadata.
+    renderPage([
+      makeMapping({
+        id: 'm-1',
+        externalProductId: 'prod_pro',
+        externalPriceId: 'price_monthly',
+        entitlementKey: 'pro-plan',
+        billingType: 'recurring',
+        providerProductInfo: { product_metadata: { tier: 'pro' } },
+      }),
+    ])
+
+    expect(await screen.findByTestId('price-metadata-block-price_monthly')).toBeInTheDocument()
+  })
+
+  it('renders the metadata block when priceMetadata has keys', async () => {
+    // `price_metadata` is price-scoped; OR of the two maps is sufficient.
+    renderPage([
+      makeMapping({
+        id: 'm-1',
+        externalProductId: 'prod_pro',
+        externalPriceId: 'price_monthly',
+        entitlementKey: 'pro-plan',
+        billingType: 'recurring',
+        providerProductInfo: { price_metadata: { interval: 'month' } },
+      }),
+    ])
+
+    expect(await screen.findByTestId('price-metadata-block-price_monthly')).toBeInTheDocument()
+  })
+
+  it('omits the metadata block entirely when both metadata objects are empty', async () => {
+    // Case A: no provider info at all.
+    renderPage([
+      makeMapping({
+        id: 'm-1',
+        externalProductId: 'prod_pro',
+        externalPriceId: 'price_monthly_a',
+        entitlementKey: 'pro-plan',
+        billingType: 'recurring',
+        providerProductInfo: null,
+      }),
+    ])
+    await screen.findByTestId('price-edit-row-price_monthly_a')
+    expect(screen.queryByTestId('price-metadata-block-price_monthly_a')).toBeNull()
+
+    // Case B: info present but both metadata maps empty/null (no placeholder).
+    renderPage([
+      makeMapping({
+        id: 'm-1',
+        externalProductId: 'prod_pro',
+        externalPriceId: 'price_monthly_b',
+        entitlementKey: 'pro-plan',
+        billingType: 'recurring',
+        providerProductInfo: { product_metadata: null, price_metadata: {} },
+      }),
+    ])
+    await screen.findByTestId('price-edit-row-price_monthly_b')
+    expect(screen.queryByTestId('price-metadata-block-price_monthly_b')).toBeNull()
+  })
+})
+
+// --- FE-T02: one_time field hiding (§4.5.4) --------------------------------
+
+/**
+ * Open the per-price "Advanced" panel for the seeded row so the lazily-mounted
+ * advanced fields (Radix CollapsibleContent) appear. Returns the row scope.
+ */
+async function openAdvancedPanel(rowTestId: string) {
+  await screen.findByTestId('mapping-product-row-prod_pro')
+  await screen.findByTestId('mapping-detail-panel')
+  const row = await screen.findByTestId(rowTestId)
+  const advancedToggle = within(row).getByRole('button', { name: /Advanced/i })
+  await userEvent.click(advancedToggle)
+  return row
+}
+
+describe('EntitlementMappingsPage — one_time field hiding', () => {
+  it('hides the four subscription-only fields for billingType one_time', async () => {
+    renderPage([
+      makeMapping({
+        id: 'm-1',
+        externalProductId: 'prod_pro',
+        externalPriceId: 'price_once',
+        entitlementKey: 'pro-plan',
+        billingType: 'one_time',
+        pointsPerPeriod: 500,
+      }),
+    ])
+
+    const row = await openAdvancedPanel('price-edit-row-price_once')
+
+    // The four subscription-only advanced fields are NOT rendered. The page's
+    // `Field` wrapper renders the label text and control as siblings (no
+    // htmlFor/id association), so presence is asserted via the rendered label
+    // text rather than `getByLabelText`.
+    expect(within(row).queryByText(m['billing.field_grant_period_type']())).toBeNull()
+    expect(within(row).queryByText(m['billing.field_max_periods']())).toBeNull()
+    expect(within(row).queryByText(m['billing.field_grant_on_subscribe']())).toBeNull()
+    // quotaWindows renders the MultiWindowQuotaEditor (testid quota-window-editor).
+    expect(within(row).queryByTestId('quota-window-editor')).toBeNull()
+
+    // validityDays + pointsPerPeriod stay visible for one-time mappings.
+    expect(within(row).getByText(m['billing.field_validity_days']())).toBeInTheDocument()
+    // pointsPerPeriod is a top-level (non-advanced) field, always present.
+    expect(within(row).getByText(m['billing.field_points_per_period']())).toBeInTheDocument()
+  })
+
+  it('renders the full field set for billingType recurring', async () => {
+    renderPage([
+      makeMapping({
+        id: 'm-1',
+        externalProductId: 'prod_pro',
+        externalPriceId: 'price_monthly',
+        entitlementKey: 'pro-plan',
+        billingType: 'recurring',
+        pointsPerPeriod: 500,
+      }),
+    ])
+
+    const row = await openAdvancedPanel('price-edit-row-price_monthly')
+
+    expect(within(row).getByText(m['billing.field_grant_period_type']())).toBeInTheDocument()
+    expect(within(row).getByText(m['billing.field_max_periods']())).toBeInTheDocument()
+    expect(within(row).getByText(m['billing.field_grant_on_subscribe']())).toBeInTheDocument()
+    expect(within(row).getByTestId('quota-window-editor')).toBeInTheDocument()
+  })
+
+  it('renders the full field set for billingType null (recurring default)', async () => {
+    renderPage([
+      makeMapping({
+        id: 'm-1',
+        externalProductId: 'prod_pro',
+        externalPriceId: 'price_unknown',
+        entitlementKey: 'pro-plan',
+        billingType: null,
+        pointsPerPeriod: 500,
+      }),
+    ])
+
+    const row = await openAdvancedPanel('price-edit-row-price_unknown')
+
+    expect(within(row).getByText(m['billing.field_grant_period_type']())).toBeInTheDocument()
+    expect(within(row).getByText(m['billing.field_max_periods']())).toBeInTheDocument()
+    expect(within(row).getByText(m['billing.field_grant_on_subscribe']())).toBeInTheDocument()
+    expect(within(row).getByTestId('quota-window-editor')).toBeInTheDocument()
   })
 })

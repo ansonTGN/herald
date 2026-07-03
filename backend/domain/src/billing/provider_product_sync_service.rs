@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use uuid::Uuid;
@@ -22,7 +23,7 @@ pub struct ProviderPrice {
     pub currency: Option<String>,
     pub billing_type: Option<String>,
     pub billing_period: Option<String>,
-    pub price_metadata: Option<serde_json::Value>,
+    pub price_metadata: Option<HashMap<String, String>>,
 }
 
 /// External provider product info returned by ProviderApiPort.
@@ -34,7 +35,7 @@ pub struct ProviderProduct {
     pub external_product_id: String,
     pub name: String,
     pub description: Option<String>,
-    pub product_metadata: Option<serde_json::Value>,
+    pub product_metadata: Option<HashMap<String, String>>,
     pub prices: Vec<ProviderPrice>,
 }
 
@@ -421,6 +422,7 @@ fn draft_entitlement_key(external_product_id: &str) -> String {
 mod tests {
     use super::{ProviderPrice, ProviderProduct};
     use super::{build_provider_product_info, draft_entitlement_key};
+    use std::collections::HashMap;
 
     /// Mirrors the DB CHECK constraint `entitlement_key ~ '^[a-z0-9-]{1,64}$'`
     /// (migration `20260607_product_reduce.sql`) and the char-class validation
@@ -505,7 +507,7 @@ mod tests {
             external_product_id: "prod_123".to_string(),
             name: "Herald Live".to_string(),
             description: Some("Monthly plan".to_string()),
-            product_metadata: Some(serde_json::json!({"tier": "pro"})),
+            product_metadata: Some(HashMap::from([("tier".to_string(), "pro".to_string())])),
             prices: Vec::new(),
         };
         let price = ProviderPrice {
@@ -514,7 +516,10 @@ mod tests {
             currency: Some("usd".to_string()),
             billing_type: Some("recurring".to_string()),
             billing_period: Some("month".to_string()),
-            price_metadata: Some(serde_json::json!({"nickname": "Monthly"})),
+            price_metadata: Some(HashMap::from([(
+                "nickname".to_string(),
+                "Monthly".to_string(),
+            )])),
         };
 
         let info = build_provider_product_info(&product, &price);

@@ -21,6 +21,13 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { PageHeader } from '@/components/shared'
 import { ProviderSyncButton } from '@/components/billing/provider-sync-button'
 import { formatProviderName } from '@/components/billing/format-provider-name'
+import {
+  readProviderProductInfo,
+  primaryProductLabel,
+  mapBillingPeriodLabel,
+  isOneTimeMapping,
+} from '@/components/billing/provider-product-info'
+import { formatInvoiceAmount } from '@/lib/invoice-utils'
 import { ProtectedPriceConfirmDialog } from '@/components/billing/entitlement-mapping-detail-dialog'
 import { MultiWindowQuotaEditor } from '@/components/billing/MultiWindowQuotaEditor'
 import {
@@ -100,7 +107,7 @@ export function EntitlementMappingsPage({ realmId, search }: EntitlementMappings
       if (!seen.has(value)) {
         seen.set(value, {
           value,
-          label: `${formatProviderName(g.paymentProvider)} · ${g.externalProductId}`,
+          label: `${formatProviderName(g.paymentProvider)} · ${g.productName ?? g.externalProductId}`,
         })
       }
     }
@@ -270,7 +277,8 @@ export function EntitlementMappingsPage({ realmId, search }: EntitlementMappings
                             />
                           )}
                           <span className="truncate text-sm font-medium">
-                            {g.externalProductId}
+                            {primaryProductLabel(g.productName, g.externalProductId) ||
+                              m['billing.product_name_empty']()}
                           </span>
                           <Badge variant="secondary" className="font-mono text-xs">
                             {formatProviderName(g.paymentProvider)}
@@ -322,6 +330,7 @@ interface DetailPanelProps {
   group: {
     paymentProvider: string
     externalProductId: string
+    productName?: string
     prices: EntitlementMappingResponse[]
   }
   canManage: boolean
@@ -385,7 +394,10 @@ function DetailPanel({
       <CardHeader>
         <div className="flex items-center justify-between gap-2" data-testid="detail-head">
           <div className="flex items-center gap-2">
-            <span className="text-base font-semibold">{group.externalProductId}</span>
+            <span className="text-base font-semibold">
+              {primaryProductLabel(group.productName, group.externalProductId) ||
+                m['billing.product_name_empty']()}
+            </span>
             <Badge variant="secondary" className="font-mono text-xs">
               {formatProviderName(group.paymentProvider)}
             </Badge>
@@ -481,6 +493,15 @@ function PriceEditRow({
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const editDisabled = !canManage
   const pointsDisabled = !canManage || !canManagePoints
+  // One-time mappings hide the four subscription-only advanced fields and null
+  // them out of the batch payload (design §4.5.4). `null`/`undefined` → false
+  // → full recurring field set (the recurring default).
+  const isOneTime = isOneTimeMapping(row.billingType)
+
+  // Per-price synced provider info (JSONB typed `unknown` upstream) — narrowed
+  // ONLY here via `readProviderProductInfo` (the single narrowing point).
+  const info = readProviderProductInfo(price.providerProductInfo)
+  const metadataEntries = buildMetadataEntries(info.productMetadata, info.priceMetadata)
 
   return (
     <div
@@ -527,11 +548,30 @@ function PriceEditRow({
         </Field>
 
         <Field
+          label={m['billing.field_price']()}
+          // `== null` (not `!info.price`): a synced $0.00 free price is a real
+          // value, not an unsynced state — only show the sync hint when price
+          // is genuinely absent. Mirrors the value-rendering `price != null` check.
+          hint={info.price == null ? m['billing.field_billing_type_sync_hint']() : undefined}
+        >
+          <Input
+            value={
+              info.price != null && info.currency
+                ? formatInvoiceAmount(info.price, info.currency)
+                : ''
+            }
+            readOnly
+            placeholder="—"
+            className="bg-muted/40 text-sm text-muted-foreground"
+          />
+        </Field>
+
+        <Field
           label={m['billing.field_period']()}
           hint={!row.billingPeriod ? m['billing.field_billing_type_sync_hint']() : undefined}
         >
           <Input
-            value={row.billingPeriod ?? ''}
+            value={mapBillingPeriodLabel(row.billingPeriod)}
             readOnly
             placeholder="—"
             className="bg-muted/40 text-sm text-muted-foreground"
@@ -578,6 +618,37 @@ function PriceEditRow({
         </Field>
       </div>
 
+      {/* Provider metadata block (read-only). Rendered per price row: the
+          backend attaches productMetadata to every price row of a product
+          (there is no product-level UI node separate from the price rows) and
+          priceMetadata is genuinely per-price, so productMetadata will visually
+          repeat across the price rows of the same product — this is ACCEPTED.
+          Omitted entirely (no placeholder text) when both maps are empty. */}
+      {metadataEntries.length > 0 && (
+        <div
+          className="mt-3 rounded-md border border-border/60 bg-muted/30 p-3"
+          data-testid={`price-metadata-block-${price.externalPriceId ?? price.id}`}
+        >
+          <Label className="mb-2 block text-xs font-medium text-muted-foreground">
+            {m['billing.subscription_provider_metadata']()}
+          </Label>
+          <dl className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
+            {metadataEntries.map(({ scope, key, value }) => (
+              <div key={scope + key} className="flex gap-1 text-xs">
+                <dt className="shrink-0 font-medium text-muted-foreground">{key}</dt>
+                <dd
+                  className="min-w-0 truncate text-foreground"
+                  title={value}
+                  data-testid={`metadata-entry-${scope}-${key}`}
+                >
+                  {value}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      )}
+
       <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
         <CollapsibleTrigger asChild>
           <Button variant="ghost" size="sm" disabled={editDisabled} className="mt-2">
@@ -586,27 +657,34 @@ function PriceEditRow({
         </CollapsibleTrigger>
         <CollapsibleContent>
           <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Field label={m['billing.field_grant_period_type']()}>
-              <Select
-                value={row.grantPeriodType ?? ''}
-                onValueChange={(v) =>
-                  onChange({
-                    grantPeriodType: (v || null) as 'once' | 'daily' | 'weekly' | 'monthly' | null,
-                  })
-                }
-                disabled={pointsDisabled}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="—" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="once">Once</SelectItem>
-                  <SelectItem value="daily">Daily</SelectItem>
-                  <SelectItem value="weekly">Weekly</SelectItem>
-                  <SelectItem value="monthly">Monthly</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
+            {!isOneTime && (
+              <Field label={m['billing.field_grant_period_type']()}>
+                <Select
+                  value={row.grantPeriodType ?? ''}
+                  onValueChange={(v) =>
+                    onChange({
+                      grantPeriodType: (v || null) as
+                        | 'once'
+                        | 'daily'
+                        | 'weekly'
+                        | 'monthly'
+                        | null,
+                    })
+                  }
+                  disabled={pointsDisabled}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="—" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="once">Once</SelectItem>
+                    <SelectItem value="daily">Daily</SelectItem>
+                    <SelectItem value="weekly">Weekly</SelectItem>
+                    <SelectItem value="monthly">Monthly</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+            )}
 
             <Field label={m['billing.field_validity_days']()}>
               <Input
@@ -623,44 +701,50 @@ function PriceEditRow({
               />
             </Field>
 
-            <Field label={m['billing.field_max_periods']()}>
-              <Input
-                type="number"
-                min={1}
-                value={row.maxPeriods ?? ''}
-                onChange={(e) =>
-                  onChange({
-                    maxPeriods: e.target.value === '' ? null : Number(e.target.value),
-                  })
-                }
-                disabled={pointsDisabled}
-                placeholder="12"
-              />
-            </Field>
-
-            <Field label={m['billing.field_grant_on_subscribe']()}>
-              <div className="flex items-center gap-2">
-                <Switch
-                  checked={row.grantOnSubscribe ?? false}
-                  onCheckedChange={(checked: boolean) => onChange({ grantOnSubscribe: checked })}
+            {!isOneTime && (
+              <Field label={m['billing.field_max_periods']()}>
+                <Input
+                  type="number"
+                  min={1}
+                  value={row.maxPeriods ?? ''}
+                  onChange={(e) =>
+                    onChange({
+                      maxPeriods: e.target.value === '' ? null : Number(e.target.value),
+                    })
+                  }
                   disabled={pointsDisabled}
+                  placeholder="12"
                 />
-              </div>
-            </Field>
+              </Field>
+            )}
+
+            {!isOneTime && (
+              <Field label={m['billing.field_grant_on_subscribe']()}>
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={row.grantOnSubscribe ?? false}
+                    onCheckedChange={(checked: boolean) => onChange({ grantOnSubscribe: checked })}
+                    disabled={pointsDisabled}
+                  />
+                </div>
+              </Field>
+            )}
 
             {/* Quota windows span the full width of the advanced grid. */}
-            <div className="sm:col-span-2">
-              <Label className="mb-2 block text-xs font-medium text-muted-foreground">
-                {m['points.quota_editor_title']()}
-              </Label>
-              <MultiWindowQuotaEditor
-                value={row.quotaWindows ?? []}
-                onChange={(v) => onChange({ quotaWindows: v })}
-                disabled={pointsDisabled}
-                context="entitlement-mapping"
-                testIdPrefix="quota-window"
-              />
-            </div>
+            {!isOneTime && (
+              <div className="sm:col-span-2">
+                <Label className="mb-2 block text-xs font-medium text-muted-foreground">
+                  {m['points.quota_editor_title']()}
+                </Label>
+                <MultiWindowQuotaEditor
+                  value={row.quotaWindows ?? []}
+                  onChange={(v) => onChange({ quotaWindows: v })}
+                  disabled={pointsDisabled}
+                  context="entitlement-mapping"
+                  testIdPrefix="quota-window"
+                />
+              </div>
+            )}
           </div>
         </CollapsibleContent>
       </Collapsible>
@@ -743,6 +827,34 @@ function LoadingSkeleton() {
 
 // ==================== helpers ====================
 
+/**
+ * Flatten the (optional) `productMetadata` + `priceMetadata` maps from the
+ * synced provider product info into a flat list of display entries for the
+ * read-only metadata block. Returns `[]` when both are absent/empty, which
+ * the caller uses to omit the whole block (no placeholder text).
+ *
+ * Values are already display strings (the backend coerces metadata to a
+ * strict string→string map at sync time); long values truncate visually via
+ * the `title` tooltip on the `<dd>`.
+ */
+function buildMetadataEntries(
+  productMetadata: Record<string, string> | null | undefined,
+  priceMetadata: Record<string, string> | null | undefined
+): { scope: 'product' | 'price'; key: string; value: string }[] {
+  const toEntries = (
+    scope: 'product' | 'price',
+    map: Record<string, string> | null | undefined
+  ): { scope: 'product' | 'price'; key: string; value: string }[] => {
+    if (!map) return []
+    const out: { scope: 'product' | 'price'; key: string; value: string }[] = []
+    for (const key of Object.keys(map)) {
+      out.push({ scope, key, value: map[key] })
+    }
+    return out
+  }
+  return [...toEntries('product', productMetadata), ...toEntries('price', priceMetadata)]
+}
+
 function seedRows(prices: EntitlementMappingResponse[]): PriceMappingUpdateFormData[] {
   return prices.map((p) => ({
     mappingId: p.id,
@@ -760,24 +872,29 @@ function seedRows(prices: EntitlementMappingResponse[]): PriceMappingUpdateFormD
 }
 
 function toPriceMappingUpdate(row: PriceMappingUpdateFormData): PriceMappingUpdate {
+  const isOneTime = isOneTimeMapping(row.billingType)
   return {
     mappingId: row.mappingId,
     entitlementKey: row.entitlementKey,
     billingType: row.billingType ?? undefined,
-    billingPeriod: row.billingPeriod ?? undefined,
     enabled: row.enabled ?? undefined,
     pointsPerPeriod: row.pointsPerPeriod ?? undefined,
-    grantPeriodType: row.grantPeriodType ?? undefined,
+    // For one_time mappings these four are hidden (design §4.5.4) and MUST NOT
+    // be written: the one-time fulfillment path never reads them, and the
+    // backend performs no combo-validation, so stale seeded values would
+    // silently leak onto the wire.
+    grantPeriodType: isOneTime ? undefined : (row.grantPeriodType ?? undefined),
     validityDays: row.validityDays ?? undefined,
-    grantOnSubscribe: row.grantOnSubscribe ?? undefined,
-    maxPeriods: row.maxPeriods ?? undefined,
+    grantOnSubscribe: isOneTime ? undefined : (row.grantOnSubscribe ?? undefined),
+    maxPeriods: isOneTime ? undefined : (row.maxPeriods ?? undefined),
     // Strip the read-side `key` (EntitlementQuotaWindowDto) before sending: the
     // save payload's element shape is `QuotaWindowInputDto` ({windowSeconds,
     // limit}). The seeded rows carry `key` straight from the GET response; if
     // forwarded verbatim it would leak an excess property onto the wire.
-    quotaWindows:
-      row.quotaWindows?.map((w) => ({ windowSeconds: w.windowSeconds, limit: w.limit })) ??
-      undefined,
+    quotaWindows: isOneTime
+      ? undefined
+      : (row.quotaWindows?.map((w) => ({ windowSeconds: w.windowSeconds, limit: w.limit })) ??
+        undefined),
   }
 }
 
