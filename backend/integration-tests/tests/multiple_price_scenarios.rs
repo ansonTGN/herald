@@ -877,13 +877,13 @@ async fn webhook_fails_loud_on_ambiguous_price(ctx: &mut SchemaTestContext) {
 //
 // Two of these are TRUE HTTP-route E2E (the batch + checkout routes are
 // registered on `create_unified_test_router` and reachable):
-//   * `batch_save_renames_shared_key_atomically` and
+//   * `batch_save_keeps_entitlement_key_readonly` and
 //     `disable_protected_price_rejected_with_active_subs` drive the REAL
 //     `PUT /api/bill/{realmId}/entitlement-mappings/batch` route via
 //     `tower::ServiceExt::oneshot` against `create_unified_test_router`, with
 //     a realm-admin session cookie (billing.manage + points.manage). The
 //     assertions are on the HTTP status code (201 / 409) AND on the DB row
-//     state after the transaction (atomic rename / rollback), so they pin the
+//     state after the transaction (read-only key / rollback), so they pin the
 //     transactional semantics, not just the handler return shape.
 //
 // Two are DATA-SUBSTRATE only (PRODUCTION-GAP, same class as the
@@ -1145,31 +1145,33 @@ async fn points_strategy_is_price_specific_under_shared_key(ctx: &mut SchemaTest
 }
 
 /// User Story: US-EM-007 — `PUT .../entitlement-mappings
-/// /batch` saves ALL price rows for a product in a SINGLE transaction. Renaming
-/// the shared `entitlement_key` is atomic and group-wide: after the PUT, every
-/// row of the product carries the new key, `saved` counts the written rows, and
-/// the response `prices` returns the product's full latest set.
+/// /batch` saves ALL price rows for a product in a SINGLE transaction. Since
+/// the provider-owned-`entitlementKey` shift (commit 2ef33cc8), the batch path
+/// no longer accepts `entitlementKey` from clients: the field is read-only and
+/// set by provider sync. This scenario pins that contract end-to-end.
 ///
 /// Covers:
-/// - Single-transaction atomicity: the whole batch commits together, so all
-///   rows reflect the rename (no partial write).
-/// - Group-wide shared-key rename: when every update in the batch targets the
-///   SAME new key, all rows end up with that key.
+/// - Single-transaction atomicity: the whole batch commits together, so both
+///   rows' (still-editable) `points_per_period` values are written.
+/// - `entitlementKey` is read-only: a client-supplied `entitlementKey` in the
+///   update rows is silently ignored (the request DTO has no such field and no
+///   `deny_unknown_fields`), and the DB rows KEEP their provider-synced key.
+///   A regression that re-introduces `entitlementKey` into the batch update
+///   path (re-opening client-driven shared-key rename) would make the key
+///   assertion fail — the rows would read `new-shared-key` instead of the
+///   original.
 /// - Response contract: `saved == updates.len()` and `prices` returns the
 ///   product's full price set.
 ///
-/// NOTE on the item's "inconsistent keys → 400" extra assertion (step 5): the
-/// implementation gates the cross-product rename check on
-/// `new_keys.len() == 1` (postgres_repository.rs). When two updates in the same
-/// batch carry DIFFERENT keys, that check is skipped and each row is written
-/// with its own key — the batch SUCCEEDS, it does NOT return 400. Per the
-/// authoring rule "match implementation semantics, don't invent", this scenario
-/// asserts the ACTUAL behavior (rename is atomic when keys agree), and surfaces
-/// the divergence for backend/dev rather than inventing a 400 the implementation
-/// does not produce.
+/// NOTE: prior to 2ef33cc8 this test was named `batch_save_renames_shared_key_
+/// atomically` and asserted the OPPOSITE — that the rename took effect. The
+/// commit deliberately removed `entitlement_key` from the batch input, SQL
+/// upsert, regex check, and the cross-product shared-key rename guard (the old
+/// `CrossProductSharedKeyRename` error variant). This rewrite tracks that
+/// intent rather than re-introducing the dropped behavior.
 #[test_context(SchemaTestContext)]
 #[tokio::test]
-async fn batch_save_renames_shared_key_atomically(ctx: &mut SchemaTestContext) {
+async fn batch_save_keeps_entitlement_key_readonly(ctx: &mut SchemaTestContext) {
     use axum::http::StatusCode;
     use tower::ServiceExt;
 
@@ -1180,14 +1182,14 @@ async fn batch_save_renames_shared_key_atomically(ctx: &mut SchemaTestContext) {
         herald_test_support::helpers::setup_billing_admin_session(ctx, "batch-rename@test.local")
             .await;
 
-    // Product P with 2 price rows sharing the OLD key "old-shared-key".
+    // Product P with 2 price rows sharing the provider-synced key "shared-key".
     let mapping_a = herald_test_support::helpers::setup_test_price_mapping(
         ctx,
         &realm_id,
         "stripe",
         "prod_batch_rename",
         Some("price_a_rename"),
-        "old-shared-key",
+        "shared-key",
         1000,
         true,
         true,
@@ -1200,7 +1202,7 @@ async fn batch_save_renames_shared_key_atomically(ctx: &mut SchemaTestContext) {
         "stripe",
         "prod_batch_rename",
         Some("price_b_rename"),
-        "old-shared-key",
+        "shared-key",
         2000,
         true,
         true,
@@ -1208,13 +1210,17 @@ async fn batch_save_renames_shared_key_atomically(ctx: &mut SchemaTestContext) {
     )
     .await;
 
-    // PUT batch: rename BOTH rows to "new-shared-key" in one transaction.
+    // PUT batch: each row carries a client-supplied `entitlementKey` (which the
+    // read-only contract must ignore) PLUS a real editable field
+    // (`pointsPerPeriod`) so the rows are actually written and `saved` is
+    // meaningful — otherwise the read-only assertion below could pass trivially
+    // on a no-op batch.
     let body = serde_json::json!({
         "paymentProvider": "stripe",
         "externalProductId": "prod_batch_rename",
         "updates": [
-            { "mappingId": mapping_a, "entitlementKey": "new-shared-key" },
-            { "mappingId": mapping_b, "entitlementKey": "new-shared-key" },
+            { "mappingId": mapping_a, "entitlementKey": "new-shared-key", "pointsPerPeriod": 1100 },
+            { "mappingId": mapping_b, "entitlementKey": "new-shared-key", "pointsPerPeriod": 2200 },
         ]
     });
     let app = ctx.create_unified_test_router();
@@ -1228,11 +1234,13 @@ async fn batch_save_renames_shared_key_atomically(ctx: &mut SchemaTestContext) {
         .await
         .expect("router oneshot must complete");
 
-    // The WHY: 201 + saved == 2 means the single transaction wrote both rows.
+    // The WHY: 201 + saved == 2 means the single transaction wrote both rows'
+    // editable fields — proving the batch is not a no-op, so the read-only key
+    // assertion below is load-bearing (the rows were touched but the key held).
     assert_eq!(
         response.status(),
         StatusCode::CREATED,
-        "consistent shared-key rename must succeed with 201"
+        "batch with valid editable fields must succeed with 201"
     );
     let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
@@ -1240,9 +1248,8 @@ async fn batch_save_renames_shared_key_atomically(ctx: &mut SchemaTestContext) {
     let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
     assert_eq!(
         json["saved"], 2,
-        "saved must count every written row (2 rows renamed)"
+        "saved must count every written row (2 rows updated)"
     );
-    // Response returns the product's FULL latest price set.
     let prices = json["prices"].as_array().expect("prices must be an array");
     assert_eq!(
         prices.len(),
@@ -1250,9 +1257,10 @@ async fn batch_save_renames_shared_key_atomically(ctx: &mut SchemaTestContext) {
         "prices must return the product's full price set (2 rows)"
     );
 
-    // Atomicity + group-wide rename: BOTH DB rows now carry the new key. A
-    // partial write (one row renamed, the other not) would fail here — pinning
-    // the single-transaction guarantee.
+    // Read-only `entitlement_key`: the client-supplied "new-shared-key" MUST be
+    // ignored and BOTH rows keep their provider-synced "shared-key". A
+    // regression that lets clients rename the shared key through the batch path
+    // (the pre-2ef33cc8 behavior) would fail here.
     let post_keys: Vec<String> = sqlx::query_scalar(
         "SELECT entitlement_key FROM provider_entitlement_mappings \
          WHERE realm_id = $1 AND payment_provider = 'stripe' \
@@ -1265,9 +1273,30 @@ async fn batch_save_renames_shared_key_atomically(ctx: &mut SchemaTestContext) {
     .unwrap();
     assert_eq!(
         post_keys,
-        vec!["new-shared-key".to_string(), "new-shared-key".to_string()],
-        "both rows must be renamed atomically to the new shared key; a partial \
-         commit would leave one row on 'old-shared-key'"
+        vec!["shared-key".to_string(), "shared-key".to_string()],
+        "entitlement_key is provider-owned/read-only: a client-supplied \
+         entitlementKey in the batch body must be ignored and the rows must \
+         keep their provider-synced key"
+    );
+
+    // Sanity: the editable field WAS written, so the read-only assertion above
+    // is not passing on an empty write. If `pointsPerPeriod` did not persist,
+    // the key assertion would be meaningless.
+    let post_points: Vec<Option<i32>> = sqlx::query_scalar(
+        "SELECT points_per_period FROM provider_entitlement_mappings \
+         WHERE realm_id = $1 AND payment_provider = 'stripe' \
+           AND external_product_id = 'prod_batch_rename' \
+         ORDER BY external_price_id",
+    )
+    .bind(&realm_id)
+    .fetch_all(&ctx.app_state.pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        post_points,
+        vec![Some(1100), Some(2200)],
+        "editable fields must still persist (proves the batch wrote the rows; \
+         the read-only entitlement_key assertion above is therefore meaningful)"
     );
 }
 
