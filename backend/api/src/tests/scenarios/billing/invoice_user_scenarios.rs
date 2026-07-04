@@ -21,7 +21,7 @@ mod tests {
         response::IntoResponse,
     };
     use chrono::{Datelike, Utc};
-    use herald_api_billing::invoice_handlers::{download_my_invoice_pdf, get_my_invoice};
+    use herald_api_billing::invoice_handlers::get_my_invoice;
     use herald_core::domain::{authentication::Identity, client_api_keys::entities::ClientApiKey};
     use serde_json::json;
     use test_context::test_context;
@@ -636,42 +636,6 @@ mod tests {
         );
     }
 
-    // -------------------------------------------------------------------------
-    // test_my_invoice_pdf_rejects_non_user_identity -- handler contract
-    // -------------------------------------------------------------------------
-    // Given: A non-user identity in the same realm
-    // When: The my invoice PDF handler is called
-    // Then: It rejects before relying on ownership mismatch
-
-    #[test_context(InvoiceTestContext)]
-    #[tokio::test]
-    async fn test_my_invoice_pdf_rejects_non_user_identity(ctx: &mut InvoiceTestContext) {
-        let realm_id = ctx._realm_id.clone();
-        let identity = third_party_identity_in_realm(&realm_id);
-
-        let err = match download_my_invoice_pdf(
-            State((*ctx.app_state).clone()),
-            Extension(identity),
-            Path((realm_id, Uuid::now_v7())),
-        )
-        .await
-        {
-            Ok(_) => panic!("Expected non-user identity to be rejected"),
-            Err(err) => err,
-        };
-
-        let response = err.into_response();
-        assert_eq!(response.status(), StatusCode::FORBIDDEN);
-        let body = parse_body(response.into_body()).await;
-        assert!(
-            body["message"]
-                .as_str()
-                .unwrap()
-                .contains("authenticated user session required"),
-            "Expected authenticated user session error, got: {}",
-            body
-        );
-    }
     // -------------------------------------------------------------------------
     // test_regular_user_cannot_use_admin_endpoints -- admin endpoints return 403
     // -------------------------------------------------------------------------

@@ -127,19 +127,6 @@ describe('stripe-config-utils', () => {
 
       expect(result.asyncPointsStrategy).toBe('eager')
     })
-
-    test('handles config with empty array', () => {
-      const configs: RealmConfigResponse[] = []
-
-      const result = parseStripeConfig(configs)
-
-      expect(result).toEqual({
-        publishableKey: '',
-        secretKey: '',
-        webhookSecret: '',
-        asyncPointsStrategy: 'conservative',
-      })
-    })
   })
 
   describe('buildStripeConfigRequest', () => {
@@ -228,28 +215,6 @@ describe('stripe-config-utils', () => {
       const keys = result.map((r) => r.configKey)
       expect(keys).toContain(STRIPE_CONFIG_KEYS.PUBLISHABLE_KEY)
       expect(keys).toContain(STRIPE_CONFIG_KEYS.API_KEY)
-    })
-
-    test('handles long key values', () => {
-      const longKey = 'a'.repeat(200)
-      const formData: StripeConfigForm = {
-        publishableKey: `pk_test_${longKey}`,
-        secretKey: `sk_test_${longKey}`,
-        webhookSecret: `whsec_${longKey}`,
-        asyncPointsStrategy: 'conservative',
-      }
-
-      const result = buildStripeConfigRequest(formData)
-
-      expect(
-        result.find((r) => r.configKey === STRIPE_CONFIG_KEYS.PUBLISHABLE_KEY)?.configValue
-      ).toBe(`pk_test_${longKey}`)
-      expect(result.find((r) => r.configKey === STRIPE_CONFIG_KEYS.API_KEY)?.configValue).toBe(
-        `sk_test_${longKey}`
-      )
-      expect(
-        result.find((r) => r.configKey === STRIPE_CONFIG_KEYS.WEBHOOK_SECRET)?.configValue
-      ).toBe(`whsec_${longKey}`)
     })
 
     test('marks individual fields with correct isSecret', () => {

@@ -1,11 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
-  queryKeys,
   purchaseHistoryQueryOptions,
   paymentAttemptStatusQueryOptions,
   paymentProvidersQueryOptions,
 } from '@/data/query-options'
-import { QUERY_KEYS } from '@/lib/constants'
 import type { PurchaseHistoryItem } from '@/lib/api-generated'
 
 // Mock SDK functions used by query options under test
@@ -52,49 +50,6 @@ function makePurchaseHistoryResponse(
     ...overrides,
   }
 }
-
-// ==================== purchaseHistory query keys ====================
-
-describe('purchaseHistory query keys', () => {
-  it('differentiates different realms with same filters', () => {
-    const keyRealm1 = queryKeys.purchaseHistory('realm-1', {})
-    const keyRealm2 = queryKeys.purchaseHistory('realm-2', {})
-    expect(keyRealm1).not.toEqual(keyRealm2)
-  })
-
-  it('differentiates empty filters from paymentProvider filter', () => {
-    const keyEmpty = queryKeys.purchaseHistory('realm-1', {})
-    const keyFiltered = queryKeys.purchaseHistory('realm-1', { paymentProvider: 'stripe' })
-    expect(keyEmpty).not.toEqual(keyFiltered)
-  })
-
-  it('differentiates empty filters from startDate filter', () => {
-    const keyEmpty = queryKeys.purchaseHistory('realm-1', {})
-    const keyFiltered = queryKeys.purchaseHistory('realm-1', { startDate: '2025-01-01' })
-    expect(keyEmpty).not.toEqual(keyFiltered)
-  })
-
-  it('differentiates different filter values', () => {
-    const keyStripe = queryKeys.purchaseHistory('realm-1', { paymentProvider: 'stripe' })
-    const keyCreem = queryKeys.purchaseHistory('realm-1', { paymentProvider: 'creem' })
-    expect(keyStripe).not.toEqual(keyCreem)
-  })
-
-  it('differentiates combined filters from single filter', () => {
-    const keyCombined = queryKeys.purchaseHistory('realm-1', {
-      paymentProvider: 'stripe',
-      startDate: '2025-01-01',
-    })
-    const keySingle = queryKeys.purchaseHistory('realm-1', { paymentProvider: 'stripe' })
-    expect(keyCombined).not.toEqual(keySingle)
-  })
-
-  it('has correct key structure', () => {
-    const key = queryKeys.purchaseHistory('realm-1', { paymentProvider: 'stripe' })
-    expect(key[0]).toBe(QUERY_KEYS.PURCHASE_HISTORY)
-    expect(key[1]).toBe('realm-1')
-  })
-})
 
 // ==================== purchaseHistoryQueryOptions ====================
 

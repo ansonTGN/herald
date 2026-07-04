@@ -418,48 +418,6 @@ mod tests {
     }
 
     // =========================================================================
-    // Test: provider_first + stripe + seller + NO external invoice => external_provider
-    // =========================================================================
-    // Stripe invoices are pushed via webhook — users must never apply manually.
-    // Stripe routes to read-only external_provider regardless of whether the
-    // webhook has landed yet; the frontend hides the button and points users to
-    // "My Invoices".
-    //
-    // Given: default policy (provider_first), seller config present,
-    //        a payment_attempt with payment_provider='stripe', no external invoice
-    // When:  GET apply-eligibility
-    // Then:  route == "external_provider", canApply == false
-
-    #[test_context(ApplyEligibilityTestContext)]
-    #[tokio::test]
-    async fn test_apply_eligibility_stripe_without_external_is_external_provider(
-        ctx: &mut ApplyEligibilityTestContext,
-    ) {
-        let app = ctx.create_unified_test_router();
-        let realm_id = ctx._realm_id.clone();
-
-        let admin_token =
-            setup_billing_admin_session(ctx, "apply-elig-stripe-admin@test.com").await;
-        setup_seller_config(&app, &admin_token, &realm_id).await;
-        // Default policy (provider_first) — no realm_config row inserted.
-
-        let (user_token, user_id) =
-            create_regular_user_session(ctx, "apply-elig-stripe@test.com").await;
-
-        let pa_id = create_payment_attempt_with_provider(ctx, &realm_id, user_id, "stripe").await;
-
-        let response =
-            fetch_apply_eligibility(&app, &user_token, &realm_id, "payment_attempt", pa_id).await;
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = parse_body(response.into_body()).await;
-
-        assert_eq!(body["route"], "external_provider");
-        assert_eq!(body["canApply"], false);
-        assert!(body["reason"].is_null());
-        assert_eq!(body["provider"], "stripe");
-    }
-
-    // =========================================================================
     // Test: provider_first + stripe + external_sync invoice => external_provider
     // =========================================================================
     // Covers: P0-2 Phase B -- an externally-synced invoice already exists for

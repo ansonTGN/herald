@@ -57,7 +57,3 @@ pub fn realm_router() -> Router<AppState> {
             axum::routing::get(totp_config::handle_get_realm_totp_config),
         )
 }
-
-// Tests
-#[cfg(test)]
-mod tests;

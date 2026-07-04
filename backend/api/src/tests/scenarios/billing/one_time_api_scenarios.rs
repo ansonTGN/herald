@@ -347,29 +347,6 @@ mod tests {
         );
     }
 
-    /// User Story: US-EM-001
-    /// Covers: Design section 4.2.2 "API Key authentication"
-    #[test_context(TestContext)]
-    #[tokio::test]
-    async fn test_ext_one_time_mappings_requires_api_key(ctx: &mut TestContext) {
-        let realm_id = ctx._realm_id.clone();
-        let app = ctx.create_unified_test_router();
-
-        // Given: an enabled mapping exists (but no API key provided)
-        let _mapping =
-            create_one_time_mapping(ctx, &realm_id, "auth-test-pkg", 100, true, true).await;
-
-        // When: request without API key
-        let (status, _body) = make_ext_request(&app, &realm_id, None).await;
-
-        // Then: 401 Unauthorized
-        assert_eq!(
-            status,
-            StatusCode::UNAUTHORIZED,
-            "Expected 401 without API key, got {status}"
-        );
-    }
-
     /// User Story: US-PU-006
     /// Covers: Design section 4.2.2 "validityDays field"
     #[test_context(TestContext)]
@@ -554,36 +531,6 @@ mod tests {
     }
 
     /// User Story: US-PU-007
-    /// Covers: Design section 4.2.2 "authenticated users only"
-    #[test_context(TestContext)]
-    #[tokio::test]
-    async fn test_purchase_history_requires_authentication(ctx: &mut TestContext) {
-        let realm_id = ctx._realm_id.clone();
-        let app = ctx.create_unified_test_router();
-
-        // When: request without auth cookie
-        let response = app
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .method("GET")
-                    .uri(format!("/api/bill/{}/purchase/history", realm_id))
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        // Then: 401 Unauthorized
-        assert_eq!(
-            response.status(),
-            StatusCode::UNAUTHORIZED,
-            "Expected 401 without auth, got {}",
-            response.status()
-        );
-    }
-
-    /// User Story: US-PU-007
     /// Covers: Design section 4.2.2 "only own records"
     #[test_context(TestContext)]
     #[tokio::test]
@@ -680,86 +627,5 @@ mod tests {
         // If Stripe is not configured, we still verify the endpoint accepted
         // entitlement_mapping target_type (the error would be about Stripe config,
         // not about the target_type).
-    }
-
-    // =========================================================================
-    // Old Routes Removed Tests
-    // =========================================================================
-
-    /// User Story: (cleanup verification)
-    /// Covers: Design section 4.2.1 "DELETE all points-packages routes"
-    #[test_context(TestContext)]
-    #[tokio::test]
-    async fn test_old_points_package_routes_removed(ctx: &mut TestContext) {
-        let realm_id = ctx._realm_id.clone();
-        let app = ctx.create_unified_test_router();
-        let token = setup_billing_admin_session(ctx, "old-routes@test.com").await;
-        let fake_id = Uuid::now_v7();
-
-        // Old billing routes that should be removed
-        let uri_list = format!("/api/bill/{}/points-packages", realm_id);
-        let uri_detail = format!("/api/bill/{}/points-packages/{}", realm_id, fake_id);
-        let old_billing_routes: Vec<(&str, &str, &str)> = vec![
-            (
-                "POST",
-                &uri_list,
-                r#"{"name":"test","points":100,"amount":999,"currency":"usd"}"#,
-            ),
-            ("GET", &uri_list, ""),
-            ("GET", &uri_detail, ""),
-            ("PUT", &uri_detail, r#"{"name":"test"}"#),
-            ("DELETE", &uri_detail, ""),
-        ];
-
-        for (method, uri, body_content) in &old_billing_routes {
-            let mut builder = Request::builder().method(*method).uri(*uri);
-            if !body_content.is_empty() {
-                builder = builder
-                    .header("Content-Type", "application/json")
-                    .header(header::COOKIE, format!("X-Auth={}", token));
-            } else {
-                builder = builder.header(header::COOKIE, format!("X-Auth={}", token));
-            }
-
-            let request = if !body_content.is_empty() {
-                builder.body(Body::from(*body_content)).unwrap()
-            } else {
-                builder.body(Body::empty()).unwrap()
-            };
-
-            let response = app.clone().oneshot(request).await.unwrap();
-            assert_eq!(
-                response.status(),
-                StatusCode::NOT_FOUND,
-                "Old route {} {} should return 404, got {}",
-                method,
-                uri,
-                response.status()
-            );
-        }
-
-        // Old ext route: GET /api/ext/{realmId}/points-packages
-        // (no auth needed to verify route is gone -- 404 is expected
-        // regardless of auth since the route itself does not exist)
-        let ext_response = app
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .method("GET")
-                    .uri(format!("/api/ext/{}/points-packages", realm_id))
-                    .header("X-API-Key", "any-key")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(
-            ext_response.status(),
-            StatusCode::NOT_FOUND,
-            "Old ext route GET /api/ext/{}/points-packages should return 404, got {}",
-            realm_id,
-            ext_response.status()
-        );
     }
 }

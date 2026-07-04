@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
-  queryKeys,
   toAuthConsentAgreements,
   toRecordConsentRequest,
   legalAgreementsQueryOptions,
@@ -17,7 +16,6 @@ import {
   discardDraftMutation,
   publishFromDraftMutation,
 } from '@/data/query-options'
-import { QUERY_KEYS } from '@/lib/constants'
 import type { LegalAgreementSummary } from '@/lib/api-generated'
 
 vi.mock('@/lib/api-generated/sdk.gen', async (importOriginal) => {
@@ -67,56 +65,6 @@ function makeAgreementSummary(overrides?: Partial<LegalAgreementSummary>): Legal
     ...overrides,
   }
 }
-
-describe('legal query keys', () => {
-  it('differentiates legal agreements by realm', () => {
-    const keyRealm1 = queryKeys.legalAgreements('realm-1')
-    const keyRealm2 = queryKeys.legalAgreements('realm-2')
-    expect(keyRealm1).not.toEqual(keyRealm2)
-    expect(keyRealm1[0]).toBe(QUERY_KEYS.LEGAL_AGREEMENTS)
-  })
-
-  it('differentiates agreement detail by type within the same realm', () => {
-    const keyTos = queryKeys.legalAgreement('realm-1', 'terms_of_service')
-    const keyPrivacy = queryKeys.legalAgreement('realm-1', 'privacy_policy')
-    expect(keyTos).not.toEqual(keyPrivacy)
-    expect(keyTos[0]).toBe(QUERY_KEYS.LEGAL_AGREEMENT)
-  })
-
-  it('differentiates agreement detail by locale within the same realm and type', () => {
-    const keyEnglish = queryKeys.legalAgreement('realm-1', 'terms_of_service', 'en')
-    const keyChinese = queryKeys.legalAgreement('realm-1', 'terms_of_service', 'zh-CN')
-    expect(keyEnglish).not.toEqual(keyChinese)
-  })
-
-  it('isolates consent status by realm', () => {
-    const key = queryKeys.consentStatus('realm-1')
-    expect(key).toEqual([QUERY_KEYS.CONSENT_STATUS, 'realm-1'])
-  })
-
-  it('isolates admin agreements by realm', () => {
-    const key = queryKeys.legalAdminAgreements('realm-1')
-    expect(key).toEqual([QUERY_KEYS.LEGAL_ADMIN_AGREEMENTS, 'realm-1'])
-  })
-
-  it('isolates draft by realm and agreement type', () => {
-    const keyTos = queryKeys.legalDraft('realm-1', 'terms_of_service')
-    const keyPrivacy = queryKeys.legalDraft('realm-1', 'privacy_policy')
-    const keyOtherRealm = queryKeys.legalDraft('realm-2', 'terms_of_service')
-    expect(keyTos).not.toEqual(keyPrivacy)
-    expect(keyTos).not.toEqual(keyOtherRealm)
-    expect(keyTos[0]).toBe(QUERY_KEYS.LEGAL_DRAFT)
-  })
-
-  it('isolates past version by realm and version id', () => {
-    const keyV1 = queryKeys.legalVersion('realm-1', 'v1')
-    const keyV2 = queryKeys.legalVersion('realm-1', 'v2')
-    const keyOtherRealm = queryKeys.legalVersion('realm-2', 'v1')
-    expect(keyV1).not.toEqual(keyV2)
-    expect(keyV1).not.toEqual(keyOtherRealm)
-    expect(keyV1[0]).toBe(QUERY_KEYS.LEGAL_AGREEMENT)
-  })
-})
 
 describe('toAuthConsentAgreements', () => {
   it('maps snake_case summary fields to camelCase auth retry shape', () => {

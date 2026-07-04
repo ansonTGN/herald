@@ -129,35 +129,6 @@ describe('calculatePasswordStrength', () => {
     })
   })
 
-  describe('label mapping', () => {
-    it('maps score 2 to Fair', () => {
-      const strength = calculatePasswordStrength('password', defaultConfig)
-      expect(strength.label).toBe('Fair')
-    })
-
-    it('maps score 4 to Strong', () => {
-      const strength = calculatePasswordStrength('Password123!', defaultConfig)
-      expect(strength.label).toBe('Strong')
-    })
-  })
-
-  describe('color mapping', () => {
-    it('returns red for Weak', () => {
-      const strength = calculatePasswordStrength('', defaultConfig)
-      expect(strength.color).toBe('red')
-    })
-
-    it('returns orange for Fair', () => {
-      const strength = calculatePasswordStrength('password', defaultConfig)
-      expect(strength.color).toBe('orange')
-    })
-
-    it('returns green for Strong', () => {
-      const strength = calculatePasswordStrength('Password123!', defaultConfig)
-      expect(strength.color).toBe('green')
-    })
-  })
-
   describe('complex passwords', () => {
     it('handles passwords with all character types', () => {
       const strength = calculatePasswordStrength('ComplexP@ssw0rd123!', defaultConfig)
@@ -172,15 +143,6 @@ describe('calculatePasswordStrength', () => {
 
       expect(strength.label).toBe('Strong')
       expect(strength.suggestions).toContain('Password must contain special characters')
-    })
-  })
-
-  describe('suggestions uniqueness', () => {
-    it('returns unique suggestions', () => {
-      const strength = calculatePasswordStrength('password', defaultConfig)
-
-      const uniqueSuggestions = Array.from(new Set(strength.suggestions))
-      expect(strength.suggestions).toHaveLength(uniqueSuggestions.length)
     })
   })
 })

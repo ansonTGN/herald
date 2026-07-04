@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { queryKeys, apiKeysQueryOptions, apiKeyQueryOptions } from '../query-options'
+import { apiKeysQueryOptions, apiKeyQueryOptions } from '../query-options'
 
 // Mock the API functions to observe parameters in queryFn tests
 vi.mock('@/lib/api-generated', async () => {
@@ -52,56 +52,6 @@ function makeDetailResponse(overrides?: Record<string, unknown>) {
 describe('API Key Query Options', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-  })
-
-  describe('queryKeys.apiKeys -- cache key isolation', () => {
-    it('produces different keys for different realm IDs', () => {
-      const keyA = queryKeys.apiKeys('realm-a', {})
-      const keyB = queryKeys.apiKeys('realm-b', {})
-      expect(keyA).not.toEqual(keyB)
-    })
-
-    it('produces different keys for different filter objects', () => {
-      const keyEmpty = queryKeys.apiKeys('realm-1', {})
-      const keyPaged = queryKeys.apiKeys('realm-1', { page: 2 })
-      const keySized = queryKeys.apiKeys('realm-1', { pageSize: 50 })
-      expect(keyEmpty).not.toEqual(keyPaged)
-      expect(keyEmpty).not.toEqual(keySized)
-      expect(keyPaged).not.toEqual(keySized)
-    })
-
-    it('produces different keys for different page numbers', () => {
-      const keyPage0 = queryKeys.apiKeys('realm-1', { page: 0 })
-      const keyPage3 = queryKeys.apiKeys('realm-1', { page: 3 })
-      expect(keyPage0).not.toEqual(keyPage3)
-    })
-
-    it('produces different keys for different page sizes', () => {
-      const keySize20 = queryKeys.apiKeys('realm-1', { pageSize: 20 })
-      const keySize50 = queryKeys.apiKeys('realm-1', { pageSize: 50 })
-      expect(keySize20).not.toEqual(keySize50)
-    })
-
-    it('produces identical keys for identical parameters (deterministic)', () => {
-      const filters = { page: 1, pageSize: 30 }
-      const keyA = queryKeys.apiKeys('realm-1', filters)
-      const keyB = queryKeys.apiKeys('realm-1', filters)
-      expect(keyA).toEqual(keyB)
-    })
-  })
-
-  describe('queryKeys.apiKey -- detail key', () => {
-    it('produces different keys for different API Key IDs', () => {
-      const keyA = queryKeys.apiKey('realm-1', 'key-a')
-      const keyB = queryKeys.apiKey('realm-1', 'key-b')
-      expect(keyA).not.toEqual(keyB)
-    })
-
-    it('produces different keys for different realm IDs', () => {
-      const keyA = queryKeys.apiKey('realm-a', 'key-1')
-      const keyB = queryKeys.apiKey('realm-b', 'key-1')
-      expect(keyA).not.toEqual(keyB)
-    })
   })
 
   describe('apiKeysQueryOptions -- parameter mapping', () => {

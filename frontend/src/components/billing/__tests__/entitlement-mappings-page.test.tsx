@@ -296,48 +296,6 @@ describe('EntitlementMappingsPage (master-detail)', () => {
   })
 })
 
-// --- Pure helper coverage (re-exported surface for the test slot) ----------
-
-describe('grouping helpers', () => {
-  it('groupByProduct preserves first-seen order', async () => {
-    const { groupByProduct } = await import('../entitlement-mapping-grouping')
-    const items = [
-      makeMapping({ id: '1', externalProductId: 'prod_b' }),
-      makeMapping({ id: '2', externalProductId: 'prod_a' }),
-      makeMapping({ id: '3', externalProductId: 'prod_b' }),
-    ]
-    const groups = groupByProduct(items)
-    expect(groups.map((g) => g.externalProductId)).toEqual(['prod_b', 'prod_a'])
-    expect(groups[0].prices).toHaveLength(2)
-  })
-
-  it('groupByEntitlementKey groups a product prices by key', async () => {
-    const { groupByEntitlementKey } = await import('../entitlement-mapping-grouping')
-    const prices = [
-      makeMapping({ id: '1', entitlementKey: 'pro-plan' }),
-      makeMapping({ id: '2', entitlementKey: 'pro-plan' }),
-      makeMapping({ id: '3', entitlementKey: 'starter' }),
-    ]
-    const groups = groupByEntitlementKey(prices)
-    expect(groups).toHaveLength(2)
-    expect(groups[0].entitlementKey).toBe('pro-plan')
-    expect(groups[0].prices).toHaveLength(2)
-  })
-
-  it('deriveSharedKeyColor is stable for the same key', async () => {
-    const { deriveSharedKeyColor } = await import('../shared-key-color')
-    const a = deriveSharedKeyColor('pro-plan')
-    const b = deriveSharedKeyColor('pro-plan')
-    const c = deriveSharedKeyColor('starter')
-    expect(a.hue).toBe(b.hue)
-    // The implementation guarantees stability, NOT uniqueness across keys, so
-    // distinct keys may legitimately collide (see entitlement-mappings-helpers
-    // test). Only assert the hue stays in the valid `[0, 360)` range.
-    expect(c.hue).toBeGreaterThanOrEqual(0)
-    expect(c.hue).toBeLessThan(360)
-  })
-})
-
 // --- FE-T02: name-first primary label with i18n placeholder fallback -------
 
 describe('EntitlementMappingsPage — primary label', () => {

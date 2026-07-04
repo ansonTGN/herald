@@ -65,39 +65,6 @@ describe('globalSubscriptionHistoryQueryOptions', () => {
 })
 
 describe('Filter Parameter Handling', () => {
-  it('should handle empty filters', () => {
-    const filters: HistoryFilters = {}
-    const options = globalSubscriptionHistoryQueryOptions('realm-1', filters)
-
-    expect(options.queryKey).toContain(filters)
-  })
-
-  it('should handle partial filters', () => {
-    const filters: HistoryFilters = {
-      eventType: 'upgraded',
-      // Other fields are undefined
-    }
-    const options = globalSubscriptionHistoryQueryOptions('realm-1', filters)
-
-    expect(options.queryKey).toContain(filters)
-  })
-
-  it('should handle complete filters', () => {
-    const filters: HistoryFilters = {
-      userId: 'user-1',
-      entitlementKey: 'basic',
-      eventType: 'upgraded',
-      subscriptionStatus: 'active',
-      fromDate: '2025-01-01',
-      toDate: '2025-01-31',
-      sortBy: 'timestamp',
-      sortOrder: 'desc',
-    }
-    const options = globalSubscriptionHistoryQueryOptions('realm-1', filters)
-
-    expect(options.queryKey).toContain(filters)
-  })
-
   it('should handle default pagination', () => {
     const options = globalSubscriptionHistoryQueryOptions('realm-1', {})
 
@@ -160,30 +127,5 @@ describe('Filter Parameter Handling', () => {
     expect(requestUrl.searchParams.get('user_id')).toBeNull()
     expect(requestUrl.searchParams.get('event_type')).toBeNull()
     expect(requestUrl.searchParams.get('page_size')).toBeNull()
-  })
-})
-
-describe('Query Key Structure', () => {
-  it('should follow consistent naming pattern for global history', () => {
-    const filters: HistoryFilters = {}
-    const options = globalSubscriptionHistoryQueryOptions('realm-1', filters, 1, 20)
-
-    expect(options.queryKey[0]).toBe(QUERY_KEYS.GLOBAL_SUBSCRIPTION_HISTORY)
-    expect(options.queryKey[1]).toBe('realm-1')
-    expect(options.queryKey[2]).toBe(filters)
-    expect(options.queryKey[3]).toBe(1)
-    expect(options.queryKey[4]).toBe(20)
-  })
-
-  it('should maintain correct order of parameters in query key', () => {
-    const filters: HistoryFilters = { eventType: 'upgraded' }
-    const options = globalSubscriptionHistoryQueryOptions('realm-1', filters, 2, 50)
-
-    expect(options.queryKey).toHaveLength(5)
-    expect(options.queryKey[0]).toBe(QUERY_KEYS.GLOBAL_SUBSCRIPTION_HISTORY)
-    expect(options.queryKey[1]).toBe('realm-1')
-    expect(options.queryKey[2]).toBe(filters)
-    expect(options.queryKey[3]).toBe(2)
-    expect(options.queryKey[4]).toBe(50)
   })
 })

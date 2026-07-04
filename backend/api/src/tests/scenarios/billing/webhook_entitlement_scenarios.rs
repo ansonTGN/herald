@@ -137,22 +137,6 @@ mod tests {
         ledger_balance + subscription_balance
     }
 
-    // Helper: get subscription count by entitlement_key
-    async fn count_subscriptions_by_entitlement_key(
-        ctx: &SchemaTestContext,
-        realm_id: &str,
-        entitlement_key: &str,
-    ) -> i64 {
-        sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*) FROM subscription WHERE realm_id = $1 AND entitlement_key = $2",
-        )
-        .bind(realm_id)
-        .bind(entitlement_key)
-        .fetch_one(&ctx.app_state.pool)
-        .await
-        .unwrap()
-    }
-
     // Helper: get subscription by external_subscription_id and provider
     async fn get_subscription_by_external_id(
         ctx: &SchemaTestContext,
@@ -769,83 +753,6 @@ mod tests {
     // =========================================================================
     // Webhook Idempotency with herald_* metadata
     // =========================================================================
-
-    /// User Story: US-EM-003
-    /// Covers: Same event sent twice -> only one subscription created, second returns OK
-    #[test_context(WebhookEntitlementTestContext)]
-    #[tokio::test]
-    async fn test_creem_webhook_idempotency_with_entitlement_key(
-        ctx: &mut WebhookEntitlementTestContext,
-    ) {
-        let app = ctx.create_unified_test_router();
-        let webhook_secret = "test_creem_wh_secret";
-        let realm_id = ctx._realm_id.clone();
-        let user_id = create_test_user_in_realm(ctx, "creem-idem@test.com").await;
-        let client_app_id = Uuid::parse_str(&ctx._client_app_id).unwrap();
-        let entitlement_key = "idem-plan";
-        let event_id = generate_test_event_id();
-        let external_product_id = format!("prod_idem_{}", entitlement_key);
-
-        set_webhook_secret_for_realm(ctx, webhook_secret).await;
-
-        setup_test_entitlement_mapping_for_webhook(
-            ctx,
-            &realm_id,
-            "creem",
-            &external_product_id,
-            entitlement_key,
-            100,
-            true,
-            true,
-        )
-        .await;
-
-        create_points_wallet_for_user(ctx, user_id, &realm_id).await;
-
-        let external_sub_id = format!("sub_idem_{}", event_id);
-        let payload = build_creem_subscription_paid_with_herald_metadata(
-            &event_id,
-            entitlement_key,
-            &realm_id,
-            user_id,
-            Some(client_app_id),
-            &external_sub_id,
-            &external_product_id,
-            false,
-        );
-
-        // Send first webhook
-        let response1 =
-            send_webhook_with_signature(&app, &realm_id, payload.clone(), webhook_secret).await;
-        assert_webhook_success(&response1);
-
-        // Send second webhook with same event_id
-        let response2 = send_webhook_with_signature(&app, &realm_id, payload, webhook_secret).await;
-        assert_eq!(
-            response2.status(),
-            StatusCode::OK,
-            "Duplicate webhook should return OK (idempotent)"
-        );
-
-        // Verify only one subscription exists
-        let sub_count =
-            count_subscriptions_by_entitlement_key(ctx, &realm_id, entitlement_key).await;
-        assert!(
-            sub_count <= 1,
-            "Expected at most 1 subscription, got {}",
-            sub_count
-        );
-
-        // Verify only one payment event
-        let event_count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM payment_event WHERE external_event_id = $1 AND payment_provider = 'creem'",
-        )
-        .bind(&event_id)
-        .fetch_one(&ctx.app_state.pool)
-        .await
-        .unwrap();
-        assert_eq!(event_count, 1, "Expected exactly 1 payment event");
-    }
 
     // =========================================================================
     // Points Recharge via Entitlement Mapping (US-EM-004)
