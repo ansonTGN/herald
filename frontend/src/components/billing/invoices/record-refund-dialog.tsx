@@ -105,7 +105,7 @@ export function RecordRefundDialog({
                     type="number"
                     step="0.01"
                     min="0.01"
-                    placeholder="0.00"
+                    placeholder={m['billing.credit_note_record_refund_amount_placeholder']()}
                     value={field.state.value ?? ''}
                     onChange={(e) => field.handleChange(e.target.value)}
                     onBlur={field.handleBlur}

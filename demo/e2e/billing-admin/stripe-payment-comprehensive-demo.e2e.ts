@@ -102,16 +102,14 @@ test.describe('[Billing Admin] Stripe Payment Comprehensive Demo', () => {
       })
 
       await test.step('When: 点击 Sync Provider Products', async () => {
-        // provider-sync-button is a wrapper <div>; the actionable control is the
-        // inner Button carrying sync-button, gated on a selected provider.
+        // provider-sync-button is a wrapper <div>; one sync Button is rendered
+        // per configured provider, each carrying data-provider="<platform>".
         const syncWrapper = page.getByTestId('provider-sync-button')
         await expect(syncWrapper).toBeVisible()
-        // Selecting a provider is required before the Sync button is enabled.
-        const providerSelect = syncWrapper.getByTestId('sync-provider-select')
-        await providerSelect.click()
-        await expect(page.getByRole('option', { name: 'Stripe', exact: true })).toBeVisible()
-        await page.getByRole('option', { name: 'Stripe', exact: true }).click()
-        const syncButton = syncWrapper.getByTestId('sync-button')
+        // Click the Stripe sync button directly (no provider dropdown anymore).
+        const syncButton = syncWrapper.locator(
+          '[data-testid="sync-button"][data-provider="stripe"]'
+        )
         await syncButton.click()
         await demoLogger.testCode.log('Sync triggered')
 

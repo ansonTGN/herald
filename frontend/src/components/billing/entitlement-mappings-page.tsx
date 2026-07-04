@@ -22,6 +22,7 @@ import {
 } from '@/components/billing/provider-product-info'
 import { formatInvoiceAmount } from '@/lib/invoice-utils'
 import { ProtectedPriceConfirmDialog } from '@/components/billing/entitlement-mapping-detail-dialog'
+import { SyncNextStepDialog } from '@/components/billing/sync-next-step-dialog'
 import { MultiWindowQuotaEditor } from '@/components/billing/MultiWindowQuotaEditor'
 import {
   groupByProduct,
@@ -69,6 +70,13 @@ export function EntitlementMappingsPage({ realmId }: EntitlementMappingsPageProp
     activeSubscriptions: number
   } | null>(null)
 
+  // Post-sync guidance: synced mappings land as disabled drafts. If, right
+  // after a sync, every refetched mapping is still disabled, surface a
+  // "next step" dialog once. Decided synchronously in the sync-complete
+  // callback (after awaiting the refetch) rather than via an effect, to
+  // comply with the no-setState-in-effect rule.
+  const [nextStepOpen, setNextStepOpen] = useState(false)
+
   const { data, isLoading } = useQuery({
     ...entitlementMappingsQueryOptions(realmId, {}),
     select: (rawData) => rawData as EntitlementMappingListResponse | undefined,
@@ -93,10 +101,20 @@ export function EntitlementMappingsPage({ realmId }: EntitlementMappingsPageProp
     [productGroups, effectiveSelectedProductKey]
   )
 
-  const handleSyncComplete = useCallback(() => {
-    queryClient.invalidateQueries({
+  const handleSyncComplete = useCallback(async () => {
+    // Refetch the mappings, then decide synchronously whether to surface the
+    // "next step" guidance: if every mapping is still disabled (the default
+    // draft state for freshly synced products), tell the admin what to do.
+    // Done in the callback (not an effect) to avoid setState-in-effect.
+    await queryClient.refetchQueries({
       queryKey: queryKeys.entitlementMappings(realmId, {}),
     })
+    const fresh = queryClient.getQueryData<EntitlementMappingListResponse>(
+      queryKeys.entitlementMappings(realmId, {})
+    )
+    const items = fresh?.items ?? []
+    const allDisabled = items.length > 0 && items.every((mp) => !mp.enabled)
+    if (allDisabled) setNextStepOpen(true)
   }, [queryClient, realmId])
 
   const showWebhookBanner = hasWebhookUnresolvedPrice(allMappings)
@@ -216,6 +234,8 @@ export function EntitlementMappingsPage({ realmId }: EntitlementMappingsPageProp
           if (!open) setProtectedConfirm(null)
         }}
       />
+
+      <SyncNextStepDialog open={nextStepOpen} onOpenChange={setNextStepOpen} />
     </div>
   )
 }
@@ -567,7 +587,7 @@ function PriceEditRow({
                     })
                   }
                   disabled={pointsDisabled}
-                  placeholder="30"
+                  placeholder="—"
                 />
               </Field>
             )}

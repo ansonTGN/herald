@@ -947,6 +947,13 @@ export const SELECTORS = {
     legalContentEnInput: (type: string) =>
       `[data-testid="legal-content-en-input-${type}"]`,
     legalPublishButton: (type: string) => `[data-testid="legal-publish-button-${type}"]`,
+    legalSaveDraftButton: (type: string) => `[data-testid="legal-save-draft-button-${type}"]`,
+    legalPreviewButton: (type: string) => `[data-testid="legal-preview-button-${type}"]`,
+    legalPreviewDialog: (type: string) => `[data-testid="legal-preview-dialog-${type}"]`,
+    legalDiscardDraftButton: (type: string) =>
+      `[data-testid="legal-discard-draft-button-${type}"]`,
+    legalDiscardDraftConfirmButton: (type: string) =>
+      `[data-testid="legal-discard-draft-confirm-${type}"]`,
     legalRevertButton: (type: string) => `[data-testid="legal-revert-button-${type}"]`,
     legalRevertConfirmButton: (type: string) =>
       `[data-testid="legal-revert-confirm-${type}"]`,

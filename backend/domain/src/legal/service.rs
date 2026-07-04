@@ -6,7 +6,7 @@ use crate::audit::{ActorType, AuditAction, AuditCategory, AuditResult, AuditTarg
 use crate::audit::{AuditEventRepository, NewAuditEvent};
 use crate::common::entities::app_errors::CoreError;
 use crate::legal::entities::{
-    AgreementType, ConsentSource, ConsentStatusItem, LegalAgreementVersion,
+    AgreementType, ConsentSource, ConsentStatusItem, LegalAgreementDraft, LegalAgreementVersion,
 };
 use crate::legal::error::LegalError;
 use crate::legal::ports::{LegalAgreementRepository, UserConsentRepository};
@@ -341,6 +341,115 @@ where
             .list_history(realm_id, agreement_type, limit)
             .await
     }
+
+    /// Fetch a single version by id (with full content body) for the admin
+    /// "view past version" dialog. Thin pass-through.
+    pub async fn get_version_by_id(
+        &self,
+        version_id: Uuid,
+    ) -> Result<Option<LegalAgreementVersion>, CoreError> {
+        self.legal_repo.get_version_by_id(version_id).await
+    }
+
+    /// Get the staged draft for `(realm_id, agreement_type)`, if any. Drafts
+    /// are isolated from published versions and never affect the consent gate.
+    pub async fn get_draft(
+        &self,
+        realm_id: &str,
+        agreement_type: AgreementType,
+    ) -> Result<Option<LegalAgreementDraft>, CoreError> {
+        self.legal_repo.get_draft(realm_id, agreement_type).await
+    }
+
+    /// Stage a draft for `(realm_id, agreement_type)`. `content` must be a
+    /// non-empty locale → body map (same rule as `publish_custom`); an invalid
+    /// payload is rejected as `BadRequest`. Idempotent: a repeat save
+    /// overwrites the existing draft. Does NOT publish — the agreement stays
+    /// unchanged for end users until [`publish_from_draft`](Self::publish_from_draft).
+    pub async fn save_draft(
+        &self,
+        realm_id: &str,
+        agreement_type: AgreementType,
+        content: serde_json::Value,
+        version_label: Option<String>,
+        updated_by: &str,
+    ) -> Result<LegalAgreementDraft, CoreError> {
+        if !content.is_object() || content.as_object().is_none_or(|m| m.is_empty()) {
+            return Err(CoreError::BadRequest(
+                "agreement content must be a non-empty locale map".to_string(),
+            ));
+        }
+        self.legal_repo
+            .upsert_draft(realm_id, agreement_type, content, version_label, updated_by)
+            .await
+    }
+
+    /// Discard the staged draft. Idempotent: discarding a missing draft is a
+    /// no-op. The published version table is untouched.
+    pub async fn discard_draft(
+        &self,
+        realm_id: &str,
+        agreement_type: AgreementType,
+    ) -> Result<(), CoreError> {
+        self.legal_repo.delete_draft(realm_id, agreement_type).await
+    }
+
+    /// Publish the staged draft as a new per-realm custom version.
+    ///
+    /// Reads the draft, delegates to [`publish_custom`](Self::publish_custom)
+    /// (which computes the next `version_no`, writes the immutable version row,
+    /// and records an `agreement.published` audit event), then deletes the
+    /// draft. An optional `version_label_override` replaces the draft's label
+    /// for this publish (letting the admin adjust the label at publish time
+    /// without re-saving the draft). Returns `DraftNotFound` (→ 404) when no
+    /// draft exists for the type.
+    ///
+    /// Note: this is not wrapped in an explicit DB transaction, but the two
+    /// effects are safe in sequence — `publish_custom_version` creates an
+    /// independent immutable version row, and a leftover draft (if the delete
+    /// failed) is harmless: the next save overwrites it and the next publish
+    /// re-publishes the same content as a fresh version (version_no still
+    /// advances). Acceptable per the established best-effort pattern in this
+    /// service (audit writes are likewise not transactional with the write).
+    pub async fn publish_from_draft(
+        &self,
+        realm_id: &str,
+        agreement_type: AgreementType,
+        version_label_override: Option<String>,
+        published_by: &str,
+        actor: AuditActorMeta,
+    ) -> Result<LegalAgreementVersion, CoreError> {
+        let draft = self
+            .legal_repo
+            .get_draft(realm_id, agreement_type.clone())
+            .await?
+            .ok_or(LegalError::DraftNotFound)?;
+
+        let label = version_label_override.or(draft.version_label);
+        let new_version = self
+            .publish_custom(
+                realm_id,
+                agreement_type.clone(),
+                draft.content,
+                label,
+                published_by,
+                actor,
+            )
+            .await?;
+
+        // Best-effort draft cleanup; a failure here does not unwind the publish
+        // (the version is already effective). The leftover draft is overwritten
+        // on the next save and surfaced to the admin via the GET-draft endpoint.
+        if let Err(cleanup_err) = self.legal_repo.delete_draft(realm_id, agreement_type).await {
+            tracing::warn!(
+                error = %cleanup_err,
+                realm = realm_id,
+                "Failed to clear legal agreement draft after publish"
+            );
+        }
+
+        Ok(new_version)
+    }
 }
 
 #[cfg(test)]
@@ -361,6 +470,14 @@ mod tests {
         default: std::collections::HashMap<String, LegalAgreementVersion>,
         history: Vec<LegalAgreementVersion>,
         published: Arc<Mutex<Vec<LegalAgreementVersion>>>,
+        drafts: Arc<
+            Mutex<
+                std::collections::HashMap<
+                    (String, String),
+                    crate::legal::entities::LegalAgreementDraft,
+                >,
+            >,
+        >,
     }
 
     impl LegalAgreementRepository for MockLegalRepo {
@@ -391,6 +508,16 @@ mod tests {
             let v = self.history.clone();
             async move { Ok(v) }
         }
+        fn get_version_by_id(
+            &self,
+            version_id: Uuid,
+        ) -> impl Future<Output = Result<Option<LegalAgreementVersion>, CoreError>> + Send {
+            let published = self.published.clone();
+            async move {
+                let g = published.lock().unwrap();
+                Ok(g.iter().find(|v| v.id == version_id).cloned())
+            }
+        }
         fn publish_custom_version(
             &self,
             _realm_id: &str,
@@ -417,12 +544,60 @@ mod tests {
                 Ok(version)
             }
         }
+        // Service `has_custom` is a thin pass-through and never branches on the
+        // result, so the mock hardcodes `true`; no test under this module needs
+        // the `false` branch (the infra/repo scenario tests cover both).
         async fn has_custom(
             &self,
             _realm_id: &str,
             _agreement_type: AgreementType,
         ) -> Result<bool, CoreError> {
             Ok(true)
+        }
+        fn get_draft(
+            &self,
+            realm_id: &str,
+            agreement_type: AgreementType,
+        ) -> impl Future<Output = Result<Option<LegalAgreementDraft>, CoreError>> + Send {
+            let drafts = self.drafts.clone();
+            let key = (realm_id.to_string(), agreement_type.as_ref().to_string());
+            async move { Ok(drafts.lock().unwrap().get(&key).cloned()) }
+        }
+        fn upsert_draft(
+            &self,
+            realm_id: &str,
+            agreement_type: AgreementType,
+            content: serde_json::Value,
+            version_label: Option<String>,
+            updated_by: &str,
+        ) -> impl Future<Output = Result<LegalAgreementDraft, CoreError>> + Send {
+            let drafts = self.drafts.clone();
+            let key = (realm_id.to_string(), agreement_type.as_ref().to_string());
+            async move {
+                let draft = LegalAgreementDraft {
+                    id: Uuid::now_v7(),
+                    realm_id: realm_id.to_string(),
+                    agreement_type,
+                    content,
+                    version_label,
+                    updated_at: Utc::now(),
+                    updated_by: Some(updated_by.to_string()),
+                };
+                drafts.lock().unwrap().insert(key, draft.clone());
+                Ok(draft)
+            }
+        }
+        fn delete_draft(
+            &self,
+            realm_id: &str,
+            agreement_type: AgreementType,
+        ) -> impl Future<Output = Result<(), CoreError>> + Send {
+            let drafts = self.drafts.clone();
+            let key = (realm_id.to_string(), agreement_type.as_ref().to_string());
+            async move {
+                drafts.lock().unwrap().remove(&key);
+                Ok(())
+            }
         }
     }
 

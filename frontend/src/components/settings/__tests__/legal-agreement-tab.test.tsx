@@ -42,9 +42,26 @@ function setupAdminAgreementsHandler(response: { agreements: AdminAgreementView[
   )
 }
 
+// Stub the per-(realm,type) draft GET to return a 404 ("no draft") by default.
+// Individual tests override with a 200 when they need a staged draft. The 404
+// path is the normal "no draft yet" state the query option collapses to null.
+function setupDraftNotFound() {
+  server.use(
+    http.get(
+      `http://localhost:3000/api/legal/admin/${realmId}/agreements/terms_of_service/draft`,
+      () => new HttpResponse(null, { status: 404 })
+    ),
+    http.get(
+      `http://localhost:3000/api/legal/admin/${realmId}/agreements/privacy_policy/draft`,
+      () => new HttpResponse(null, { status: 404 })
+    )
+  )
+}
+
 describe('LegalAgreementTab', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    setupDraftNotFound()
   })
 
   it('shows loading state while fetching agreements', () => {
@@ -99,7 +116,7 @@ describe('LegalAgreementTab', () => {
     expect(screen.queryByTestId('legal-revert-button-terms_of_service')).not.toBeInTheDocument()
   })
 
-  it('renders publish controls and hides revert for default source with manage permission', async () => {
+  it('renders draft + publish + preview controls and hides revert for default source with manage permission', async () => {
     setupAdminAgreementsHandler({
       agreements: [
         makeAgreementView({
@@ -112,6 +129,8 @@ describe('LegalAgreementTab', () => {
     renderWithProviders(<LegalAgreementTab realmId={realmId} canManage />)
 
     expect(await screen.findByTestId('legal-publish-button-terms_of_service')).toBeInTheDocument()
+    expect(screen.getByTestId('legal-save-draft-button-terms_of_service')).toBeInTheDocument()
+    expect(screen.getByTestId('legal-preview-button-terms_of_service')).toBeInTheDocument()
     expect(screen.queryByTestId('legal-revert-button-terms_of_service')).not.toBeInTheDocument()
     expect(screen.getByTestId('legal-history-empty-terms_of_service')).toBeInTheDocument()
   })
@@ -162,9 +181,11 @@ describe('LegalAgreementTab', () => {
     expect(await screen.findByText(/English content is required/i)).toBeInTheDocument()
   })
 
-  it('publishes a custom version and invalidates the admin agreements query', async () => {
+  it('publishes from a draft: saves draft then publishes, invalidating the admin agreements query', async () => {
     let listCalls = 0
-    let requestBody: unknown
+    let saveDraftBody: unknown
+    let publishBody: unknown
+    let publishCalls = 0
 
     server.use(
       http.get(`http://localhost:3000/api/legal/admin/${realmId}/agreements`, () => {
@@ -179,9 +200,22 @@ describe('LegalAgreementTab', () => {
         })
       }),
       http.put(
-        `http://localhost:3000/api/legal/admin/${realmId}/agreements/terms_of_service`,
+        `http://localhost:3000/api/legal/admin/${realmId}/agreements/terms_of_service/draft`,
         async ({ request }) => {
-          requestBody = await request.json()
+          saveDraftBody = await request.json()
+          return HttpResponse.json({
+            agreement_type: 'terms_of_service',
+            content: { en: 'Updated terms' },
+            version_label: 'Summer update',
+            updated_at: '2026-07-01T00:00:00Z',
+          })
+        }
+      ),
+      http.post(
+        `http://localhost:3000/api/legal/admin/${realmId}/agreements/terms_of_service/publish`,
+        async ({ request }) => {
+          publishCalls += 1
+          publishBody = await request.json().catch(() => null)
           return HttpResponse.json({
             version_id: 'tos-v2',
             version_no: 2,
@@ -203,15 +237,176 @@ describe('LegalAgreementTab', () => {
     await user.type(screen.getByTestId('legal-content-en-input-terms_of_service'), 'Updated terms')
     await user.click(screen.getByTestId('legal-publish-button-terms_of_service'))
 
+    // Publish saves the draft first (PUT .../draft), then publishes (POST .../publish).
     await waitFor(() => {
-      expect(requestBody).toEqual({
+      expect(saveDraftBody).toEqual({
         content: { en: 'Updated terms' },
         version_label: 'Summer update',
       })
     })
+    await waitFor(() => {
+      expect(publishCalls).toBe(1)
+    })
+    // The publish body carries the version_label override (the form's current label).
+    expect(publishBody).toEqual({ version_label: 'Summer update' })
 
     await waitFor(() => {
       expect(listCalls).toBeGreaterThanOrEqual(2)
+    })
+  })
+
+  it('saves a draft without publishing when Save Draft is clicked', async () => {
+    let saveDraftBody: unknown
+    let saveCalls = 0
+    let publishCalls = 0
+
+    server.use(
+      http.get(`http://localhost:3000/api/legal/admin/${realmId}/agreements`, () =>
+        HttpResponse.json({
+          agreements: [makeAgreementView({ source: 'default' })],
+        })
+      ),
+      http.put(
+        `http://localhost:3000/api/legal/admin/${realmId}/agreements/terms_of_service/draft`,
+        async ({ request }) => {
+          saveCalls += 1
+          saveDraftBody = await request.json()
+          return HttpResponse.json({
+            agreement_type: 'terms_of_service',
+            content: { en: 'work in progress' },
+            version_label: 'wip',
+            updated_at: '2026-07-01T00:00:00Z',
+          })
+        }
+      ),
+      http.post(
+        `http://localhost:3000/api/legal/admin/${realmId}/agreements/terms_of_service/publish`,
+        () => {
+          publishCalls += 1
+          return HttpResponse.json({
+            version_id: 'tos-v2',
+            version_no: 2,
+            effective_at: '2026-07-01T00:00:00Z',
+          })
+        }
+      )
+    )
+
+    renderWithProviders(<LegalAgreementTab realmId={realmId} canManage />)
+    const user = userEvent.setup()
+
+    await screen.findByTestId('legal-save-draft-button-terms_of_service')
+    await user.type(
+      screen.getByTestId('legal-content-en-input-terms_of_service'),
+      'work in progress'
+    )
+    await user.type(screen.getByTestId('legal-version-label-input-terms_of_service'), 'wip')
+    await user.click(screen.getByTestId('legal-save-draft-button-terms_of_service'))
+
+    await waitFor(() => {
+      expect(saveCalls).toBe(1)
+    })
+    expect(saveDraftBody).toEqual({
+      content: { en: 'work in progress' },
+      version_label: 'wip',
+    })
+    // Saving a draft must NOT publish.
+    expect(publishCalls).toBe(0)
+  })
+
+  it('opens a Markdown preview dialog rendering the current content', async () => {
+    setupAdminAgreementsHandler({
+      agreements: [makeAgreementView({ source: 'default' })],
+    })
+
+    renderWithProviders(<LegalAgreementTab realmId={realmId} canManage />)
+    const user = userEvent.setup()
+
+    await screen.findByTestId('legal-preview-button-terms_of_service')
+    await user.type(
+      screen.getByTestId('legal-content-en-input-terms_of_service'),
+      '# Heading{enter}{enter}**bold** text'
+    )
+    await user.click(screen.getByTestId('legal-preview-button-terms_of_service'))
+
+    const dialog = await screen.findByTestId('legal-preview-dialog-terms_of_service')
+    expect(dialog).toBeInTheDocument()
+    // The Markdown renderer turns "# Heading" into an <h1> and "**bold**" into <strong>.
+    expect(dialog.querySelector('h1')).not.toBeNull()
+    expect(dialog.querySelector('strong')).not.toBeNull()
+  })
+
+  it('seeds the edit form from an existing draft', async () => {
+    setupAdminAgreementsHandler({
+      agreements: [makeAgreementView({ source: 'default' })],
+    })
+    server.use(
+      http.get(
+        `http://localhost:3000/api/legal/admin/${realmId}/agreements/terms_of_service/draft`,
+        () =>
+          HttpResponse.json({
+            agreement_type: 'terms_of_service',
+            content: { en: 'resumed draft body' },
+            version_label: 'resumed label',
+            updated_at: '2026-07-01T00:00:00Z',
+          })
+      )
+    )
+
+    renderWithProviders(<LegalAgreementTab realmId={realmId} canManage />)
+
+    // Wait for the draft to load and seed the form. The discard button only
+    // renders when a draft is present, so it doubles as a load gate.
+    await screen.findByTestId('legal-discard-draft-button-terms_of_service')
+    expect(
+      (screen.getByTestId('legal-version-label-input-terms_of_service') as HTMLInputElement).value
+    ).toBe('resumed label')
+    expect(
+      (screen.getByTestId('legal-content-en-input-terms_of_service') as HTMLTextAreaElement).value
+    ).toBe('resumed draft body')
+  })
+
+  it('discards a draft after confirmation', async () => {
+    let discardCalled = false
+
+    server.use(
+      http.get(`http://localhost:3000/api/legal/admin/${realmId}/agreements`, () =>
+        HttpResponse.json({
+          agreements: [makeAgreementView({ source: 'default' })],
+        })
+      ),
+      http.get(
+        `http://localhost:3000/api/legal/admin/${realmId}/agreements/terms_of_service/draft`,
+        () =>
+          HttpResponse.json({
+            agreement_type: 'terms_of_service',
+            content: { en: 'doomed draft' },
+            version_label: null,
+            updated_at: '2026-07-01T00:00:00Z',
+          })
+      ),
+      http.delete(
+        `http://localhost:3000/api/legal/admin/${realmId}/agreements/terms_of_service/draft`,
+        () => {
+          discardCalled = true
+          return new HttpResponse(null, { status: 204 })
+        }
+      )
+    )
+
+    renderWithProviders(<LegalAgreementTab realmId={realmId} canManage />)
+    const user = userEvent.setup()
+
+    await screen.findByTestId('legal-discard-draft-button-terms_of_service')
+    await user.click(screen.getByTestId('legal-discard-draft-button-terms_of_service'))
+
+    expect(
+      await screen.findByTestId('legal-discard-draft-dialog-title-terms_of_service')
+    ).toBeInTheDocument()
+    await user.click(screen.getByTestId('legal-discard-draft-confirm-terms_of_service'))
+
+    await waitFor(() => {
+      expect(discardCalled).toBe(true)
     })
   })
 
@@ -263,5 +458,67 @@ describe('LegalAgreementTab', () => {
     await waitFor(() => {
       expect(listCalls).toBeGreaterThanOrEqual(2)
     })
+  })
+
+  it('disables the preview button when the content textarea is empty', async () => {
+    setupAdminAgreementsHandler({
+      agreements: [makeAgreementView({ source: 'default' })],
+    })
+
+    renderWithProviders(<LegalAgreementTab realmId={realmId} canManage />)
+
+    const previewButton = await screen.findByTestId('legal-preview-button-terms_of_service')
+    // No content typed yet → preview is disabled (the dialog would only show
+    // "Nothing to preview yet." otherwise).
+    expect(previewButton).toBeDisabled()
+  })
+
+  it('opens a version detail dialog with the past body when a history row View is clicked', async () => {
+    let versionCalls = 0
+
+    setupAdminAgreementsHandler({
+      agreements: [
+        makeAgreementView({
+          agreement_type: 'terms_of_service',
+          source: 'custom',
+          history: [
+            makeVersionSummary({
+              version_id: 'tos-v1',
+              version_no: 1,
+              source: 'default',
+            }),
+          ],
+        }),
+      ],
+    })
+    server.use(
+      http.get(
+        `http://localhost:3000/api/legal/admin/${realmId}/agreements/versions/tos-v1`,
+        () => {
+          versionCalls += 1
+          return HttpResponse.json({
+            agreement_type: 'terms_of_service',
+            version_no: 1,
+            version_label: null,
+            content: { en: '# Old heading{enter}{enter}legacy body' },
+            effective_at: '2026-06-30T00:00:00Z',
+          })
+        }
+      )
+    )
+
+    renderWithProviders(<LegalAgreementTab realmId={realmId} canManage={false} />)
+    const user = userEvent.setup()
+
+    await screen.findByTestId('legal-history-row-terms_of_service-tos-v1')
+    await user.click(screen.getByTestId('legal-history-view-button-terms_of_service-tos-v1'))
+
+    // The version body is fetched on demand and rendered as Markdown.
+    const dialog = await screen.findByTestId('legal-version-dialog-terms_of_service')
+    expect(dialog).toBeInTheDocument()
+    await waitFor(() => {
+      expect(dialog.querySelector('h1')).not.toBeNull()
+    })
+    expect(versionCalls).toBe(1)
   })
 })

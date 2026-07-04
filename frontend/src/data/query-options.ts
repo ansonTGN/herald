@@ -53,6 +53,11 @@ import {
   adminListAgreements,
   adminPublishCustom,
   adminRevertToDefault,
+  adminGetDraft,
+  adminSaveDraft,
+  adminPublishFromDraft,
+  adminDiscardDraft,
+  adminGetVersion,
 } from '@/lib/api-generated'
 import { handleApiResponse } from '@/lib/api-utils'
 import type {
@@ -76,6 +81,8 @@ import type {
   DeleteAccountRequest,
   PublishCustomRequest,
   PublishVersionResponse,
+  LegalAgreementDraftResponse,
+  SaveDraftRequest,
 } from '@/lib/api-generated'
 import type {
   HistoryFilters,
@@ -258,6 +265,10 @@ export const queryKeys = {
     [QUERY_KEYS.LEGAL_AGREEMENT, realmId, agreementType, locale] as const,
   consentStatus: (realmId: string) => [QUERY_KEYS.CONSENT_STATUS, realmId] as const,
   legalAdminAgreements: (realmId: string) => [QUERY_KEYS.LEGAL_ADMIN_AGREEMENTS, realmId] as const,
+  legalDraft: (realmId: string, agreementType: string) =>
+    [QUERY_KEYS.LEGAL_DRAFT, realmId, agreementType] as const,
+  legalVersion: (realmId: string, versionId: string) =>
+    [QUERY_KEYS.LEGAL_AGREEMENT, realmId, versionId] as const,
 }
 
 // ==================== Public Config ====================
@@ -1274,6 +1285,18 @@ export const legalAdminAgreementsQueryOptions = (realmId: string) =>
     staleTime: STALE_TIME_2_MIN,
   })
 
+/// Past-version detail for the admin "view version" dialog. Lazily fetched on
+/// demand (the history list only carries summaries; the full body is pulled
+/// when an admin opens a specific version). Callers pass `enabled` to gate the
+/// fetch until a version is selected.
+export const legalVersionQueryOptions = (realmId: string, versionId: string) =>
+  queryOptions({
+    queryKey: queryKeys.legalVersion(realmId, versionId),
+    queryFn: async () => handleApiResponse(await adminGetVersion({ path: { realmId, versionId } })),
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_5_MIN,
+  })
+
 export const recordConsentMutation = async (
   realmId: string,
   data: RecordConsentRequest
@@ -1305,6 +1328,62 @@ export const revertToDefaultAgreementMutation = async (
   agreementType: string
 ): Promise<PublishVersionResponse> => {
   const response = await adminRevertToDefault({ path: { realmId, agreementType } })
+  if (response.error) throw response.error
+  return response.data as PublishVersionResponse
+}
+
+/// Draft query: returns the staged draft, or `null` when none exists (a 404
+/// from the backend — "no draft saved for this type" — is treated as the
+/// normal "no draft yet" state, not an error).
+///
+/// The 404 is folded to `null` inside `queryFn`, so it never reaches `retry`.
+/// Transient errors (500, network) should still get the standard one-shot retry
+/// — a flake must not present as "no draft" and silently blank the admin form.
+export const legalDraftQueryOptions = (realmId: string, agreementType: string) =>
+  queryOptions({
+    queryKey: queryKeys.legalDraft(realmId, agreementType),
+    queryFn: async () => {
+      const response = await adminGetDraft({ path: { realmId, agreementType } })
+      // A 404 ("no draft saved for this type") is the normal "no draft yet"
+      // state, not an error. Inspect the raw response error's status before
+      // `handleApiResponse` would wrap it as a plain Error (which loses the
+      // status code). Any other error is surfaced normally.
+      const err = response.error as { status?: number } | undefined
+      if (err?.status === 404) return null
+      return handleApiResponse(response) as LegalAgreementDraftResponse
+    },
+    retry: clientErrorRetry,
+    staleTime: STALE_TIME_2_MIN,
+  })
+
+export const saveDraftMutation = async (
+  realmId: string,
+  agreementType: string,
+  data: SaveDraftRequest
+): Promise<LegalAgreementDraftResponse> => {
+  const response = await adminSaveDraft({ path: { realmId, agreementType }, body: data })
+  if (response.error) throw response.error
+  return response.data as LegalAgreementDraftResponse
+}
+
+export const discardDraftMutation = async (
+  realmId: string,
+  agreementType: string
+): Promise<void> => {
+  const response = await adminDiscardDraft({ path: { realmId, agreementType } })
+  if (response.error) throw response.error
+}
+
+/// Publish the staged draft. `versionLabelOverride` optionally replaces the
+/// draft's label for this publish only; when omitted the draft's stored label
+/// is used. Returns the newly published version identifiers.
+export const publishFromDraftMutation = async (
+  realmId: string,
+  agreementType: string,
+  versionLabelOverride?: string | null
+): Promise<PublishVersionResponse> => {
+  const body = versionLabelOverride !== undefined ? { version_label: versionLabelOverride } : {}
+  const response = await adminPublishFromDraft({ path: { realmId, agreementType }, body })
   if (response.error) throw response.error
   return response.data as PublishVersionResponse
 }

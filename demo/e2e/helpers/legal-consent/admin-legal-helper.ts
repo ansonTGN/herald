@@ -49,7 +49,13 @@ export class AdminLegalHelper extends BasePage {
   }
 
   /**
-   * Publish a custom agreement version and wait for the version number to increase.
+   * Publish a custom agreement version via the draft flow: fill the form,
+   * Save Draft (PUT .../draft), then Publish (POST .../publish). Waits for the
+   * version number to increase and the source badge to flip to custom.
+   *
+   * The admin UI publishes only from a saved draft — there is no "publish
+   * directly with content" entry. Saving the draft is a separate, non-binding
+   * step that lets the admin preview before committing.
    */
   async publishCustomAgreement(
     agreementType: AgreementType,
@@ -64,11 +70,24 @@ export class AdminLegalHelper extends BasePage {
     }
     await this.fillField(card.locator(SELECTORS.legalConsent.legalContentEnInput(agreementType)), contentEn)
 
+    // Step 1: Save the draft (PUT .../draft).
+    const saveDraftResponsePromise = this.page.waitForResponse(
+      response =>
+        response.url().includes(`/api/legal/admin/`) &&
+        response.url().includes(`/agreements/${agreementType}/draft`) &&
+        response.request().method() === 'PUT',
+      { timeout: 10000 }
+    )
+    await this.smartClick(card.locator(SELECTORS.legalConsent.legalSaveDraftButton(agreementType)))
+    const saveDraftResponse = await saveDraftResponsePromise
+    expect(saveDraftResponse.ok()).toBe(true)
+
+    // Step 2: Publish from the saved draft (POST .../publish).
     const publishResponsePromise = this.page.waitForResponse(
       response =>
         response.url().includes(`/api/legal/admin/`) &&
-        response.url().includes(`/agreements/${agreementType}`) &&
-        response.request().method() === 'PUT',
+        response.url().includes(`/agreements/${agreementType}/publish`) &&
+        response.request().method() === 'POST',
       { timeout: 10000 }
     )
     const publishButton = card.locator(SELECTORS.legalConsent.legalPublishButton(agreementType))
@@ -79,6 +98,52 @@ export class AdminLegalHelper extends BasePage {
     await expect(
       card.locator(SELECTORS.legalConsent.sourceBadge('custom')).first()
     ).toBeVisible({ timeout: 15000 })
+  }
+
+  /**
+   * Save the form as a draft WITHOUT publishing, and assert the published
+   * version is unchanged. This is the "draft does not affect the live
+   * agreement" invariant (US-RA-019 extension).
+   */
+  async saveDraftWithoutPublishing(
+    agreementType: AgreementType,
+    contentEn: string,
+    versionLabel?: string
+  ): Promise<void> {
+    const card = this.agreementCard(agreementType)
+    await expect(card).toBeVisible()
+    const beforeVersion = await this.getCurrentVersion(agreementType)
+
+    if (versionLabel !== undefined) {
+      await this.fillField(card.locator(SELECTORS.legalConsent.legalVersionLabelInput(agreementType)), versionLabel)
+    }
+    await this.fillField(card.locator(SELECTORS.legalConsent.legalContentEnInput(agreementType)), contentEn)
+
+    const saveDraftResponsePromise = this.page.waitForResponse(
+      response =>
+        response.url().includes(`/api/legal/admin/`) &&
+        response.url().includes(`/agreements/${agreementType}/draft`) &&
+        response.request().method() === 'PUT',
+      { timeout: 10000 }
+    )
+    await this.smartClick(card.locator(SELECTORS.legalConsent.legalSaveDraftButton(agreementType)))
+    const saveDraftResponse = await saveDraftResponsePromise
+    expect(saveDraftResponse.ok()).toBe(true)
+
+    // The published version must not move when only a draft is saved.
+    const afterVersion = await this.getCurrentVersion(agreementType)
+    expect(afterVersion).toBe(beforeVersion)
+  }
+
+  /**
+   * Open the Markdown preview dialog for the agreement and assert it renders.
+   */
+  async openPreview(agreementType: AgreementType): Promise<void> {
+    const card = this.agreementCard(agreementType)
+    await this.smartClick(card.locator(SELECTORS.legalConsent.legalPreviewButton(agreementType)))
+    await expect(this.page.locator(SELECTORS.legalConsent.legalPreviewDialog(agreementType))).toBeVisible({
+      timeout: 5000,
+    })
   }
 
   /**

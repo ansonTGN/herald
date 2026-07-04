@@ -395,7 +395,7 @@ export function InvoiceFormPage({ mode, realmId, invoice }: InvoiceFormPageProps
                     onChange={(e) => field.handleChange(e.target.value || null)}
                     placeholder={m['billing.invoice_notes_placeholder']()}
                     rows={3}
-                    className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                    className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-placeholder focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:border-transparent disabled:bg-muted disabled:text-muted-foreground"
                   />
                   {(field.state.meta.isTouched || form.state.isSubmitted) &&
                     field.state.meta.errors.length > 0 && (
@@ -570,7 +570,7 @@ function LineItemRow({
                     value={qtyField.state.value ?? ''}
                     onBlur={qtyField.handleBlur}
                     onChange={(e) => qtyField.handleChange(e.target.value)}
-                    placeholder="1.0"
+                    placeholder={m['billing.invoice_line_item_quantity_placeholder']()}
                     className="h-8 text-sm"
                   />
                   {(qtyField.state.meta.isTouched || form.state.isSubmitted) &&
@@ -593,7 +593,7 @@ function LineItemRow({
                     value={priceField.state.value ?? ''}
                     onBlur={priceField.handleBlur}
                     onChange={(e) => priceField.handleChange(e.target.value)}
-                    placeholder="0.00"
+                    placeholder={m['billing.invoice_line_item_unit_price_placeholder']()}
                     className="h-8 text-sm"
                   />
                   {(priceField.state.meta.isTouched || form.state.isSubmitted) &&

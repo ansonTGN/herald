@@ -7,10 +7,15 @@ import {
   legalAgreementQueryOptions,
   consentStatusQueryOptions,
   legalAdminAgreementsQueryOptions,
+  legalVersionQueryOptions,
+  legalDraftQueryOptions,
   recordConsentMutation,
   deleteAccountMutation,
   publishCustomAgreementMutation,
   revertToDefaultAgreementMutation,
+  saveDraftMutation,
+  discardDraftMutation,
+  publishFromDraftMutation,
 } from '@/data/query-options'
 import { QUERY_KEYS } from '@/lib/constants'
 import type { LegalAgreementSummary } from '@/lib/api-generated'
@@ -25,8 +30,13 @@ vi.mock('@/lib/api-generated/sdk.gen', async (importOriginal) => {
     recordConsent: vi.fn(),
     deleteAccount: vi.fn(),
     adminListAgreements: vi.fn(),
+    adminGetVersion: vi.fn(),
     adminPublishCustom: vi.fn(),
     adminRevertToDefault: vi.fn(),
+    adminGetDraft: vi.fn(),
+    adminSaveDraft: vi.fn(),
+    adminPublishFromDraft: vi.fn(),
+    adminDiscardDraft: vi.fn(),
   }
 })
 
@@ -37,8 +47,13 @@ import {
   recordConsent,
   deleteAccount,
   adminListAgreements,
+  adminGetVersion,
   adminPublishCustom,
   adminRevertToDefault,
+  adminGetDraft,
+  adminSaveDraft,
+  adminPublishFromDraft,
+  adminDiscardDraft,
 } from '@/lib/api-generated/sdk.gen'
 
 function makeAgreementSummary(overrides?: Partial<LegalAgreementSummary>): LegalAgreementSummary {
@@ -82,6 +97,24 @@ describe('legal query keys', () => {
   it('isolates admin agreements by realm', () => {
     const key = queryKeys.legalAdminAgreements('realm-1')
     expect(key).toEqual([QUERY_KEYS.LEGAL_ADMIN_AGREEMENTS, 'realm-1'])
+  })
+
+  it('isolates draft by realm and agreement type', () => {
+    const keyTos = queryKeys.legalDraft('realm-1', 'terms_of_service')
+    const keyPrivacy = queryKeys.legalDraft('realm-1', 'privacy_policy')
+    const keyOtherRealm = queryKeys.legalDraft('realm-2', 'terms_of_service')
+    expect(keyTos).not.toEqual(keyPrivacy)
+    expect(keyTos).not.toEqual(keyOtherRealm)
+    expect(keyTos[0]).toBe(QUERY_KEYS.LEGAL_DRAFT)
+  })
+
+  it('isolates past version by realm and version id', () => {
+    const keyV1 = queryKeys.legalVersion('realm-1', 'v1')
+    const keyV2 = queryKeys.legalVersion('realm-1', 'v2')
+    const keyOtherRealm = queryKeys.legalVersion('realm-2', 'v1')
+    expect(keyV1).not.toEqual(keyV2)
+    expect(keyV1).not.toEqual(keyOtherRealm)
+    expect(keyV1[0]).toBe(QUERY_KEYS.LEGAL_AGREEMENT)
   })
 })
 
@@ -259,6 +292,49 @@ describe('legalAdminAgreementsQueryOptions', () => {
   })
 })
 
+describe('legalVersionQueryOptions', () => {
+  const versionResponse = {
+    agreement_type: 'terms_of_service' as const,
+    version_no: 2,
+    version_label: 'Summer update',
+    content: { en: '# Terms body' },
+    effective_at: '2026-07-01T00:00:00Z',
+  }
+
+  beforeEach(() => {
+    vi.mocked(adminGetVersion).mockResolvedValue({
+      data: versionResponse,
+      error: undefined,
+    })
+  })
+
+  it('calls adminGetVersion with correct path params', async () => {
+    const options = legalVersionQueryOptions('realm-1', 'tos-v2')
+    await options.queryFn()
+
+    expect(adminGetVersion).toHaveBeenCalledWith({
+      path: { realmId: 'realm-1', versionId: 'tos-v2' },
+    })
+  })
+
+  it('returns the version detail with full body', async () => {
+    const options = legalVersionQueryOptions('realm-1', 'tos-v2')
+    const result = await options.queryFn()
+
+    expect(result).toEqual(versionResponse)
+  })
+
+  it('rethrows when the SDK returns an error', async () => {
+    vi.mocked(adminGetVersion).mockResolvedValue({
+      data: undefined,
+      error: { status: 404, message: 'Agreement version not found' } as never,
+    })
+
+    const options = legalVersionQueryOptions('realm-1', 'missing')
+    await expect(options.queryFn()).rejects.toBeDefined()
+  })
+})
+
 describe('recordConsentMutation', () => {
   beforeEach(() => {
     vi.mocked(recordConsent).mockResolvedValue({
@@ -365,5 +441,157 @@ describe('revertToDefaultAgreementMutation', () => {
       path: { realmId: 'realm-1', agreementType: 'terms_of_service' },
     })
     expect(result).toEqual(revertResponse)
+  })
+})
+
+describe('legalDraftQueryOptions', () => {
+  const draftResponse = {
+    agreement_type: 'terms_of_service' as const,
+    content: { en: 'draft body' },
+    version_label: 'wip',
+    updated_at: '2026-07-01T00:00:00Z',
+  }
+
+  it('calls adminGetDraft and returns the staged draft', async () => {
+    vi.mocked(adminGetDraft).mockResolvedValue({ data: draftResponse, error: undefined })
+    const options = legalDraftQueryOptions('realm-1', 'terms_of_service')
+    const result = await options.queryFn()
+
+    expect(adminGetDraft).toHaveBeenCalledWith({
+      path: { realmId: 'realm-1', agreementType: 'terms_of_service' },
+    })
+    expect(result).toEqual(draftResponse)
+  })
+
+  it('collapses a 404 (no draft) to null instead of erroring', async () => {
+    vi.mocked(adminGetDraft).mockResolvedValue({
+      data: undefined,
+      error: { message: 'Not found', status: 404 },
+    })
+    const options = legalDraftQueryOptions('realm-1', 'terms_of_service')
+    await expect(options.queryFn()).resolves.toBeNull()
+  })
+
+  it('retries transient (non-404) errors so a flake never blanks the form', async () => {
+    // WHY: a 500/network flake must not be misread as "no draft" — that would
+    // silently discard an admin's in-progress edit. The retry function must
+    // return true for such errors so react-query gets a second shot.
+    vi.mocked(adminGetDraft).mockResolvedValue({
+      data: undefined,
+      error: { message: 'Server error', status: 500 },
+    })
+    const options = legalDraftQueryOptions('realm-1', 'terms_of_service')
+    const retry = options.retry as (failureCount: number, error: unknown) => boolean
+    expect(retry(0, new Error('Server error'))).toBe(true)
+  })
+
+  it('rethrows non-404 errors', async () => {
+    vi.mocked(adminGetDraft).mockResolvedValue({
+      data: undefined,
+      error: { message: 'Forbidden', status: 403 },
+    })
+    const options = legalDraftQueryOptions('realm-1', 'terms_of_service')
+    await expect(options.queryFn()).rejects.toThrow('Forbidden')
+  })
+})
+
+describe('saveDraftMutation', () => {
+  const draftResponse = {
+    agreement_type: 'terms_of_service' as const,
+    content: { en: 'draft body' },
+    version_label: 'wip',
+    updated_at: '2026-07-01T00:00:00Z',
+  }
+
+  beforeEach(() => {
+    vi.mocked(adminSaveDraft).mockResolvedValue({ data: draftResponse, error: undefined })
+  })
+
+  it('calls adminSaveDraft with path and body', async () => {
+    const body = { content: { en: 'draft body' }, version_label: 'wip' }
+    const result = await saveDraftMutation('realm-1', 'terms_of_service', body)
+
+    expect(adminSaveDraft).toHaveBeenCalledWith({
+      path: { realmId: 'realm-1', agreementType: 'terms_of_service' },
+      body,
+    })
+    expect(result).toEqual(draftResponse)
+  })
+
+  it('throws when API returns error', async () => {
+    vi.mocked(adminSaveDraft).mockResolvedValue({
+      data: undefined,
+      error: { message: 'Forbidden', status: 403 },
+    })
+    await expect(
+      saveDraftMutation('realm-1', 'terms_of_service', { content: { en: 'x' } })
+    ).rejects.toEqual({ message: 'Forbidden', status: 403 })
+  })
+})
+
+describe('discardDraftMutation', () => {
+  beforeEach(() => {
+    vi.mocked(adminDiscardDraft).mockResolvedValue({ data: undefined, error: undefined })
+  })
+
+  it('calls adminDiscardDraft with path params', async () => {
+    await discardDraftMutation('realm-1', 'terms_of_service')
+
+    expect(adminDiscardDraft).toHaveBeenCalledWith({
+      path: { realmId: 'realm-1', agreementType: 'terms_of_service' },
+    })
+  })
+
+  it('throws when API returns error', async () => {
+    vi.mocked(adminDiscardDraft).mockResolvedValue({
+      data: undefined,
+      error: { message: 'Forbidden', status: 403 },
+    })
+    await expect(discardDraftMutation('realm-1', 'terms_of_service')).rejects.toEqual({
+      message: 'Forbidden',
+      status: 403,
+    })
+  })
+})
+
+describe('publishFromDraftMutation', () => {
+  const publishResponse = {
+    version_id: 'version-new',
+    version_no: 2,
+    effective_at: '2026-07-01T00:00:00Z',
+  }
+
+  beforeEach(() => {
+    vi.mocked(adminPublishFromDraft).mockResolvedValue({ data: publishResponse, error: undefined })
+  })
+
+  it('calls adminPublishFromDraft with empty body when no override given', async () => {
+    const result = await publishFromDraftMutation('realm-1', 'terms_of_service')
+
+    expect(adminPublishFromDraft).toHaveBeenCalledWith({
+      path: { realmId: 'realm-1', agreementType: 'terms_of_service' },
+      body: {},
+    })
+    expect(result).toEqual(publishResponse)
+  })
+
+  it('passes version_label override in the body when provided', async () => {
+    await publishFromDraftMutation('realm-1', 'terms_of_service', 'final label')
+
+    expect(adminPublishFromDraft).toHaveBeenCalledWith({
+      path: { realmId: 'realm-1', agreementType: 'terms_of_service' },
+      body: { version_label: 'final label' },
+    })
+  })
+
+  it('throws when API returns error', async () => {
+    vi.mocked(adminPublishFromDraft).mockResolvedValue({
+      data: undefined,
+      error: { message: 'No draft', status: 404 },
+    })
+    await expect(publishFromDraftMutation('realm-1', 'terms_of_service')).rejects.toEqual({
+      message: 'No draft',
+      status: 404,
+    })
   })
 })

@@ -318,4 +318,26 @@ test.describe('[Realm Admin] Legal Agreement Management Demo Tests', () => {
       })
     })
   })
+
+  test('Scenario 4: Saving a draft does not change the live agreement', async ({
+    page,
+    adminLegalHelper,
+  }) => {
+    // WHY: drafts are staged in a separate table and must never affect the
+    // effective version or trigger user reconsent until explicitly published.
+    // This scenario saves a draft and asserts the published version_no is
+    // unchanged, end-to-end through the admin UI.
+    await adminLegalHelper.gotoLegalTab(realmId)
+    await adminLegalHelper.saveDraftWithoutPublishing(
+      'terms_of_service',
+      'Unpublished draft body — must not go live (EN).',
+      'admin-legal-demo-draft-only'
+    )
+
+    await test.step('Preview renders the staged draft without publishing', async () => {
+      await adminLegalHelper.openPreview('terms_of_service')
+      // Closing the dialog returns to the tab; the version is still unchanged.
+      await page.keyboard.press('Escape')
+    })
+  })
 })

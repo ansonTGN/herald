@@ -12,6 +12,8 @@ pub enum LegalError {
     StaleVersion,
     #[error("no access to agreements in this realm")]
     Forbidden,
+    #[error("no draft saved for this agreement type")]
+    DraftNotFound,
 }
 
 impl From<LegalError> for CoreError {
@@ -22,6 +24,10 @@ impl From<LegalError> for CoreError {
             // current effective version before retrying).
             LegalError::StaleVersion => CoreError::Conflict(err.to_string()),
             LegalError::Forbidden => CoreError::Forbidden(err.to_string()),
+            // Publish-from-draft with no staged draft → 404 (caller must save a
+            // draft first). Discarding a missing draft is idempotent and does
+            // not surface this error.
+            LegalError::DraftNotFound => CoreError::NotFound,
         }
     }
 }

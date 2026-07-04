@@ -88,8 +88,13 @@ pub struct HealthCheckResponse {
         legal::get_consent_status,
         legal::record_consent,
         legal::admin_list_agreements,
+        legal::admin_get_version,
         legal::admin_publish_custom,
         legal::admin_revert_to_default,
+        legal::admin_get_draft,
+        legal::admin_save_draft,
+        legal::admin_publish_from_draft,
+        legal::admin_discard_draft,
         health_check,
     ),
     components(
@@ -130,10 +135,14 @@ pub struct HealthCheckResponse {
             legal::RecordConsentRequest,
             legal::RecordConsentItem,
             legal::LegalAgreementVersionSummary,
+            legal::LegalAgreementVersionDetailResponse,
             legal::AdminAgreementView,
             legal::AdminAgreementsResponse,
             legal::PublishCustomRequest,
             legal::PublishVersionResponse,
+            legal::LegalAgreementDraftResponse,
+            legal::SaveDraftRequest,
+            legal::PublishFromDraftRequest,
             herald_core::domain::legal::entities::AgreementType,
             herald_core::domain::legal::entities::AgreementSource,
             HealthCheckResponse,
@@ -461,12 +470,29 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
             Router::new()
                 .route("/agreements", get(legal::admin_list_agreements))
                 .route(
+                    "/agreements/versions/{versionId}",
+                    get(legal::admin_get_version),
+                )
+                .route(
                     "/agreements/{agreementType}",
                     axum::routing::put(legal::admin_publish_custom),
                 )
                 .route(
                     "/agreements/{agreementType}/custom",
                     axum::routing::delete(legal::admin_revert_to_default),
+                )
+                // Draft lifecycle: save/get/discard a staged draft, and publish
+                // from it. The admin UI publishes only through this path (no
+                // "publish without a draft" entry in the UI).
+                .route(
+                    "/agreements/{agreementType}/draft",
+                    get(legal::admin_get_draft)
+                        .put(legal::admin_save_draft)
+                        .delete(legal::admin_discard_draft),
+                )
+                .route(
+                    "/agreements/{agreementType}/publish",
+                    axum::routing::post(legal::admin_publish_from_draft),
                 )
                 .layer(from_fn_with_state((*state).clone(), inject_identity)),
         )

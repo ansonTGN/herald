@@ -78,6 +78,7 @@ export const QUERY_KEYS = {
   LEGAL_AGREEMENTS: 'legal-agreements',
   LEGAL_AGREEMENT: 'legal-agreement',
   LEGAL_ADMIN_AGREEMENTS: 'legal-admin-agreements',
+  LEGAL_DRAFT: 'legal-draft',
   CONSENT_STATUS: 'consent-status',
 } as const
 
