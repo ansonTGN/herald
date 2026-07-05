@@ -1,0 +1,217 @@
+---
+title: Billing Architecture
+description: "Herald's billing system does not keep a local product catalog. Payment providers like Stripe and Creem own Product, Price, Checkout, and the subscription lifecycle; Herald keeps only the minimum data needed for authorization and credit grants."
+---
+
+Herald's billing system does not keep a local product catalog. Payment providers like Stripe and Creem own Product, Price, Checkout, and the subscription lifecycle; Herald keeps only the minimum data needed for authorization and credit grants.
+
+## Who this is for
+
+Developers who need to understand the design of Herald's billing module. It does not cover the hands-on integration steps for any specific provider — for those, see each provider's dedicated guide.
+
+## Old vs. new model
+
+The old model had three layers of local catalog: Product → SubscriptionPlan → Subscription. Admins created products and plans in Herald, configured payment mappings, then assigned them to Client Apps. The problem is that Stripe/Creem also have their own Product/Price/Subscription, and the two catalogs had to be kept in sync by hand — over time they drifted.
+
+The new model hands the commercial catalog to the payment provider. Herald no longer offers CRUD for Product and SubscriptionPlan. Instead, a mapping table (Entitlement Mapping) records "which provider product corresponds to which Herald entitlement."
+
+The credits side changed too. The old credits ledger was "one global balance per user," mixing all credits together. The new model uses Credit Accounts to split credits into multiple isolated pools, settled and consumed per app group. The Credit Account is the common anchor for several concepts: mappings are attached to it, subscriptions are bound to it, and credits are granted into its pools.
+
+## Core concepts
+
+### Credit Account
+
+A Credit Account is the unit of isolation for credits. A Realm can have multiple Credit Accounts, each with an independent balance that does not affect the others.
+
+It solves this problem: a single Realm may run several business lines at once — say, an AI chatbot app and an image-generation app — and their credits must be settled and consumed separately, never mixed. Each Credit Account covers a set of Client Apps; only covered Client Apps can spend credits from this pool.
+
+Fields on each Credit Account:
+
+| Field | Description |
+|------|------|
+| `bucket_key` | Identifier, matches `^[a-z0-9-]{1,64}$`, unique within the Realm |
+| `name` | Display name |
+| `display_order` | Display order |
+| `enabled` | Whether it is enabled. When disabled, it is hidden from new users and cannot be purchased; users who already hold the account can still spend the remaining credits |
+| `receives_registration_credits` | Whether this is the Realm's registration-credits receiving account |
+
+Registration-credits receiving pool: at most one Credit Account per Realm can be flagged `receives_registration_credits`, enforced by a partial unique index `uq_credit_buckets_registration_pool`. Credits granted at user registration, and free periodic credits, both go into this account. If the Realm has no receiving pool configured, these system-granted credits have nowhere to go and are simply not granted — they do not silently fall into some implicit default account. Herald has no concept of a "default Credit Account"; every Credit Account must be explicitly created by an admin.
+
+The Credit Account catalog management API lives under `/api/realms/{realmId}/billing/credit-buckets`, with list, detail, create, update, delete, plus an `overview` endpoint that returns the balance matrix for each Credit Account × each credit type, along with a cross-account total. All of them require the Realm Admin's `points.manage` permission.
+
+A few constraints that fail loudly rather than fail silently:
+
+- The coverage set cannot be empty. Both create and update validate this; an empty set returns 400.
+- Removing a mounted mapping from a Credit Account is rejected with `bucket_orphan_mapping`. To move a mapping, attach it to the target account first.
+- Deleting a Credit Account that still has active subscriptions or a wallet with a balance returns 409 `bucket_in_use`.
+- Changing the coverage set only affects future routing; it does not reclaim already-granted balances.
+
+Credits in a pool come in five types by source. Both the balance page and the admin overview break these down by the five keys. The Credit Account overview matrix and the user balance both expand along these five keys:
+
+| Key | Meaning |
+|------|------|
+| `topup` | Top-up credits (user purchased voluntarily) |
+| `subscription` | Subscription credits (granted with a subscription plan) |
+| `registration` | Registration credits (one-time grant at sign-up) |
+| `free_periodic` | Free periodic credits (auto-granted per period) |
+| `granted` | Granted credits (admin or SDK grant) |
+
+### Entitlement Mapping
+
+An Entitlement Mapping is a table that maps a provider's external product ID to an internal Herald `entitlement_key`, and at the same time anchors it to a Credit Account. It is not a product catalog — it is an allowlist plus a sync cache.
+
+Each mapping includes:
+
+| Field | Description |
+|------|------|
+| `payment_provider` | Provider name (stripe, creem) |
+| `external_product_id` | Product ID on the provider side (e.g. `prod_xxxx`) |
+| `external_price_id` | Price ID on the provider side (Stripe has this; not applicable to Creem) |
+| `entitlement_key` | Internal Herald entitlement identifier (e.g. `pro-plan`) |
+| `bucket_id` | Owning Credit Account. After purchasing this product, credits go into this account's pool |
+| `billing_type` | Billing type: Recurring or OneTime |
+| `points_per_period` | Number of credits granted per period |
+| `grant_on_subscribe` | Whether to grant credits on first subscription |
+| `validity_days` | Credit validity in days |
+| `enabled` | Whether it is enabled. When disabled, webhooks still update the subscription projection, but no credits are granted |
+
+The mapping also carries a copy of display info synced from the provider (`provider_product_info`), read-only, used to show the product's original appearance in the admin console, not used for billing:
+
+| Field | Description |
+|------|------|
+| Product name | The list and grouping use it as the primary label. When missing, falls back to the external product id, then a placeholder — never an empty label |
+| Price | Display respects the provider's unit. Stripe syncs the smallest currency unit as an integer (e.g. 999 means 9.99), converted to the major unit for display; Creem uses the value as-is (a string like `"9.99"`), with no extra divide-by-100. The unit conversion is driven by the provider source and is not shared across providers |
+| Currency | Product currency, follows the sync override |
+| Billing type | recurring / one_time, from the provider |
+| Billing period | Stripe takes `Price.recurring.interval` (day/week/month/year), read-only, no manual input; re-sync uses Stripe's current value. Creem takes its product response's `billing_period` (e.g. `every-month`, mapped to display copy by the frontend); when missing, shows "—", never fabricated |
+| Metadata | Syncs Stripe `Product.metadata` and `Price.metadata` (merchant-defined key/value pairs), read-only display. Creem Product has no native metadata, treated as empty, never fabricated |
+
+Display info is overwritten by the provider's current value on every re-sync; business fields like `entitlement_key`, `points`, `grant` policy, and `quota_windows` are not overwritten by sync.
+
+The billing period (from Stripe) and the quota rolling window (`quota_windows`, e.g. 5 hours / week) are two independent concepts, deliberately decoupled. The billing period decides when Stripe charges and when it fires the renewal webhook; the quota window decides how much quota a user can spend within a rolling window. The two do not need to be equal, to divide evenly, or to align. A long billing period (yearly) can still carry rolling limits (monthly / weekly windows). Quota grants are driven by renewal webhook events, anchored to one entitlement period using the provider-returned `(period_start, period_end)`; the full-period total is never pre-granted, and there is no fixed-calendar-day reset.
+
+Mappings are produced in two ways:
+
+1. **Admin manual sync**: calls the provider's Product API, pulls all products, and auto-creates or updates mappings. Newly created mappings are first bound to this Realm's registration receiving pool; afterwards the admin can move them to another Credit Account.
+2. **Webhook incremental update**: when a payment event fires, info is extracted from the webhook payload to update the cache.
+
+When sync fails, the local cache keeps serving — there is no silent degradation.
+
+### Subscription Projection
+
+A Subscription is a local, read-only copy of the provider's subscription state — it is not a subscription owned by Herald. The SDK and authorization queries read this projection instead of hitting the live provider API.
+
+Projection fields include `realm_id`, `user_id`, `entitlement_key`, `bucket_id`, `status`, `current_period_start/end`, `provider_metadata`, and so on. When a subscription is established, it is bound to the Credit Account that the purchased Entitlement Mapping belonged to at that moment. Later renewals, upgrades, downgrades, cancellations, and refunds all return to the same pool — they never leak into another Credit Account. The old `plan_id`, `tier`, and `billing_period` fields have been removed; when you need that information, derive it from `entitlement_key` or `provider_metadata`.
+
+Subscription statuses: Active, Trialing, PastDue, Canceled, Expired, Paused, Disputed, ScheduledCancel, Incomplete.
+
+The `has_access()` method decides whether a user has access: Active and Trialing return true; the rest return false.
+
+### Payment Attempt
+
+A Payment Attempt is a unified ledger recording every successful payment, covering one-time purchases, subscription first installments, and subscription renewals. Previously, a subscription renewal only updated the subscription period and credits, leaving no record of "this payment happened"; now every successful renewal also writes a successful payment attempt, which serves as the local anchor for external invoices. Every third-party-synced invoice can be traced directly to the payment attempt or subscription it belongs to. Zero-amount periods (100% discount / free tier) produce no renewal payment attempt. Attribution and anomaly detection are detailed in [Invoice Management](billing-invoice).
+
+### Metadata contract
+
+All metadata keys Herald uses share the `herald_` prefix. This metadata is written into the Checkout Session or Subscription and returned verbatim by the provider in webhooks.
+
+Required metadata:
+
+| Key | Description |
+|-----|------|
+| `herald_realm_id` | Realm ID |
+| `herald_client_app_id` | Client App ID |
+| `herald_user_id` | User ID |
+| `herald_entitlement_key` | Entitlement identifier |
+| `herald_billing_kind` | `subscription` or `points_package` |
+
+Checkout creation validates this metadata; if any is missing, creation is rejected. After receiving a webhook event, the entitlement_key is resolved in this order:
+
+1. The `herald_entitlement_key` in the webhook metadata
+2. The local mapping table (looked up by provider + external_product_id)
+3. If neither is found, an error is logged — it is not silently skipped
+
+### Points policy
+
+The source of truth for the points policy is the local Entitlement Mapping in Herald, not the provider's metadata. Stripe's `Product.metadata` and `Price.metadata` flow in with product sync into the display info (Stripe only), read-only on the Herald side — Herald never writes back or edits them. Creem has no native metadata feature, so it must be configured manually in Herald.
+
+The policy is queried by `entitlement_key` and covers: first-subscription grant, renewal grant, cancellation clawback, refund clawback, and upgrade/downgrade handling. Grants and clawbacks both target the subscription's bound Credit Account pool, booked separately under the five credit types above.
+
+Admins can modify the points policy in Herald. What they modify is Herald's business rules — nothing is written back to the provider.
+
+## Data flow
+
+```mermaid
+flowchart LR
+    subgraph Provider
+        CK[Checkout Session]
+        WH[Webhook]
+    end
+
+    subgraph Herald
+        EM[Entitlement Mapping]
+        SP[Subscription Projection]
+        PP[Points Policy]
+        CB[(Credit Account Pool)]
+    end
+
+    subgraph Admin
+        SYNC[Sync Products]
+        BUCKET[Create Credit Account / Set Coverage]
+        CFG[Configure Points Policy]
+    end
+
+    BUCKET --> CB
+    SYNC --> EM
+    EM -. belongs to .-> CB
+    CFG --> PP
+    EM --> CK
+    CK -->| herald_* metadata | WH
+    WH --> SP
+    SP -. bound to .-> CB
+    WH --> PP
+    PP -->| grant/clawback to pool | CB
+```
+
+User payment flow:
+
+1. The frontend calls the Checkout API, passing `entitlement_key` and `payment_provider`
+2. Herald looks up the Entitlement Mapping to find the corresponding external product and its owning Credit Account
+3. Herald calls the provider API to create a Checkout Session, writing the `herald_*` fields into metadata
+4. The user completes payment on the provider's page
+5. The provider sends a Webhook to Herald
+6. Herald parses the entitlement_key from metadata, creates/updates the Subscription Projection, and binds it to the mapping's Credit Account
+7. Herald looks up the points policy by entitlement_key and grants credits into that account's pool, or claws them back from it
+
+## How SDK spend is routed
+
+When a third-party app spends credits through the SDK, it passes only the Client App and the amount — it knows nothing about Credit Accounts. Herald finds every Credit Account pool that covers this Client App and debits across them, nearest-expiry first, atomically, never overdrawing. If no pool covers it, or the covered pools' combined balance is insufficient, the spend is rejected with a clear insufficient-balance error. A Credit Account that does not cover this Client App will never be debited.
+
+## Supported providers
+
+| Provider | Commercial catalog | Subscriptions | One-time purchase (credit packs) | Metadata support |
+|--------|---------|------|---------------------|--------------|
+| Stripe | Product / Price API | Checkout Session + Subscription | Payment Intent | Supported on Product/Price/Checkout/Subscription |
+| Creem | Product API | Checkout | Checkout | Checkout metadata, returned in webhook |
+
+Stripe and Creem are initiator-style platforms; the payment process is unified through PaymentAttempt.
+
+## Removed features
+
+The following features were removed in the June 2026 refactor and no longer exist:
+
+- Local Product CRUD (admin page and API)
+- Local SubscriptionPlan CRUD (admin page and API)
+- Plan → Payment Provider Mapping configuration
+- Plan → Client App assignment
+- Join tables: `subscription_plan_payment_provider`, `client_app_subscription_plan`, `points_plan_configs`
+- The "unanchored mapping → not purchasable" intermediate state: `bucket_id` is NOT NULL on mappings, subscriptions, and payment attempts. A product either belongs to some Credit Account or is not purchasable — there is no dangling state.
+
+If you see references to "plan_id", "Product management", or "Subscription Plan" in code or docs, they are obsolete.
+
+## Related docs
+
+- [Credit Account user stories](https://github.com/timzaak/cas-2/blob/main/docs/user-stories/billing/credit-bucket.md) — acceptance scenarios for the Credit Account catalog, coverage sets, purchase-to-pool, cross-pool consumption, and the subscription lifecycle
+- [Stripe integration guide](billing-stripe-payment) — Stripe provider configuration and webhook handling
+- [Creem integration guide](billing-creem-payment) — Creem provider configuration and webhook handling
+- [Invoice management](billing-invoice) — Invoice creation, issuance, and PDF generation

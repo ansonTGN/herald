@@ -1,0 +1,105 @@
+---
+title: Getting Started
+description: "How to configure multi-window rolling quotas for subscription plans and free users."
+---
+
+This chapter shows how to configure multi-window rolling quotas for subscription plans and free users.
+
+## Configure subscription quotas (Entitlement Mapping)
+
+Subscription credit policy hangs off `provider_entitlement_mappings` and is configured either through the Entitlement Mappings page in the admin console or via `PUT /api/bill/{realmId}/entitlement-mappings/batch`.
+
+### Admin console
+
+1. Log in as Realm Admin and go to `/{realmId}/manage/billing/entitlement-mappings`
+2. Pick the target product from the left-hand product list
+3. Find the multi-window quota editor in the advanced config of the price row
+4. Add window rows and save
+
+### API request example
+
+The batch update endpoint at `backend/api-billing/src/entitlement_mapping_handlers.rs` accepts a body like:
+
+```json
+{
+  "paymentProvider": "stripe",
+  "externalProductId": "prod_xxx",
+  "updates": [
+    {
+      "mappingId": "550e8400-e29b-41d4-a716-446655440000",
+      "entitlementKey": "pro-plan",
+      "billingType": "recurring",
+      "billingPeriod": "month",
+      "pointsPerPeriod": 1000,
+      "grantPeriodType": "monthly",
+      "validityDays": 30,
+      "grantOnSubscribe": true,
+      "maxPeriods": 10,
+      "enabled": true,
+      "quotaWindows": [
+        { "windowSeconds": 18000, "limit": 500 },
+        { "windowSeconds": 604800, "limit": 5000 },
+        { "windowSeconds": 2592000, "limit": 20000 }
+      ]
+    }
+  ]
+}
+```
+
+Field reference:
+
+| Field | Constraint | Description |
+|---|---|---|
+| `windowSeconds` | Must be greater than 0 | Sliding window length, in seconds |
+| `limit` | Must be greater than or equal to 0 | Quota cap for this window |
+| `quotaWindows` | At most 8 rows | Exceeding this is rejected with 400 |
+
+The configuration only affects subsequently granted quota entitlements; already-active entitlements are unaffected (the `quota_windows` snapshot is written into `points_quota_entitlements` when an entitlement is granted).
+
+### Active-subscription protection
+
+If a batch update would flip a mapping that still has active subscriptions from `enabled=true` to `enabled=false`, the backend rolls back the whole transaction and returns 409; the response body includes the count of affected active subscriptions. The frontend pops a `ProtectedPriceConfirmDialog` to surface this.
+
+## Configure the Realm default free-period quota
+
+The periodic quota a free user gets at registration is controlled by the Realm default config, at `/{realmId}/manage/points/default-config`, backed by `GET/PUT /api/points/{realmId}/default-config` in `backend/api-points/src/realm_configs.rs`.
+
+### Admin console
+
+1. Log in as Realm Admin and go to `/{realmId}/manage/points/default-config`
+2. Find the "free-period multi-window quota" editor
+3. Add window rows and save
+
+### API request example
+
+```json
+PUT /api/points/{realmId}/default-config
+{
+  "registrationBonusPoints": 1000,
+  "freePeriodicPointsAmount": 50,
+  "freePeriodicGrantPeriodType": "daily",
+  "freePeriodicValidityDays": 1,
+  "freePeriodicQuotaWindows": [
+    { "windowSeconds": 86400, "limit": 50 },
+    { "windowSeconds": 604800, "limit": 200 }
+  ]
+}
+```
+
+`freePeriodicQuotaWindows` semantics:
+
+- `null`: leave the stored value untouched (PUT is a partial update)
+- `[]`: clear the window configuration
+- `[{windowSeconds, limit}]`: replace with the new window definitions
+
+Validation matches the Entitlement Mapping rules: `windowSeconds` greater than 0, `limit` greater than or equal to 0, at most 8 rows.
+
+### Registration bonus credits
+
+`registrationBonusPoints` controls the one-time `registration_credit` a new user gets at registration, which is permanent. This field sits in its own area of the same config page as the free-period quota.
+
+## Verify the configuration took effect
+
+1. After a new user registers or a new subscription is paid, visit `/{realmId}/user/points`
+2. The `PointsUsageDashboard` on the page should show, per window row, the remaining/limit/used/recovery time
+3. If no window rows appear, check whether the corresponding mapping or Realm default has `quotaWindows` configured, and whether the user has actually been granted the quota entitlement

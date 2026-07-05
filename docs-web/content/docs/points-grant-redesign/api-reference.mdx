@@ -1,0 +1,259 @@
+---
+title: API Reference
+description: "Base URL, auth, and global error codes follow Herald's existing conventions. This chapter lists only the points-grant-redesign endpoints and fields."
+---
+
+Base URL, auth, and global error codes follow Herald's existing conventions. This chapter lists only the points-grant-redesign-related endpoints and fields.
+
+## Consume credits
+
+### POST `/api/ext/points/{realmId}/consume`
+
+The SDK / third-party app consumes credits via an API Key. The request/response contract is unchanged; internally it coordinates as "window quota first, overflow to pool".
+
+**Auth**: `X-API-Key` header, ThirdParty identity, and the API Key must be scoped to the `client_app_id`.
+
+**Rate limit**: 100/min at the realm level, 20/min at the user level.
+
+**Request body** (`backend/api-ext/src/points.rs`):
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `userId` | string | yes | Target user ID |
+| `clientAppId` | string | yes | The Client App the consumption is attributed to |
+| `amount` | i64 | yes | Quantity to consume; must be greater than 0 |
+| `description` | string | no | Consumption note |
+| `idempotencyKey` | string | no | Idempotency key; replays return the original result |
+
+```json
+{
+  "userId": "550e8400-e29b-41d4-a716-446655440000",
+  "clientAppId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "amount": 300,
+  "description": "AI API call"
+}
+```
+
+**Response** (200 on success):
+
+| Field | Type | Description |
+|---|---|---|
+| `userId` | string | User ID |
+| `amount` | i64 | Quantity consumed |
+| `correlationId` | string | Cross-account consumption group key |
+| `transactions` | array | One transaction per account involved |
+| `allocations` | array | Actual ledger/type allocations debited |
+
+**Error codes**:
+
+- `400`: invalid parameters, account frozen/closed
+- `401/403`: invalid API Key, cross-realm
+- `409`: insufficient balance (`code=insufficient_points`; response carries `have`/`need`)
+
+## Query wallet balance
+
+### GET `/api/points/{realmId}/wallets`
+
+Lists wallets in the Realm, grouped by `(user, account)`. Regular users see only their own; admins (`points.manage`) can view the whole tenant.
+
+**Query params** (`backend/api-points/src/wallets.rs`):
+
+| Param | Type | Description |
+|---|---|---|
+| `status` | string | Filter by wallet status |
+| `search` | string | Search by user ID (admin only) |
+| `bucketId` | string | Filter by Credit Account |
+| `page` | u64 | Page number, 0-indexed, default 0 |
+| `pageSize` | u64 | Default 20, max 100 |
+
+**Response** (`ListWalletsByBucketResponse`):
+
+| Field | Type | Description |
+|---|---|---|
+| `items` | `WalletByBucketResponse[]` | Wallet list grouped by account |
+| `crossBucketTotal` | i64 | Sum of `bucketTotal` across all accounts |
+
+`WalletByBucketResponse` fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `bucketId` | UUID \| null | Credit Account ID; may be null on aggregate rows |
+| `name` | string \| null | Account display name |
+| `enabled` | boolean \| null | Whether the account is enabled |
+| `userId` | UUID | Owning user of the wallet |
+| `balancesByType` | `BalancesByType` | Balances of the five credit types |
+| `bucketTotal` | i64 | Total currently consumable = window-available + pool balance |
+| `quotaWindows` | `QuotaWindowViewDto[]` \| null | Window view; null for pure-pool accounts |
+| `spendableFromQuota` | i64 \| null | Minimum of remaining across windows |
+| `spendableFromPool` | i64 \| null | topup + registration + granted balance |
+
+`BalancesByType`:
+
+```json
+{
+  "topup": 1000,
+  "subscription": 0,
+  "registration": 1000,
+  "freePeriodic": 0,
+  "granted": 0
+}
+```
+
+`QuotaWindowViewDto`:
+
+| Field | Type | Description |
+|---|---|---|
+| `key` | string | Stable display key, e.g. `5h`/`week`/`month` |
+| `limit` | i64 | Window cap |
+| `used` | i64 | Used within the window |
+| `remaining` | i64 | Remaining quota |
+| `windowSeconds` | i64 | Window length (seconds) |
+| `resetsAt` | ISO8601 \| null | Approximate recovery time |
+| `isTightest` | boolean | Whether this is the minimum-remaining window |
+| `exhausted` | boolean | Whether exhausted |
+
+## Realm default config
+
+### GET `/api/points/{realmId}/default-config`
+
+Returns the Realm's default points config, including the registration bonus and the free-periodic multi-window quota.
+
+**Permission**: `settings.view`
+
+**Response** (`RealmDefaultConfigResponse`):
+
+| Field | Type | Description |
+|---|---|---|
+| `realmId` | string | Realm ID |
+| `registrationBonusPoints` | i64 | Registration bonus credits |
+| `freePeriodicPointsAmount` | i64 | Free-periodic credit amount (legacy field, kept for compatibility) |
+| `freePeriodicGrantPeriodType` | string | Period type: `once`/`daily`/`weekly`/`monthly` |
+| `freePeriodicValidityDays` | i64 | Free-periodic credit validity (days) |
+| `freePeriodicQuotaWindows` | `QuotaWindowInputDto[]` \| null | Multi-window quota definitions |
+| `createdAt` | ISO8601 | Creation time |
+| `updatedAt` | ISO8601 | Update time |
+
+### PUT `/api/points/{realmId}/default-config`
+
+Updates the Realm default config.
+
+**Permission**: `settings.manage`
+
+**Request body** (`UpdateRealmConfigRequest`):
+
+```json
+{
+  "registrationBonusPoints": 1500,
+  "freePeriodicPointsAmount": 100,
+  "freePeriodicGrantPeriodType": "daily",
+  "freePeriodicValidityDays": 1,
+  "freePeriodicQuotaWindows": [
+    { "windowSeconds": 86400, "limit": 100 },
+    { "windowSeconds": 604800, "limit": 400 }
+  ]
+}
+```
+
+`freePeriodicQuotaWindows` semantics:
+
+- `null`: leave the stored value untouched
+- `[]`: clear the window configuration
+- `[{windowSeconds, limit}]`: replace
+
+Per-row validation: `windowSeconds` greater than 0, `limit` greater than or equal to 0; at most 8 rows.
+
+## Entitlement Mapping batch update
+
+### PUT `/api/bill/{realmId}/entitlement-mappings/batch`
+
+Batch-saves the price/entitlement mappings for a product, including the subscription points policy and the multi-window quota.
+
+**Permissions**:
+
+1. `billing.manage`
+2. If any row carries points-policy fields (`pointsPerPeriod`/`grantPeriodType`/`validityDays`/`grantOnSubscribe`/`maxPeriods`/`quotaWindows`), `points.manage` is also required
+
+**Request body** (`BatchUpdateEntitlementMappingsRequest`):
+
+```json
+{
+  "paymentProvider": "stripe",
+  "externalProductId": "prod_xxx",
+  "updates": [
+    {
+      "mappingId": "550e8400-e29b-41d4-a716-446655440000",
+      "entitlementKey": "pro-plan",
+      "billingType": "recurring",
+      "billingPeriod": "month",
+      "pointsPerPeriod": 1000,
+      "grantPeriodType": "monthly",
+      "validityDays": 30,
+      "grantOnSubscribe": true,
+      "maxPeriods": 10,
+      "enabled": true,
+      "quotaWindows": [
+        { "windowSeconds": 18000, "limit": 500 },
+        { "windowSeconds": 604800, "limit": 5000 },
+        { "windowSeconds": 2592000, "limit": 20000 }
+      ]
+    }
+  ]
+}
+```
+
+New fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `quotaWindows` | `QuotaWindowInputDto[]` \| null | Multi-window quota definitions |
+
+`QuotaWindowInputDto`:
+
+| Field | Type | Constraint | Description |
+|---|---|---|---|
+| `windowSeconds` | i64 | greater than 0 | Window length (seconds) |
+| `limit` | i64 | greater than or equal to 0 | Quota cap |
+
+**Response** (201):
+
+```json
+{
+  "saved": 1,
+  "prices": [
+    {
+      "mappingId": "550e8400-e29b-41d4-a716-446655440000",
+      "entitlementKey": "pro-plan",
+      "billingType": "recurring",
+      "billingPeriod": "month",
+      "pointsPerPeriod": 1000,
+      "grantPeriodType": "monthly",
+      "validityDays": 30,
+      "grantOnSubscribe": true,
+      "maxPeriods": 10,
+      "enabled": true,
+      "quotaWindows": [
+        { "windowSeconds": 18000, "limit": 500 },
+        { "windowSeconds": 604800, "limit": 5000 },
+        { "windowSeconds": 2592000, "limit": 20000 }
+      ]
+    }
+  ]
+}
+```
+
+**Error codes**:
+
+- `400`: invalid entitlement key, cross-product shared-key rename, invalid window config
+- `403`: missing `billing.manage` or `points.manage`
+- `409`: active-subscription protection (`MappingActiveSubscriptionLockErrorBody`)
+
+## Common window lengths
+
+| Window | windowSeconds |
+|---|---|
+| 5 hours | 18000 |
+| 1 day | 86400 |
+| 1 week | 604800 |
+| 30 days (approx. month) | 2592000 |
+
+The backend maps these lengths to stable keys via `derive_window_key`: `5h`, `day`, `week`, `month`.

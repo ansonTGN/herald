@@ -1,0 +1,360 @@
+---
+title: Deployment
+description: "Herald deploys as four Docker containers on a single machine."
+---
+
+Herald deploys as four Docker containers on a single machine.
+
+## Architecture
+
+```
+Internet ──→ Caddy (80/443) ──→ App (3000)
+                                    |
+                           PostgreSQL + Redis
+```
+
+All external traffic enters through Caddy. Caddy handles TLS termination and forwards requests to the App container on port 3000. The App container serves both API requests (`/api/*`) and the frontend static files (`/app/frontend/dist`).
+
+Every container sits on the same Docker network and talks to the others by container name -- for example, the App connects to PostgreSQL at `herald-postgres:5432`.
+
+## Prerequisites
+
+- A Linux server (Ubuntu 22.04+ or Debian 12+) with at least 2 GB RAM
+- Docker Engine 24+ and Docker CLI
+- A domain name with a DNS A record pointing to your server IP
+- Firewall open on ports 80 (HTTP) and 443 (HTTPS)
+
+## Setup
+
+### Create the Docker Network
+
+```bash
+docker network create herald-net
+```
+
+All containers will join this network.
+
+### Create Volumes
+
+```bash
+docker volume create pgdata
+docker volume create redisdata
+docker volume create caddy-data
+docker volume create caddy-config
+```
+
+These four volumes store database data, Redis persistence, Caddy certificates, and Caddy configuration respectively. Data in Docker volumes survives container removal.
+
+### Create the Configuration Directory
+
+```bash
+mkdir -p /opt/herald/conf
+```
+
+### App Configuration
+
+Create the production config file at `/opt/herald/config.production.toml`:
+
+```toml
+[database]
+url = "postgres://herald:YOUR_PASSWORD@herald-postgres:5432/herald"
+
+[redis]
+url = "redis://herald-redis:6379"
+
+[server]
+bind_address = "0.0.0.0:3000"
+log_level = "info"
+app_env = "production"
+
+[frontend]
+url = "https://your-domain.com"
+static_dir = "/app/frontend/dist"
+```
+
+Replace `YOUR_PASSWORD` and `your-domain.com` with actual values. Redis runs without a password because the Docker network doesn't expose its port externally. If you do expose the Redis port outside Docker, add a password.
+
+### Caddy Configuration
+
+Create `/opt/herald/Caddyfile`:
+
+```
+your-domain.com {
+    reverse_proxy herald-app:3000
+}
+```
+
+Replace `your-domain.com` with your domain.
+
+Caddy automatically obtains and renews TLS certificates from Let's Encrypt. No extra certificate configuration needed.
+
+## Starting Services
+
+Start containers in this order: PostgreSQL, then Redis, then App, then Caddy. The App needs both the database and Redis running before it can start.
+
+### PostgreSQL
+
+```bash
+docker run -d \
+    --name herald-postgres \
+    --network herald-net \
+    --restart unless-stopped \
+    -e POSTGRES_USER=herald \
+    -e POSTGRES_PASSWORD=YOUR_PASSWORD \
+    -e POSTGRES_DB=herald \
+    -v pgdata:/var/lib/postgresql/data \
+    postgres:18-alpine
+```
+
+Verify:
+
+```bash
+docker exec herald-postgres pg_isready -U herald
+```
+
+You should see `/var/run/postgresql:5432 - accepting connections`.
+
+### Redis
+
+```bash
+docker run -d \
+    --name herald-redis \
+    --network herald-net \
+    --restart unless-stopped \
+    -v redisdata:/data \
+    redis:8.4-alpine \
+    redis-server --appendonly yes
+```
+
+The `--appendonly yes` flag enables AOF persistence, so Redis data survives restarts.
+
+Verify:
+
+```bash
+docker exec herald-redis redis-cli ping
+```
+
+You should see `PONG`.
+
+### App
+
+```bash
+docker run -d \
+    --name herald-app \
+    --network herald-net \
+    --restart unless-stopped \
+    -e HERALD_CONFIG=/app/config.toml \
+    -v /opt/herald/config.production.toml:/app/config.toml:ro \
+    ghcr.io/timzaak/herald:latest
+```
+
+To pin a specific version, replace `latest` with a tag like `v0.1.0`.
+
+The App runs database migrations automatically on startup (`sqlx::migrate!`). You don't need to create tables manually. Back up your database before each upgrade, though -- migrations are irreversible.
+
+Verify:
+
+```bash
+docker exec herald-app wget -qO- http://localhost:3000/health
+```
+
+A response like `{"status":"healthy","database":true,"redis":true,"version":"0.1.7","uptime":45,"timestamp":"..."}` means the service is running.
+
+### Caddy
+
+```bash
+docker run -d \
+    --name herald-caddy \
+    --network herald-net \
+    --restart unless-stopped \
+    -p 80:80 \
+    -p 443:443 \
+    -v /opt/herald/Caddyfile:/etc/caddy/Caddyfile:ro \
+    -v caddy-data:/data \
+    -v caddy-config:/config \
+    caddy:2-alpine
+```
+
+On first start, Caddy requests a certificate from Let's Encrypt. If your DNS hasn't propagated yet, or port 80 is blocked by the firewall, the certificate request will fail and Caddy will keep retrying.
+
+Verify:
+
+```bash
+curl -I https://your-domain.com
+```
+
+An `HTTP/2 200` response means deployment is complete. Opening `https://your-domain.com` in a browser should show the frontend.
+
+## Post-Deployment Checklist
+
+Once everything is running, confirm each piece:
+
+1. Open `https://your-domain.com` in a browser -- the frontend should load
+2. `curl https://your-domain.com/health` returns `{"status":"healthy",...}`
+3. `docker exec herald-redis redis-cli ping` returns `PONG`
+4. `docker exec herald-postgres pg_isready -U herald` returns accepting connections
+
+## CI/CD
+
+The project uses GitHub Actions for automated builds and pushes. The pipeline is defined in `.github/workflows/cd.yml`.
+
+It triggers on tags starting with `v` (e.g. `git tag v0.1.0 && git push origin v0.1.0`).
+
+The pipeline:
+
+1. Builds images for both amd64 and arm64
+2. Merges them into a multi-architecture manifest
+3. Pushes to `ghcr.io/timzaak/herald:<tag>` and `ghcr.io/timzaak/herald:latest`
+4. Creates a GitHub Release
+
+The Dockerfile uses a multi-stage build with five stages:
+
+| Stage | Base Image | Purpose |
+|-------|-----------|---------|
+| backend-chef | rust:1.90-alpine | Installs cargo-chef and build dependencies |
+| backend-planner | backend-chef | Analyzes the dependency graph, produces recipe.json |
+| backend-builder | backend-chef | Compiles dependencies (cache layer), then the project binary |
+| frontend-builder | node:20-alpine | Exports OpenAPI spec from backend, generates API client, builds frontend |
+| Final image | alpine:3.20 | Copies binary and frontend assets only, runs as non-root user |
+
+The caching design is deliberate: as long as `Cargo.toml` and `Cargo.lock` haven't changed, the dependency layer is cached and only the application code gets recompiled. The frontend works the same way -- unchanged `package.json` and `package-lock.json` reuse the `node_modules` cache.
+
+The runtime image contains the binary, frontend static assets, database migration scripts, and config files. The process runs as the `herald` user (UID 1000), not root. A built-in health check hits `/health` every 30 seconds.
+
+### Releasing a New Version
+
+1. Tag and push to trigger the GitHub Actions build:
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+2. Once the build finishes, SSH into the production server and upgrade:
+
+```bash
+VERSION=v0.2.0
+
+# Pull the new image
+docker pull ghcr.io/timzaak/herald:${VERSION}
+
+# Stop and remove the old container
+docker stop herald-app
+docker rm herald-app
+
+# Start with the new image
+docker run -d \
+    --name herald-app \
+    --network herald-net \
+    --restart unless-stopped \
+    -e HERALD_CONFIG=/app/config.toml \
+    -v /opt/herald/config.production.toml:/app/config.toml:ro \
+    ghcr.io/timzaak/herald:${VERSION}
+```
+
+3. Verify:
+
+```bash
+# Check logs
+docker logs herald-app --tail 10
+
+# Health check
+docker exec herald-app wget -qO- http://localhost:3000/health
+```
+
+### Rolling Back
+
+If the new version has problems, restart with the previous tag:
+
+```bash
+docker stop herald-app
+docker rm herald-app
+docker run -d \
+    --name herald-app \
+    --network herald-net \
+    --restart unless-stopped \
+    -e HERALD_CONFIG=/app/config.toml \
+    -v /opt/herald/config.production.toml:/app/config.toml:ro \
+    ghcr.io/timzaak/herald:v0.1.0
+```
+
+### Back Up the Database Before Upgrading
+
+The App runs migrations automatically on startup, and migrations are irreversible. Back up first:
+
+```bash
+docker exec herald-postgres pg_dump -U herald herald > backup_$(date +%Y%m%d).sql
+```
+
+> Only the `herald-app` container gets replaced during an upgrade. The other containers stay as they are. Expect a few seconds of downtime between stopping the old container and starting the new one.
+
+## Data Persistence
+
+The App itself is stateless. All persistent data lives in these locations:
+
+| Data | Storage | Volume or Mount |
+|------|---------|----------------|
+| Business data | PostgreSQL | `pgdata` volume |
+| Cache and sessions | Redis | `redisdata` volume (AOF persistence) |
+| TLS certificates | Caddy | `caddy-data` volume |
+| App config | Host filesystem | `/opt/herald/config.production.toml` file mount |
+| Caddyfile | Host filesystem | `/opt/herald/Caddyfile` file mount |
+
+Back up the database:
+
+```bash
+docker exec herald-postgres pg_dump -U herald herald > backup.sql
+```
+
+Restore:
+
+```bash
+cat backup.sql | docker exec -i herald-postgres psql -U herald herald
+```
+
+Losing Redis data is not critical -- the App rebuilds its caches automatically. If you want to back it up anyway:
+
+```bash
+docker exec herald-redis redis-cli BGSAVE
+docker cp herald-redis:/data/dump.rdb ./redis-backup.rdb
+```
+
+## Troubleshooting
+
+### Caddy Certificate Request Fails
+
+You see `acme: error` in the logs. Check:
+
+- Does the domain DNS point to the server IP? Confirm with `dig your-domain.com`
+- Are ports 80 and 443 open in the firewall?
+- Is another process using port 80? Check with `ss -tlnp | grep :80`
+
+### App Cannot Connect to the Database
+
+The App logs show `connection refused` or `no route to host`.
+
+Check that both containers are on the same network:
+
+```bash
+docker network inspect herald-net
+```
+
+You should see postgres, app, and other containers listed. Make sure the database URL in the config file uses `herald-postgres:5432`, not `localhost`.
+
+### App Exits Immediately After Starting
+
+This is usually a failed database migration. Check the logs:
+
+```bash
+docker logs herald-app --tail 100
+```
+
+Common causes: wrong database password in the config, or PostgreSQL hasn't finished starting yet. Wait until `pg_isready` reports success before starting the App.
+
+### Applying Caddyfile Changes
+
+```bash
+docker exec herald-caddy caddy reload --config /etc/caddy/Caddyfile
+```
+
+No need to restart the Caddy container.

@@ -1,0 +1,51 @@
+---
+title: Points Grant Redesign
+description: "Herald's points system changes subscription_credit and free_periodic_credit from period-pregenerated full-period quotas to on-demand rolling-window quotas. topup_credit, registration_credit, and granted_credit keep the pool model unchanged."
+---
+
+Herald's points system changes `subscription_credit` (subscription credits) and `free_periodic_credit` (free periodic credits) from "pre-grant the full-period quota at period start" to **on-demand rolling-window quotas computed at consumption time**. `topup_credit` / `registration_credit` / `granted_credit` keep the pool model unchanged.
+
+## Who this is for
+
+- Product or ops people who need to configure subscription / free-period quotas
+- Frontend/backend developers who need to understand consumption coordination and balance display
+- Third-party developers integrating the SDK to consume credits or query balances
+
+## Prerequisites
+
+- Familiar with Herald's Realm, Credit Account, and Entitlement Mapping concepts
+- Comfortable with JSON and REST API calls
+
+## What problems it solves
+
+### Mid-period joiners get their quota immediately
+
+The old model pre-granted the full-period quota at period start in the background. If a user subscribed on June 20 to a monthly plan that started June 1, they had to wait for a background catch-up or the next period. The new model computes the available window quota in real time at consume/query time, so they get it on first access (`backend/domain/src/points/service.rs`'s `reconcile_due_for_user` is now a pure read path and no longer pre-grants).
+
+### Zero background overhead for inactive users
+
+With full-table pre-granting removed, inactive users are never scanned, written, or reclaimed by background scheduling. `points_quota_entitlements` records are created only on subscription paid/renewal, registration, or upgrade; usage comes from aggregating `points_transactions(type='consume')`, so there is no separate usage_log.
+
+### Strict caps across overlapping time windows
+
+A single entitlement can carry multiple windows, e.g. `{5h: 500, week: 5000, month: 20000}`. At any moment the available quota is the minimum of "limit − used-in-window" across all windows. If the 5-hour window is exhausted, the current available quota is 0 even if the weekly/monthly windows still have room.
+
+### A single consume auto-coordinates window quota and pool balance
+
+On consume, the window quota is deducted first within the same transaction; any overflow is atomically taken from the topup/registration/granted pools; if the combined total is insufficient, the whole thing rolls back and is rejected — no partial deduction.
+
+## Key model comparison
+
+| Credit type | Billing model | Notes |
+|---|---|---|
+| `subscription_credit` | Rolling-window quota | Computed in real time at consume time; the full-period total is never pre-written |
+| `free_periodic_credit` | Rolling-window quota | Computed in real time at consume time; does not accumulate |
+| `topup_credit` | Pool model | User purchases voluntarily; long-lived (unless a validity is configured) |
+| `registration_credit` | Pool model (permanent) | One-time grant at registration; preserved after upgrading to a paid plan |
+| `granted_credit` | Pool model | Admin or SDK grant; validity can be configured |
+
+## Chapters
+
+- [Getting started](getting-started) — Configure subscription quotas on Entitlement Mappings and the Realm default free-period quota
+- [Architecture](architecture) — The components implementing quota entitlements, window aggregation, and mixed consumption
+- [API reference](api-reference) — Endpoints and fields for consumption, balance queries, Realm defaults, and Entitlement Mapping batch updates

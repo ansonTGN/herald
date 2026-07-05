@@ -1,0 +1,636 @@
+---
+title: 第三方后端服务对接 Herald
+description: "Herald 处理用户、登录、权限、计费。你的后端只写业务逻辑，通过 Herald SDK 调用认证和计费接口。"
+---
+
+Herald 处理用户、登录、权限、计费。你的后端只写业务逻辑，通过 Herald SDK 调用认证和计费接口。
+
+```
+用户浏览器 → 你的前端 → 你的后端 → Herald SDK → Herald 服务
+                ↓                       (校验 token、查权限、扣积分)
+              OAuth 跳转 → Herald 登录页 → 回调你的后端 → 设置 Cookie
+```
+
+你的后端不直连 Herald 的数据库，所有交互走 HTTP API，SDK 内部带缓存。
+
+## 1. 前置准备
+
+在 Herald 管理后台完成以下操作，不需要写代码：
+
+1. 创建一个 realm（租户），记下 `realm_id`
+2. 在 realm 下创建一个 client app（代表你的服务），记下 `client_id`
+3. 为这个 realm 生成一个 API Key，保存密钥值——只显示一次，丢了得重新生成。生成时选择对应的 Client App；不选择时默认绑定 `admin-api-client`
+4. 定义权限点。权限格式是 `resource:action`，比如 `product:read`、`device:manage`
+5. 创建角色，把权限点分配给角色
+6. 创建一个管理员用户，把角色分配给这个用户
+
+第 4 步的权限点怎么设计，[设计权限模型](#设计权限模型) 会讲。
+
+## 2. 后端集成
+
+### 配置项
+
+在你的服务配置文件中加一个 `[herald]` 段：
+
+```toml
+[herald]
+base_url = "http://127.0.0.1:13000"
+api_key = "sk-your-api-key"
+realm_id = "my-app"
+client_id = "admin-web-console"
+```
+
+| 字段 | 说明 |
+|------|------|
+| `base_url` | Herald 服务地址，Docker 网络内用容器名 |
+| `api_key` | 在 Herald 管理端生成的 API Key |
+| `realm_id` | 你的服务所属的 realm |
+| `client_id` | 前置准备中创建的 client app 标识 |
+
+这四个字段是整个集成的基础。配置结构体用 `Option<HeraldConfig>` 包裹，不配置时整个认证体系不启用：
+
+```rust
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct HeraldConfig {
+    pub base_url: String,
+    pub api_key: String,
+    pub realm_id: String,
+    pub client_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct Config {
+    // ... 其他配置
+    #[serde(default)]
+    pub herald: Option<HeraldConfig>,
+}
+```
+
+### 安装 SDK
+
+在 `Cargo.toml` 中添加：
+
+```toml
+[dependencies]
+herald-sdk = "0.1"
+```
+
+### 初始化
+
+启动时根据配置决定是否创建 SDK 客户端。`Option<Arc<Client>>` 为 `None` 时，后续路由不会挂认证中间件：
+
+```rust
+let herald_client = config.herald.as_ref().map(|herald| {
+    Arc::new(herald_sdk::Client::new(
+        herald.base_url.clone(),
+        herald.api_key.clone(),
+        None,  // 使用默认 5 分钟缓存
+    ))
+});
+```
+
+第三个参数是缓存时间，`None` 表示默认 300 秒。SDK 会在 token 过期时自动失效缓存条目。
+
+API Key 是你的后端跟 Herald 之间的身份凭证，存在配置文件或环境变量里，不要硬编码。API Key 同时带有 Client App 范围：绑定 `admin-api-client` 的 Key 可以访问该 realm 下所有 Client App 资源；绑定普通 Client App 的 Key 只能访问该 Client App 的权限检查、订阅和积分资源。
+
+### Auth Config 端点
+
+前端需要知道 Herald 是否启用。提供一个公开端点：
+
+```rust
+#[derive(Serialize)]
+pub struct AuthConfigResponse {
+    pub enabled: bool,
+    pub login_url: Option<String>,
+    pub herald_login_url: Option<String>,
+}
+
+// GET /api/auth/config
+pub async fn get_auth_config(State(state): State<Arc<AppState>>) -> Json<AuthConfigResponse> {
+    let herald = &state.config.herald;
+    Json(AuthConfigResponse {
+        enabled: herald.is_some(),
+        login_url: herald.as_ref().map(|_| "/api/auth/oauth/start".to_string()),
+        herald_login_url: herald.as_ref().map(|h| {
+            format!("{}/{}/auth/login", h.base_url.trim_end_matches('/'), h.realm_id)
+        }),
+    })
+}
+```
+
+前端启动时调一次这个接口。`enabled: false` 时跳过所有认证逻辑，直接渲染页面。
+
+### OAuth 后端处理器
+
+SPA 前端用 OAuth 2.1 Authorization Code + PKCE 流程登录。后端需要两个处理器：`oauth_start` 负责发起登录，`oauth_callback` 负责接收回调。
+
+#### oauth_start：发起登录
+
+```rust
+// GET /api/auth/oauth/start?redirect=/devices
+pub async fn oauth_start(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(query): Query<OAuthStartQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    let herald = state.config.herald.as_ref()?;
+
+    let (app_origin, return_to) = resolve_app_origin_and_return_to(&headers, query.redirect)?;
+    let redirect_uri = format!("{app_origin}/api/auth/oauth/callback");
+    let oauth_state = random_token(32);
+    let code_verifier = random_token(64);
+    let code_challenge = pkce_challenge(&code_verifier);
+
+    let authorize_url = format!(
+        "{}/api/oauth/{}/authorize?client_id={}&redirect_uri={}&state={}&response_type=code&code_challenge={}&code_challenge_method=S256",
+        herald.base_url.trim_end_matches('/'),
+        herald.realm_id,
+        herald.client_id,
+        urlencoding::encode(&redirect_uri),
+        oauth_state,
+        code_challenge,
+    );
+
+    // 把 OAuth 状态存到 Cookie，5 分钟有效
+    let oauth_cookie = encode_oauth_cookie(&OAuthCookie {
+        state: oauth_state,
+        code_verifier,
+        return_to,
+        redirect_uri,
+    });
+
+    Ok((
+        StatusCode::FOUND,
+        [
+            (header::LOCATION, authorize_url),
+            (header::SET_COOKIE, build_cookie("APP_OAUTH", &oauth_cookie, 300)),
+        ],
+    ))
+}
+```
+
+这个处理器做了四件事：
+
+1. 生成 `code_verifier`（随机字符串）和 `code_challenge`（SHA256 哈希后 Base64url 编码）
+2. 构造 Herald 授权 URL，把用户重定向过去
+3. 把 `{state, code_verifier, return_to, redirect_uri}` 编码后存到 `APP_OAUTH` Cookie
+4. `return_to` 记录用户原始页面，回调时用
+
+#### oauth_callback：处理回调
+
+```rust
+// GET /api/auth/oauth/callback?code=xxx&state=yyy
+pub async fn oauth_callback(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(query): Query<OAuthCallbackQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    let herald = state.config.herald.as_ref()?;
+
+    // 1. 从 Cookie 取出 OAuth 状态，验证 state 防止 CSRF
+    let oauth_cookie_value = get_cookie(&headers, "APP_OAUTH").ok_or(ApiError::unauthorized)?;
+    let oauth_cookie = decode_oauth_cookie(&oauth_cookie_value)?;
+    if oauth_cookie.state != query.state {
+        return Err(ApiError::unauthorized());
+    }
+
+    // 2. 用授权码 + code_verifier 换 token
+    let token = exchange_oauth_code(
+        herald.base_url.trim_end_matches('/'),
+        &herald.realm_id,
+        &herald.client_id,
+        &query.code,
+        &oauth_cookie.redirect_uri,
+        &oauth_cookie.code_verifier,
+    ).await?;
+
+    // 3. 设置 X-Auth Cookie，清除 OAuth 状态 Cookie，重定向回原始页面
+    let mut headers = HeaderMap::new();
+    headers.insert(header::LOCATION, HeaderValue::from_str(&oauth_cookie.return_to)?);
+    headers.append(header::SET_COOKIE, HeaderValue::from_str(&build_cookie("X-Auth", &token.access_token, token.expires_in))?);
+    headers.append(header::SET_COOKIE, HeaderValue::from_str(&clear_cookie("APP_OAUTH"))?);
+
+    Ok((StatusCode::FOUND, headers))
+}
+```
+
+`exchange_oauth_code` 向 Herald 的 token 端点发 POST 请求：
+
+```rust
+async fn exchange_oauth_code(
+    herald_base_url: &str, realm_id: &str, client_id: &str,
+    code: &str, redirect_uri: &str, code_verifier: &str,
+) -> Result<TokenResponse, ApiError> {
+    let url = format!("{herald_base_url}/api/oauth/{realm_id}/token");
+    let response = reqwest::Client::new()
+        .post(url)
+        .json(&serde_json::json!({
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": redirect_uri,
+            "client_id": client_id,
+            "code_verifier": code_verifier,
+        }))
+        .send().await?;
+    // ...
+}
+```
+
+PKCE 的安全性在于 `code_verifier` 只存在你的后端 Cookie 里，不经过前端 URL。授权码是一次性的——Herald 用 `GETDEL` 原子操作读取并删除，同一个 code 换第二次会报错。
+
+#### Cookie 辅助函数
+
+```rust
+fn build_cookie(name: &str, value: &str, max_age_seconds: i64) -> String {
+    format!("{name}={value}; Path=/; Max-Age={max_age_seconds}; HttpOnly; SameSite=Lax")
+}
+
+fn clear_cookie(name: &str) -> String {
+    format!("{name}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax")
+}
+
+fn get_cookie(headers: &HeaderMap, name: &str) -> Option<String> {
+    let cookies = headers.get(header::COOKIE)?.to_str().ok()?;
+    cookies.split(';').find_map(|cookie| {
+        let (cookie_name, value) = cookie.trim().split_once('=')?;
+        (cookie_name == name && !value.is_empty()).then(|| value.to_string())
+    })
+}
+
+fn pkce_challenge(code_verifier: &str) -> String {
+    let digest = sha2::Sha256::digest(code_verifier.as_bytes());
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(digest)
+}
+```
+
+### 认证中间件
+
+中间件做三件事：从 Cookie 提取 token、把请求路径映射成权限规则、调 Herald 校验。
+
+```rust
+use axum::extract::State;
+use axum::http::{Method, Request, header};
+use axum::middleware::Next;
+use axum::response::{IntoResponse, Response};
+use herald_sdk::{Client, Error, PermissionCheckRequest, Rule};
+use std::sync::Arc;
+
+#[derive(Clone)]
+pub struct HeraldAuthState {
+    pub herald_sdk: Arc<Client>,
+    pub client_id: Arc<str>,
+}
+
+pub async fn herald_auth_middleware(
+    State(auth_state): State<HeraldAuthState>,
+    mut request: Request,
+    next: Next,
+) -> Response {
+    // 1. 从 Cookie 中提取 token
+    let Some(token) = extract_auth_token(&request) else {
+        return ApiError::unauthorized().into_response();
+    };
+
+    // 2. 根据请求路径生成权限规则
+    let Some(rule) = extract_permission(request.uri().path(), request.method()) else {
+        return ApiError::forbidden().into_response();
+    };
+
+    // 3. 调 Herald 校验
+    let response = auth_state.herald_sdk
+        .check_permission(PermissionCheckRequest {
+            token,
+            rules: Some(vec![rule]),
+            client_id: auth_state.client_id.to_string(),
+        })
+        .await;
+
+    match response {
+        // 允许：把 user_id 注入请求扩展
+        Ok(permission) if permission.allowed => {
+            let Some(user_id) = permission.user_id else {
+                return ApiError::unauthorized().into_response();
+            };
+            request.extensions_mut().insert(CurrentUser { user_id });
+            next.run(request).await
+        }
+        // session 不存在或已过期：allowed=false, user_id=None
+        Ok(permission) if permission.user_id.is_none() => {
+            ApiError::unauthorized().into_response()
+        }
+        // 用户已认证但没有权限：allowed=false, user_id=Some(...)
+        Ok(_) => ApiError::forbidden().into_response(),
+        // Herald 返回错误：区分 401/403/其他
+        Err(error) => classify_auth_error(&error).into_response(),
+    }
+}
+
+fn classify_auth_error(error: &Error) -> ApiError {
+    match error {
+        Error::Unauthorized(_) => ApiError::unauthorized(),
+        Error::Forbidden(_) => ApiError::forbidden(),
+        _ => ApiError::service_unavailable("auth service unavailable"),
+    }
+}
+
+fn extract_auth_token(request: &Request) -> Option<String> {
+    let cookies = request.headers().get(header::COOKIE)?.to_str().ok()?;
+    cookies.split(';').find_map(|cookie| {
+        let (name, value) = cookie.trim().split_once('=')?;
+        (name == "X-Auth" && !value.is_empty()).then(|| value.to_string())
+    })
+}
+```
+
+三种拒绝场景的处理逻辑不同：
+
+| 情况 | Herald 返回 | 你的后端返回 | 前端行为 |
+|------|------------|------------|---------|
+| Cookie 缺失或 token 无效 | `allowed=false, user_id=None` | 401 | 跳转登录 |
+| 用户有 session 但没权限 | `allowed=false, user_id=Some(...)` | 403 | 显示无权限提示 |
+| Herald 服务不可用 | 网络错误或 500 | 503 | 提示服务暂时不可用 |
+
+503 而不是放行——认证服务挂掉时继续处理请求等于绕过了认证。
+
+### 设计权限模型
+
+权限分两个维度：**资源**（resource）和**操作**（action）。你自己定义，Herald 只管存储和校验。
+
+路径到权限的映射在中间件里做。这段代码和 Herald 没有关系——Herald 只回答"这个用户能不能做 `product:read`"，路径映射是你的中间件决定的。
+
+```rust
+pub fn extract_permission(path: &str, method: &Method) -> Option<Rule> {
+    // Strip /api prefix if present — the middleware runs inside a nest("/api", ...)
+    let path = path.strip_prefix("/api").unwrap_or(path);
+
+    let resource = if path.starts_with("/admin/product")
+        || path.starts_with("/admin/valid")
+        || path.starts_with("/admin/file")
+    {
+        "product"
+    } else if path.starts_with("/admin/device")
+        || path.starts_with("/admin/property")
+        || path.starts_with("/admin/event")
+        || path.starts_with("/admin/alarm-rule")
+        || path.starts_with("/admin/alarm")
+    {
+        "device"
+    } else if path.starts_with("/admin/ca") || path.starts_with("/admin/ota") {
+        "cert"
+    } else {
+        return None;
+    };
+
+    let action = match *method {
+        Method::GET => "read",
+        Method::POST | Method::PUT | Method::PATCH | Method::DELETE => "write",
+        _ => return None,
+    };
+
+    Some(Rule {
+        resource: resource.to_string(),
+        action: action.to_string(),
+    })
+}
+```
+
+路径映射设计好之后，去 Herald 管理后台把 `product:read`、`product:write`、`device:read`、`device:write` 配成权限点，创建角色，给用户分配角色。
+
+Herald 内置了 action 层级。`manage` 覆盖 `view`、`create` 和 `manage` 本身。`create` 只覆盖 `create`。`view` 只覆盖 `view`。自定义 action（比如 `admin`）只匹配自身，不参与层级。所以如果你给用户分配了 `product:manage`，中间件请求 `product:read` 时也会通过。
+
+### 路由挂载
+
+路由分三组：auth 端点、公开路由、需要认证的管理路由。
+
+```rust
+pub fn create_router(
+    config: Arc<Config>,
+    herald_client: Option<Arc<herald_sdk::Client>>,
+) -> Router {
+    // auth 端点：公开访问，不需要 Herald 认证
+    let auth_routes = Router::new()
+        .route("/auth/config", get(get_auth_config))
+        .route("/auth/oauth/start", get(oauth_start))
+        .route("/auth/oauth/callback", get(oauth_callback));
+
+    // 公开路由：健康检查、webhook 等
+    let public_routes = Router::new()
+        .route("/health", get(health_check))
+        .route("/webhook/device", post(device_webhook));
+
+    // 管理路由：需要 Herald 认证
+    let admin_routes = Router::new()
+        .route("/admin/product", get(list_products).post(create_product))
+        .route("/admin/device", get(list_devices));
+
+    // 条件挂载：只在 Herald 配置存在时加认证中间件
+    let admin_routes = match (config.herald.as_ref(), herald_client) {
+        (Some(herald_config), Some(herald_sdk)) => {
+            admin_routes.layer(axum::middleware::from_fn_with_state(
+                HeraldAuthState {
+                    herald_sdk,
+                    client_id: herald_config.client_id.clone().into(),
+                },
+                herald_auth_middleware,
+            ))
+        }
+        (_, _) => admin_routes,
+    };
+
+    Router::new()
+        .merge(auth_routes)
+        .merge(public_routes)
+        .merge(admin_routes)
+}
+```
+
+`match` 分支是关键。不配置 `[herald]` 时，`herald_client` 为 `None`，admin 路由不加中间件，所有管理接口直接可访问。本地开发或内网隔离环境下不用配置 Herald。
+
+## 3. 前端集成
+
+前端需要处理三件事：探测认证状态、跳转登录、处理 401。
+
+### 探测认证状态
+
+```typescript
+interface AuthConfig {
+  enabled: boolean
+  login_url: string | null
+  herald_login_url?: string | null
+}
+
+let cachedAuthConfig: AuthConfig | null = null
+
+async function getAuthConfig(): Promise<AuthConfig> {
+  if (cachedAuthConfig) return cachedAuthConfig
+  const res = await fetch('/api/auth/config')
+  cachedAuthConfig = await res.json()
+  return cachedAuthConfig
+}
+```
+
+启动时调一次 `/api/auth/config`。`enabled: false` 时跳过后续认证逻辑。
+
+### 检查登录状态
+
+```typescript
+export async function checkAuth(): Promise<boolean> {
+  const config = await getAuthConfig()
+  if (!config.enabled) return true
+
+  // 用一个轻量级管理接口探测登录状态
+  const response = await fetch('/api/admin/product?page=1&page_size=1', {
+    credentials: 'include',
+  })
+  return response.status !== 401
+}
+```
+
+不是专门调一个"检查登录"接口，而是用一个实际的管理接口做探测。省掉一个额外的 API。
+
+### 401 处理
+
+```typescript
+let isRedirecting = false
+
+export function handle401(): void {
+  if (isRedirecting) return
+  isRedirecting = true
+
+  const loginUrl = new URL(cachedAuthConfig?.login_url || '/', window.location.origin)
+  loginUrl.searchParams.set('redirect', window.location.href)
+  window.location.href = loginUrl.toString()
+}
+```
+
+`isRedirecting` 防止多个并发 401 触发多次跳转。跳转 URL 带上当前页面地址，OAuth 回调后会重定向回来。
+
+在 API 拦截器里调用：
+
+```typescript
+apiClient.interceptors.response.use(
+  response => response,
+  error => {
+    if (error.response?.status === 401) {
+      handle401()
+    }
+    return Promise.reject(error)
+  }
+)
+```
+
+## 4. 通过 SDK 管理资源
+
+API Key 在 Herald 中也是一种 Principal（主体），跟用户一样可以分配角色和权限。你给 API Key 分配了什么权限，通过这个 Key 发出的 SDK 调用就能做什么。权限受 Client App 范围限制。
+
+### 管理 Realm
+
+```rust
+let realm = herald_client.create_realm(CreateRealmSdkRequest {
+    name: "my-app".to_string(),
+    description: Some("我的应用".to_string()),
+    admin_user: AdminUserSdkInput {
+        email: "admin@example.com".to_string(),
+        password: "secure-password".to_string(),
+    },
+}).await?;
+
+let realms = herald_client.list_realms().await?;
+let realm = herald_client.get_realm("my-realm").await?;
+```
+
+### 管理用户
+
+```rust
+let user = herald_client.create_user("my-realm", CreateUserSdkRequest {
+    email: "user@example.com".to_string(),
+    password: "secure-password".to_string(),
+    nickname: Some("johndoe".to_string()),
+}).await?;
+
+let users = herald_client.list_users("my-realm").await?;
+let user = herald_client.get_user("my-realm", &user_id).await?;
+```
+
+### 管理 Client App
+
+```rust
+let app = herald_client.create_client_app("my-realm", CreateClientAppSdkRequest {
+    name: "Mobile App".to_string(),
+    description: Some("iOS and Android app".to_string()),
+    redirect_uris: vec!["https://app.example.com/callback".to_string()],
+}).await?;
+
+let apps = herald_client.list_client_apps("my-realm").await?;
+let app = herald_client.get_client_app("my-realm", "my-mobile-app").await?;
+```
+
+建议给后端使用绑定该 Client App 的 API Key；只有需要跨 Client App 管理时才用 `admin-api-client` Key。
+
+## 5. 积分系统
+
+如果你的服务按量计费（比如 AI API 调用次数），用 Herald 的积分系统。
+
+```rust
+// 查余额
+let balance = herald_client.get_balance("my-realm", &user_id).await?;
+println!("余额: {} {}", balance.balance, balance.unit);
+
+// 扣积分
+let result = herald_client.consume_points(
+    "my-realm",
+    &user_id,
+    "my-client-app",
+    100,
+    Some("AI API 调用".to_string()),
+    Some("unique-request-id".to_string()),
+).await?;
+println!("扣费后余额: {}", result.balance_after);
+```
+
+`idempotency_key` 建议每次请求都传。网络超时重试时，相同的 key 不会重复扣费。如果 SDK 使用普通 Client App API Key，`client_app_id` 必须是该 Key 绑定的 Client App。
+
+扣减发生在哪个积分账户由 Herald 根据 `client_app_id` 自动决定：系统找到所有覆盖这个 Client App 的积分账户池，按过期时间从近到远跨池扣减。你的后端不用关心积分账户，但要知道同一个用户在不同 Client App 下的可用余额可能不同，取决于哪些积分账户覆盖了那个应用。积分账户的背景见[计费架构](billing-overview#积分账户)。
+
+余额是 Herald 实时从积分账本派生计算的，不含尚未到生效时间的预发积分——你查到的余额就是当前可消费的额度。
+
+## 6. 订阅系统
+
+查询 Client App 的订阅状态：
+
+```rust
+let sub = herald_client.get_subscription("my-realm", "my-client-app").await?;
+if sub.status == "active" {
+    // 用户有付费订阅
+}
+```
+
+订阅权益由支付平台产品同步到 Herald 的 `entitlement_key`。支付流程由 Herald 和支付平台处理，你的后端只需要调 SDK 查订阅状态和当前权益。
+
+## 7. 部署
+
+### Cookie 共享要求
+
+Herald 登录成功后在浏览器设置 `X-Auth` Cookie。你的后端中间件需要读到这个 Cookie，所以 Herald 和你的服务必须部署在同一主机或同根域下，否则浏览器不会把 Cookie 带给你的后端。
+
+三种常见部署方式：
+
+- 同主机不同端口（`127.0.0.1:3000` 和 `127.0.0.1:8080`）——开发环境最方便
+- 反向代理统一入口（Caddy 或 Nginx 把 `/auth` 转发到 Herald，`/` 转发到你的服务）——生产环境推荐
+- 同根域子域名（`auth.example.com` 和 `app.example.com`）——需要配置 Cookie Domain
+
+### 会话管理
+
+Cookie 名称：`X-Auth`，属性：`httpOnly`、`secure`（生产环境）、`sameSite=Lax`。默认会话 TTL 1800 秒（30 分钟），可在 Client App 配置中修改 `session_ttl_seconds`。
+
+滑动续期：如果 Client App 配置了 `session_renewal_ttl_seconds`，Herald 的 identity middleware 在每次请求时检查剩余 TTL，当剩余 TTL 小于等于 `renewal_ttl_seconds / 2` 时自动续期。
+
+三种续期策略：
+
+| 策略 | 配置 | 效果 |
+|------|------|------|
+| 严格 | `session_ttl=300, renewal_ttl=null` | 5 分钟硬过期，不续期 |
+| 宽松 | `session_ttl=28800, renewal_ttl=28800` | 8 小时，活跃用户永不过期 |
+| 渐进 | `session_ttl=300, renewal_ttl=7200` | 初始 5 分钟，首次续期后延长到 2 小时 |
+
+渐进模式适合管理后台：短时间操作够了，长时间使用自动续期，关掉浏览器就过期。
