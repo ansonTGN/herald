@@ -3474,15 +3474,6 @@ impl PointsRepository for PostgresPointsRepository {
                 return Err(CoreError::NoCoveredPointsPool { client_app_id });
             }
 
-            // expires_at ASC NULLS LAST order (single FOR UPDATE).
-            let ledgers = Self::find_active_ledgers_by_expiration_for_update(
-                &mut tx,
-                &realm_id,
-                user_id,
-                &covered_bucket_ids,
-            )
-            .await?;
-
             // `points_wallets FOR UPDATE` per bucket, bucket_id ASC) BEFORE the
             // window+pool availability computation. This serializes the
             // mixed-consume coordination: two concurrent
@@ -3505,6 +3496,17 @@ impl PointsRepository for PostgresPointsRepository {
                 }
                 bucket_wallets.insert(*bucket_id, wallet.id);
             }
+
+            // Lock pool ledgers after the bucket wallet rows. Refund/revoke paths
+            // also lock wallet before ledger, so this ordering avoids wallet<->ledger
+            // deadlocks under concurrent consume/refund races.
+            let ledgers = Self::find_active_ledgers_by_expiration_for_update(
+                &mut tx,
+                &realm_id,
+                user_id,
+                &covered_bucket_ids,
+            )
+            .await?;
 
             // window_avail_total = Σ over covered buckets of (min over active
             // windows of (limit − used)) for BOTH window credit_types
