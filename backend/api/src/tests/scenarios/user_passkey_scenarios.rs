@@ -2,6 +2,7 @@
 // User Passkey API Scenarios
 // =============================================================================
 
+use crate::tests::helpers::passkey_authenticator::Es256Authenticator;
 use crate::tests::schema_test_context::SchemaTestContext as TestContext;
 use axum::{
     body::Body,
@@ -14,15 +15,12 @@ use test_context::test_context;
 use totp_lite::Sha256;
 use tower::ServiceExt;
 use uuid::Uuid;
-use webauthn_authenticator_rs::{
-    prelude::{CreationChallengeResponse, RequestChallengeResponse, Url, WebauthnAuthenticator},
-    softtoken::SoftToken,
-};
 
 const PASSWORD: &str = "Password123!";
 const PASSKEY_VERIFY_FAILED: &str = "Passkey 验证失败";
+const RP_ORIGIN: &str = "https://localhost";
 
-type TestAuthenticator = WebauthnAuthenticator<SoftToken>;
+type TestAuthenticator = Es256Authenticator;
 
 fn setup_passkey_env() {
     unsafe {
@@ -33,12 +31,7 @@ fn setup_passkey_env() {
 }
 
 fn softtoken() -> TestAuthenticator {
-    let (token, _ca) = SoftToken::new(true).expect("SoftToken should initialize");
-    WebauthnAuthenticator::new(token)
-}
-
-fn rp_origin() -> Url {
-    Url::parse("https://localhost").expect("RP origin should parse")
+    Es256Authenticator::new()
 }
 
 async fn response_body(response: axum::response::Response) -> Value {
@@ -216,14 +209,10 @@ async fn finish_registration(
     reg_token: &str,
     options: Value,
 ) -> Value {
-    let challenge: CreationChallengeResponse =
-        serde_json::from_value(options).expect("registration options should deserialize");
-    let attestation = authenticator
-        .do_registration(rp_origin(), challenge)
-        .expect("SoftToken registration should succeed");
+    let attestation = authenticator.register(&options, RP_ORIGIN);
     let payload = json!({
         "regToken": reg_token,
-        "attestation": serde_json::to_value(attestation).unwrap()
+        "attestation": attestation
     });
 
     let req = Request::builder()
@@ -268,7 +257,7 @@ async fn credential_bytes_for_id(ctx: &TestContext, credential_id: &str) -> Vec<
 
 fn add_allow_credential(options: &mut Value, credential_id: &[u8]) {
     let encoded = URL_SAFE_NO_PAD.encode(credential_id);
-    options["publicKey"]["allowCredentials"] = json!([{
+    options["allowCredentials"] = json!([{
         "type": "public-key",
         "id": encoded,
     }]);
@@ -306,14 +295,10 @@ async fn finish_first_factor(
     auth_token: &str,
     options: Value,
 ) -> (String, Value) {
-    let challenge: RequestChallengeResponse =
-        serde_json::from_value(options).expect("auth options should deserialize");
-    let assertion = authenticator
-        .do_authentication(rp_origin(), challenge)
-        .expect("SoftToken authentication should succeed");
+    let assertion = authenticator.authenticate(&options, RP_ORIGIN);
     let payload = json!({
         "authToken": auth_token,
-        "assertion": serde_json::to_value(assertion).unwrap()
+        "assertion": assertion
     });
 
     let req = Request::builder()
@@ -392,15 +377,11 @@ async fn finish_second_factor(
     auth_token: &str,
     options: Value,
 ) -> (String, Value) {
-    let challenge: RequestChallengeResponse =
-        serde_json::from_value(options).expect("2fa options should deserialize");
-    let assertion = authenticator
-        .do_authentication(rp_origin(), challenge)
-        .expect("SoftToken authentication should succeed");
+    let assertion = authenticator.authenticate(&options, RP_ORIGIN);
     let payload = json!({
         "tempToken": temp_token,
         "authToken": auth_token,
-        "assertion": serde_json::to_value(assertion).unwrap()
+        "assertion": assertion
     });
     let req = Request::builder()
         .method("POST")
@@ -880,14 +861,10 @@ async fn test_first_factor_cross_realm_credential_isolated(ctx: &mut TestContext
 
     let (mut options, auth_token) = begin_first_factor(ctx, other_realm).await;
     add_allow_credential(&mut options, &credential_bytes);
-    let challenge: RequestChallengeResponse =
-        serde_json::from_value(options).expect("auth options should deserialize");
-    let assertion = authenticator
-        .do_authentication(rp_origin(), challenge)
-        .expect("SoftToken authentication should succeed");
+    let assertion = authenticator.authenticate(&options, RP_ORIGIN);
     let payload = json!({
         "authToken": auth_token,
-        "assertion": serde_json::to_value(assertion).unwrap()
+        "assertion": assertion
     });
     let req = Request::builder()
         .method("POST")
@@ -920,15 +897,10 @@ async fn test_registration_finish_duplicate_credential_id_conflict(ctx: &mut Tes
     let (options, reg_token) =
         begin_registration(ctx, &session, PASSWORD, Some("Duplicate Key")).await;
     clear_passkey_user_rate_limit(ctx, &user_id).await;
-    let challenge: CreationChallengeResponse =
-        serde_json::from_value(options).expect("registration options should deserialize");
-    let attestation = authenticator
-        .do_registration(rp_origin(), challenge)
-        .expect("SoftToken registration should succeed");
-    let attestation_json = serde_json::to_value(attestation).unwrap();
-    let raw_id = attestation_json["rawId"]
+    let attestation_json = authenticator.register(&options, RP_ORIGIN);
+    let raw_id = attestation_json["id"]
         .as_str()
-        .or_else(|| attestation_json["id"].as_str())
+        .or_else(|| attestation_json["rawId"].as_str())
         .expect("attestation should include credential id");
     let credential_bytes = URL_SAFE_NO_PAD
         .decode(raw_id)

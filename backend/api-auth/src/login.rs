@@ -291,7 +291,10 @@ pub async fn login(
     // Check if user has TOTP enabled
     let totp_repo = PostgresUserTotpRepository::new(state.db.clone());
     let totp_config = totp_repo.get_config_by_user_id(user.id).await?;
-    let has_totp = totp_config.as_ref().map(|config| config.enabled).unwrap_or(false);
+    let has_totp = totp_config
+        .as_ref()
+        .map(|config| config.enabled)
+        .unwrap_or(false);
 
     // Check if user has passkeys registered for second-factor login
     let passkey_repo = PostgresUserPasskeyRepository::new(state.db.clone());

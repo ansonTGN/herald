@@ -154,6 +154,7 @@ impl UserPasskeyRepository for PostgresUserPasskeyRepository {
         &self,
         id: Uuid,
         counter: u64,
+        user_verified: bool,
         used_at: chrono::DateTime<chrono::Utc>,
     ) -> Result<(), CoreError> {
         let credential = user_passkey_credential::Entity::find_by_id(id)
@@ -163,6 +164,7 @@ impl UserPasskeyRepository for PostgresUserPasskeyRepository {
 
         let mut active_model: user_passkey_credential::ActiveModel = credential.into();
         active_model.counter = Set(Self::counter_to_i64(counter)?);
+        active_model.user_verified = Set(user_verified);
         active_model.last_used_at = Set(Some(used_at.into()));
         active_model.updated_at = Set(chrono::Utc::now().into());
         active_model.update(&*self.db).await?;

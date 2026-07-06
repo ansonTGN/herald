@@ -42,6 +42,7 @@ pub trait UserPasskeyRepository: Send + Sync {
         &self,
         id: Uuid,
         counter: u64,
+        user_verified: bool,
         used_at: DateTime<Utc>,
     ) -> impl Future<Output = Result<(), CoreError>> + Send;
 }

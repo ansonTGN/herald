@@ -34,6 +34,8 @@ pub mod email_config_helpers;
 pub mod oauth_pkce_helpers;
 pub mod oauth_test_helpers;
 #[cfg(test)]
+pub mod passkey_authenticator;
+#[cfg(test)]
 pub mod payment_assertions;
 pub mod points_grant_helpers;
 pub mod points_helpers;
