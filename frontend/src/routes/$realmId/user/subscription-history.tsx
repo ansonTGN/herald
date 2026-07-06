@@ -13,12 +13,12 @@ import {
   requireFeature,
 } from '@/data/query-options'
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants'
-import type { PurchaseHistoryItemDto } from '@/lib/api-generated'
+import type { PurchaseHistoryItem } from '@/lib/api-generated'
 import { m } from '@/paraglide/messages'
 
 export const Route = createFileRoute('/$realmId/user/subscription-history')({
   beforeLoad: ({ context, params }) =>
-    requireFeature(context.queryClient, params.realmId, (f) => f.user.pointsPurchaseVisible, {
+    requireFeature(context.queryClient, params.realmId, (f) => f.user.pointsVisible, {
       to: '/$realmId/user/profile',
       params: { realmId: params.realmId },
     }),
@@ -29,7 +29,7 @@ function PurchaseRecordsRoute() {
   const { realmId } = Route.useParams()
   const navigate = useNavigate()
   const [purchaseHistoryPage, setPurchaseHistoryPage] = useState(1)
-  const [selectedPurchase, setSelectedPurchase] = useState<PurchaseHistoryItemDto | null>(null)
+  const [selectedPurchase, setSelectedPurchase] = useState<PurchaseHistoryItem | null>(null)
 
   const { data: purchaseHistoryData, isLoading: purchaseHistoryLoading } = useQuery(
     purchaseHistoryQueryOptions(realmId, {
@@ -39,7 +39,7 @@ function PurchaseRecordsRoute() {
   )
   const { data: features } = useQuery(featureAvailabilityQueryOptions(realmId))
   const invoicesVisible = features?.user.invoicesVisible === true
-  const canPurchasePoints = features?.user.pointsPurchaseVisible === true
+  const canPurchasePoints = features?.user.pointsVisible === true
 
   const handleDetailsClick = useCallback(
     (attemptId: string) => {

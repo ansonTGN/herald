@@ -14,7 +14,6 @@ import {
   getCreditNoteSourceColorClass,
   getProviderLabel,
   getViewInProviderUrl,
-  shouldRenderRefundDimension,
 } from '@/lib/invoice-utils'
 import type { InvoiceDetailResponse } from '@/lib/api-generated'
 import { m } from '@/paraglide/messages'
@@ -32,7 +31,7 @@ export function CreditNoteList({
   showRecordRefundEntry,
   onRecordRefund,
 }: CreditNoteListProps) {
-  if (!showCreditNotes || !shouldRenderRefundDimension(invoice.provider, invoice.amountRefunded)) {
+  if (!showCreditNotes || invoice.creditNotes.length === 0) {
     return null
   }
 

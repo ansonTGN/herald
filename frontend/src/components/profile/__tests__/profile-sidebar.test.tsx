@@ -11,7 +11,6 @@ import { LocaleProvider } from '@/components/shared/locale-provider'
 let featureData = {
   user: {
     pointsVisible: false,
-    pointsPurchaseVisible: false,
     subscriptionVisible: false,
     invoicesVisible: false,
   },
@@ -43,11 +42,13 @@ vi.mock('@/data/query-options', () => ({
 }))
 
 describe('ProfileSidebar', () => {
-  it('shows purchase records when point purchases are available', () => {
+  it('shows points and purchase records together when points area is available', () => {
+    // After the gate merge, `pointsVisible` drives both the Points and the
+    // PurchaseRecords entries — they belong to the same points area and no
+    // longer gate independently.
     featureData = {
       user: {
-        pointsVisible: false,
-        pointsPurchaseVisible: true,
+        pointsVisible: true,
         subscriptionVisible: false,
         invoicesVisible: false,
       },
@@ -61,7 +62,7 @@ describe('ProfileSidebar', () => {
 
     expect(screen.getByTestId('profile-menu-profile')).toBeInTheDocument()
     expect(screen.getByTestId('profile-menu-security')).toBeInTheDocument()
-    expect(screen.queryByTestId('profile-menu-points')).not.toBeInTheDocument()
+    expect(screen.getByTestId('profile-menu-points')).toBeInTheDocument()
     expect(screen.getByTestId('profile-menu-purchaserecords')).toBeInTheDocument()
     expect(screen.queryByTestId('profile-menu-subscription')).not.toBeInTheDocument()
     expect(screen.queryByTestId('profile-menu-invoices')).not.toBeInTheDocument()
@@ -71,7 +72,6 @@ describe('ProfileSidebar', () => {
     featureData = {
       user: {
         pointsVisible: false,
-        pointsPurchaseVisible: false,
         subscriptionVisible: false,
         invoicesVisible: true,
       },
@@ -86,11 +86,10 @@ describe('ProfileSidebar', () => {
     expect(screen.getByTestId('profile-menu-invoices')).toBeInTheDocument()
   })
 
-  it('does not show purchase records for subscription-only realms', () => {
+  it('does not show points/purchase records when points area is hidden (e.g. subscription-only realm with no enabled mappings on the points axis)', () => {
     featureData = {
       user: {
         pointsVisible: false,
-        pointsPurchaseVisible: false,
         subscriptionVisible: true,
         invoicesVisible: false,
       },
@@ -103,5 +102,6 @@ describe('ProfileSidebar', () => {
     )
 
     expect(screen.queryByTestId('profile-menu-purchaserecords')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('profile-menu-points')).not.toBeInTheDocument()
   })
 })

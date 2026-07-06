@@ -29,15 +29,6 @@ Once running: frontend at http://localhost:3000 , backend API at http://localhos
 - **URL**: https://auth.fornetcode.com
 - **Admin**: admin@fornetcode.com / Herald@2026Admin
 
-## Documentation
-
-Full tutorials at [docs/tutorials/](docs/tutorials/), covering local development, architecture, configuration, deployment, and billing.
-
-- [Getting Started](docs/tutorials/getting-started-en.md) — local development setup
-- [Architecture](docs/tutorials/architecture-en.md) — project structure and tech choices
-- [Billing Architecture](docs/tutorials/billing-overview.md) — entitlement mapping, subscription projection, credits policy
-- [Third-Party Integration](docs/tutorials/third-party-integration-en.md) — integrate via the SDK
-
 ## License
 
 [Apache-2.0](LICENSE)

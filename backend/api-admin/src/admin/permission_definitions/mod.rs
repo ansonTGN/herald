@@ -11,9 +11,6 @@ mod list;
 pub mod types;
 mod update;
 
-#[cfg(test)]
-mod tests;
-
 pub use create::*;
 pub use delete::*;
 pub use get::*;

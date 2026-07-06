@@ -1,5 +1,5 @@
 use axum::extract::{Extension, Path, Query, State};
-use herald_api_base::application::http::auth::util::require_permission;
+use herald_api_base::application::http::common::auth_utils::AdminIdentity;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult, PageResponse};
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
@@ -33,16 +33,8 @@ pub async fn list_api_keys(
     Path(realm_id): Path<String>,
     Query(query): Query<ListQuery>,
 ) -> Result<ApiResult<PageResponse<ApiKeyListItem>>, ApiError> {
-    let user_id = identity.user_id();
-    require_permission(
-        &state,
-        &realm_id,
-        &user_id,
-        "api_keys",
-        "view",
-        "api_keys.view",
-    )
-    .await?;
+    let admin = AdminIdentity::require(identity, &realm_id, "api keys")?;
+    admin.require_permission(&state, "api_keys", "view").await?;
 
     let offset = (query.page * query.page_size) as u64;
     let limit = query.page_size as u64;

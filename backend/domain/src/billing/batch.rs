@@ -1,19 +1,19 @@
 //! Batch price-mapping write types.
 //!
-//! Single-transaction upsert of ALL price rows for a product; shared-key rename
-//! consistency (group-wide); any row violating the active-subscription lock
-//! rolls back the whole transaction and surfaces a structured 409.
+//! Single-transaction upsert of ALL price rows for a product; any row violating
+//! the active-subscription lock rolls back the whole transaction and surfaces a
+//! structured 409.
 
 use uuid::Uuid;
 
 use crate::billing::entities::EntitlementMapping;
 
-/// Billing-side input DTO for one quota window in a mapping batch update.
+/// Billing-side input for one quota window in a mapping batch update.
 ///
 /// Carries only the editable fields (`window_seconds`, `limit`); the stable
 /// display `key` is derived by the API layer (via `derive_window_key`) before
 /// persistence, so callers cannot drift window identity. Mirrors the
-/// points-domain request shape (`api-points::types::QuotaWindowInputDto`) — kept
+/// points-domain request shape (`api-points::types::QuotaWindowInput`) — kept
 /// local to billing so api-billing does not depend on api-points.
 #[derive(Debug, Clone)]
 pub struct QuotaWindowInput {
@@ -32,14 +32,10 @@ pub struct QuotaWindowInput {
 #[derive(Debug, Clone)]
 pub struct PriceMappingUpdateInput {
     pub mapping_id: Uuid,
-    pub entitlement_key: String,
     pub billing_type: Option<String>,
-    pub billing_period: Option<String>,
     pub points_per_period: Option<i64>,
-    pub grant_period_type: Option<String>,
     pub validity_days: Option<i64>,
     pub grant_on_subscribe: Option<bool>,
-    pub max_periods: Option<i32>,
     pub enabled: Option<bool>,
     /// Quota window config (design §4.3.2). `None` ⟺ leave unchanged;
     /// `Some(vec![])` ⟺ clear (no window grant); `Some(non-empty)` ⟺ set.
@@ -78,18 +74,6 @@ pub enum BatchMappingError {
         mapping_id: Uuid,
         provider: String,
         product: String,
-    },
-
-    /// Renaming the shared `entitlement_key` for this product's group would also
-    /// affect mappings of OTHER products that currently share the same key
-    /// (cross-product rename leak). → 400.
-    #[error(
-        "shared-key rename would affect {affected_count} mapping(s) outside provider '{provider}' product '{product}'"
-    )]
-    CrossProductSharedKeyRename {
-        provider: String,
-        product: String,
-        affected_count: i64,
     },
 
     /// One or more rows transition `enabled` true→false while their mapping has

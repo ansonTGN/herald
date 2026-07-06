@@ -128,6 +128,11 @@ export function MySubscriptionsPage({ realmId }: MySubscriptionsPageProps) {
             <p className="text-sm text-muted-foreground text-center">
               {m['billing.my_subscriptions_empty_description']()}
             </p>
+            <Button asChild className="mt-4" data-testid="my-subscriptions-browse-plans">
+              <Link to="/$realmId/user/purchase-points" params={{ realmId }}>
+                {m['billing.my_subscriptions_browse_plans']()}
+              </Link>
+            </Button>
           </CardContent>
         </Card>
       ) : (
@@ -165,6 +170,20 @@ export function MySubscriptionsPage({ realmId }: MySubscriptionsPageProps) {
                     {formatProviderName(subscription.paymentProvider ?? '')}
                   </div>
                 </div>
+
+                {subscription.status.toLowerCase() === 'active' && (
+                  <Button
+                    asChild
+                    variant="secondary"
+                    size="sm"
+                    className="w-full"
+                    data-testid={`subscription-change-plan-${subscription.id}`}
+                  >
+                    <Link to="/$realmId/user/purchase-points" params={{ realmId }}>
+                      {m['billing.my_subscriptions_change_plan']()}
+                    </Link>
+                  </Button>
+                )}
 
                 <Button asChild variant="outline" size="sm" className="w-full">
                   <Link

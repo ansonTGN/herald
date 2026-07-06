@@ -6,7 +6,14 @@
  * access to auth data for Zustand store updates.
  */
 
-import { status, getUserRoles, getProfile, login, logout } from '@/lib/api-generated'
+import {
+  status,
+  getCurrentUserPermissions,
+  getUserRoles,
+  getProfile,
+  login,
+  logout,
+} from '@/lib/api-generated'
 import type {
   StatusResponse,
   LoginRequestPayload,
@@ -39,13 +46,18 @@ export async function fetchAuthStatus(realmId: string): Promise<StatusResponse> 
  * @returns Object containing permissions and roles arrays
  */
 export async function fetchUserPermissions(): Promise<{ permissions: string[]; roles: string[] }> {
-  const { data, error } = await getUserRoles()
-  if (error || !data) {
+  const [permissionsResult, rolesResult] = await Promise.all([
+    getCurrentUserPermissions(),
+    getUserRoles(),
+  ])
+
+  if (permissionsResult.error || rolesResult.error) {
     return { permissions: [], roles: [] }
   }
+
   return {
-    permissions: data.permissions || [],
-    roles: data.roles || [],
+    permissions: permissionsResult.data?.permissions || [],
+    roles: rolesResult.data?.roles || [],
   }
 }
 

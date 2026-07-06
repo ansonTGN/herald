@@ -6,13 +6,11 @@ pub mod audit_collection_scenarios;
 
 // Tests for self-implemented permission system
 pub mod admin_init_scenarios;
-pub mod admin_role_definitions_scenarios;
 pub mod builtin_protection_scenarios;
 pub mod change_email_scenarios;
 pub mod client_app_scenarios;
 pub mod consent_gate_scenarios;
 pub mod login_flow_scenarios;
-pub mod permission_regression_scenarios;
 pub mod permission_security_scenarios;
 pub mod realm_access_scenarios;
 pub mod realm_admin_creation_scenarios;
@@ -26,9 +24,6 @@ pub mod user_roles_scenarios;
 
 // Billing scenarios
 pub mod billing;
-
-// Realm creation permission scenarios
-pub mod realm_creation_permission_test;
 
 // Client API scenarios
 pub mod client_api_scenarios;

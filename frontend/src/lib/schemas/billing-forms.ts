@@ -1,21 +1,13 @@
 import { z } from 'zod'
-import { m } from '@/paraglide/messages'
 import { quotaWindowSchema } from '@/lib/schemas/points-forms'
 
 // ==================== Price-Level Batch Save Schema ====================
 //
 // Mirrors the generated `PriceMappingUpdate` / `BatchUpdateEntitlementMappingsRequest`.
-// One price row per entry; `entitlementKey` is shared across the product's prices.
-
-const ENTITLEMENT_KEY_REGEX = /^[a-z0-9-]{1,64}$/
+// One price row per entry; `entitlementKey` is provider-sync owned and not editable here.
 
 export const priceMappingUpdateSchema = z.object({
   mappingId: z.string().min(1),
-
-  entitlementKey: z
-    .string()
-    .min(1, { error: () => m['billing.entitlement_key_required']() })
-    .regex(ENTITLEMENT_KEY_REGEX, { error: () => m['billing.entitlement_key_format']() }),
 
   billingType: z.string().nullable().optional(),
 
@@ -25,13 +17,9 @@ export const priceMappingUpdateSchema = z.object({
 
   pointsPerPeriod: z.number().int().min(0).nullable().optional(),
 
-  grantPeriodType: z.enum(['once', 'daily', 'weekly', 'monthly']).nullable().optional(),
-
   validityDays: z.number().int().min(1).nullable().optional(),
 
   grantOnSubscribe: z.boolean().nullable().optional(),
-
-  maxPeriods: z.number().int().min(1).nullable().optional(),
 
   // Per-price quota windows (design §3.2 / §4.3.2). Mirrors
   // `PriceMappingUpdate.quotaWindows`: `null`/undefined ⟺ leave unchanged,
@@ -52,8 +40,7 @@ export type BatchEntitlementMappingsFormData = z.infer<typeof batchEntitlementMa
 
 /**
  * Build form defaults for the price-level batch editor from the product's
- * current price rows. Each input row must already carry its `mappingId`;
- * the entitlement key is seeded from the row (the editor renames it group-wide).
+ * current price rows. Each input row must already carry its `mappingId`.
  */
 export function getBatchEntitlementMappingsDefaults(
   config?: Partial<BatchEntitlementMappingsFormData>

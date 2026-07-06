@@ -1,14 +1,10 @@
-import { useState } from 'react'
 import { RefreshCw } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { useSyncProviderProducts } from '@/data/entitlement-mapping-mutations'
+import { paymentProvidersQueryOptions } from '@/data/query-options'
+import { formatProviderName } from '@/components/billing/format-provider-name'
 import { m } from '@/paraglide/messages'
 
 interface ProviderSyncButtonProps {
@@ -16,19 +12,20 @@ interface ProviderSyncButtonProps {
   onSyncComplete?: () => void
 }
 
-const SYNC_PROVIDERS = [
-  { value: 'stripe', label: 'Stripe' },
-  { value: 'creem', label: 'Creem' },
-] as const
+// Render order for provider buttons when more than one is configured.
+const PROVIDER_ORDER = ['stripe', 'creem'] as const
 
 export function ProviderSyncButton({ realmId, onSyncComplete }: ProviderSyncButtonProps) {
-  const [selectedProvider, setSelectedProvider] = useState<string>('')
   const syncMutation = useSyncProviderProducts(realmId)
+  const { data: providers } = useQuery(paymentProvidersQueryOptions(realmId))
 
-  const handleSync = () => {
-    if (!selectedProvider) return
+  const configured = PROVIDER_ORDER.filter((platform) =>
+    (providers ?? []).some((p) => p.platform === platform)
+  )
+
+  const handleSync = (paymentProvider: string) => {
     syncMutation.mutate(
-      { paymentProvider: selectedProvider },
+      { paymentProvider },
       {
         onSuccess: () => {
           onSyncComplete?.()
@@ -37,46 +34,43 @@ export function ProviderSyncButton({ realmId, onSyncComplete }: ProviderSyncButt
     )
   }
 
-  // Show counts inline only for a completed sync (the mutation also toasts).
-  // `partial` still surfaces what synced so the admin can see price-level progress.
-  const syncData = syncMutation.data
-  const showCounts =
-    syncData != null && (syncData.syncStatus === 'completed' || syncData.syncStatus === 'partial')
-
-  return (
-    <div className="flex items-center gap-2" data-testid="provider-sync-button">
-      <Select value={selectedProvider} onValueChange={setSelectedProvider}>
-        <SelectTrigger className="w-[160px]" data-testid="sync-provider-select">
-          <SelectValue placeholder={m['billing.sync_provider']()} />
-        </SelectTrigger>
-        <SelectContent>
-          {SYNC_PROVIDERS.map((provider) => (
-            <SelectItem key={provider.value} value={provider.value}>
-              {provider.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+  const renderSyncButton = (platform: string) => {
+    const label = m['billing.sync_provider_with_name']({ name: formatProviderName(platform) })
+    return (
       <Button
-        onClick={handleSync}
-        disabled={!selectedProvider || syncMutation.isPending}
+        key={platform}
+        onClick={() => handleSync(platform)}
+        disabled={syncMutation.isPending}
         data-testid="sync-button"
+        data-provider={platform}
       >
         <RefreshCw
           className={syncMutation.isPending ? 'mr-2 h-4 w-4 animate-spin' : 'mr-2 h-4 w-4'}
         />
-        {m['billing.sync_provider']()}
+        {label}
       </Button>
-      {showCounts && (
-        <span className="text-sm text-muted-foreground" data-testid="sync-result">
-          <span data-testid="sync-result-products">
-            {m['billing.sync_result_products']({ count: syncData.productsSynced })}
-          </span>
-          {' · '}
-          <span data-testid="sync-result-prices">
-            {m['billing.sync_result_prices']({ count: syncData.pricesSynced })}
-          </span>
-        </span>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-2" data-testid="provider-sync-button">
+      {configured.length > 0 ? (
+        configured.map(renderSyncButton)
+      ) : (
+        <TooltipProvider delayDuration={200}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              {/* span wrapper so the disabled Button still receives hover events for the tooltip */}
+              <span tabIndex={0}>
+                <Button disabled data-testid="sync-button">
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  {m['billing.sync_provider']()}
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>{m['billing.sync_provider_none_configured_hint']()}</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       )}
     </div>
   )

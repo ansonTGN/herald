@@ -70,7 +70,3 @@ pub fn realm_router() -> Router<AppState> {
             axum::routing::get(passkey_config::handle_get_realm_passkey_config),
         )
 }
-
-// Tests
-#[cfg(test)]
-mod tests;

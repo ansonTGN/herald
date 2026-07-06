@@ -30,7 +30,7 @@ pub use ports::{
 pub use service::PointsService;
 /// Stable display-key derivation for quota windows (design §4.2.2 / §4.4.3).
 /// Re-exported so the api layer can derive keys when materializing the domain
-/// input DTOs from the request shape (`QuotaWindowInputDto` carries no key).
+/// inputs from the request shape (`QuotaWindowInput` carries no key).
 pub use service::derive_window_key;
 pub use subscription_service::{CancelMode, SubscriptionService};
 

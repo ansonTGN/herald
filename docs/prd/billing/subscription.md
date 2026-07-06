@@ -262,8 +262,7 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 - **Paused（暂停）** — 订阅暂停中，无访问权限
 - **Pending（待处理）** — 本地扩展状态，用于支付流程中间态
 
-> **退款说明**：`refund.created`（Creem）/ `charge.refunded`（Stripe）事件不作为独立订阅状态。退款事件仅记录审计日志并触发积分回收（按退款类型比例撤销），不改变订阅状态。详见 `docs/prd/billing/points.md`。
-> **[待完善]** 当前退款事件仅通过日志记录，未创建 `SubscriptionHistoryEvent`。应补充退款事件的历史记录创建逻辑。
+> **退款说明**：`refund.created`（Creem）/ `charge.refunded`（Stripe）事件不作为独立订阅状态。退款事件记录订阅历史事件（`SubscriptionHistoryEvent`，类型 `Refunded`）并触发积分回收（按退款类型比例撤销），不改变订阅状态。详见 `docs/prd/billing/points.md`。
 
 **订阅变更事件类型**：
 

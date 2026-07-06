@@ -242,13 +242,11 @@ pub trait BillingRepository: Send + Sync {
 
     /// Atomically batch-upsert ALL price rows for one product.
     ///
-    /// Single transaction: upsert every row, apply shared-key rename consistency
-    /// (group-wide), and reject the WHOLE batch with
+    /// Single transaction: upsert every row, and reject the WHOLE batch with
     /// [`BatchMappingError::ActiveSubscriptionLock`] if any row transitions
     /// `enabled` true→false while protected by an active subscription.
-    /// Cross-product shared-key rename leaks surface as
-    /// [`BatchMappingError::CrossProductSharedKeyRename`]; cross-realm/product
-    /// `mapping_id` tampering surfaces as
+    /// `entitlement_key` is provider-owned/read-only and not written by this
+    /// path; cross-realm/product `mapping_id` tampering surfaces as
     /// [`BatchMappingError::MappingNotInGroup`].
     fn batch_update_mappings(
         &self,

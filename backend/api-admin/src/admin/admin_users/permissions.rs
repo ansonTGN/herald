@@ -8,6 +8,7 @@ use axum::{
     http::HeaderMap,
 };
 use axum_valid::Valid;
+use herald_api_base::application::http::common::auth_utils::AdminIdentity;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
@@ -45,37 +46,8 @@ pub async fn get_user_permissions(
     Path((realm_id, user_id)): Path<(String, Uuid)>,
     _headers: HeaderMap,
 ) -> Result<ApiResult<UserPermissionsResponse>, ApiError> {
-    // Extract user_id from identity
-    let current_user_id = identity.user_id();
-    let identity_realm_id = identity.realm_id();
-
-    // Check realm boundary
-    if identity_realm_id != realm_id {
-        return Err(ApiError::forbidden(
-            "Access denied: cannot view permissions from a different realm",
-        ));
-    }
-
-    // Check users.view permission (viewing other user's permissions)
-    let allowed = state
-        .permission_checker
-        .check_permission(&realm_id, &current_user_id, "users", "view")
-        .await
-        .map_err(|e| {
-            tracing::error!(
-                current_user_id = %current_user_id,
-                realm_id = %realm_id,
-                error = %e,
-                "Failed to check users.view permission"
-            );
-            ApiError::internal("Failed to check permission")
-        })?;
-
-    if !allowed {
-        return Err(ApiError::forbidden(
-            "Insufficient permissions to view user permissions",
-        ));
-    }
+    let admin = AdminIdentity::require(identity, &realm_id, "user permission management")?;
+    admin.require_permission(&state, "users", "view").await?;
 
     // Get user's direct permissions from role_policies table
     // Note: Direct user permissions are stored with user_id as role_id
@@ -136,7 +108,9 @@ pub async fn assign_user_permission(
     _headers: HeaderMap,
     Valid(Json(payload)): Valid<Json<AssignPermissionRequest>>,
 ) -> Result<ApiResult<()>, ApiError> {
-    let current_user_id = identity.user_id();
+    let admin = AdminIdentity::require(identity, &realm_id, "user permission management")?;
+    let current_user_id = admin.user_id_string();
+    let permission_checker = &state.permission_checker;
 
     tracing::info!(
         realm_id = %realm_id,
@@ -146,8 +120,6 @@ pub async fn assign_user_permission(
         action = %payload.action,
         "Assigning direct permission to user"
     );
-
-    let permission_checker = &state.permission_checker;
 
     // Security: Cannot create "All" or wildcard policies
     if payload.resource == "All" || payload.resource.contains("*") {
@@ -161,24 +133,9 @@ pub async fn assign_user_permission(
     }
 
     // Check policies.manage permission
-    let has_permission = permission_checker
-        .check_permission(&realm_id, &current_user_id, "policies", "manage")
-        .await
-        .map_err(|e| {
-            tracing::error!(
-                current_user_id = %current_user_id,
-                realm_id = %realm_id,
-                error = %e,
-                "Failed to check policies.manage permission"
-            );
-            ApiError::internal("Failed to check permission")
-        })?;
-
-    if !has_permission {
-        return Err(ApiError::forbidden(
-            "You don't have permission to manage policies",
-        ));
-    }
+    admin
+        .require_permission(&state, "policies", "manage")
+        .await?;
 
     // Check if permission already exists
     let existing = sqlx::query_scalar::<_, Uuid>(
@@ -279,7 +236,7 @@ pub async fn remove_user_permission(
     _headers: HeaderMap,
     Valid(Json(payload)): Valid<Json<AssignPermissionRequest>>,
 ) -> Result<ApiResult<()>, ApiError> {
-    let current_user_id = identity.user_id();
+    let admin = AdminIdentity::require(identity, &realm_id, "user permission management")?;
 
     tracing::info!(
         realm_id = %realm_id,
@@ -292,24 +249,9 @@ pub async fn remove_user_permission(
     let permission_checker = &state.permission_checker;
 
     // Check policies.manage permission
-    let has_permission = permission_checker
-        .check_permission(&realm_id, &current_user_id, "policies", "manage")
-        .await
-        .map_err(|e| {
-            tracing::error!(
-                current_user_id = %current_user_id,
-                realm_id = %realm_id,
-                error = %e,
-                "Failed to check policies.manage permission"
-            );
-            ApiError::internal("Failed to check permission")
-        })?;
-
-    if !has_permission {
-        return Err(ApiError::forbidden(
-            "You don't have permission to manage policies",
-        ));
-    }
+    admin
+        .require_permission(&state, "policies", "manage")
+        .await?;
 
     // Delete the permission policy from role_policies table
     let result = sqlx::query(
@@ -386,11 +328,14 @@ pub async fn get_effective_permissions(
     Path((realm_id, target_user_id)): Path<(String, Uuid)>,
     _headers: HeaderMap,
 ) -> Result<ApiResult<EffectivePermissionsResponse>, ApiError> {
+    let admin = AdminIdentity::require(identity, &realm_id, "user permission management")?;
+    admin.require_permission(&state, "users", "view").await?;
+
     let user_permission_service = &state.user_permission_service;
 
     // Call service layer to get effective permissions
     let permissions = user_permission_service
-        .get_effective_permissions(identity, &realm_id, target_user_id)
+        .get_effective_permissions(admin.identity().clone(), &realm_id, target_user_id)
         .await
         .map_err(|e| match e {
             UserAdminError::PermissionDenied(msg) => ApiError::forbidden(msg),

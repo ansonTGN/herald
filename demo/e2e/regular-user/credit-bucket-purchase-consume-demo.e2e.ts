@@ -497,22 +497,25 @@ test.describe('[Regular User / SDK] 购买 Bucket 套餐与跨池消费 (US-CB-0
     await test.step('When: 购买已归属 mapping 并模拟支付成功', async () => {
       // Card-selection uses the price-card grid (migrated from the legacy
       // `mappingCard.card(targetEntitlementKey)`). We pick the first
-      // purchasable card in the Monthly pane (skipping any
-      // disabled card with a `-reason` row). The page resolves the checkout
-      // mappingId from the clicked option, so we do not pin it here.
+      // purchasable card across both sections (Subscriptions month grid +
+      // Credit packs grid), skipping any disabled card with a `-reason` row.
+      // The page resolves the checkout mappingId from the clicked option, so we
+      // do not pin it here.
       await page.evaluate(() =>
         localStorage.removeItem('cas-purchase-flow'),
       )
       await page.goto(`/${TEST_REALM}/user/purchase-points`)
       await expect(page.locator(SELECTORS.purchasePoints.page)).toBeVisible()
 
-      const monthGrid = page.locator(
-        SELECTORS.purchasePriceCard.priceGrid('month'),
-      )
-      await expect(monthGrid).toBeVisible({ timeout: 10000 })
+      // Union the Subscriptions (month) grid and the Credit packs grid so a
+      // one_time-only realm still resolves.
+      const cards = page
+        .locator(
+          `${SELECTORS.purchasePriceCard.priceGrid('month')}, ${SELECTORS.purchasePriceCard.creditPacksGrid}`,
+        )
+        .locator('[data-testid^="purchase-price-card-"]')
+      await expect(cards.first()).toBeVisible({ timeout: 10000 })
 
-      // Enumerate cards, skip disabled ones (those carrying a `-reason` row).
-      const cards = monthGrid.locator('[data-testid^="purchase-price-card-"]')
       const cardCount = await cards.count()
       let clickedPriceId: string | null = null
       for (let i = 0; i < cardCount; i++) {
@@ -522,13 +525,13 @@ test.describe('[Regular User / SDK] 购买 Bucket 套餐与跨池消费 (US-CB-0
         const reason = card.locator(`[data-testid="${testid}-reason"]`)
         if ((await reason.count()) > 0) continue // disabled card
         await card.click()
-        // Recover priceId from the testid (Monthly pane → no `-annual` suffix).
+        // Card testid is period-invariant under the section IA (no `-annual`).
         clickedPriceId = testid.replace(/^purchase-price-card-/, '')
         break
       }
       expect(
         clickedPriceId,
-        'a purchasable price card must exist in the month pane',
+        'a purchasable price card must exist in the Subscriptions month or Credit packs grid',
       ).not.toBeNull()
 
       await expect(

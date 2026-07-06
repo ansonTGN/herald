@@ -40,7 +40,6 @@ use herald_entity::{
 
 /// Custom struct for SQLx query results from points_wallets table
 /// Implements FromRow to work with sqlx::query_as
-///
 /// The 5 per-type balance fields and
 /// `total_balance` are gone; only the 4 lifetime analytics columns remain.
 #[derive(Debug, FromRow)]
@@ -84,7 +83,6 @@ struct PointsTransactionRow {
     /// for consume/refund/revoke/expiration or when the ledger row's
     /// `effective_at` is NULL (immediately available). The domain
     /// `PointsTransaction.effective_at` is populated from this column.
-    ///
     /// `#[sqlx(default)]` so `SELECT * FROM points_transactions` (which cannot
     /// see the JOIN column) still deserializes — the value defaults to `None`
     /// when absent, which is the correct semantics for the write-side replay
@@ -145,8 +143,6 @@ struct ReclaimTargetRow {
 /// `points_quota_entitlements` sqlx row. Mirrors `PointsCreditLedgerRow`'s
 /// style: timestamps as `DateTimeWithTimeZone`, enums as raw strings parsed
 /// in the domain converter, and `quota_windows` read as a raw JSON value
-/// (the camelCase ↔ snake_case mapping is handled in the domain converter at
-/// this infra boundary — design BE-D04 handoff).
 #[derive(Debug, FromRow)]
 struct PointsQuotaEntitlementRow {
     pub id: Uuid,
@@ -168,11 +164,10 @@ struct PointsQuotaEntitlementRow {
 /// JSONB serde boundary for `quota_windows`. The DB column is
 /// `[{windowSeconds, limit, key}]` (camelCase); the domain `QuotaWindow` is
 /// snake_case Rust. This struct isolates the rename at the infra boundary so
-/// the domain entity stays as BE-D01 defined it (no DB-driven serde attrs on
+/// the domain entity stays as defined (no DB-driven serde attrs on
 /// the entity). Mirrors how `client/mod.rs` round-trips `redirect_uris`.
-///
 /// `pub(crate)` so the billing infra repository can reuse the same boundary for
-/// `provider_entitlement_mappings.quota_windows` (BE-D09) instead of forking a
+/// `provider_entitlement_mappings.quota_windows` instead of forking a
 /// second camelCase↔snake_case mapping.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct QuotaWindowDbJson {
@@ -185,11 +180,10 @@ pub(crate) struct QuotaWindowDbJson {
 /// Parse a raw JSONB value into the domain `Vec<QuotaWindow>`. `None` /
 /// `Null` ⟹ empty vec (the column is nullable; empty means "no window-model
 /// grant"). Used to hydrate `RealmDefaultConfig.free_periodic_quota_windows`
-/// (BE-D07 field wiring) and shares the `QuotaWindowDbJson` serde boundary
+/// and shares the `QuotaWindowDbJson` serde boundary
 /// with the `points_quota_entitlements.quota_windows` path.
-///
 /// `pub(crate)` so the billing infra repository reuses it for
-/// `provider_entitlement_mappings.quota_windows` (BE-D09).
+/// `provider_entitlement_mappings.quota_windows`.
 pub(crate) fn parse_quota_windows_value(
     raw: Option<serde_json::Value>,
 ) -> Result<Vec<QuotaWindow>, CoreError> {
@@ -212,13 +206,11 @@ pub(crate) fn parse_quota_windows_value(
 }
 
 /// Serialize a `Vec<QuotaWindow>` into the JSONB column shape
-/// (`[{windowSeconds, limit, key}]`, camelCase — matches
-/// `QuotaWindowDbJson` / design §4.3.2). Returns `None` for an empty slice so
+/// Returns `None` for an empty slice so
 /// the stored value stays SQL `NULL` (consistent with the read-path
 /// `parse_quota_windows_value` treating `None`/`Null` as "no window grant").
-///
 /// `pub(crate)` so the billing infra repository reuses it for
-/// `provider_entitlement_mappings.quota_windows` (BE-D09).
+/// `provider_entitlement_mappings.quota_windows`.
 pub(crate) fn serialize_quota_windows_value(
     windows: &[QuotaWindow],
 ) -> Result<Option<serde_json::Value>, CoreError> {
@@ -255,16 +247,16 @@ struct PlannedAllocation {
 }
 
 /// Pure split of a single bucket's `window_part` across the two window
-/// credit_types, per the points-grant-redesign §5.3 priority rule
-/// (design BE-D05 step 3):
+/// credit_types, per the priority:
+///
 /// - `subscription_credit` is consumed first (`sub_part`),
 /// - `free_periodic_credit` makes up the remainder (`free_part`).
 ///
 /// Inputs are the per-credit_type window spendables (each = `min over active
 /// windows of (limit − used)`). Output is the per-type consume amounts plus the
 /// residual `window_remainder` that could not be covered by this bucket's
-/// windows and must overflow to the next bucket (or to the pool side, which the
-/// §5.3 gate already accounted for via the wholesale `pool_avail`).
+/// windows and must overflow to the next bucket (or to the pool side, which is
+/// already accounted for via the wholesale `pool_avail`).
 ///
 /// This is deliberately free of DB / wallet concerns so the priority ordering,
 /// the `sub_part ≤ subscription_spendable` / `free_part ≤ free_spendable`
@@ -640,7 +632,7 @@ impl PostgresPointsRepository {
 
     /// Convert `points_quota_entitlements` sqlx row to the domain entity.
     /// The camelCase ↔ snake_case JSONB mapping for `quota_windows` is done
-    /// here at the infra boundary (design BE-D04).
+    /// here at the infra boundary.
     fn row_to_points_quota_entitlement(
         row: PointsQuotaEntitlementRow,
     ) -> Result<PointsQuotaEntitlement, CoreError> {
@@ -822,12 +814,10 @@ impl PostgresPointsRepository {
     }
 
     /// Pure allocation plan for a multi-pool consume.
-    ///
     /// Inputs: the already-locked active ledgers in `expires_at ASC NULLS LAST,
     /// created_at ASC` order, and the requested `amount`. Output is a sequence of
     /// `(ledger_index, allocated_amount)` covering the request greedily in expiry
     /// order, plus a `fully_covers` flag.
-    ///
     /// This is deliberately free of DB / wallet concerns so the cross-pool split,
     /// permanent-pool-last ordering, partial-coverage rejection and exact-amount
     /// boundary can be unit-tested without Postgres (testing requirement).
@@ -1026,17 +1016,14 @@ impl PostgresPointsRepository {
     }
 
     /// SINGLE writer of the `points_wallets` lifetime analytics columns.
-    ///
     /// The 5 per-type balance columns and
     /// `total_balance` were physically dropped; available balance is now a
     /// derived SUM over `points_credit_ledger`. This fn only advances the 4
     /// monotonic analytics columns (`total_recharged` / `total_consumed` /
     /// `total_topup_granted` / `total_subscription_granted`) inside the same
     /// transaction as the ledger mutation, so analytics stay drift-free.
-    ///
     /// MUST be the only writer of these columns — any future direct ledger
     /// write that bypasses this fn re-introduces analytics drift.
-    ///
     /// Returns the post-delta row. Callers that need the post-mutation
     /// available balance for `balance_after` on a `points_transactions` row
     /// must call `compute_available_balance_in_tx` (same predicate as the
@@ -1077,7 +1064,6 @@ impl PostgresPointsRepository {
     /// fill `points_transactions.balance_after` (+typed snapshots) with the
     /// REAL derived value at grant/consume/refund/revoke write time, replacing
     /// the old `updated_wallet.total_balance` source that no longer exists.
-    ///
     /// `bucket_ids` empty ⟺ aggregate across ALL the user's buckets; non-empty
     /// ⟺ restrict to listed buckets (used by per-bucket consume loop).
     async fn compute_available_balance_in_tx(
@@ -1141,9 +1127,7 @@ impl PostgresPointsRepository {
             .collect()
     }
 
-    /// Pure window-credit split for a single bucket (design BE-D05 step 3 /
-    /// points-grant-redesign §5.3 priority rule). See [`WindowCreditSplit`].
-    ///
+    /// Pure window-credit split for a single bucket. See [`WindowCreditSplit`].
     /// Defensive: negative spendables (shrunk quota / aggregation glitch) are
     /// clamped to 0 so the overspend invariant holds even if a negative slips
     /// through — mirrors `plan_mixed_consume`'s clamp.
@@ -1166,18 +1150,16 @@ impl PostgresPointsRepository {
         }
     }
 
-    /// In-transaction window spendable for `(user, bucket, credit_type)`
-    /// (points-grant-redesign §5.2 / design BE-D05 step 1). Returns the min over
+    /// In-transaction window spendable for `(user, bucket, credit_type)`.
+    /// Returns the min over
     /// active entitlement windows of `(limit − Σ consume in window)`, i.e. the
     /// tightest window's remaining headroom for that credit_type.
-    ///
     /// Mirrors [`Self::compute_available_balance_in_tx`]: runs against the
     /// caller's open tx so the window aggregation reflects the just-locked
-    /// `points_wallets FOR UPDATE` serialization (the §5.3 P0 anti-overspend
-    /// invariant). Reuses the BE-D04 SQL text + `PointsQuotaEntitlementRow` /
+    /// `points_wallets FOR UPDATE` serialization (the anti-overspend
+    /// invariant). Reuses the SQL text + `PointsQuotaEntitlementRow` /
     /// `QuotaWindowDbJson` serde boundary structs — does NOT duplicate the
     /// query strings.
-    ///
     /// `now` is the consume timestamp; the window-start is derived per window as
     /// `now - window_seconds`.
     async fn compute_window_spendable_in_tx(
@@ -1188,7 +1170,7 @@ impl PostgresPointsRepository {
         credit_type: CreditType,
         now: chrono::DateTime<chrono::Utc>,
     ) -> Result<i64, CoreError> {
-        // Reuse the BE-D04 SELECT text for active entitlements — same predicate,
+        // Reuse the SELECT text for active entitlements — same predicate,
         // run in-tx instead of on `self.pool`.
         let entitlement_rows = sqlx::query_as::<_, PointsQuotaEntitlementRow>(
             r#"
@@ -1230,7 +1212,7 @@ impl PostgresPointsRepository {
                     return Ok(0);
                 }
                 let window_start = now - chrono::Duration::seconds(window.window_seconds);
-                // Reuse the BE-D04 window-aggregation SQL text in-tx.
+                // Reuse the window-aggregation SQL text in-tx.
                 let used: i64 = sqlx::query_scalar(
                     r#"
                     SELECT COALESCE(SUM(ABS(amount)), 0)::BIGINT
@@ -1606,12 +1588,10 @@ impl PostgresPointsRepository {
 
 impl PointsRepository for PostgresPointsRepository {
     /// User-total wallet view (read path for `get_balance` / `get_wallet`).
-    ///
     /// A user may hold one wallet row per Bucket; this returns a single
     /// aggregated `PointsWallet` with `bucket_id = None` whose balance fields
-    /// are the SUM across the user's per-bucket wallet rows (review #5 chimera
-    /// fix). For a single-bucket user the result equals that bucket's row.
-    ///
+    /// are the SUM across the user's per-bucket wallet rows. For a single-bucket
+    /// user the result equals that bucket's row.
     /// O(1) per row: reads the maintained projection columns, never aggregates
     /// the ledger. Returns `None` if the user has no wallet row.
     async fn find_by_user_id(
@@ -1632,7 +1612,7 @@ impl PointsRepository for PostgresPointsRepository {
             return Ok(None);
         }
 
-        // Aggregate into a single user-total view. bucket_id = None signals
+        // Aggregate into a single user-total view. Bucket_id = None signals
         // "not tied to a specific pool" (matches the synthesized zero-balance
         // wallet used when no row exists). Status reflects the most restrictive
         // pool (any non-active row dominates); created_at/updated_at from the
@@ -1789,28 +1769,28 @@ impl PointsRepository for PostgresPointsRepository {
         // transaction→ledger relation has no FK, so we resolve the matching
         // ledger row via a LATERAL subquery that picks EXACTLY ONE row per
         // transaction. This fixes two issues with the prior plain LEFT JOIN:
-        //   R1 (fan-out): a plain LEFT JOIN on the OR-based LIKE/equality
-        //   conditions could match >1 ledger row per transaction (e.g. when
-        //   the same `source_id` is reused across multiple grants), duplicating
-        //   `points_transactions` rows and breaking pagination (`total` vs
-        //   `len(data)` and LIMIT/OFFSET). LATERAL + LIMIT 1 guarantees at
-        //   most one ledger row per transaction.
-        //   R2 (subscription-grant miss): subscription grants write
-        //   `ledger.source_id = "<entitlement_key>:<idempotency_key>"` and
-        //   `txn.external_ref_id = "<idempotency_key>"`. The prior third
-        //   branch `l.source_id LIKE (t.external_ref_id || ':%')` only matched
-        //   when the entitlement_key prefix was absent. The corrected
-        //   suffix-match branch `l.source_id LIKE '%:' || t.external_ref_id`
-        //   matches the `<entitlement_key>:<idempotency_key>` form regardless
-        //   of the entitlement-key prefix, so `points.manage` now returns the
-        //   real `effective_at` for subscription grants.
+        // R1 (fan-out): a plain LEFT JOIN on the OR-based LIKE/equality
+        // conditions could match >1 ledger row per transaction (e.g. when
+        // the same `source_id` is reused across multiple grants), duplicating
+        // `points_transactions` rows and breaking pagination (`total` vs
+        // `len(data)` and LIMIT/OFFSET). LATERAL + LIMIT 1 guarantees at
+        // most one ledger row per transaction.
+        // R2 (subscription-grant miss): subscription grants write
+        // `ledger.source_id = "<entitlement_key>:<idempotency_key>"` and
+        // `txn.external_ref_id = "<idempotency_key>"`. The prior third
+        // branch `l.source_id LIKE (t.external_ref_id || ':%')` only matched
+        // when the entitlement_key prefix was absent. The corrected
+        // suffix-match branch `l.source_id LIKE '%:' || t.external_ref_id`
+        // matches the `<entitlement_key>:<idempotency_key>` form regardless
+        // of the entitlement-key prefix, so `points.manage` now returns the
+        // real `effective_at` for subscription grants.
         // Match precedence (deterministic single pick via ORDER BY):
-        //   1. exact equality `t.external_ref_id = l.source_id` (strongest),
-        //   2. prefix form `t.external_ref_id LIKE l.source_id || ':%'`
-        //      (grant_points_atomic / pregrant: txn ref = `<source_id>:<tx_id>`),
-        //   3. suffix form `l.source_id LIKE '%:' || t.external_ref_id`
-        //      (subscription grant: ledger source_id = `<ek>:<idem_key>`),
-        //   then tie-break on `created_at DESC` for determinism.
+        // 1. Exact equality `t.external_ref_id = l.source_id` (strongest),
+        // 2. Prefix form `t.external_ref_id LIKE l.source_id || ':%'`
+        // (grant_points_atomic / pregrant: txn ref = `<source_id>:<tx_id>`),
+        // 3. Suffix form `l.source_id LIKE '%:' || t.external_ref_id`
+        // (subscription grant: ledger source_id = `<ek>:<idem_key>`),
+        // then tie-break on `created_at DESC` for determinism.
         // Non-grant rows (consume/refund/expiration) have NULL or non-matching
         // external_ref_id and yield NULL effective_at (correct semantics).
         // The filter clauses mirror `apply_transaction_filters` exactly so
@@ -2639,7 +2619,7 @@ impl PointsRepository for PostgresPointsRepository {
                 .map_err(|e| CoreError::BadRequest(format!("Invalid grant period type: {}", e)))?;
 
             let now = chrono::Utc::now();
-            // BE-D08: write-path DTO now carries `free_periodic_quota_windows`.
+            // write-path DTO now carries `free_periodic_quota_windows`.
             // `None` ⟺ leave column NULL (no window grant); `Some([])` ⟺ same;
             // `Some([...])` ⟺ persist the snapshot (keys already derived by the
             // api layer via `derive_window_key`).
@@ -2708,7 +2688,7 @@ impl PointsRepository for PostgresPointsRepository {
             active.free_periodic_points_amount = Set(input.free_periodic_points_amount);
             active.free_periodic_grant_period_type = Set(input.free_periodic_grant_period_type);
             active.free_periodic_validity_days = Set(input.free_periodic_validity_days);
-            // BE-D08: `None` ⟺ leave the stored column untouched (partial-update
+            // `None` ⟺ leave the stored column untouched (partial-update
             // semantics, so a caller editing only the bonus points does not
             // clobber an existing window config); `Some([...])` ⟺ replace,
             // `Some([])` ⟺ clear to NULL.
@@ -3494,18 +3474,9 @@ impl PointsRepository for PostgresPointsRepository {
                 return Err(CoreError::NoCoveredPointsPool { client_app_id });
             }
 
-            // expires_at ASC NULLS LAST order (single FOR UPDATE).
-            let ledgers = Self::find_active_ledgers_by_expiration_for_update(
-                &mut tx,
-                &realm_id,
-                user_id,
-                &covered_bucket_ids,
-            )
-            .await?;
-
             // `points_wallets FOR UPDATE` per bucket, bucket_id ASC) BEFORE the
             // window+pool availability computation. This serializes the
-            // mixed-consume coordination (design §5.3 / §7 P0): two concurrent
+            // mixed-consume coordination: two concurrent
             // consumes for the same (user, bucket) compute window+pool spendable
             // under the same row lock, so neither can overdraw a window or the
             // pool. The window-quota model is per-(user, bucket, credit_type), so
@@ -3526,9 +3497,20 @@ impl PointsRepository for PostgresPointsRepository {
                 bucket_wallets.insert(*bucket_id, wallet.id);
             }
 
+            // Lock pool ledgers after the bucket wallet rows. Refund/revoke paths
+            // also lock wallet before ledger, so this ordering avoids wallet<->ledger
+            // deadlocks under concurrent consume/refund races.
+            let ledgers = Self::find_active_ledgers_by_expiration_for_update(
+                &mut tx,
+                &realm_id,
+                user_id,
+                &covered_bucket_ids,
+            )
+            .await?;
+
             // window_avail_total = Σ over covered buckets of (min over active
             // windows of (limit − used)) for BOTH window credit_types
-            // (subscription_credit + free_periodic_credit). pool_avail is the
+            // (subscription_credit + free_periodic_credit). Pool_avail is the
             // existing locked-ledger remaining sum (unchanged source).
             // `plan_mixed_consume` rejects wholesale when
             // `amount > window_avail + pool_avail` (no partial deduction).
@@ -3565,7 +3547,7 @@ impl PointsRepository for PostgresPointsRepository {
                     pool_part,
                 } => (window_part, pool_part),
                 // Wholesale reject — rollback the whole transaction; NO partial
-                // deduction (the core P0 anti-overspend invariant).
+                // deduction.
                 MixedConsumePlan::Insufficient => {
                     return Err(CoreError::insufficient_points(
                         amount,
@@ -3663,7 +3645,7 @@ impl PointsRepository for PostgresPointsRepository {
             // Overspend invariant (P0): per-bucket `sub_part ≤ subscription_spendable`
             // and `free_part ≤ free_spendable` (enforced by the pure split's
             // `min`); Σ `sub_part + free_part` ≤ `window_part` (any residual
-            // overflows to the next bucket; the §5.3 gate already guaranteed
+            // overflows to the next bucket; the already guaranteed
             // `window_part ≤ window_avail_total`).
             let mut transactions: Vec<PointsTransaction> = Vec::new();
             let mut window_remaining = window_part;
@@ -3760,7 +3742,7 @@ impl PointsRepository for PostgresPointsRepository {
                 }
                 window_remaining = split.window_remainder;
             }
-            // The §5.3 gate guaranteed window_part ≤ window_avail_total, so the
+            // The guaranteed window_part ≤ window_avail_total, so the
             // per-bucket distribution MUST have fully absorbed it. Fail loud on
             // drift (concurrent entitlement revoke slipped past the wallet lock).
             let window_consumed_total: i64 = window_per_bucket.values().sum();
@@ -4384,7 +4366,7 @@ impl PointsRepository for PostgresPointsRepository {
             // types in a fixed priority so a refund against any balance
             // composition actually revokes — same priority as consume.
             // Bucket-scoped ledger locks prevent cross-bucket contention
-            // (review #8) since refunds target a single Bucket.
+            // since refunds target a single Bucket.
             let refund_types = [
                 CreditType::SubscriptionCredit,
                 CreditType::TopupCredit,
@@ -4857,7 +4839,6 @@ impl PointsRepository for PostgresPointsRepository {
     /// balance == spendable balance" — so future-effective rows are excluded
     /// from the user-visible balance and bucket totals. Replaces reading
     /// `points_wallets` Stored balance columns for available-balance semantics.
-    ///
     /// `bucket_ids` empty ⟺ aggregate across ALL the user's buckets (used by
     /// `get_balance`'s user-total view); non-empty ⟺ restrict to listed
     /// buckets (per-bucket grant responses). Empty-slice maps to no
@@ -4936,7 +4917,6 @@ impl PointsRepository for PostgresPointsRepository {
     /// bucket overview / bucket delete guard / `list_wallets` bulk-derived
     /// assembly so they no longer read `points_wallets.total_balance` (avoids
     /// future-effective leakage and bucket mis-judgement).
-    ///
     /// NOTE: `bucket_ids` empty ⟺ no bucket filter (aggregate every bucket in
     /// the realm). Callers that need "current page only" should pass the
     /// concrete bucket_id list.
@@ -5008,7 +4988,6 @@ impl PointsRepository for PostgresPointsRepository {
     /// idempotency) linked to the new ledger via `ledger_id` FK. Idempotent:
     /// a re-call for an already-written `(schedule_id, period_number)` returns
     /// the existing ledger without re-writing.
-    ///
     /// Real transactional pre-grant: `FOR UPDATE schedule`
     /// (serializes concurrent callers), check
     /// `points_grant_records(schedule_id, period_number)` existence (HIT →
@@ -5036,8 +5015,8 @@ impl PointsRepository for PostgresPointsRepository {
                 .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
 
             // 1) Lock the schedule row for the duration of this pre-grant so
-            //    concurrent callers serialize on the (schedule_id, period_number)
-            //    idempotency check. Re-read current state inside the lock.
+            // concurrent callers serialize on the (schedule_id, period_number)
+            // idempotency check. Re-read current state inside the lock.
             let row =
                 sqlx::query("SELECT active FROM points_grant_schedules WHERE id = $1 FOR UPDATE")
                     .bind(schedule.id)
@@ -5061,8 +5040,8 @@ impl PointsRepository for PostgresPointsRepository {
             }
 
             // 2) Idempotency: if a grant_record already exists for this
-            //    (schedule_id, period_number), return its ledger row via the
-            //    ledger_id FK bridge.
+            // (schedule_id, period_number), return its ledger row via the
+            // ledger_id FK bridge.
             let existing_ledger_id: Option<Uuid> = sqlx::query_scalar(
                 "SELECT ledger_id FROM points_grant_records WHERE schedule_id = $1 AND period_number = $2 LIMIT 1",
             )
@@ -5093,9 +5072,9 @@ impl PointsRepository for PostgresPointsRepository {
             }
 
             // 3) No prior grant_record — create the ledger row, apply wallet
-            //    delta, and write a points_transactions row (mirroring
-            //    `grant_points_atomic` in-tx). `source_type` /
-            //    `credit_type` come from the schedule's grant semantics.
+            // delta, and write a points_transactions row (mirroring
+            // `grant_points_atomic` in-tx). `source_type` /
+            // `credit_type` come from the schedule's grant semantics.
             let credit_type = match schedule.subscription_id {
                 Some(_) => CreditType::SubscriptionCredit,
                 None => CreditType::FreePeriodicCredit,
@@ -5187,11 +5166,11 @@ impl PointsRepository for PostgresPointsRepository {
             .await?;
 
             // 4) Insert the grant_record linking to the ledger row (FK bridge).
-            //    The UNIQUE(schedule_id, period_number) constraint is
-            //    the period-level business idempotency guarantee.
+            // The UNIQUE(schedule_id, period_number) constraint is
+            // the period-level business idempotency guarantee.
             // 4b) Insert the grant_record via raw SQL (the `&mut` sqlx tx
-            //     cannot be shared with sea-orm). Column order matches
-            //     `create_revocation_record_in_tx` for consistency.
+            // cannot be shared with sea-orm). Column order matches
+            // `create_revocation_record_in_tx` for consistency.
             let grant_record_id = Uuid::now_v7();
             sqlx::query(
                 r#"
@@ -5224,10 +5203,10 @@ impl PointsRepository for PostgresPointsRepository {
             })?;
 
             // 5) Advance the schedule. `granted_periods` becomes the latest
-            //    period granted; `next_grant_time` becomes the start of the
-            //    next nominal period. Using the domain's own
-            //    `next_grant_time(base, n)` arithmetic keeps a single source
-            //    of truth for period cadence.
+            // period granted; `next_grant_time` becomes the start of the
+            // next nominal period. Using the domain's own
+            // `next_grant_time(base, n)` arithmetic keeps a single source
+            // of truth for period cadence.
             let advanced_granted_periods = period_number_i64.max(schedule.granted_periods);
             let next_period_index = advanced_granted_periods + 1;
             let next_grant_time = schedule
@@ -5341,7 +5320,6 @@ impl PointsRepository for PostgresPointsRepository {
     /// as idempotent no-op). For partially-consumed rows (`used_amount > 0`),
     /// a `PointsRevocationRecord(reason='subscription_pre_grant_reclaim',
     /// revocation_type=CancelRevoke)` is written so the shortfall is auditable.
-    ///
     /// `ReclaimLocator::BySourceId(src)` filters
     /// `points_credit_ledger.source_id` directly;
     /// `ReclaimLocator::BySchedulePeriod{..}` is resolved to the unique ledger
@@ -5479,7 +5457,7 @@ impl PointsRepository for PostgresPointsRepository {
     }
 
     /// Locate active quota entitlements for the consume / balance read path
-    /// (design §5.2 / BE-D02 port). Window availability is computed by the
+    /// Window availability is computed by the
     /// caller from the returned snapshots + `sum_consume_in_window`.
     /// `bucket_id = None` omits the bucket filter, returning active
     /// entitlements across all the user's buckets.
@@ -5543,8 +5521,8 @@ impl PointsRepository for PostgresPointsRepository {
         }
     }
 
-    /// Sliding-window consume aggregation (design §5.2). Backed by
-    /// `idx_points_transactions_window_agg` (design §4.3.2). `window_start` is
+    /// Sliding-window consume aggregation. Backed by
+    /// `idx_points_transactions_window_agg`. `window_start` is
     /// `now - window_seconds`; the caller computes it per window.
     fn sum_consume_in_window(
         &self,
@@ -5581,7 +5559,7 @@ impl PointsRepository for PostgresPointsRepository {
         }
     }
 
-    /// Grant a quota entitlement atomically (design §5.4). Idempotent via
+    /// Grant a quota entitlement atomically. Idempotent via
     /// `UNIQUE(realm_id, user_id, bucket_id, credit_type, idempotency_key)`.
     /// `ON CONFLICT DO NOTHING RETURNING *` returns the freshly inserted row;
     /// if it returns nothing (replay), a follow-up SELECT returns the existing
@@ -5639,7 +5617,7 @@ impl PointsRepository for PostgresPointsRepository {
 
             // Idempotent replay path: conflict suppressed the INSERT — read the
             // pre-existing row and return it so the caller sees the persisted
-            // snapshot (design §5.4).
+            // snapshot.
             let row = match inserted {
                 Some(row) => row,
                 None => sqlx::query_as::<_, PointsQuotaEntitlementRow>(
@@ -5670,10 +5648,10 @@ impl PointsRepository for PostgresPointsRepository {
     }
 
     /// Revoke the active quota entitlement for
-    /// `(realm_id, user_id, bucket_id, credit_type, source_id)` (design §5.4).
+    /// `(realm_id, user_id, bucket_id, credit_type, source_id)`.
     /// Sets `status='revoked'` + `effective_until=revoke_at`; already-consumed
     /// usage is NOT reverse-adjusted (ages out via window slide). No-op
-    /// (`Ok(())`) if no active entitlement matches — replay-safe.
+    /// (`Ok()`) if no active entitlement matches — replay-safe.
     fn revoke_quota_entitlement_atomic(
         &self,
         realm_id: &str,
@@ -5715,7 +5693,7 @@ impl PointsRepository for PostgresPointsRepository {
     }
 
     /// Sweep-expire quota entitlements whose `effective_until` has passed
-    /// (design §4.1 / BE-D02 port). Sets matched rows to `status='expired'` in
+    /// Sets matched rows to `status='expired'` in
     /// batches of `batch_size`. Postgres has no `UPDATE ... LIMIT`, so a
     /// CTE+ctid sub-select bounds the update (the standard Postgres idiom).
     /// NOT a correctness backstop — window availability is a pure function of
@@ -5963,7 +5941,7 @@ mod tests {
     // the window side of the mixed consume. These pin WHY the ordering matters:
     // subscription credits are the paid entitlement and must be drawn before the
     // free periodic quota; the `min` clamps prevent any window from being
-    // overdrawn within a single transaction (the P0 anti-overspend invariant).
+    // overdrawn within a single transaction.
 
     #[test]
     fn window_split_subscription_first_until_exhausted() {
@@ -5998,7 +5976,7 @@ mod tests {
         // Both window types together (10+15=25) < window_part 40 ⟹ 15 must
         // overflow to the next bucket (window_remainder). This is the per-bucket
         // distribution contract: the caller hands the remainder to the next
-        // covered bucket's window; the §5.3 gate already guaranteed the TOTAL
+        // covered bucket's window; the already guaranteed the TOTAL
         // window_part ≤ Σ all buckets' window spendable.
         let split = PostgresPointsRepository::split_window_part_by_credit_type(40, 10, 15);
         assert_eq!(split.sub_part, 10);

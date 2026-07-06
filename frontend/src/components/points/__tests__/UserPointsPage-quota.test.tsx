@@ -9,7 +9,7 @@ import { http, HttpResponse } from 'msw'
 import type {
   ListWalletsByBucketResponse,
   PointsTransactionResponse,
-  QuotaWindowViewDto,
+  QuotaWindowViewResponse,
   WalletByBucketResponse,
 } from '@/lib/api-generated'
 import { UserPointsPage } from '../UserPointsPage'
@@ -29,7 +29,9 @@ import { renderWithProviders } from '@/test/utils/render'
 //   - Root page:                  `user-points-page`
 //   - Cross-bucket total bar:     `user-points-cross-bucket-total` (only when
 //                                 the current user holds >= 2 buckets)
-//   - Empty state:                `points-balance-empty`
+//   - Empty state:                (none — empty pools render nothing; the
+//                                 Transaction History card is also hidden when
+//                                 there are no transactions)
 //   - Dashboard root:             `points-usage-dashboard-{bucketId}`
 //   - Dashboard loading root:     `points-usage-dashboard` (no suffix)
 //   - Spendable now (big number): `points-spendable-now`  == backend `bucketTotal`
@@ -52,7 +54,9 @@ const OTHER_USER = 'user-other'
 
 // ---------- Factory helpers ----------
 
-function makeWindow(overrides: Partial<QuotaWindowViewDto> & { key: string }): QuotaWindowViewDto {
+function makeWindow(
+  overrides: Partial<QuotaWindowViewResponse> & { key: string }
+): QuotaWindowViewResponse {
   return {
     limit: 100,
     used: 0,
@@ -262,12 +266,13 @@ describe('UserPointsPage — quota dashboard + pool cards (MSW integration)', ()
       expect(screen.getByTestId('points-balance-card-bucket-quota')).toBeInTheDocument()
       expect(screen.getByTestId('points-balance-card-bucket-pool')).toBeInTheDocument()
 
-      // spendable-now renders the BACKEND bucketTotal verbatim per bucket.
-      // (FE-T03 pinned this at the dashboard layer; here we pin it end-to-end
-      // through the query → derive → render pipeline.)
-      expect(within(quotaDashboard).getByTestId('points-spendable-now')).toHaveTextContent('120')
+      // The "current spendable total" big number was removed from the dashboard
+      // card, so spendable-now is no longer rendered end-to-end. Pin its absence
+      // here so the removal intent survives through the query → derive → render
+      // pipeline.
+      expect(within(quotaDashboard).queryByTestId('points-spendable-now')).not.toBeInTheDocument()
       const poolDashboard = screen.getByTestId('points-usage-dashboard-bucket-pool')
-      expect(within(poolDashboard).getByTestId('points-spendable-now')).toHaveTextContent('80')
+      expect(within(poolDashboard).queryByTestId('points-spendable-now')).not.toBeInTheDocument()
     })
 
     it('GIVEN a quota bucket WHEN rendered THEN the dashboard surfaces its window row AND the pool card big number is spendableFromPool (not bucketTotal)', async () => {
@@ -375,7 +380,9 @@ describe('UserPointsPage — quota dashboard + pool cards (MSW integration)', ()
       expect(screen.getByTestId('transaction-bucket-0')).toHaveTextContent('Subscription Bucket')
 
       // Bucket Select options come from wallet rows.
-      const bucketSelect = screen.getByRole('combobox', { name: /^bucket$/i })
+      // The bucket Select's accessible name comes from `points.filter_bucket_label`
+      // (now "Account"); match the current copy rather than a stale literal.
+      const bucketSelect = screen.getByRole('combobox', { name: /^account$/i })
       await user.click(bucketSelect)
       expect(screen.getByRole('option', { name: 'Subscription Bucket' })).toBeInTheDocument()
       expect(screen.getByRole('option', { name: 'Topup Bucket' })).toBeInTheDocument()
@@ -415,10 +422,11 @@ describe('UserPointsPage — quota dashboard + pool cards (MSW integration)', ()
   })
 
   describe('empty state', () => {
-    it('GIVEN a user with no wallets WHEN rendered THEN shows the points-balance-empty state and no cards or total bar', async () => {
+    it('GIVEN a user with no wallets WHEN rendered THEN shows no cards, no total bar, and no empty placeholder', async () => {
       // INTENT: a brand-new user with no balance in any bucket must see a
-      // single clear empty state — not a stack of zero-balance cards that
-      // would imply they hold buckets they don't.
+      // quiet page — no stack of zero-balance cards, no "no pools yet"
+      // placeholder, and no Transaction History section (which would also
+      // be empty). The page should render only the header.
       server.use(
         ...walletsAndTransactionsHandlers({
           wallets: [],
@@ -428,11 +436,16 @@ describe('UserPointsPage — quota dashboard + pool cards (MSW integration)', ()
 
       renderPage()
 
-      const empty = await screen.findByTestId('points-balance-empty')
-      expect(empty).toBeInTheDocument()
+      // Let queries settle.
+      await screen.findByTestId('user-points-page')
+      expect(screen.queryByTestId('points-balance-empty')).not.toBeInTheDocument()
       expect(screen.queryByTestId(/^points-usage-dashboard-/)).not.toBeInTheDocument()
       expect(screen.queryByTestId(/^points-balance-card-/)).not.toBeInTheDocument()
       expect(screen.queryByTestId('user-points-cross-bucket-total')).not.toBeInTheDocument()
+      // Transaction history card is hidden when there are no transactions.
+      expect(
+        screen.queryByRole('heading', { name: /transaction history/i })
+      ).not.toBeInTheDocument()
     })
   })
 
@@ -472,8 +485,14 @@ describe('UserPointsPage — quota dashboard + pool cards (MSW integration)', ()
       expect(loadingDashboards.length).toBeGreaterThanOrEqual(1)
       expect(loadingPoolCards.length).toBeGreaterThanOrEqual(1)
 
-      // Once the (empty) response settles, the empty state takes over.
-      await waitFor(() => expect(screen.getByTestId('points-balance-empty')).toBeInTheDocument())
+      // Once the (empty) response settles, the page renders no cards and no
+      // transaction history (everything is empty).
+      await waitFor(() =>
+        expect(screen.queryByTestId(/^points-usage-dashboard-/)).not.toBeInTheDocument()
+      )
+      expect(
+        screen.queryByRole('heading', { name: /transaction history/i })
+      ).not.toBeInTheDocument()
     })
   })
 })

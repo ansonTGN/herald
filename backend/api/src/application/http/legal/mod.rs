@@ -331,6 +331,19 @@ pub struct LegalAgreementVersionSummary {
     pub version_label: Option<String>,
 }
 
+/// Single version detail (admin GET by version id). Carries the full localized
+/// `content` map (same shape as `LegalAgreementDraftResponse.content`) so the
+/// admin "view past version" dialog can read `content.en` exactly like the draft
+/// preview. `effective_at` is the version's `published_at`.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct LegalAgreementVersionDetailResponse {
+    pub agreement_type: AgreementType,
+    pub version_no: i32,
+    pub version_label: Option<String>,
+    pub content: serde_json::Value,
+    pub effective_at: chrono::DateTime<chrono::Utc>,
+}
+
 /// Admin agreement view. `source` reflects whether a realm has any custom
 /// version for this type (Custom) or only the platform default (Default).
 /// `current_version` is the resolved effective summary; `history` lists prior
@@ -365,6 +378,40 @@ pub struct PublishVersionResponse {
     pub version_id: Uuid,
     pub version_no: i32,
     pub effective_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// GET/PUT draft response: the staged draft's stable fields plus the localized
+/// `content` body. Mirrors the locale map shape of a published version so the
+/// admin form can render/edit it the same way.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct LegalAgreementDraftResponse {
+    pub agreement_type: AgreementType,
+    pub content: serde_json::Value,
+    pub version_label: Option<String>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// PUT draft request body. `content` is a locale → body map and must contain at
+/// least one entry (validated by the service layer, same rule as publish).
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct SaveDraftRequest {
+    pub content: serde_json::Value,
+    pub version_label: Option<String>,
+}
+
+/// POST publish-from-draft request body. The entire body is optional — when
+/// omitted, the draft's stored `version_label` is used; when present,
+/// `version_label` overrides the draft's label for this publish only.
+///
+/// Wire contract: the handler takes `Option<Json<Self>>`. Clients SHOULD send
+/// an empty object (`{}`) when they have no override — this is what the admin
+/// UI does and what the OpenAPI examples show. A completely bodyless POST is
+/// also accepted (resolves to `None` → no override), but the `{}` form is the
+/// stable, documented call shape so future extractor changes don't break
+/// clients.
+#[derive(Debug, Deserialize, ToSchema, Default)]
+pub struct PublishFromDraftRequest {
+    pub version_label: Option<String>,
 }
 
 fn to_version_summary(v: &LegalAgreementVersion) -> LegalAgreementVersionSummary {
@@ -476,6 +523,65 @@ pub async fn admin_list_agreements(
     }
 
     Ok(Json(AdminAgreementsResponse { agreements }))
+}
+
+/// Get a single published version's full body by id (admin history view).
+///
+/// Admin — requires `inject_identity` + `settings.view` + `has_access_to_realm`
+/// (same gate as `admin_list_agreements`, since this is a read of the same
+/// history the list already exposes). Returns 404 when the id does not resolve.
+/// The `realmId` path segment scopes the permission check; the version itself is
+/// looked up by primary key (history rows already surfaced by the list endpoint
+/// are guaranteed to belong to the realm or be the platform default).
+#[utoipa::path(
+    get,
+    path = "/api/legal/admin/{realmId}/agreements/versions/{versionId}",
+    tag = "legal",
+    params(
+        ("realmId" = String, Path, description = "Realm ID"),
+        ("versionId" = Uuid, Path, description = "Agreement version ID")
+    ),
+    responses(
+        (status = 200, description = "Version with full localized body", body = LegalAgreementVersionDetailResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden (missing settings.view or cross-realm)", body = ErrorResponse),
+        (status = 404, description = "Version not found", body = ErrorResponse),
+        (status = 500, description = "Server error", body = ErrorResponse)
+    )
+)]
+pub async fn admin_get_version(
+    State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
+    Path((realm_id, version_id)): Path<(String, Uuid)>,
+) -> Result<Json<LegalAgreementVersionDetailResponse>, ApiError> {
+    if !identity.has_access_to_realm(&realm_id) {
+        return Err(ApiError::forbidden(
+            "Identity does not belong to this realm",
+        ));
+    }
+    require_permission(
+        &state,
+        &realm_id,
+        &identity.user_id(),
+        "settings",
+        "view",
+        "settings.view",
+    )
+    .await?;
+
+    let version = state
+        .legal_service
+        .get_version_by_id(version_id)
+        .await?
+        .ok_or_else(|| ApiError::not_found("Agreement version not found"))?;
+
+    Ok(Json(LegalAgreementVersionDetailResponse {
+        agreement_type: version.agreement_type,
+        version_no: version.version_no,
+        version_label: version.version_label,
+        content: version.content,
+        effective_at: version.published_at,
+    }))
 }
 
 /// Publish a new per-realm custom agreement version.
@@ -628,4 +734,275 @@ pub async fn admin_revert_to_default(
         version_no: new_version.version_no,
         effective_at: new_version.published_at,
     }))
+}
+
+// ----------------------------------------------------------------------------
+// Admin draft handlers
+// ----------------------------------------------------------------------------
+
+/// Get the staged draft for an agreement type.
+///
+/// Admin — requires `inject_identity` + `settings.manage` + `has_access_to_realm`.
+/// Returns 404 when no draft exists for the type (the admin form treats this as
+/// "start a new draft").
+#[utoipa::path(
+    get,
+    path = "/api/legal/admin/{realmId}/agreements/{agreementType}/draft",
+    tag = "legal",
+    params(
+        ("realmId" = String, Path, description = "Realm ID"),
+        ("agreementType" = String, Path, description = "Agreement type: terms_of_service | privacy_policy")
+    ),
+    responses(
+        (status = 200, description = "Staged draft with localized body", body = LegalAgreementDraftResponse),
+        (status = 400, description = "Unknown agreement type", body = ErrorResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden (missing settings.manage or cross-realm)", body = ErrorResponse),
+        (status = 404, description = "No draft saved for this type", body = ErrorResponse),
+        (status = 500, description = "Server error", body = ErrorResponse)
+    )
+)]
+pub async fn admin_get_draft(
+    State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
+    Path((realm_id, agreement_type)): Path<(String, String)>,
+) -> Result<Json<LegalAgreementDraftResponse>, ApiError> {
+    if !identity.has_access_to_realm(&realm_id) {
+        return Err(ApiError::forbidden(
+            "Identity does not belong to this realm",
+        ));
+    }
+    require_permission(
+        &state,
+        &realm_id,
+        &identity.user_id(),
+        "settings",
+        "manage",
+        "settings.manage",
+    )
+    .await?;
+
+    let agreement_type =
+        AgreementType::try_from(agreement_type.as_str()).map_err(ApiError::bad_request)?;
+
+    let draft = state
+        .legal_service
+        .get_draft(&realm_id, agreement_type.clone())
+        .await?
+        .ok_or_else(|| ApiError::not_found("No draft saved for this agreement type"))?;
+
+    Ok(Json(LegalAgreementDraftResponse {
+        agreement_type: draft.agreement_type,
+        content: draft.content,
+        version_label: draft.version_label,
+        updated_at: draft.updated_at,
+    }))
+}
+
+/// Save (upsert) a draft for an agreement type.
+///
+/// Admin — requires `inject_identity` + `settings.manage` + `has_access_to_realm`.
+/// A repeat save overwrites the prior draft. Does NOT publish — the agreement
+/// stays unchanged for end users until POST `/publish`.
+#[utoipa::path(
+    put,
+    path = "/api/legal/admin/{realmId}/agreements/{agreementType}/draft",
+    tag = "legal",
+    params(
+        ("realmId" = String, Path, description = "Realm ID"),
+        ("agreementType" = String, Path, description = "Agreement type: terms_of_service | privacy_policy")
+    ),
+    request_body = SaveDraftRequest,
+    responses(
+        (status = 200, description = "Saved draft", body = LegalAgreementDraftResponse),
+        (status = 400, description = "Unknown agreement type or invalid content", body = ErrorResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden (missing settings.manage or cross-realm)", body = ErrorResponse),
+        (status = 500, description = "Server error", body = ErrorResponse)
+    )
+)]
+pub async fn admin_save_draft(
+    State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
+    Path((realm_id, agreement_type)): Path<(String, String)>,
+    Json(payload): Json<SaveDraftRequest>,
+) -> Result<Json<LegalAgreementDraftResponse>, ApiError> {
+    if !identity.has_access_to_realm(&realm_id) {
+        return Err(ApiError::forbidden(
+            "Identity does not belong to this realm",
+        ));
+    }
+    require_permission(
+        &state,
+        &realm_id,
+        &identity.user_id(),
+        "settings",
+        "manage",
+        "settings.manage",
+    )
+    .await?;
+
+    let agreement_type =
+        AgreementType::try_from(agreement_type.as_str()).map_err(ApiError::bad_request)?;
+
+    if !payload.content.is_object()
+        || payload
+            .content
+            .as_object()
+            .map(|m| m.is_empty())
+            .unwrap_or(true)
+    {
+        return Err(ApiError::bad_request(
+            "content must be a non-empty locale map",
+        ));
+    }
+
+    let draft = state
+        .legal_service
+        .save_draft(
+            &realm_id,
+            agreement_type.clone(),
+            payload.content,
+            payload.version_label,
+            &identity.user_id(),
+        )
+        .await?;
+
+    Ok(Json(LegalAgreementDraftResponse {
+        agreement_type: draft.agreement_type,
+        content: draft.content,
+        version_label: draft.version_label,
+        updated_at: draft.updated_at,
+    }))
+}
+
+/// Publish the staged draft as a new effective version.
+///
+/// Admin — requires `inject_identity` + `settings.manage` + `has_access_to_realm`.
+/// Reads the draft, creates a new immutable `legal_agreement_version` row
+/// (advancing `version_no`, recording an `agreement.published` audit event),
+/// and clears the draft. Returns 404 when no draft exists for the type. This is
+/// the only path the admin UI uses to publish — there is no "publish without a
+/// draft" entry in the UI (the legacy `PUT /agreements/{type}` handler remains
+/// for backward compatibility).
+#[utoipa::path(
+    post,
+    path = "/api/legal/admin/{realmId}/agreements/{agreementType}/publish",
+    tag = "legal",
+    params(
+        ("realmId" = String, Path, description = "Realm ID"),
+        ("agreementType" = String, Path, description = "Agreement type: terms_of_service | privacy_policy")
+    ),
+    request_body = Option<PublishFromDraftRequest>,
+    responses(
+        (status = 200, description = "Newly published version", body = PublishVersionResponse),
+        (status = 400, description = "Unknown agreement type", body = ErrorResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden (missing settings.manage or cross-realm)", body = ErrorResponse),
+        (status = 404, description = "No draft saved for this type", body = ErrorResponse),
+        (status = 500, description = "Server error", body = ErrorResponse)
+    )
+)]
+pub async fn admin_publish_from_draft(
+    State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
+    Path((realm_id, agreement_type)): Path<(String, String)>,
+    ClientIp(ip): ClientIp,
+    headers: HeaderMap,
+    payload: Option<Json<PublishFromDraftRequest>>,
+) -> Result<Json<PublishVersionResponse>, ApiError> {
+    if !identity.has_access_to_realm(&realm_id) {
+        return Err(ApiError::forbidden(
+            "Identity does not belong to this realm",
+        ));
+    }
+    require_permission(
+        &state,
+        &realm_id,
+        &identity.user_id(),
+        "settings",
+        "manage",
+        "settings.manage",
+    )
+    .await?;
+
+    let agreement_type =
+        AgreementType::try_from(agreement_type.as_str()).map_err(ApiError::bad_request)?;
+
+    let version_label_override = payload.and_then(|Json(p)| p.version_label);
+
+    let user_agent = headers
+        .get(USER_AGENT)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+    let actor = admin_actor(&identity, Some(ip), user_agent);
+
+    let new_version = state
+        .legal_service
+        .publish_from_draft(
+            &realm_id,
+            agreement_type,
+            version_label_override,
+            &identity.user_id(),
+            actor,
+        )
+        .await?;
+
+    Ok(Json(PublishVersionResponse {
+        version_id: new_version.id,
+        version_no: new_version.version_no,
+        effective_at: new_version.published_at,
+    }))
+}
+
+/// Discard the staged draft.
+///
+/// Admin — requires `inject_identity` + `settings.manage` + `has_access_to_realm`.
+/// Idempotent: discarding a missing draft returns 204. The published version
+/// table is untouched.
+#[utoipa::path(
+    delete,
+    path = "/api/legal/admin/{realmId}/agreements/{agreementType}/draft",
+    tag = "legal",
+    params(
+        ("realmId" = String, Path, description = "Realm ID"),
+        ("agreementType" = String, Path, description = "Agreement type: terms_of_service | privacy_policy")
+    ),
+    responses(
+        (status = 204, description = "Draft discarded (idempotent)"),
+        (status = 400, description = "Unknown agreement type", body = ErrorResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden (missing settings.manage or cross-realm)", body = ErrorResponse),
+        (status = 500, description = "Server error", body = ErrorResponse)
+    )
+)]
+pub async fn admin_discard_draft(
+    State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
+    Path((realm_id, agreement_type)): Path<(String, String)>,
+) -> Result<StatusCode, ApiError> {
+    if !identity.has_access_to_realm(&realm_id) {
+        return Err(ApiError::forbidden(
+            "Identity does not belong to this realm",
+        ));
+    }
+    require_permission(
+        &state,
+        &realm_id,
+        &identity.user_id(),
+        "settings",
+        "manage",
+        "settings.manage",
+    )
+    .await?;
+
+    let agreement_type =
+        AgreementType::try_from(agreement_type.as_str()).map_err(ApiError::bad_request)?;
+
+    state
+        .legal_service
+        .discard_draft(&realm_id, agreement_type)
+        .await?;
+
+    Ok(StatusCode::NO_CONTENT)
 }

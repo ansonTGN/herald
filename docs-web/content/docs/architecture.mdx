@@ -1,0 +1,204 @@
+---
+title: Architecture
+description: "Rust backend (hexagonal architecture) + React frontend (TanStack stack), deployed as a single process."
+---
+
+Rust backend (hexagonal architecture) + React frontend (TanStack stack), deployed as a single process.
+
+## Directory Structure
+
+```
+backend/
+├── entity/              # SeaORM entity definitions (database table mappings)
+├── domain/              # Domain layer — pure business logic, zero external dependencies
+├── infra/               # Infrastructure layer — concrete implementations for DB, Redis, third-party APIs
+├── infra-creem/         # Creem payment integration
+├── infra-stripe/        # Stripe payment integration
+├── infra-wechat/        # WeChat Pay integration
+├── core/                # Assembly layer — dependency injection, ApplicationService Builder
+├── api/                 # Main API crate (Axum route registration, middleware, AppState)
+├── api-base/            # Shared API utilities (AppState definition, common HTTP helpers)
+├── api-billing/         # Billing handlers (credit accounts, entitlement mappings, subscriptions, payments, invoices, webhooks)
+├── api-admin/           # Admin panel handlers (user management, roles, permission definitions)
+├── api-auth/            # Auth handlers (registration, login, password reset)
+├── api-ext/             # External API handlers (API Key auth, for third-party consumption)
+├── api-oauth/           # OAuth handlers (GitHub/Google/WeChat login)
+├── api-points/          # Points handlers (balance queries, consumption, top-up)
+├── worker/              # Background jobs (points expiration, points pre-grant, invoice overdue marking)
+├── app/                 # Entry point (main.rs, database migrations)
+├── sdk/                 # Rust SDK crate published for third-party use
+├── test-db/             # Test database utilities (testcontainers)
+├── test-support/        # Test helpers
+└── integration-tests/   # Integration tests
+
+frontend/                # React admin frontend
+docker/                  # Dockerfile
+```
+
+## Tech Stack
+
+Backend: Rust 2024 edition + Axum 0.8 + SeaORM 1.1 + sqlx 0.8 + PostgreSQL 16+ + Redis + Tokio.
+Frontend: React 19 + TypeScript + TanStack Router/Query/Form + Tailwind CSS v4 + Vite 7.
+
+These aren't picked to follow trends. Each choice solves a concrete problem:
+
+- **Axum over actix-web**: native tokio runtime, clean integration with the tower middleware ecosystem, and trait-based handlers that read better than macro-based routing.
+- **SeaORM alongside sqlx**: SeaORM handles routine CRUD (the entity crate is auto-generated), while sqlx deals with complex queries and migrations. Both point at the same PostgreSQL — SeaORM sits on top of sqlx under the hood.
+- **Redis**: session storage, permission caching, rate limiting (Redis Functions), idempotency keys. Wrapped in a custom `RedisConnectionManager` that automatically switches to DB 1 during tests for data isolation.
+- **TanStack Router**: file-based routing with type safety. Path parameters like `$realmId` get their types inferred at compile time. More reliable than react-router's runtime matching.
+- **API type generation**: the backend exports OpenAPI JSON via utoipa, and the frontend generates TypeScript clients and types with `@hey-api/openapi-ts`. When the backend API changes, one command — `npm run generate-api` — brings the frontend types back in sync.
+
+## Core Request Flow
+
+A typical request travels through these layers:
+
+```
+HTTP Request
+  → Axum Router (route matching)
+  → inject_identity middleware (resolves user identity from session cookie or Bearer token)
+  → Handler (extracts AppState, parses request body)
+  → Domain Service (business logic, calls Repository through a trait)
+  → Repository implementation (infra layer, talks to PostgreSQL or Redis)
+  → SeaORM Entity / sqlx query
+  → PostgreSQL
+```
+
+Handlers never write SQL. They call methods on Domain Services, which access data through trait-based ports. The infra layer provides concrete implementations. This is the central constraint of hexagonal architecture: `domain/` pulls in sea-orm, sqlx, etc. in its `Cargo.toml`, but only for error type conversions (`From` impls). The domain layer does not directly query databases or make HTTP requests.
+
+Permission checks follow a separate path: Handler → `RedisPermissionChecker` → Redis cache → PostgreSQL (on cache miss). The permission model uses `resource:action` pairs (e.g., `product:read`), scoped by `realm_id` and `client_id`. Actions have a hierarchy: `manage` covers `view`, `create`, and `manage` itself; `create` and `view` only cover themselves.
+
+## Module Breakdown
+
+### entity — Database Table Mappings
+
+Auto-generated SeaORM entity definitions. Covering users, roles, permissions, subscriptions, points, payments, invoices, and more. Each `.rs` file maps to one table, containing column definitions, relations, and defaults.
+
+No business logic lives here. To change a table schema, write a migration SQL file first (`backend/app/migrations/`), then regenerate the entities.
+
+### domain — Domain Layer
+
+Pure business logic. `Cargo.toml` primarily depends on foundational crates (serde, uuid, chrono, bcrypt, etc.), but also pulls in sea-orm, sqlx, redis, reqwest, and axum — these are used solely for `From<ExternalError>` error conversions. The domain layer does not directly query databases or make HTTP requests.
+
+Key submodules:
+
+| Module | Responsibility |
+|--------|---------------|
+| `authentication` | Login, registration, session management |
+| `authorization` | RBAC permission model (roles, policies, permission definitions) |
+| `audit` | Audit event model and collection (user management, RBAC changes, auth events) |
+| `billing` | Credit account directory, entitlement mappings, subscription projection, payment webhook handling |
+| `points` | Points accounts (pooled per credit account), top-up, consumption, expiration, idempotency |
+| `payment_attempt` | Unified payment attempts (abstracting over payment channels) |
+| `purchase` | Purchase fulfillment (one-time top-up or subscription activation) |
+| `realm` | Tenant management |
+| `realm_config` | Tenant configuration (payment provider secrets, etc.) |
+| `client` | Third-party application management |
+| `client_app` | Client App entity and logic |
+| `client_api_keys` | API Key management |
+| `oauth` | OAuth provider configuration |
+| `user` | User entity and queries |
+| `user_totp` | TOTP two-factor authentication |
+| `totp_key_management` | TOTP key management |
+| `rbac_init` | Default roles and permissions for new realms |
+| `dashboard` | Dashboard data aggregation |
+| `common` | Shared domain utility types |
+| `security_constants` | Security-related constants |
+
+Each submodule contains `ports/` (trait definitions), `entities/` (domain entities), and `service.rs` (business logic). Ports define Repository traits with methods like `find_by_id`, `save`, and `update` — without caring whether the backing store is PostgreSQL or in-memory.
+
+### infra — Infrastructure Implementations
+
+Concrete implementations of domain layer traits, named `PostgresXxxRepository` — one struct per trait.
+
+Beyond database repositories:
+- `redis/` — `RedisConnectionManager`, connection pool with test isolation
+- `authorization/` — `RedisPermissionChecker`, permission caching
+- `billing/` — invoice PDF generation (IronPress), encryption key management
+
+Payment channel clients live in separate crates (`infra-creem`, `infra-stripe`, `infra-wechat`) rather than inside the main `infra` crate. The reason is to avoid pulling in payment SDKs you don't need — if you only use Stripe, the WeChat Pay SDK won't get compiled.
+
+### core — Assembly Layer
+
+Two responsibilities:
+
+1. **ApplicationService Builder**: wires domain services together with infra repositories. Builder pattern — inject database, redis, permission_checker in sequence, then call `.build()` to produce an `ApplicationService`.
+2. **Re-exports**: `herald_domain` becomes `domain`, `herald_entity` becomes `entity`, `herald_infra` becomes `infrastructure`. Other crates can write `use herald_core::domain::xxx` directly.
+
+### api crates — HTTP Interface
+
+Eight crates form the API layer:
+
+| Crate | Responsibility | Auth Method |
+|-------|---------------|-------------|
+| `api` | Main entry: route registration, middleware orchestration, Swagger UI, OpenAPI spec merging, audit log queries | — |
+| `api-base` | `AppState` definition (shared across all api sub-crates) | — |
+| `api-auth` | Registration, login, password reset, email verification | session |
+| `api-admin` | User CRUD, role management, permission definition management | session + inject_identity |
+| `api-billing` | Credit account directory, entitlement mappings, subscription projection, payment webhooks (Stripe/Creem), invoices, one-time purchases | mixed |
+| `api-oauth` | OAuth login (GitHub/Google/WeChat), OAuth configuration management | mixed |
+| `api-ext` | Third-party API: permission checks, subscription queries, points balance and consumption, isolated by the API key's bound client app | API Key |
+| `api-points` | Points balance, transaction history, consumption, top-up | session or API Key |
+
+`api` crate's `create_api_routes()` is the single entry point for route registration. It nests sub-crate routes under unified prefixes and attaches the `inject_identity` middleware. Each sub-crate defines its own `ApiDoc` (utoipa OpenApi spec), which get merged into one complete OpenAPI document in `build_openapi_spec()`.
+
+Splitting into multiple crates is a compile-time optimization. `api-billing` is the heaviest crate (webhook handling, type definitions). Changing one payment channel's handler should not force `api-auth` to recompile.
+
+### worker — Background Jobs
+
+Recurring tasks that run in the same process as the API server:
+
+- **Points expiration**: hourly scan for expired points, batch-marked as expired
+- **Points pre-grant**: every 5 minutes, scans grant schedules due soon (subscription renewals, free periodic grants) and pre-grants them ahead of their effective time, absorbing webhook and scheduling latency. This is a performance optimization, not a correctness guarantee — even when this job is not running, balance queries and consumption sync-grant due credits on the request path
+- **Invoice overdue marking**: hourly scan for unpaid invoices, marked as overdue
+
+`WorkerConfig` is generic over `R: InvoiceRepository`, making it straightforward to inject mocks during testing. Production uses `PostgresInvoiceRepository`.
+
+### app — Entry Point
+
+`main.rs` follows a fixed startup sequence:
+
+1. Parse CLI arguments. `--export-openapi <path>` exports OpenAPI JSON and exits (used in CI before frontend builds)
+2. Load configuration (`HERALD_CONFIG` environment variable or `config.toml`)
+3. Initialize tracing
+4. Connect to PostgreSQL (SeaORM connection pool, parameters from config)
+5. Run database migrations (sqlx migrate)
+6. Connect to Redis and run a health check
+7. Initialize the points expiration service (points repository + expiration service)
+8. Start the API server (`herald_api::run_with_config`, which initializes all services and binds Axum routes internally)
+9. Start the Worker (recurring job loop)
+
+Steps 8 and 9 run concurrently. `tokio::select!` waits for either one to finish or a shutdown signal (Ctrl+C or SIGTERM).
+
+### sdk — Rust SDK
+
+A Rust crate published for third-party applications. Wraps all endpoints under `/api/ext/`:
+
+- `check_permission` — permission check (with moka local cache, auto-invalidation)
+- `get_subscription` — subscription status query with `entitlement_key`
+- `get_balance` / `consume_points` — points queries and consumption
+
+The constructor takes `base_url` and `api_key`. All requests include the `X-API-Key` header automatically. Permission checks use a local moka cache with a 5-minute TTL; when a token expires, associated cache entries are cleared in batch.
+
+Each API key is bound to a client app. A key bound to the default `admin-api-client` is realm-wide and can access external API resources for any client app in the same realm. A key bound to an ordinary client app can only access permission checks, subscriptions, and points for that client app. `api-ext` enforces this scope for subscription, points, and permission-check endpoints. API key authentication rechecks the bound client app's enabled state even on cache hits, so disabling a client app immediately blocks its API keys.
+
+### frontend — React Admin Panel
+
+File-based routing via TanStack Router. The route structure mirrors the `frontend/src/routes/` directory:
+
+```
+$realmId/
+├── auth/          # Login, registration, email verification
+├── user/          # User profile (settings, security, points, subscriptions, invoices)
+├── manage/        # Admin panel (users, roles, permissions, entitlement mappings, billing, points, audit logs, Client Apps, settings)
+├── points/        # Points balance and transaction history
+├── subscription/  # User subscription status
+└── device/        # Device Code authorization page
+```
+
+All API calls go through auto-generated clients in `frontend/src/lib/api-generated/`. When backend endpoints change, run `npm run generate-api` (which exports OpenAPI JSON, then runs openapi-ts to generate TypeScript types) to regenerate.
+
+TanStack Query manages server state. TanStack Form + Zod handles form validation. Radix UI provides accessible low-level components (Dialog, Select, Tabs, etc.). Tailwind CSS v4 for styling.
+
+### Database Migrations
+
+Timestamped SQL files in `backend/app/migrations/`. Migrations run automatically at startup via `sqlx::migrate!`. No manual scripts needed.

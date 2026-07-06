@@ -22,6 +22,7 @@ import {
   recordRefundViaDialog,
   seedPaidExternalInvoice,
 } from '../billing-admin/helpers/credit-note-helpers'
+import { navigateToInvoiceAdminPage } from '../billing-admin/helpers/invoice-helpers'
 
 const REALM_ID = DEMO_ADMIN.realmId
 
@@ -60,11 +61,13 @@ test.describe('[Regular User] Credit Note User Visibility Demo Tests', () => {
     await test.step('Given: admin is logged in and retrieves user1 account id', async () => {
       const accountId = getAccountIdByEmail(REALM_ID, DEMO_USERS.user1.email)
       await loginAsAdmin(page, { realmId: REALM_ID, waitNavigation: true })
+      await navigateToInvoiceAdminPage(page, REALM_ID)
 
       await test.step('When: create and pay a $100.00 manual invoice for user1', async () => {
         invoiceNumber = await createAndPayManualInvoice(page, REALM_ID, {
           accountId,
           billingName,
+          billingEmail: 'user-refund-demo@example.com',
           sellerName: 'Herald Demo',
           lineItems: [{ name: 'Service', quantity: '1', unitPrice: 10000 }],
           dueDate: '2026-12-31',
@@ -104,8 +107,8 @@ test.describe('[Regular User] Credit Note User Visibility Demo Tests', () => {
 
     await test.step('Then: refund breakdown shows correct amounts', async () => {
       await expect(page.getByTestId('invoice-refund-summary')).toBeVisible({ timeout: 10000 })
-      await expect(page.getByTestId('invoice-refunded-amount')).toHaveText('-$40.00')
-      await expect(page.getByTestId('invoice-remaining-amount')).toHaveText('$60.00')
+      await expect(page.getByTestId('invoice-refunded-amount')).toHaveText('-CN¥40.00')
+      await expect(page.getByTestId('invoice-remaining-amount')).toHaveText('CN¥60.00')
     })
 
     await test.step('Then: Credit Note lists and operator details are not exposed', async () => {

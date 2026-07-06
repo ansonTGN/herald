@@ -14,10 +14,8 @@ pub struct UpdateEntitlementMappingInput {
     pub entitlement_key: Option<String>,
     pub enabled: Option<bool>,
     pub points_per_period: Option<Option<i64>>,
-    pub grant_period_type: Option<Option<String>>,
     pub validity_days: Option<Option<i64>>,
     pub grant_on_subscribe: Option<bool>,
-    pub max_periods: Option<Option<i64>>,
     pub bucket_id: Option<uuid::Uuid>,
     /// `None` = leave unchanged; `Some(None)` = clear; `Some(Some(vec))` = replace.
     pub quota_windows: Option<Option<Vec<QuotaWindow>>>,
@@ -146,10 +144,7 @@ where
                 Some(v) => v,
                 None => existing.points_per_period,
             },
-            grant_period_type: match input.grant_period_type {
-                Some(v) => v,
-                None => existing.grant_period_type,
-            },
+            grant_period_type: existing.grant_period_type,
             validity_days: match input.validity_days {
                 Some(v) => v,
                 None => existing.validity_days,
@@ -157,10 +152,7 @@ where
             grant_on_subscribe: input
                 .grant_on_subscribe
                 .unwrap_or(existing.grant_on_subscribe),
-            max_periods: match input.max_periods {
-                Some(v) => v,
-                None => existing.max_periods,
-            },
+            max_periods: existing.max_periods,
             enabled: input.enabled.unwrap_or(existing.enabled),
             provider_product_info: existing.provider_product_info,
             quota_windows: match input.quota_windows {

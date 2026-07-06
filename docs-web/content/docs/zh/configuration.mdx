@@ -1,0 +1,189 @@
+---
+title: 配置
+description: "Herald 通过一个 TOML 文件管理所有运行时配置。应用启动时读取该文件，不支持热加载——修改配置需要重启进程。"
+---
+
+Herald 通过一个 TOML 文件管理所有运行时配置。应用启动时读取该文件，不支持热加载——修改配置需要重启进程。
+
+## 配置文件加载
+
+启动时按以下顺序决定配置文件路径：
+
+1. 读取环境变量 `HERALD_CONFIG`，如果有值则作为文件路径
+2. 未设置则默认读取 `config/config.toml`
+
+代码入口在 `backend/app/src/main.rs`：
+
+```rust
+let config_path = env::var("HERALD_CONFIG").unwrap_or("config/config.toml".to_owned());
+let config = ApiConfig::load(&config_path)?;
+```
+
+路径可以是相对路径或绝对路径。相对路径基于进程工作目录解析，不是二进制文件所在目录。
+
+## 环境变量
+
+| 变量名 | 默认值 | 必填 | 说明 |
+|---|---|---|---|
+| `HERALD_CONFIG` | `config/config.toml` | 否 | 配置文件路径 |
+| `RUST_LOG` | 由 `server.log_level` 决定 | 否 | tracing 日志级别，优先级高于配置文件中的 `log_level` |
+
+`RUST_LOG` 在应用启动时由 `tracing_subscriber::EnvFilter::try_from_default_env()` 读取。如果设置了该环境变量，它会覆盖配置文件中的 `log_level`。没设置则回退到配置文件的值。
+
+## 配置文件段
+
+Docker 镜像内置了一份生产配置（`backend/config/production.toml`）。下表"代码默认值"列是配置文件中省略该字段时代码自动使用的值，"Docker 配置值"列是生产配置中显式设定的值。本地开发按需覆盖即可。
+
+### [database]
+
+PostgreSQL 连接池配置。`url` 是唯一必填项，其余都有内置默认值。
+
+| 参数 | 类型 | 代码默认值 | Docker 配置值 | 必填 | 说明 |
+|---|---|---|---|---|---|
+| `url` | string | — | — | 是 | PostgreSQL 连接字符串 |
+| `max_connections` | u32 | 100 | 50 | 否 | 连接池最大连接数 |
+| `acquire_timeout_secs` | u64 | 30 | 10 | 否 | 从连接池获取连接的超时（秒） |
+| `idle_timeout_secs` | u64 | 600 | 300 | 否 | 空闲连接存活时间（秒） |
+| `max_lifetime_secs` | u64 | 1800 | 1800 | 否 | 单个连接最大生命周期（秒） |
+| `connect_timeout_secs` | u64 | 10 | 5 | 否 | 建立 TCP 连接的超时（秒） |
+
+连接字符串格式：`postgresql://用户名:密码@主机:端口/数据库名`
+
+Docker 环境中主机名使用容器名（如 `db` 或 `herald-postgres`）：
+
+```toml
+[database]
+url = "postgresql://herald:herald@db:5432/herald"
+```
+
+生产环境建议根据实际并发量调整 `max_connections`。连接池实现基于 SeaORM 的 `ConnectOptions`。
+
+### [redis]
+
+| 参数 | 类型 | 代码默认值 | Docker 配置值 | 必填 | 说明 |
+|---|---|---|---|---|---|
+| `url` | string | `redis://127.0.0.1:6379` | `redis://redis:6379` | 否 | Redis 连接地址 |
+
+Redis 用于权限检查缓存和 session 存储。Docker 环境中使用容器名作为主机名。
+
+```toml
+[redis]
+url = "redis://redis:6379"
+```
+
+### [server]
+
+HTTP 服务器和日志配置。
+
+| 参数 | 类型 | 代码默认值 | Docker 配置值 | 必填 | 说明 |
+|---|---|---|---|---|---|
+| `bind_address` | string | `0.0.0.0:3000` | `0.0.0.0:3000` | 否 | 监听地址，格式为 `ip:port` |
+| `log_level` | string | `info` | `info` | 否 | 日志级别（trace/debug/info/warn/error） |
+| `app_env` | string | `production` | `production` | 否 | 运行环境标识 |
+
+`app_env` 目前是一个标识字段，代码中不直接用它做分支逻辑。`bind_address` 用 `0.0.0.0` 表示监听所有网卡。
+
+```toml
+[server]
+bind_address = "0.0.0.0:3000"
+log_level = "info"
+app_env = "production"
+```
+
+### [frontend]
+
+前端应用相关的配置，主要影响 CORS 和静态文件托管。
+
+| 参数 | 类型 | 代码默认值 | Docker 配置值 | 必填 | 说明 |
+|---|---|---|---|---|---|
+| `url` | string | `http://localhost:5173` | `http://localhost:3000` | 否 | 前端应用地址，用于 CORS 白名单 |
+| `static_dir` | string | 无（不托管） | `/app/frontend/dist` | 否 | 静态文件目录路径，设置后由后端托管 SPA |
+
+`url` 在 Docker 环境中默认为 `http://localhost:3000`，因为后端在同一端口上同时提供 API 和前端静态文件。部署到域名时改为实际地址（如 `https://your-domain.com`）。
+
+`static_dir` 在 Docker 镜像中默认指向 `/app/frontend/dist`，前端产物在构建时已打包到该路径。
+
+```toml
+[frontend]
+url = "https://your-domain.com"
+static_dir = "/app/frontend/dist"
+```
+
+### [jwt]
+
+JWT 密钥配置，用于设备码授权（RFC 8628）和第三方 OAuth 登录流程中生成访问令牌。
+
+| 参数 | 类型 | 默认值（Docker） | 必填 | 说明 |
+|---|---|---|---|---|
+| `secret` | string | — | 是 | JWT 签名密钥 |
+
+Docker 镜像内置了一个占位值 `change-me-in-production`，部署时必须覆盖为安全的随机字符串。
+
+```toml
+[jwt]
+secret = "your-random-base64-secret-key-here"
+```
+
+生成密钥示例（Linux/macOS）：
+
+```bash
+openssl rand -base64 48
+```
+
+### [observability]
+
+OpenTelemetry 可观测性配置。整段缺省（旧配置文件没有 `[observability]`）时也能正常解析，等价于下面的代码默认值——即 metrics 开、traces 关。
+
+| 参数 | 类型 | 代码默认值 | Docker 配置值 | 必填 | 说明 |
+|---|---|---|---|---|---|
+| `service_name` | string | `herald-api` | 未设置 | 否 | 上报到 OTLP 的服务名 |
+| `otlp_endpoint` | string | `http://localhost:4318` | 未设置 | 否 | OTLP/HTTP 端点；`4318` 是 OTLP HTTP 标准端口 |
+| `metrics_export_interval_secs` | u64 | `5` | 未设置 | 否 | metrics 导出周期（秒） |
+| `traces_enabled` | bool | `false` | 未设置 | 否 | 是否开启 trace 导出 |
+| `sqlx_slow_statement_ms` | u64 | `200` | 未设置 | 否 | SQL 慢查询日志阈值（毫秒），超过则记录 |
+
+两点需要留意：
+
+- **metrics 默认常开**：无论 `traces_enabled` 如何，metrics（OTLP meter provider 加 RED 指标中间件）始终导出到 `otlp_endpoint`。要让指标被收集，部署侧需要在该端点有可达的 OTLP collector。
+- **traces 默认关闭**：`traces_enabled = false` 是有意为之，避免 trace 导出的回压影响主线请求。设为 `true` 才接入 tracing registry，并在进程优雅退出时 flush。
+
+`sqlx_slow_statement_ms` 控制 sqlx 的慢语句日志：执行时间超过阈值的 SQL 会被记录，用于定位慢查询。
+
+```toml
+[observability]
+service_name = "herald-api"
+otlp_endpoint = "http://localhost:4318"
+metrics_export_interval_secs = 5
+traces_enabled = false
+sqlx_slow_statement_ms = 200
+```
+
+`production.toml` 没有显式设置这一段，所以 Docker 默认走上面的代码 baseline。本地若要接自己的 collector，改 `otlp_endpoint` 即可。
+
+## 用户协议与隐私政策配置
+
+每个 Realm 的用户协议和隐私政策不是写在配置文件里的，而是通过管理后台动态发布。系统初始化时会自动 seed 平台默认模板（中文草稿版，需法务审阅后替换）。
+
+配置入口：以 Realm Admin 登录 → 管理后台 → Settings → Legal。
+
+### 使用平台默认模板
+
+如果从未发布过自定义版本，该 Realm 自动使用平台默认模板。默认模板更新时，未自定义的 Realm 会触发用户重新同意。
+
+### 发布自定义版本
+
+在 Legal Tab 的编辑框里填写《用户协议》和/或《隐私政策》的正文，支持多语言（目前为 `en` 和 `zh-CN`）。点击发布后，该 Realm 立即切换到自定义版本，版本号递增，已同意的用户下次登录或访问核心功能时会收到重新同意提示。
+
+### 回退到默认模板
+
+如果 Realm 已经发布了自定义版本，可以点击「回退默认模板」。这不会删除历史自定义版本，而是把当前平台默认模板的内容快照成一个新的自定义版本发布。因此版本号仍然递增，用户仍然需要重新同意。
+
+### 查看历史版本
+
+Legal Tab 会列出每个协议类型的历史版本，包括版本号、生效日期、来源（默认/自定义）。历史版本用于审计追溯，不能编辑或删除。
+
+## RBAC 配置
+
+RBAC 策略不在主配置文件中，而是通过数据库中的 `role_policies` 表存储。系统初始化时，`RealmInitializationService` 会为每个 realm 创建默认角色和权限。权限检查由 `RedisPermissionChecker` 完成，先查 Redis 缓存，缓存 miss 时回源 PostgreSQL。
+
+权限模型使用 `resource:action` 对（如 `product:read`、`device:manage`），通过 `realm_id` 和 `client_id` 确定作用域。action 有层级关系：`manage` 覆盖 `view`、`create` 和 `manage` 本身；`create` 和 `view` 只覆盖自身。自定义 action（如 `admin`）只匹配自身，不参与层级。

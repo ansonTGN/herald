@@ -4,9 +4,7 @@ use axum::extract::{Extension, Path, Query, State};
 use uuid::Uuid;
 
 use crate::types::{ListTransactionsQuery, PointsTransactionResponse};
-use herald_api_base::application::http::auth::util::{
-    check_permission_with_timeout, require_permission,
-};
+use herald_api_base::application::http::auth::util::check_permission_with_timeout;
 use herald_api_base::application::http::common::auth_utils::require_authenticated_user_in_realm;
 use herald_api_base::application::http::server::api_entities::{
     ApiError, ApiResult, ErrorResponse, PageResponse,
@@ -40,8 +38,6 @@ use herald_core::domain::points::ports::TransactionFilters;
     tag = "Points"
 )]
 #[tracing::instrument(
-    // Governance: identity carries user_id/realm_id; query
-    // may carry user_id/bucket_id filters; realm_id conservatively skipped.
     skip_all,
     fields(db.operation = "list_transactions")
 )]
@@ -54,17 +50,8 @@ pub async fn list_transactions(
     let user_id = require_authenticated_user_in_realm(&identity, &realm_id, "points transactions")?;
     // Authenticated caller id, captured before the filter `user_id` (Option<Uuid>)
     // shadows the outer binding below. Used for the `points.manage` probe that
-    // gates `effective_at` visibility (P1-2).
+    // gates `effective_at` visibility.
     let caller_user_id = user_id;
-    require_permission(
-        &state,
-        &realm_id,
-        &caller_user_id.to_string(),
-        "points",
-        "view",
-        "points.view",
-    )
-    .await?;
 
     // Parse filters
     let user_id = query.user_id.and_then(|s| s.parse::<Uuid>().ok());
@@ -126,19 +113,13 @@ pub async fn list_transactions(
         .await
     {
         Ok(paginated) => {
-            // `effective_at` is admin/audit-only (P1-2).
-            // Regular users (`points.view` alone) must never see it. Probe
-            // `points.manage` non-erroringly — deny resolves to `false`, which
-            // forces `effective_at = None` for every row below. Combined with
-            // `#[serde(skip_serializing_if = "Option::is_none")]` on the DTO,
-            // this guarantees the key is absent from regular-user JSON. The
-            // base `points.view` gate above already rejected users lacking even
-            // view permission, so a `false` here means "view-only".
-            //
-            // The plumbing gap is closed — `PointsTransaction`
-            // now carries `effective_at` (sourced via LEFT JOIN to
-            // `points_credit_ledger` in `find_transactions`), so the
-            // `points.manage` path surfaces the real ledger effective_at.
+            // `effective_at` is admin/audit-only. Regular users must never see
+            // it. Probe `points.manage` non-erroringly — deny resolves to
+            // `false`, which forces `effective_at = None` for every row below.
+            // Combined with `#[serde(skip_serializing_if = "Option::is_none")]`
+            // on the response type, this guarantees the key is absent from regular-user
+            // JSON. A `false` here means "not a points manager" (view-only or
+            // self-view).
             let can_manage = check_permission_with_timeout(
                 &state,
                 &realm_id,
@@ -166,9 +147,9 @@ pub async fn list_transactions(
                     subscription_id: transaction.subscription_id,
                     external_ref_id: transaction.external_ref_id,
                     created_at: transaction.created_at.to_rfc3339(),
-                    // P1-2 hiding: `points.view`-only callers get `None`
-                    // (serialized away by `skip_serializing_if`); `points.manage`
-                    // callers get the real ledger `effective_at`.
+                    // `points.view`-only callers get `None` (serialized away by
+                    // `skip_serializing_if`); `points.manage` callers get the real
+                    // ledger `effective_at`.
                     effective_at: if can_manage {
                         transaction.effective_at
                     } else {

@@ -6,6 +6,7 @@ use axum::{
 };
 use axum_valid::Valid;
 use herald_api_base::application::http::auth::util::normalize_email;
+use herald_api_base::application::http::common::auth_utils::AdminIdentity;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
@@ -42,10 +43,13 @@ pub async fn create_user(
     _headers: HeaderMap,
     Valid(Json(payload)): Valid<Json<UserCreateRequest>>,
 ) -> Result<ApiResult<UserResponse>, ApiError> {
+    let admin = AdminIdentity::require(identity, &realm_id, "user management")?;
+    admin.require_permission(&state, "users", "manage").await?;
+
     tracing::info!(
         realm_id = %realm_id,
         email = %payload.email,
-        current_user_id = %identity.user_id(),
+        current_user_id = %admin.user_id_string(),
         "Creating user"
     );
 
@@ -66,7 +70,7 @@ pub async fn create_user(
 
     // 4. Call service layer
     let admin_user = admin_user_service
-        .create_user_with_roles(identity, &realm_id, request)
+        .create_user_with_roles(admin.identity().clone(), &realm_id, request)
         .await
         .map_err(|e| match e {
             UserAdminError::DuplicateEmail(email) => {

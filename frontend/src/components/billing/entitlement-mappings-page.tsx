@@ -4,13 +4,6 @@ import { format } from 'date-fns'
 import { toast } from 'sonner'
 import { Plug2, AlertTriangle } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Input } from '@/components/ui/input'
@@ -21,7 +14,15 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { PageHeader } from '@/components/shared'
 import { ProviderSyncButton } from '@/components/billing/provider-sync-button'
 import { formatProviderName } from '@/components/billing/format-provider-name'
+import {
+  readProviderProductInfo,
+  primaryProductLabel,
+  mapBillingPeriodLabel,
+  isOneTimeMapping,
+} from '@/components/billing/provider-product-info'
+import { formatInvoiceAmount } from '@/lib/invoice-utils'
 import { ProtectedPriceConfirmDialog } from '@/components/billing/entitlement-mapping-detail-dialog'
+import { SyncNextStepDialog } from '@/components/billing/sync-next-step-dialog'
 import { MultiWindowQuotaEditor } from '@/components/billing/MultiWindowQuotaEditor'
 import {
   groupByProduct,
@@ -50,26 +51,16 @@ import type {
   PriceMappingUpdate,
 } from '@/lib/api-generated'
 
-const PROVIDER_FILTER_OPTIONS = [
-  { value: 'all', label: 'All' },
-  { value: 'stripe', label: 'Stripe' },
-  { value: 'creem', label: 'Creem' },
-] as const
-
 interface EntitlementMappingsPageProps {
   realmId: string
-  search: { page?: number; pageSize?: number; provider?: string }
 }
 
-export function EntitlementMappingsPage({ realmId, search }: EntitlementMappingsPageProps) {
+export function EntitlementMappingsPage({ realmId }: EntitlementMappingsPageProps) {
   const queryClient = useQueryClient()
   const { hasPermission } = usePermission()
   const canManage = hasPermission('billing.manage')
   const canManagePoints = hasPermission('points.manage')
 
-  const [providerFilter, setProviderFilter] = useState<string>(search.provider ?? 'all')
-  const [productFilter, setProductFilter] = useState<string>('all')
-  const [entitlementKeyFilter, setEntitlementKeyFilter] = useState<string>('all')
   const [selectedProductKey, setSelectedProductKey] = useState<string | null>(null)
 
   // Protected-price 409 confirmation state: surfaces the active-sub count for
@@ -79,12 +70,15 @@ export function EntitlementMappingsPage({ realmId, search }: EntitlementMappings
     activeSubscriptions: number
   } | null>(null)
 
-  const filters = {
-    paymentProvider: providerFilter !== 'all' ? providerFilter : undefined,
-  }
+  // Post-sync guidance: synced mappings land as disabled drafts. If, right
+  // after a sync, every refetched mapping is still disabled, surface a
+  // "next step" dialog once. Decided synchronously in the sync-complete
+  // callback (after awaiting the refetch) rather than via an effect, to
+  // comply with the no-setState-in-effect rule.
+  const [nextStepOpen, setNextStepOpen] = useState(false)
 
   const { data, isLoading } = useQuery({
-    ...entitlementMappingsQueryOptions(realmId, filters),
+    ...entitlementMappingsQueryOptions(realmId, {}),
     select: (rawData) => rawData as EntitlementMappingListResponse | undefined,
   })
 
@@ -92,64 +86,35 @@ export function EntitlementMappingsPage({ realmId, search }: EntitlementMappings
 
   const productGroups = useMemo(() => groupByProduct(allMappings), [allMappings])
 
-  // Unique product id list for the product filter dropdown.
-  const productFilterOptions = useMemo(() => {
-    const seen = new Map<string, { value: string; label: string }>()
-    for (const g of productGroups) {
-      const value = productKeyOf(g)
-      if (!seen.has(value)) {
-        seen.set(value, {
-          value,
-          label: `${formatProviderName(g.paymentProvider)} · ${g.externalProductId}`,
-        })
-      }
-    }
-    return Array.from(seen.values())
-  }, [productGroups])
-
-  // Unique entitlement key list (across all loaded mappings) for the key filter.
-  const entitlementKeyOptions = useMemo(() => {
-    const seen = new Set<string>()
-    for (const item of allMappings) seen.add(item.entitlementKey)
-    return Array.from(seen).sort()
-  }, [allMappings])
-
-  // Apply provider (server) + product + entitlement_key (client) filters.
-  const filteredGroups = useMemo(() => {
-    let groups = productGroups
-    if (productFilter !== 'all') {
-      groups = groups.filter((g) => productKeyOf(g) === productFilter)
-    }
-    if (entitlementKeyFilter !== 'all') {
-      groups = groups
-        .map((g) => ({
-          ...g,
-          prices: g.prices.filter((p) => p.entitlementKey === entitlementKeyFilter),
-        }))
-        .filter((g) => g.prices.length > 0)
-    }
-    return groups
-  }, [productGroups, productFilter, entitlementKeyFilter])
-
   // Derive the EFFECTIVE selected product key without a setState effect:
-  // if the user's selection still exists in the filtered list, keep it;
-  // otherwise fall back to the first product (or null when empty). This
-  // avoids cascading renders from a setState-in-effect.
+  // if the user's selection still exists in the list, keep it; otherwise
+  // fall back to the first product (or null when empty). This avoids
+  // cascading renders from a setState-in-effect.
   const effectiveSelectedProductKey: string | null = useMemo(() => {
-    if (filteredGroups.length === 0) return null
-    const exists = filteredGroups.some((g) => productKeyOf(g) === selectedProductKey)
-    return exists ? selectedProductKey : productKeyOf(filteredGroups[0])
-  }, [filteredGroups, selectedProductKey])
+    if (productGroups.length === 0) return null
+    const exists = productGroups.some((g) => productKeyOf(g) === selectedProductKey)
+    return exists ? selectedProductKey : productKeyOf(productGroups[0])
+  }, [productGroups, selectedProductKey])
 
   const selectedGroup = useMemo(
-    () => filteredGroups.find((g) => productKeyOf(g) === effectiveSelectedProductKey) ?? null,
-    [filteredGroups, effectiveSelectedProductKey]
+    () => productGroups.find((g) => productKeyOf(g) === effectiveSelectedProductKey) ?? null,
+    [productGroups, effectiveSelectedProductKey]
   )
 
-  const handleSyncComplete = useCallback(() => {
-    queryClient.invalidateQueries({
+  const handleSyncComplete = useCallback(async () => {
+    // Refetch the mappings, then decide synchronously whether to surface the
+    // "next step" guidance: if every mapping is still disabled (the default
+    // draft state for freshly synced products), tell the admin what to do.
+    // Done in the callback (not an effect) to avoid setState-in-effect.
+    await queryClient.refetchQueries({
       queryKey: queryKeys.entitlementMappings(realmId, {}),
     })
+    const fresh = queryClient.getQueryData<EntitlementMappingListResponse>(
+      queryKeys.entitlementMappings(realmId, {})
+    )
+    const items = fresh?.items ?? []
+    const allDisabled = items.length > 0 && items.every((mp) => !mp.enabled)
+    if (allDisabled) setNextStepOpen(true)
   }, [queryClient, realmId])
 
   const showWebhookBanner = hasWebhookUnresolvedPrice(allMappings)
@@ -185,51 +150,8 @@ export function EntitlementMappingsPage({ realmId, search }: EntitlementMappings
         </div>
       )}
 
-      {/* Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <Select value={providerFilter} onValueChange={setProviderFilter}>
-            <SelectTrigger className="w-[160px]" data-testid="provider-filter-select">
-              <SelectValue placeholder="All Providers" />
-            </SelectTrigger>
-            <SelectContent>
-              {PROVIDER_FILTER_OPTIONS.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select value={productFilter} onValueChange={setProductFilter}>
-            <SelectTrigger className="w-[220px]" data-testid="product-filter-select">
-              <SelectValue placeholder="All Products" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Products</SelectItem>
-              {productFilterOptions.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select value={entitlementKeyFilter} onValueChange={setEntitlementKeyFilter}>
-            <SelectTrigger className="w-[180px]" data-testid="entitlement-key-filter-select">
-              <SelectValue placeholder="All Keys" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Keys</SelectItem>
-              {entitlementKeyOptions.map((k) => (
-                <SelectItem key={k} value={k}>
-                  {k}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
+      {/* Toolbar: provider sync only (filters removed — the product list is the navigation). */}
+      <div className="flex justify-end">
         <ProviderSyncButton realmId={realmId} onSyncComplete={handleSyncComplete} />
       </div>
 
@@ -246,7 +168,7 @@ export function EntitlementMappingsPage({ realmId, search }: EntitlementMappings
             </CardHeader>
             <CardContent className="p-0">
               <ul className="divide-y" data-testid="mapping-product-list">
-                {filteredGroups.map((g) => {
+                {productGroups.map((g) => {
                   const key = productKeyOf(g)
                   const isSelected = key === effectiveSelectedProductKey
                   const primaryColor = deriveSharedKeyColor(g.prices[0]?.entitlementKey ?? '')
@@ -270,7 +192,8 @@ export function EntitlementMappingsPage({ realmId, search }: EntitlementMappings
                             />
                           )}
                           <span className="truncate text-sm font-medium">
-                            {g.externalProductId}
+                            {primaryProductLabel(g.productName, g.externalProductId) ||
+                              m['billing.product_name_empty']()}
                           </span>
                           <Badge variant="secondary" className="font-mono text-xs">
                             {formatProviderName(g.paymentProvider)}
@@ -311,6 +234,8 @@ export function EntitlementMappingsPage({ realmId, search }: EntitlementMappings
           if (!open) setProtectedConfirm(null)
         }}
       />
+
+      <SyncNextStepDialog open={nextStepOpen} onOpenChange={setNextStepOpen} />
     </div>
   )
 }
@@ -322,6 +247,7 @@ interface DetailPanelProps {
   group: {
     paymentProvider: string
     externalProductId: string
+    productName?: string
     prices: EntitlementMappingResponse[]
   }
   canManage: boolean
@@ -385,7 +311,10 @@ function DetailPanel({
       <CardHeader>
         <div className="flex items-center justify-between gap-2" data-testid="detail-head">
           <div className="flex items-center gap-2">
-            <span className="text-base font-semibold">{group.externalProductId}</span>
+            <span className="text-base font-semibold">
+              {primaryProductLabel(group.productName, group.externalProductId) ||
+                m['billing.product_name_empty']()}
+            </span>
             <Badge variant="secondary" className="font-mono text-xs">
               {formatProviderName(group.paymentProvider)}
             </Badge>
@@ -481,6 +410,15 @@ function PriceEditRow({
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const editDisabled = !canManage
   const pointsDisabled = !canManage || !canManagePoints
+  // One-time mappings keep validityDays because one-time fulfillment uses it
+  // for topup_credit expiration. Recurring mappings rely on provider period
+  // boundaries for validity and only expose the active subscription controls.
+  const isOneTime = isOneTimeMapping(row.billingType)
+
+  // Per-price synced provider info (JSONB typed `unknown` upstream) — narrowed
+  // ONLY here via `readProviderProductInfo` (the single narrowing point).
+  const info = readProviderProductInfo(price.providerProductInfo)
+  const metadataEntries = buildMetadataEntries(info.productMetadata, info.priceMetadata)
 
   return (
     <div
@@ -496,47 +434,71 @@ function PriceEditRow({
 
         <Field label="Entitlement Key">
           <Input
-            value={row.entitlementKey}
-            onChange={(e) => onChange({ entitlementKey: e.target.value })}
-            disabled={editDisabled}
-            className="font-mono text-sm"
+            value={price.entitlementKey}
+            readOnly
+            className="bg-muted/40 font-mono text-sm text-muted-foreground"
           />
-          <p className="text-xs text-muted-foreground">
-            {m['billing.editing_key_renames_group']()}
-          </p>
         </Field>
 
         <Field
           label={m['billing.field_billing_type']()}
           required={isUnresolved && !row.billingType}
+          hint={!row.billingType ? m['billing.field_billing_type_sync_hint']() : undefined}
         >
-          <Select
-            value={row.billingType ?? ''}
-            onValueChange={(v) => onChange({ billingType: v || null })}
-            disabled={editDisabled}
-          >
-            <SelectTrigger className={isUnresolved && !row.billingType ? 'border-destructive' : ''}>
-              <SelectValue placeholder="—" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="recurring">{m['billing.billing_type_recurring']()}</SelectItem>
-              <SelectItem value="one_time">{m['billing.billing_type_one_time']()}</SelectItem>
-            </SelectContent>
-          </Select>
-        </Field>
-
-        <Field label={m['billing.field_period']()}>
           <Input
-            value={row.billingPeriod ?? ''}
-            onChange={(e) => onChange({ billingPeriod: e.target.value || null })}
-            disabled={editDisabled}
-            placeholder="month, year, …"
-            className="text-sm"
+            value={
+              row.billingType === 'recurring'
+                ? m['billing.billing_type_recurring']()
+                : row.billingType === 'one_time'
+                  ? m['billing.billing_type_one_time']()
+                  : ''
+            }
+            readOnly
+            placeholder="—"
+            className="bg-muted/40 text-sm text-muted-foreground"
+            data-testid={`price-billing-type-${price.externalPriceId ?? price.id}`}
           />
         </Field>
 
         <Field
-          label={m['billing.field_points_per_period']()}
+          label={m['billing.field_price']()}
+          // `== null` (not `!info.price`): a synced $0.00 free price is a real
+          // value, not an unsynced state — only show the sync hint when price
+          // is genuinely absent. Mirrors the value-rendering `price != null` check.
+          hint={info.price == null ? m['billing.field_billing_type_sync_hint']() : undefined}
+        >
+          <Input
+            value={
+              info.price != null && info.currency
+                ? formatInvoiceAmount(info.price, info.currency)
+                : ''
+            }
+            readOnly
+            placeholder="—"
+            className="bg-muted/40 text-sm text-muted-foreground"
+          />
+        </Field>
+
+        {!isOneTime && (
+          <Field
+            label={m['billing.field_period']()}
+            hint={!row.billingPeriod ? m['billing.field_billing_type_sync_hint']() : undefined}
+          >
+            <Input
+              value={mapBillingPeriodLabel(row.billingPeriod)}
+              readOnly
+              placeholder="—"
+              className="bg-muted/40 text-sm text-muted-foreground"
+            />
+          </Field>
+        )}
+
+        <Field
+          label={
+            isOneTime
+              ? m['billing.field_one_time_points']()
+              : m['billing.field_points_per_period']()
+          }
           required={isUnresolved && row.pointsPerPeriod == null}
         >
           <Input
@@ -549,7 +511,6 @@ function PriceEditRow({
               })
             }
             disabled={pointsDisabled}
-            placeholder="1000"
             className={isUnresolved && row.pointsPerPeriod == null ? 'border-destructive' : ''}
           />
         </Field>
@@ -575,6 +536,37 @@ function PriceEditRow({
         </Field>
       </div>
 
+      {/* Provider metadata block (read-only). Rendered per price row: the
+          backend attaches productMetadata to every price row of a product
+          (there is no product-level UI node separate from the price rows) and
+          priceMetadata is genuinely per-price, so productMetadata will visually
+          repeat across the price rows of the same product — this is ACCEPTED.
+          Omitted entirely (no placeholder text) when both maps are empty. */}
+      {metadataEntries.length > 0 && (
+        <div
+          className="mt-3 rounded-md border border-border/60 bg-muted/30 p-3"
+          data-testid={`price-metadata-block-${price.externalPriceId ?? price.id}`}
+        >
+          <Label className="mb-2 block text-xs font-medium text-muted-foreground">
+            {m['billing.subscription_provider_metadata']()}
+          </Label>
+          <dl className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
+            {metadataEntries.map(({ scope, key, value }) => (
+              <div key={scope + key} className="flex gap-1 text-xs">
+                <dt className="shrink-0 font-medium text-muted-foreground">{key}</dt>
+                <dd
+                  className="min-w-0 truncate text-foreground"
+                  title={value}
+                  data-testid={`metadata-entry-${scope}-${key}`}
+                >
+                  {value}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      )}
+
       <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
         <CollapsibleTrigger asChild>
           <Button variant="ghost" size="sm" disabled={editDisabled} className="mt-2">
@@ -583,81 +575,50 @@ function PriceEditRow({
         </CollapsibleTrigger>
         <CollapsibleContent>
           <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Field label={m['billing.field_grant_period_type']()}>
-              <Select
-                value={row.grantPeriodType ?? ''}
-                onValueChange={(v) =>
-                  onChange({
-                    grantPeriodType: (v || null) as 'once' | 'daily' | 'weekly' | 'monthly' | null,
-                  })
-                }
-                disabled={pointsDisabled}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="—" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="once">Once</SelectItem>
-                  <SelectItem value="daily">Daily</SelectItem>
-                  <SelectItem value="weekly">Weekly</SelectItem>
-                  <SelectItem value="monthly">Monthly</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-
-            <Field label={m['billing.field_validity_days']()}>
-              <Input
-                type="number"
-                min={1}
-                value={row.validityDays ?? ''}
-                onChange={(e) =>
-                  onChange({
-                    validityDays: e.target.value === '' ? null : Number(e.target.value),
-                  })
-                }
-                disabled={pointsDisabled}
-                placeholder="30"
-              />
-            </Field>
-
-            <Field label={m['billing.field_max_periods']()}>
-              <Input
-                type="number"
-                min={1}
-                value={row.maxPeriods ?? ''}
-                onChange={(e) =>
-                  onChange({
-                    maxPeriods: e.target.value === '' ? null : Number(e.target.value),
-                  })
-                }
-                disabled={pointsDisabled}
-                placeholder="12"
-              />
-            </Field>
-
-            <Field label={m['billing.field_grant_on_subscribe']()}>
-              <div className="flex items-center gap-2">
-                <Switch
-                  checked={row.grantOnSubscribe ?? false}
-                  onCheckedChange={(checked: boolean) => onChange({ grantOnSubscribe: checked })}
+            {isOneTime && (
+              <Field label={m['billing.field_validity_days']()}>
+                <Input
+                  type="number"
+                  min={1}
+                  value={row.validityDays ?? ''}
+                  onChange={(e) =>
+                    onChange({
+                      validityDays: e.target.value === '' ? null : Number(e.target.value),
+                    })
+                  }
                   disabled={pointsDisabled}
+                  placeholder="—"
                 />
-              </div>
-            </Field>
+              </Field>
+            )}
+
+            {!isOneTime && (
+              <Field label={m['billing.field_grant_on_subscribe']()}>
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={row.grantOnSubscribe ?? false}
+                    onCheckedChange={(checked: boolean) => onChange({ grantOnSubscribe: checked })}
+                    disabled={pointsDisabled}
+                  />
+                </div>
+              </Field>
+            )}
 
             {/* Quota windows span the full width of the advanced grid. */}
-            <div className="sm:col-span-2">
-              <Label className="mb-2 block text-xs font-medium text-muted-foreground">
-                {m['points.quota_editor_title']()}
-              </Label>
-              <MultiWindowQuotaEditor
-                value={row.quotaWindows ?? []}
-                onChange={(v) => onChange({ quotaWindows: v })}
-                disabled={pointsDisabled}
-                context="entitlement-mapping"
-                testIdPrefix="quota-window"
-              />
-            </div>
+            {!isOneTime && (
+              <div className="sm:col-span-2">
+                <Label className="mb-2 block text-xs font-medium text-muted-foreground">
+                  {m['points.quota_editor_title']()}
+                </Label>
+                <MultiWindowQuotaEditor
+                  value={row.quotaWindows ?? []}
+                  onChange={(v) => onChange({ quotaWindows: v })}
+                  disabled={pointsDisabled}
+                  context="entitlement-mapping"
+                  testIdPrefix="quota-window"
+                />
+              </div>
+            )}
           </div>
         </CollapsibleContent>
       </Collapsible>
@@ -668,10 +629,12 @@ function PriceEditRow({
 function Field({
   label,
   required,
+  hint,
   children,
 }: {
   label: string
   required?: boolean
+  hint?: string
   children: React.ReactNode
 }) {
   return (
@@ -681,6 +644,7 @@ function Field({
         {required && <span className="ml-0.5 text-destructive">*</span>}
       </Label>
       {children}
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
     </div>
   )
 }
@@ -737,42 +701,66 @@ function LoadingSkeleton() {
 
 // ==================== helpers ====================
 
+/**
+ * Flatten the (optional) `productMetadata` + `priceMetadata` maps from the
+ * synced provider product info into a flat list of display entries for the
+ * read-only metadata block. Returns `[]` when both are absent/empty, which
+ * the caller uses to omit the whole block (no placeholder text).
+ *
+ * Values are already display strings (the backend coerces metadata to a
+ * strict string→string map at sync time); long values truncate visually via
+ * the `title` tooltip on the `<dd>`.
+ */
+function buildMetadataEntries(
+  productMetadata: Record<string, string> | null | undefined,
+  priceMetadata: Record<string, string> | null | undefined
+): { scope: 'product' | 'price'; key: string; value: string }[] {
+  const toEntries = (
+    scope: 'product' | 'price',
+    map: Record<string, string> | null | undefined
+  ): { scope: 'product' | 'price'; key: string; value: string }[] => {
+    if (!map) return []
+    const out: { scope: 'product' | 'price'; key: string; value: string }[] = []
+    for (const key of Object.keys(map)) {
+      out.push({ scope, key, value: map[key] })
+    }
+    return out
+  }
+  return [...toEntries('product', productMetadata), ...toEntries('price', priceMetadata)]
+}
+
 function seedRows(prices: EntitlementMappingResponse[]): PriceMappingUpdateFormData[] {
   return prices.map((p) => ({
     mappingId: p.id,
-    entitlementKey: p.entitlementKey,
     billingType: p.billingType ?? null,
     billingPeriod: p.billingPeriod ?? null,
     enabled: p.enabled,
     pointsPerPeriod: p.pointsPerPeriod ?? null,
-    grantPeriodType: (p.grantPeriodType as 'once' | 'daily' | 'weekly' | 'monthly' | null) ?? null,
     validityDays: p.validityDays ?? null,
     grantOnSubscribe: p.grantOnSubscribe,
-    maxPeriods: p.maxPeriods ?? null,
     quotaWindows: p.quotaWindows ?? null,
   }))
 }
 
 function toPriceMappingUpdate(row: PriceMappingUpdateFormData): PriceMappingUpdate {
-  return {
+  const isOneTime = isOneTimeMapping(row.billingType)
+  const update = {
     mappingId: row.mappingId,
-    entitlementKey: row.entitlementKey,
     billingType: row.billingType ?? undefined,
-    billingPeriod: row.billingPeriod ?? undefined,
     enabled: row.enabled ?? undefined,
     pointsPerPeriod: row.pointsPerPeriod ?? undefined,
-    grantPeriodType: row.grantPeriodType ?? undefined,
-    validityDays: row.validityDays ?? undefined,
-    grantOnSubscribe: row.grantOnSubscribe ?? undefined,
-    maxPeriods: row.maxPeriods ?? undefined,
+    validityDays: isOneTime ? (row.validityDays ?? undefined) : undefined,
+    grantOnSubscribe: isOneTime ? undefined : (row.grantOnSubscribe ?? undefined),
     // Strip the read-side `key` (EntitlementQuotaWindowDto) before sending: the
-    // save payload's element shape is `QuotaWindowInputDto` ({windowSeconds,
+    // save payload's element shape is `QuotaWindowInput` ({windowSeconds,
     // limit}). The seeded rows carry `key` straight from the GET response; if
     // forwarded verbatim it would leak an excess property onto the wire.
-    quotaWindows:
-      row.quotaWindows?.map((w) => ({ windowSeconds: w.windowSeconds, limit: w.limit })) ??
-      undefined,
+    quotaWindows: isOneTime
+      ? undefined
+      : (row.quotaWindows?.map((w) => ({ windowSeconds: w.windowSeconds, limit: w.limit })) ??
+        undefined),
   }
+  return update as PriceMappingUpdate
 }
 
 function latestSyncedAt(prices: EntitlementMappingResponse[]): string | null {

@@ -1,5 +1,6 @@
 use herald_core::domain::common::entities::app_errors::CoreError;
 use herald_core::domain::points::entities::{PointsTransaction, TransactionType};
+use herald_core::domain::purchase::metadata_keys;
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -60,6 +61,26 @@ pub fn parse_optional_uuid_field(value: &Value) -> Option<Uuid> {
 /// Look up a metadata value by primary key, falling back to an alternate key.
 pub fn metadata_value<'a>(metadata: &'a Value, primary: &str, fallback: &str) -> &'a Value {
     metadata.get(primary).unwrap_or(&metadata[fallback])
+}
+
+/// Resolve the Herald user id from provider webhook metadata.
+///
+/// Stripe metadata key naming is inconsistent across write paths:
+/// - `purchase_service` (Checkout Session path) writes `heraldUserId` (camelCase)
+/// - `infra-stripe/client.rs` and `api-billing/handlers.rs` write `herald_user_id` (snake_case)
+/// - legacy/fallback readers expect `userId`
+///
+/// Stripe merges metadata from the Checkout Session + PaymentIntent onto the
+/// generated Invoice, so all three keys are typically present on `invoice.*`
+/// payloads. This helper tries them in order of recency and returns the first
+/// parseable UUID.
+pub fn metadata_user_id(metadata: &Value) -> Option<Uuid> {
+    metadata
+        .get(metadata_keys::HERALD_USER_ID)
+        .or_else(|| metadata.get("herald_user_id"))
+        .or_else(|| metadata.get("userId"))
+        .and_then(|v| v.as_str())
+        .and_then(|s| Uuid::parse_str(s).ok())
 }
 
 /// Parse attempt_id from JSON, treating nil UUID as absent.

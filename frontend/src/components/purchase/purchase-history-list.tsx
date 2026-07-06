@@ -13,20 +13,21 @@ import {
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import type { PurchaseHistoryItemDto } from '@/lib/api-generated'
+import type { PurchaseHistoryItem } from '@/lib/api-generated'
 import { formatInvoiceAmount, getPaymentStatusBadgeVariant } from '@/lib/invoice-utils'
 import { InvoiceApplyRowButton } from '@/components/billing/invoices/invoice-apply-row-button'
 
 interface PurchaseHistoryListProps {
-  purchases: PurchaseHistoryItemDto[]
+  purchases: PurchaseHistoryItem[]
   isLoading: boolean
   error?: Error
   onDetailsClick: (attemptId: string) => void
   /**
    * Render a per-row Invoice button gated by the apply-eligibility API.
    * Only rendered when the outer realm-level `invoicesVisible` gate is open
-   * (caller passes this through); the button itself reflects per-resource
-   * eligibility (P1-3/P1-4).
+   * AND the purchase is not a Stripe transaction (Stripe invoices are pushed
+   * via webhook — users apply through "My Invoices", never manually). The
+   * button itself reflects per-resource eligibility (P1-3/P1-4).
    */
   realmId?: string
   onApplyInvoice?: (attemptId: string) => void
@@ -34,7 +35,7 @@ interface PurchaseHistoryListProps {
 
 interface HistoryTableRowProps {
   realmId?: string
-  purchase: PurchaseHistoryItemDto
+  purchase: PurchaseHistoryItem
   onDetailsClick: (attemptId: string) => void
   onApplyInvoice?: (attemptId: string) => void
 }
@@ -85,7 +86,7 @@ const HistoryTableRow = memo(
         </TableCell>
         <TableCell className="text-right">
           <div className="flex justify-end gap-1">
-            {onApplyInvoice && realmId && (
+            {onApplyInvoice && realmId && purchase.paymentProvider !== 'stripe' && (
               <InvoiceApplyRowButton
                 realmId={realmId}
                 referenceType="payment_attempt"

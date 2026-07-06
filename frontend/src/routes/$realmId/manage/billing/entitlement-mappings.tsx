@@ -6,7 +6,6 @@ import { EntitlementMappingsPage } from '@/components/billing/entitlement-mappin
 const entitlementMappingsSearchSchema = z.object({
   page: z.number().int().min(0).optional(),
   pageSize: z.number().int().min(1).max(100).optional(),
-  provider: z.string().optional(),
 })
 
 export const Route = createFileRoute('/$realmId/manage/billing/entitlement-mappings')({
@@ -21,7 +20,6 @@ export const Route = createFileRoute('/$realmId/manage/billing/entitlement-mappi
 
 function EntitlementMappingsRoute() {
   const { realmId } = Route.useParams()
-  const search = Route.useSearch()
 
-  return <EntitlementMappingsPage realmId={realmId} search={search} />
+  return <EntitlementMappingsPage realmId={realmId} />
 }

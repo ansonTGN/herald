@@ -48,9 +48,7 @@
 //
 // =============================================================================
 
-use crate::tests::helpers::points_helpers::{
-    assert_derived_balance, get_user_ledgers_by_credit_type,
-};
+use crate::tests::helpers::points_helpers::{assert_derived_balance, get_user_quota_entitlements};
 use crate::tests::helpers::webhook_helpers::{
     assert_webhook_success, generate_test_event_id, send_stripe_webhook_with_signature,
     setup_test_entitlement_mapping_for_webhook,
@@ -214,14 +212,14 @@ async fn test_stripe_invoice_period_normalized_drives_renewal_grant(ctx: &mut Sc
     let response = send_stripe_webhook_with_signature(&app, &realm_id, event, webhook_secret).await;
     assert_webhook_success(&response);
 
-    // Then: a subscription_credit ledger WAS written — the invoice line period
-    // resolved and drove the renewal grant.
-    let ledgers =
-        get_user_ledgers_by_credit_type(ctx, user_id, CreditType::SubscriptionCredit).await;
+    // Then: a subscription_credit quota entitlement WAS written — the invoice
+    // line period resolved and drove the renewal grant.
+    let entitlements =
+        get_user_quota_entitlements(ctx, user_id, CreditType::SubscriptionCredit).await;
     assert!(
-        !ledgers.is_empty(),
+        !entitlements.is_empty(),
         "Stripe invoice single-line period must normalize to Some and drive a renewal grant; \
-         got 0 subscription_credit ledgers"
+         got 0 subscription_credit quota entitlements"
     );
 
     // The current-period grant (effective_at = period_start <= now) is
@@ -303,15 +301,15 @@ async fn test_stripe_invoice_no_line_period_skips_renewal_grant(ctx: &mut Schema
     // EntitlementMappingNotFound graceful-skip behavior.
     assert_webhook_success(&response);
 
-    // Then: NO subscription_credit ledger was written — P0 forbids writing
-    // a ledger with an invented period.
-    let ledgers =
-        get_user_ledgers_by_credit_type(ctx, user_id, CreditType::SubscriptionCredit).await;
+    // Then: NO subscription_credit quota entitlement was written — P0 forbids
+    // writing an entitlement with an invented period.
+    let entitlements =
+        get_user_quota_entitlements(ctx, user_id, CreditType::SubscriptionCredit).await;
     assert!(
-        ledgers.is_empty(),
+        entitlements.is_empty(),
         "Stripe invoice with NO line carrying a period must SKIP the renewal grant (P0 — \
-         never guess); got {} subscription_credit ledgers",
-        ledgers.len()
+         never guess); got {} subscription_credit quota entitlements",
+        entitlements.len()
     );
 
     // And: derived available balance is 0 (no ledger row exists).

@@ -32,6 +32,7 @@ import {
 } from './helpers/credit-note-webhook-helpers'
 
 const POSTGRES_CONTAINER = 'cas-demo-postgres'
+const DEMO_ADMIN_STRIPE_WEBHOOK_SECRET = 'whsec_demo_admin_points_package'
 
 /**
  * Query the UUID of a local Stripe credit note by its external Stripe id.
@@ -76,7 +77,7 @@ test.describe('[Billing Admin] Stripe Credit Note Void Rollback Demo Tests', () 
     request,
     demoLogger,
   }) => {
-    const externalInvoiceId = 'in_demo_credit_note_void_rollback'
+    const externalInvoiceId = `in_demo_credit_note_void_rollback_${randomUUID().slice(0, 8)}`
     const eventIdCreated = `evt_${randomUUID()}`
     const creditNoteId = `cn_${randomUUID()}`
 
@@ -97,6 +98,7 @@ test.describe('[Billing Admin] Stripe Credit Note Void Rollback Demo Tests', () 
       invoiceNumber = result.invoiceNumber
       invoiceId = getInvoiceIdByNumber(DEMO_ADMIN.realmId, invoiceNumber)
       console.log(`[Test] Paid Stripe invoice seeded: ${invoiceNumber} (${invoiceId})`)
+      await page.reload({ waitUntil: 'networkidle' })
     })
 
     await test.step('Then: detail dialog shows no refund summary or Stripe credit notes initially', async () => {
@@ -113,7 +115,12 @@ test.describe('[Billing Admin] Stripe Credit Note Void Rollback Demo Tests', () 
         total: 5000,
         currency: 'USD',
       })
-      const result = await deliverStripeCreditNoteWebhook(request, DEMO_ADMIN.realmId, payload)
+      const result = await deliverStripeCreditNoteWebhook(
+        request,
+        DEMO_ADMIN.realmId,
+        payload,
+        DEMO_ADMIN_STRIPE_WEBHOOK_SECRET,
+      )
       expect(result.status, `credit_note.created webhook failed: ${result.body}`).toBe(200)
     })
 
@@ -141,7 +148,12 @@ test.describe('[Billing Admin] Stripe Credit Note Void Rollback Demo Tests', () 
         invoiceId: externalInvoiceId,
         total: 5000,
       })
-      const result = await deliverStripeCreditNoteWebhook(request, DEMO_ADMIN.realmId, payload)
+      const result = await deliverStripeCreditNoteWebhook(
+        request,
+        DEMO_ADMIN.realmId,
+        payload,
+        DEMO_ADMIN_STRIPE_WEBHOOK_SECRET,
+      )
       expect(result.status, `credit_note.voided webhook failed: ${result.body}`).toBe(200)
     })
 

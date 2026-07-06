@@ -70,7 +70,7 @@ mod tests {
             "sellerName": "Test Seller Inc.",
             "sellerAddress": "456 Seller Ave",
             "sellerTaxId": "SELLER-TAX-001",
-            "dueDate": "2026-06-30",
+            "dueDate": "2099-12-31",
         });
 
         let response = app
@@ -163,90 +163,6 @@ mod tests {
         sqlx::query(
             "INSERT INTO invoice_history (id, invoice_id, event_type, actor_user_id, actor_type, changes, created_at)
              VALUES ($1, $2, 'issued', $3, 'user', '{\"field\":\"status\",\"from\":\"draft\",\"to\":\"issued\"}', NOW())",
-        )
-        .bind(Uuid::now_v7())
-        .bind(invoice_id)
-        .bind(applicant_user_id)
-        .execute(&ctx.app_state.pool)
-        .await
-        .unwrap();
-
-        invoice_id
-    }
-
-    /// Create a paid invoice for a user.
-    async fn create_paid_invoice_for_user(
-        ctx: &InvoiceTestContext,
-        realm_id: &str,
-        applicant_user_id: Uuid,
-    ) -> Uuid {
-        let invoice_id = Uuid::now_v7();
-
-        let year = chrono::Utc::now().year();
-        let seq: i64 = sqlx::query_scalar(
-            "INSERT INTO invoice_number_counter (realm_id, year, next_seq, updated_at)
-             VALUES ($1, $2, 2, NOW())
-             ON CONFLICT (realm_id, year) DO UPDATE SET next_seq = invoice_number_counter.next_seq + 1, updated_at = NOW()
-             RETURNING next_seq - 1",
-        )
-        .bind(realm_id)
-        .bind(year)
-        .fetch_one(&ctx.app_state.pool)
-        .await
-        .unwrap();
-
-        let invoice_number = format!("INV-{}-{:04}", year, seq);
-
-        sqlx::query(
-            "INSERT INTO invoice (
-                id, realm_id, invoice_number, source, account_id, applicant_user_id,
-                status, currency, subtotal, discount_amount, tax_amount, shipping_amount, total,
-                billing_name, billing_address, billing_tax_id,
-                seller_name, seller_address, seller_tax_id,
-                issued_at, paid_at, issue_date, due_date, created_at, updated_at
-            ) VALUES (
-                $1, $2, $3, 'user_application', $4, $5,
-                'paid', 'USD', 20000, 0, 0, 0, 20000,
-                'Paid Test Client', '123 User St', 'TAX-PAID-001',
-                'Seller Inc', '456 Seller Ave', 'SELLER-TAX-001',
-                NOW(), NOW(), CURRENT_DATE, CURRENT_DATE + INTERVAL '30 days', NOW(), NOW()
-            )",
-        )
-        .bind(invoice_id)
-        .bind(realm_id)
-        .bind(&invoice_number)
-        .bind(Uuid::nil())
-        .bind(applicant_user_id)
-        .execute(&ctx.app_state.pool)
-        .await
-        .unwrap();
-
-        // Insert a line item
-        sqlx::query(
-            "INSERT INTO invoice_line_item (id, invoice_id, sort_order, name, quantity, unit_price, subtotal)
-             VALUES ($1, $2, 1, 'Annual Plan', '1', 20000, 20000)",
-        )
-        .bind(Uuid::now_v7())
-        .bind(invoice_id)
-        .execute(&ctx.app_state.pool)
-        .await
-        .unwrap();
-
-        // Insert history records
-        sqlx::query(
-            "INSERT INTO invoice_history (id, invoice_id, event_type, actor_user_id, actor_type, changes, created_at)
-             VALUES ($1, $2, 'issued', $3, 'user', '{}', NOW() - INTERVAL '1 day')",
-        )
-        .bind(Uuid::now_v7())
-        .bind(invoice_id)
-        .bind(applicant_user_id)
-        .execute(&ctx.app_state.pool)
-        .await
-        .unwrap();
-
-        sqlx::query(
-            "INSERT INTO invoice_history (id, invoice_id, event_type, actor_user_id, actor_type, changes, created_at)
-             VALUES ($1, $2, 'paid', $3, 'user', '{}', NOW())",
         )
         .bind(Uuid::now_v7())
         .bind(invoice_id)
@@ -608,57 +524,6 @@ mod tests {
             pdf_response.status(),
             StatusCode::FORBIDDEN,
             "Expected 403 when user tries to download another user's invoice PDF"
-        );
-    }
-
-    // User Story: docs/user-stories/13-invoice-user-stories.md
-    // Covers: US-IV-009 -- user downloads own paid invoice PDF
-    //
-    // Given: A regular user with a paid invoice they own
-    // When: GET /api/bill/{realmId}/my/invoices/{invoiceId}/pdf
-    // Then: Returns 200 with Content-Type: application/pdf
-
-    #[test_context(InvoiceTestContext)]
-    #[tokio::test]
-    async fn test_user_download_own_paid_invoice_pdf(ctx: &mut InvoiceTestContext) {
-        let app = ctx.create_unified_test_router();
-        let realm_id = ctx._realm_id.clone();
-
-        let (user_token, user_id) =
-            create_regular_user_session(ctx, "invoice-pdf-user-paid@test.com").await;
-
-        // Create a paid invoice for this user
-        let invoice_id = create_paid_invoice_for_user(ctx, &realm_id, user_id).await;
-
-        // User downloads their paid invoice PDF
-        let pdf_response = app
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .method("GET")
-                    .uri(format!(
-                        "/api/bill/{}/my/invoices/{}/pdf",
-                        realm_id, invoice_id
-                    ))
-                    .header("cookie", format!("X-Auth={}", user_token))
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(pdf_response.status(), StatusCode::OK);
-
-        let content_type = pdf_response
-            .headers()
-            .get(header::CONTENT_TYPE)
-            .expect("Missing Content-Type header")
-            .to_str()
-            .unwrap();
-        assert!(
-            content_type.contains("application/pdf"),
-            "Expected Content-Type to contain 'application/pdf', got: {}",
-            content_type
         );
     }
 

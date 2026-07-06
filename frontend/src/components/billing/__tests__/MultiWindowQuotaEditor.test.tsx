@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { userEvent } from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { MultiWindowQuotaEditor, type MultiWindowQuotaEditorProps } from '../MultiWindowQuotaEditor'
-import type { QuotaWindowInputDto } from '@/lib/api-generated/types.gen'
+import type { QuotaWindowInput } from '@/lib/api-generated/types.gen'
 
 /**
  * Factory for a single quota window. Centralised so test intent reads as
@@ -10,7 +10,7 @@ import type { QuotaWindowInputDto } from '@/lib/api-generated/types.gen'
  * and so the payload shape (`{ windowSeconds, limit }`) is asserted in one
  * place rather than scattered as hardcoded fixtures.
  */
-function windowSeconds(windowSeconds: number, limit: number): QuotaWindowInputDto {
+function windowSeconds(windowSeconds: number, limit: number): QuotaWindowInput {
   return { windowSeconds, limit }
 }
 
@@ -28,7 +28,7 @@ function defaultProps(
 
 /**
  * MultiWindowQuotaEditor is the single source of truth for assembling the
- * `QuotaWindowInputDto[]` payload consumed by both the entitlement-mapping and
+ * `QuotaWindowInput[]` payload consumed by both the entitlement-mapping and
  * realm-default pages. Its invariants matter because pages trust whatever
  * array it emits and persist it nearly verbatim — a wrong payload, a lost row,
  * or a silently-violated 8-window cap would corrupt stored quota config.
@@ -143,30 +143,35 @@ describe('MultiWindowQuotaEditor', () => {
       expect(onChange).toHaveBeenCalledWith([{ windowSeconds: 18000, limit: 0 }])
     })
 
-    it('switching unit preserves the absolute window length and re-expresses it in the chosen unit', async () => {
-      const onChange = vi.fn()
+    it('switching unit keeps the length number stable and recomputes windowSeconds in the new unit', async () => {
+      let current: QuotaWindowInput[] = [windowSeconds(86400, 0)]
+      const onChange = vi.fn((next: QuotaWindowInput[]) => {
+        current = next
+      })
       const user = userEvent.setup()
-      render(
+      const { rerender } = render(
         <MultiWindowQuotaEditor
           {...defaultProps({
             // 86400s derives unit=days, amount=1.
-            value: [windowSeconds(86400, 0)],
+            value: current,
             onChange,
           })}
         />
       )
 
-      // Open the Select and pick "hours": the absolute window length (86400s)
-      // must NOT change — switching unit is a presentation affordance, so no
-      // onChange emission. But the length input MUST re-express 86400s in the
-      // newly chosen unit (24 hours); otherwise the control is a decorative
-      // no-op that silently discards the operator's selection. Radix Select
-      // needs real pointer events, hence userEvent rather than fireEvent.
+      // Open the Select and pick "hours": the displayed length number (1) must
+      // stay stable while the absolute windowSeconds is recomputed in the new
+      // unit (1 hour = 3600s). The unit selector is a true unit-conversion
+      // control, not a presentation-only affordance. Radix Select needs real
+      // pointer events, hence userEvent rather than fireEvent.
       await user.click(screen.getByTestId('quota-window-unit-row-0'))
       await user.click(await screen.findByRole('option', { name: 'hours' }))
 
-      expect(onChange).not.toHaveBeenCalled()
-      expect(screen.getByTestId('quota-window-length-row-0')).toHaveValue(24)
+      expect(onChange).toHaveBeenCalledWith([{ windowSeconds: 3600, limit: 0 }])
+      // Apply the emitted value like a controlled parent would, then the length
+      // input reflects 1 hour in the now-selected "hours" unit.
+      rerender(<MultiWindowQuotaEditor {...defaultProps({ value: current, onChange })} />)
+      expect(screen.getByTestId('quota-window-length-row-0')).toHaveValue(1)
     })
 
     it('emits limit as a non-negative integer', () => {
@@ -251,7 +256,7 @@ describe('MultiWindowQuotaEditor', () => {
     // 9-window array that the schema then rejects on save, a confusing
     // mismatch between UI and persistence.
 
-    function eightWindows(): QuotaWindowInputDto[] {
+    function eightWindows(): QuotaWindowInput[] {
       return Array.from({ length: 8 }, (_, i) => windowSeconds(3600 * (i + 1), i * 10))
     }
 
@@ -316,7 +321,8 @@ describe('MultiWindowQuotaEditor', () => {
   })
 
   describe('context and testIdPrefix', () => {
-    it('renders the entitlement-mapping impact message by default', () => {
+    it('renders the entitlement-mapping impact message by default', async () => {
+      const user = userEvent.setup()
       render(
         <MultiWindowQuotaEditor
           {...defaultProps({
@@ -326,14 +332,17 @@ describe('MultiWindowQuotaEditor', () => {
         />
       )
 
-      // The impact alert is the only context-driven difference and is the
+      // The impact tooltip is the only context-driven difference and is the
       // operator's guarantee that editing here won't retroactively change
       // already-issued entitlements.
-      const alert = screen.getByTestId('quota-window-impact-alert')
-      expect(alert).toHaveTextContent(/future granted quota/i)
+      await user.hover(screen.getByTestId('quota-window-impact-tooltip'))
+      expect(await screen.findByTestId('quota-window-impact-tooltip-content')).toHaveTextContent(
+        /future granted quota/i
+      )
     })
 
-    it('renders the realm-default impact message and a custom testid prefix', () => {
+    it('renders the realm-default impact message and a custom testid prefix', async () => {
+      const user = userEvent.setup()
       render(
         <MultiWindowQuotaEditor
           {...defaultProps({
@@ -348,8 +357,10 @@ describe('MultiWindowQuotaEditor', () => {
       expect(screen.getByTestId('default-quota-editor')).toBeInTheDocument()
       expect(screen.getByTestId('default-quota-length-row-0')).toBeInTheDocument()
       expect(screen.getByTestId('default-quota-add-button')).toBeInTheDocument()
-      const alert = screen.getByTestId('default-quota-impact-alert')
-      expect(alert).toHaveTextContent(/new registered users/i)
+      await user.hover(screen.getByTestId('default-quota-impact-tooltip'))
+      expect(await screen.findByTestId('default-quota-impact-tooltip-content')).toHaveTextContent(
+        /new registered users/i
+      )
     })
   })
 
@@ -361,7 +372,7 @@ describe('MultiWindowQuotaEditor', () => {
 
       await user.click(screen.getByTestId('quota-window-add-button'))
 
-      const emitted = onChange.mock.calls[0][0] as QuotaWindowInputDto[]
+      const emitted = onChange.mock.calls[0][0] as QuotaWindowInput[]
       expect(emitted).toHaveLength(1)
       // Pin the wire shape callers depend on: no stray keys, both fields
       // present, both numbers.

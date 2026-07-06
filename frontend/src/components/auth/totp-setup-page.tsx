@@ -473,7 +473,7 @@ function OtpCodeInput({
           data-testid={`totp-otp-digit-${index}`}
           className="w-12 h-14 text-center text-2xl font-semibold border-2 border-input rounded-lg
             focus:border-primary focus:ring-2 focus:ring-primary/20 focus:outline-none
-            transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            transition-all disabled:cursor-not-allowed disabled:border-transparent disabled:bg-muted disabled:text-muted-foreground"
           aria-label={`Digit ${index + 1}`}
         />
       ))}

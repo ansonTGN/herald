@@ -741,7 +741,7 @@ mod tests {
 
     fn make_summary(external_invoice_id: Option<&str>) -> InvoiceSummary {
         InvoiceSummary {
-            id: Uuid::new_v4(),
+            id: Uuid::now_v7(),
             realm_id: "admin".to_string(),
             invoice_number: "INV-1".to_string(),
             source: InvoiceSource::ExternalSync,
@@ -763,7 +763,7 @@ mod tests {
         }
     }
 
-    /// The list/summary DTO MUST surface external_invoice_id so callers can
+    /// The list/summary response MUST surface external_invoice_id so callers can
     /// discover Stripe invoices by their `in_...` id. This is the field the
     /// live E2E `waitForStripeInvoice` filter depends on, so a regression here
     /// would silently break invoice discovery.

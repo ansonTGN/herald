@@ -55,13 +55,19 @@ pub struct ChangeEmailResponse {
   )
 )]
 pub async fn request(
-    Path(_realm_id): Path<String>,
+    Path(realm_id): Path<String>,
     State(state): State<AppState>,
     ClientIp(ip): ClientIp,
     headers: HeaderMap,
     Valid(Json(payload)): Valid<Json<ChangeEmailRequest>>,
 ) -> Result<ApiResult<ChangeEmailResponse>, ApiError> {
     let (_token, sess) = require_session(&state, &headers).await?;
+    if sess.realm_id != realm_id {
+        return Err(ApiError::forbidden(
+            "cannot request email change for a different realm",
+        ));
+    }
+
     let new_email = normalize_email(&payload.new_email);
 
     // Apply rate limiting: 1 request per minute per IP and email

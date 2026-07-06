@@ -48,9 +48,6 @@ export const Route = createRootRouteWithContext<RouterContext>()({
       const result = await initializeAuth(realmId)
       const authenticated = result.authenticated
 
-      console.log('[__root loader] Pathname:', pathname)
-      console.log('[__root loader] Realm ID:', realmId)
-
       // Route redirect logic using Zustand state
 
       // Root path: redirect based on auth status and permissions
@@ -74,13 +71,8 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 
       // Realm root path (e.g., /admin, /admin/, /user, /user/): redirect authenticated users based on permissions
       if (isRealmRootPath && authenticated) {
-        console.log(
-          '[__root loader] Realm root path with authenticated user, checking permissions...'
-        )
         const hasAdmin = checkAdminPermission()
-        console.log('[__root loader] Has admin permission:', hasAdmin)
         const targetPath = hasAdmin ? '/$realmId/manage' : '/$realmId/user/profile'
-        console.log('[__root loader] Redirecting to:', targetPath)
         throw redirect({
           to: targetPath,
           params: { realmId },
@@ -99,10 +91,8 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 
       // Protected routes: require authentication (auth and legal are public)
       if (!isAuthRoute && !isLegalRoute && !authenticated) {
-        console.log('[__root loader] Protected route without authentication, redirecting to login')
         // Extract the relative path (without realm prefix)
         const relativePath = pathname.replace(new RegExp(`^/${realmId}`), '') || '/'
-        console.log('[__root loader] Relative path:', relativePath)
         throw redirect({
           to: '/$realmId/auth/login',
           params: { realmId },
@@ -121,17 +111,13 @@ export const Route = createRootRouteWithContext<RouterContext>()({
       // Return empty object (auth data is now in Zustand store)
       return {}
     } catch (error) {
-      console.error('[__root loader] Error in loader:', error)
-
       // If it's a redirect, re-throw it
       if (isRedirect(error)) {
-        console.log('[__root loader] Re-throwing redirect')
         throw error
       }
 
       // Other errors: redirect to login (unless it's a public route)
       if (!isAuthRoute && !isLegalRoute) {
-        console.log('[__root loader] Error occurred, redirecting to login')
         const relativePath = pathname.replace(new RegExp(`^/${realmId}`), '') || '/'
         throw redirect({
           to: '/$realmId/auth/login',

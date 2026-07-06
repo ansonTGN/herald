@@ -64,11 +64,11 @@ test.describe('[Regular User] US-PU-006 Edge Cases + US-PU-007 Purchase History'
     })
 
     await test.step('Wait for price-card grid or empty state', async () => {
-      // The page now renders either a price-card grid
-      // (`purchase-price-grid-${period}`) or the per-pane empty state
-      // (`purchase-empty-state`). The page boots in Monthly.
+      // The page now renders either a price-card grid (Credit packs section
+      // for one_time: `purchase-price-grid-credit-packs`) or the empty state
+      // (`purchase-empty-state`).
       const cardsGrid = page.locator(
-        SELECTORS.purchasePriceCard.priceGrid('month'),
+        SELECTORS.purchasePriceCard.creditPacksGrid,
       )
       const emptyState = page.locator(SELECTORS.purchasePriceCard.emptyState)
 
@@ -85,7 +85,7 @@ test.describe('[Regular User] US-PU-006 Edge Cases + US-PU-007 Purchase History'
       // `opacity-60` class; its onClick is undefined. The reason row is the
       // load-bearing marker (no auto-dismissing toast).
       const cardsGrid = page.locator(
-        SELECTORS.purchasePriceCard.priceGrid('month'),
+        SELECTORS.purchasePriceCard.creditPacksGrid,
       )
       // Only meaningful when cards exist.
       const gridVisible = await cardsGrid.isVisible().catch(() => false)
@@ -159,11 +159,11 @@ test.describe('[Regular User] US-PU-006 Edge Cases + US-PU-007 Purchase History'
 
     await test.step('Check for empty state vs price-card grid', async () => {
       // Empty-state + grid testids migrated from mappingCard.* to
-      // purchasePriceCard.* (same testid strings, new group). The page boots
-      // in Monthly; empty state renders per-pane when periodPane.length === 0.
+      // purchasePriceCard.* (same testid strings, new group). one_time cards
+      // live in the Credit packs grid under the section IA.
       const emptyState = page.locator(SELECTORS.purchasePriceCard.emptyState)
       const cardsGrid = page.locator(
-        SELECTORS.purchasePriceCard.priceGrid('month'),
+        SELECTORS.purchasePriceCard.creditPacksGrid,
       )
 
       // Wait for either state to render

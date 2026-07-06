@@ -65,7 +65,8 @@ export const ADMIN_PERMISSIONS = [
  * @returns true if user has any admin permission
  */
 export function hasAdminPermission(permissions?: string[]): boolean {
-  return ADMIN_PERMISSIONS.some((perm) => permissions?.includes(perm))
+  const normalizedPermissions = permissions?.map((permission) => permission.replace(':', '.'))
+  return ADMIN_PERMISSIONS.some((perm) => normalizedPermissions?.includes(perm))
 }
 
 /**

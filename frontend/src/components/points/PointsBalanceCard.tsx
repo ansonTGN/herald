@@ -56,7 +56,7 @@ export function PointsBalanceCard({ card, loading }: PointsBalanceCardProps) {
             <span>{m['points.balance_pool']()}</span>
           </div>
           <div
-            className="text-5xl font-bold"
+            className="text-3xl font-bold"
             data-testid={`points-balance-total-${card.bucketId ?? ''}`}
           >
             {(card.spendableFromPool ?? 0).toLocaleString()}

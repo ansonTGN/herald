@@ -4,13 +4,12 @@ use axum::{
     extract::{Path, Query, State},
     http::HeaderMap,
 };
+use herald_api_base::application::http::common::auth_utils::AdminIdentity;
 use herald_api_base::application::http::common::pagination;
 use herald_api_base::application::http::server::api_entities::PageResponse;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
-use herald_core::domain::authorization::permission_service::PermissionService;
-use herald_core::domain::common::policies::ensure_policy;
 use herald_core::domain::user::UserService;
 use sqlx::Row;
 
@@ -45,13 +44,20 @@ pub async fn list_users(
     Query(query): Query<ListUsersQuery>,
     _headers: HeaderMap,
 ) -> Result<ApiResult<PageResponse<UserResponse>>, ApiError> {
-    use herald_core::domain::common::entities::app_errors::CoreError;
-
-    // Extract identity from request extension (injected by inject_identity middleware)
-    let user_id = identity.user_id();
-    let identity_realm_id = identity.realm_id();
+    let admin = AdminIdentity::require(identity, &realm_id, "user management")?;
+    admin
+        .require_permission(&state, "users", "view")
+        .await
+        .inspect_err(|_e| {
+            tracing::warn!(
+                realm_id = %realm_id,
+                user_id = %admin.user_id(),
+                "User list permission denied"
+            );
+        })?;
 
     // Debug logging to investigate UUID issue
+    let user_id = admin.user_id_string();
     tracing::debug!("user_id from identity: {}", user_id);
     tracing::debug!("user_id length: {}", user_id.len());
     tracing::debug!(
@@ -59,63 +65,8 @@ pub async fn list_users(
         uuid::Uuid::parse_str(&user_id).is_ok()
     );
 
-    // MANUAL POLICY CHECK
-    // Check specific permission for listing users
-    {
-        let permission_checker = &state.permission_checker;
-
-        let allowed = permission_checker
-            .check_permission(&realm_id, &user_id, "users", "view")
-            .await
-            .map_err(|e| {
-                tracing::error!("Permission check error: {e}");
-                ApiError::internal("Internal server error")
-            })?;
-
-        tracing::info!(
-            realm_id = %realm_id,
-            user_id = %user_id,
-            resource = "users",
-            action = "view",
-            allowed,
-            "Policy check result"
-        );
-
-        ensure_policy(allowed, "Insufficient permissions to list users").map_err(|e| match e {
-            CoreError::Forbidden(msg) => {
-                tracing::warn!(
-                    "Policy check failed: realm_id={}, user_id={}, error={}",
-                    realm_id,
-                    user_id,
-                    msg
-                );
-                ApiError::forbidden(msg)
-            }
-            _ => ApiError::internal("Internal server error"),
-        })?;
-    }
-
-    // STRICT REALM BOUNDARY CHECK
-    // Session user can ONLY access their own realm (no exceptions)
-    tracing::info!(
-        user_realm = %identity_realm_id,
-        target_realm = %realm_id,
-        "Starting realm boundary check"
-    );
-
-    if identity_realm_id != realm_id {
-        tracing::warn!(
-            user_realm = %identity_realm_id,
-            target_realm = %realm_id,
-            "Realm boundary violation: user cannot access different realm"
-        );
-        return Err(ApiError::forbidden(
-            "Access denied: cannot list users from a different realm",
-        ));
-    }
-
     tracing::debug!(
-        user_realm = %identity_realm_id,
+        user_realm = %admin.realm_id(),
         target_realm = %realm_id,
         "Realm access check passed"
     );
@@ -131,7 +82,7 @@ pub async fn list_users(
     let user_service = state.service.user_service();
     let (users, total_count) = user_service
         .list_users(
-            identity.clone(),
+            admin.identity().clone(),
             realm_id.clone(),
             norm.page as u64,
             norm.page_size as u64,

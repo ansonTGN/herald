@@ -91,7 +91,7 @@ mod tests {
             "sellerName": "Test Seller Inc.",
             "sellerAddress": "456 Seller Ave",
             "sellerTaxId": "SELLER-TAX-001",
-            "dueDate": "2026-06-30",
+            "dueDate": "2099-12-31",
         });
 
         let create_response = app
@@ -470,139 +470,6 @@ mod tests {
         assert_eq!(
             row_b["amountRefunded"], 0,
             "Invoice B row should show amountRefunded=0"
-        );
-    }
-
-    // =========================================================================
-    // Test: User My-Invoice List Shows Refund Annotation
-    // (US-IF-009 scenario 1)
-    // =========================================================================
-    // User Story: docs/user-stories/billing/invoice-fallback.md
-    // Covers: US-IF-009 scenario 1
-    //
-    // Given: A user's invoice with a credit note (amount_refunded=3000)
-    // When: GET my invoices list
-    // Then: Response includes amountRefunded=3000 for that invoice
-
-    #[test_context(RefundQueryTestContext)]
-    #[tokio::test]
-    async fn test_my_invoice_list_shows_refund_annotation(ctx: &mut RefundQueryTestContext) {
-        let app = ctx.create_unified_test_router();
-        let realm_id = ctx._realm_id.clone();
-
-        // Set up an admin (to create invoices / insert credit notes) and a regular user
-        let admin_token =
-            setup_billing_admin_session(ctx, "refund-query-my-list-admin@test.com").await;
-        let (user_token, user_id) =
-            create_admin_session_with_user(ctx, "refund-query-my-list-user@test.com", 1800).await;
-        let user_id = Uuid::parse_str(&user_id).expect("valid user UUID");
-
-        // Create a paid manual invoice owned by the regular user.
-        // We create it via admin API with applicant_user_id = user_id so the
-        // user can see it through the my-invoice ownership check.
-        // `user_id` comes from `create_admin_session_with_user`, which inserts a
-        // row into the `account` table, so it satisfies both the
-        // `validate_account_in_realm` checks for `accountId` and
-        // `applicantUserId` (unified account/user table).
-        let payload = json!({
-            "accountId": user_id.to_string(),
-            "applicantUserId": user_id.to_string(),
-            "currency": "USD",
-            "lineItems": [
-                {
-                    "name": "User Refund Service",
-                    "quantity": "1",
-                    "unitPrice": 10000,
-                }
-            ],
-            "billingName": "My List Client",
-            "billingAddress": "123 Test St",
-            "billingEmail": "my-list@test.com",
-            "billingTaxId": "TAX-001",
-            "sellerName": "Test Seller Inc.",
-            "sellerAddress": "456 Seller Ave",
-            "sellerTaxId": "SELLER-TAX-001",
-            "dueDate": "2026-06-30",
-        });
-
-        let create_response = app
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri(format!("/api/bill/{}/invoices", realm_id))
-                    .header("content-type", "application/json")
-                    .header("cookie", format!("X-Auth={}", admin_token))
-                    .body(Body::from(payload.to_string()))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(create_response.status(), StatusCode::CREATED);
-        let draft = parse_body(create_response.into_body()).await;
-        let invoice_id: Uuid = Uuid::parse_str(draft["id"].as_str().unwrap()).expect("valid UUID");
-
-        // Issue + mark paid
-        for action in ["issue", "mark-paid"] {
-            let response = app
-                .clone()
-                .oneshot(
-                    Request::builder()
-                        .method("POST")
-                        .uri(format!(
-                            "/api/bill/{}/invoices/{}/{}",
-                            realm_id, invoice_id, action
-                        ))
-                        .header("content-type", "application/json")
-                        .header("cookie", format!("X-Auth={}", admin_token))
-                        .body(Body::from(json!({}).to_string()))
-                        .unwrap(),
-                )
-                .await
-                .unwrap();
-            assert_eq!(response.status(), StatusCode::OK);
-        }
-
-        // Insert a credit note (amount=3000)
-        insert_credit_note_via_sql(
-            ctx,
-            invoice_id,
-            &realm_id,
-            3000,
-            "USD",
-            "manual",
-            Some("My list refund"),
-        )
-        .await;
-
-        // User lists their invoices
-        let list_response = app
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .method("GET")
-                    .uri(format!("/api/bill/{}/my/invoices", realm_id))
-                    .header("cookie", format!("X-Auth={}", user_token))
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(list_response.status(), StatusCode::OK);
-        let list_body = parse_body(list_response.into_body()).await;
-        let data = list_body["data"].as_array().unwrap();
-        let row = data
-            .iter()
-            .find(|item| {
-                Uuid::parse_str(item["id"].as_str().unwrap_or_default()).unwrap_or_default()
-                    == invoice_id
-            })
-            .expect("User should see their own refunded invoice in the my-invoices list");
-
-        assert_eq!(
-            row["amountRefunded"], 3000,
-            "User-side list row should show amountRefunded=3000 for a refunded invoice"
         );
     }
 

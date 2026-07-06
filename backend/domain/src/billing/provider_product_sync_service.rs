@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use uuid::Uuid;
@@ -22,6 +23,7 @@ pub struct ProviderPrice {
     pub currency: Option<String>,
     pub billing_type: Option<String>,
     pub billing_period: Option<String>,
+    pub price_metadata: Option<HashMap<String, String>>,
 }
 
 /// External provider product info returned by ProviderApiPort.
@@ -33,6 +35,7 @@ pub struct ProviderProduct {
     pub external_product_id: String,
     pub name: String,
     pub description: Option<String>,
+    pub product_metadata: Option<HashMap<String, String>>,
     pub prices: Vec<ProviderPrice>,
 }
 
@@ -48,6 +51,7 @@ static NULL_PRICE: ProviderPrice = ProviderPrice {
     currency: None,
     billing_type: None,
     billing_period: None,
+    price_metadata: None,
 };
 
 /// Result of a full provider sync operation
@@ -256,19 +260,12 @@ where
                         .and_then(|s: &str| s.parse().ok()),
                     billing_period: price.billing_period.clone(),
                     points_per_period: draft.points_per_period,
-                    grant_period_type: draft.grant_period_type,
                     validity_days: draft.validity_days,
                     grant_on_subscribe: draft.grant_on_subscribe,
-                    max_periods: draft.max_periods,
+                    grant_period_type: existing.as_ref().and_then(|m| m.grant_period_type.clone()),
+                    max_periods: existing.as_ref().and_then(|m| m.max_periods),
                     enabled: draft.enabled,
-                    provider_product_info: Some(serde_json::json!({
-                        "name": product.name,
-                        "description": product.description,
-                        "price": price.price,
-                        "currency": price.currency,
-                        "billing_type": price.billing_type,
-                        "billing_period": price.billing_period,
-                    })),
+                    provider_product_info: Some(build_provider_product_info(&product, price)),
                     // Provider sync never carries quota config; preserve an
                     // existing mapping's windows when re-syncing, else None
                     // (new mapping). The upsert update-branch also preserves
@@ -341,11 +338,32 @@ where
 #[derive(Debug, Clone, Default)]
 struct DraftDefaults {
     points_per_period: Option<i64>,
-    grant_period_type: Option<String>,
     validity_days: Option<i64>,
     grant_on_subscribe: bool,
-    max_periods: Option<i64>,
     enabled: bool,
+}
+
+/// Assemble the `provider_product_info` JSONB value written to
+/// `provider_entitlement_mappings` during sync.
+///
+/// Extracted from the sync loop purely so the JSON shape (the contract surface
+/// downstream consumers — admin UI, backend/test scenarios — rely on) is
+/// unit-testable without mocking the repository. Behavior is unchanged: same
+/// keys, same source fields, same `null`-on-`None` serialization.
+fn build_provider_product_info(
+    product: &ProviderProduct,
+    price: &ProviderPrice,
+) -> serde_json::Value {
+    serde_json::json!({
+        "name": product.name,
+        "description": product.description,
+        "price": price.price,
+        "currency": price.currency,
+        "billing_type": price.billing_type,
+        "billing_period": price.billing_period,
+        "product_metadata": product.product_metadata,
+        "price_metadata": price.price_metadata,
+    })
 }
 
 /// Build a deterministic placeholder `entitlement_key` for a freshly-synced
@@ -400,7 +418,9 @@ fn draft_entitlement_key(external_product_id: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::draft_entitlement_key;
+    use super::{ProviderPrice, ProviderProduct};
+    use super::{build_provider_product_info, draft_entitlement_key};
+    use std::collections::HashMap;
 
     /// Mirrors the DB CHECK constraint `entitlement_key ~ '^[a-z0-9-]{1,64}$'`
     /// (migration `20260607_product_reduce.sql`) and the char-class validation
@@ -472,5 +492,69 @@ mod tests {
     fn draft_entitlement_key_caps_at_64_chars() {
         let key = draft_entitlement_key(&"a".repeat(200));
         assert!(key.len() <= 64, "slug length {} exceeds 64", key.len());
+    }
+
+    /// `provider_product_info` is the JSONB contract surface downstream
+    /// consumers (admin UI, backend/test sync scenarios) rely on. This pins
+    /// the assembled shape: every existing key is present with the right source
+    /// field, the two new metadata keys are carried through, and `None`
+    /// metadata serializes to JSON `null` (not omitted, not `"null"`).
+    #[test]
+    fn build_provider_product_info_assembles_expected_json_shape() {
+        let product = ProviderProduct {
+            external_product_id: "prod_123".to_string(),
+            name: "Herald Live".to_string(),
+            description: Some("Monthly plan".to_string()),
+            product_metadata: Some(HashMap::from([("tier".to_string(), "pro".to_string())])),
+            prices: Vec::new(),
+        };
+        let price = ProviderPrice {
+            external_price_id: Some("price_abc".to_string()),
+            price: Some(1999),
+            currency: Some("usd".to_string()),
+            billing_type: Some("recurring".to_string()),
+            billing_period: Some("month".to_string()),
+            price_metadata: Some(HashMap::from([(
+                "nickname".to_string(),
+                "Monthly".to_string(),
+            )])),
+        };
+
+        let info = build_provider_product_info(&product, &price);
+
+        // Existing keys unchanged.
+        assert_eq!(info["name"], "Herald Live");
+        assert_eq!(info["description"], "Monthly plan");
+        assert_eq!(info["price"], 1999);
+        assert_eq!(info["currency"], "usd");
+        assert_eq!(info["billing_type"], "recurring");
+        assert_eq!(info["billing_period"], "month");
+        // New metadata keys carry the source value through verbatim.
+        assert_eq!(info["product_metadata"]["tier"], "pro");
+        assert_eq!(info["price_metadata"]["nickname"], "Monthly");
+
+        // `None` metadata MUST serialize to JSON `null` (the NULL_PRICE /
+        // Creem-empty fallback path), not be omitted or stringified.
+        let null_product = ProviderProduct {
+            external_product_id: "prod_456".to_string(),
+            name: "Creem Product".to_string(),
+            description: None,
+            product_metadata: None,
+            prices: Vec::new(),
+        };
+        let null_price = ProviderPrice {
+            external_price_id: None,
+            price: None,
+            currency: None,
+            billing_type: None,
+            billing_period: None,
+            price_metadata: None,
+        };
+        let null_info = build_provider_product_info(&null_product, &null_price);
+        assert!(null_info["product_metadata"].is_null());
+        assert!(null_info["price_metadata"].is_null());
+        // Existing `None` fields keep their null serialization too.
+        assert!(null_info["description"].is_null());
+        assert!(null_info["price"].is_null());
     }
 }

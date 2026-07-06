@@ -30,7 +30,7 @@ function SelectTrigger({
       data-slot="select-trigger"
       data-testid={dataTestId}
       className={cn(
-        'border-input bg-background ring-offset-background focus:ring-ring placeholder:text-muted-foreground flex h-10 w-full items-center justify-between rounded-md border px-3 py-2 text-sm whitespace-nowrap focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1',
+        'border-input bg-background ring-offset-background focus:ring-ring placeholder:text-placeholder flex h-10 w-full items-center justify-between rounded-md border px-3 py-2 text-sm whitespace-nowrap focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:cursor-not-allowed disabled:border-transparent disabled:bg-muted disabled:text-muted-foreground [&>span]:line-clamp-1',
         className
       )}
       {...props}

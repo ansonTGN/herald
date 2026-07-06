@@ -29,15 +29,6 @@ uv run scripts/demo-start.py
 - **地址**：https://auth.fornetcode.com
 - **管理员**：admin@fornetcode.com / Herald@2026Admin
 
-## 文档
-
-完整教程见 [docs/tutorials/](docs/tutorials/)，涵盖本地开发、架构、配置、部署和计费。
-
-- [快速上手](docs/tutorials/getting-started.md) — 本地开发环境搭建
-- [架构](docs/tutorials/architecture.md) — 项目结构和技术选型
-- [计费架构](docs/tutorials/billing-overview.md) — Entitlement Mapping、订阅投影、积分策略
-- [第三方后端对接](docs/tutorials/third-party-integration.md) — 用 SDK 接入 Herald
-
 ## 许可证
 
 [Apache-2.0](LICENSE)

@@ -139,29 +139,9 @@ pub async fn evaluate_login_consent_gate(
         return Some(summaries);
     }
 
-    let record_items = status_items
-        .iter()
-        .map(|i| (i.agreement_type.clone(), i.current_version_id))
-        .collect::<Vec<_>>();
-    if !record_items.is_empty()
-        && let Err(e) = state
-            .legal_service
-            .record_consent(
-                user.id,
-                realm_id,
-                record_items,
-                ConsentSource::Login,
-                actor_meta,
-            )
-            .await
-    {
-        tracing::warn!(
-            user_id = %user.id,
-            realm_id = %realm_id,
-            error = %e,
-            "record_consent(Login) failed after consent gate pass; login proceeds"
-        );
-    }
-
+    // Reachable only when every agreement is already consented at its current
+    // version (otherwise the `needs_reconsent` branch above would have
+    // returned). Recording consent again here would emit a duplicate
+    // `agreement.consent` audit event on every login, so we do nothing.
     None
 }

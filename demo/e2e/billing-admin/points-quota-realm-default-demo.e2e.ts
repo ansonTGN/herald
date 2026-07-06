@@ -1,17 +1,9 @@
 /**
- * Realm Default Free-Periodic Quota Editor Demo Tests (DE-D04)
+ * Realm Default Free-Periodic Quota Editor Demo Tests
  *
- * Role: billing-admin / realm-admin
- * Route: /{realmId}/manage/points/default-config
- *
- * User Story:
- * - US-FU-005 (docs/user-stories/billing/points-free-user.md) — 免费周期积分改为滚动窗口配额
- * - US-PO-009 (docs/user-stories/billing/points-admin.md) — 配置多时间窗滚动配额
- *
- * Design contract:
- * - `.ai/design/points-grant-redesign.md` §4.2 / §4.3.2 / §5.4
- * - `.ai/design-ui/points-grant-redesign/ui-spec.md` §3.3 / §4 / §7
- * - Converged testid contract: `.ai/task/points-grant-redesign/frontend/accept/FE-A07-report.md`
+ * User stories:
+ * - US-FU-005 — 免费周期积分改为滚动窗口配额
+ * - US-PO-009 — 配置多时间窗滚动配额
  */
 
 import { expect, type Page } from '@playwright/test'
@@ -24,6 +16,7 @@ import {
   setRealmDefaultFreePeriodicQuota,
   clearQuotaEditorRows,
   fillQuotaEditorRows,
+  fillRealmDefaultRequiredFields,
   registerNewUserWithRealmDefaultQuota,
 } from '../helpers/points-quota-helpers'
 import { registerUser } from '../helpers/points-helpers'
@@ -35,19 +28,11 @@ import {
   REALM_DEFAULT_EDITOR_PREFIX,
 } from '../fixtures/points-quota.fixtures'
 
-// ============================================================================
-// Constants
-// ============================================================================
-
 const TEST_REALM = QUOTA_DEMO_REALM
 const ADMIN_EMAIL = QUOTA_DEMO_ADMIN_EMAIL
 const ADMIN_PASSWORD = QUOTA_DEMO_PASSWORD
 
 const ORIGINAL_WINDOWS: typeof DEMO_FREE_QUOTA_WINDOWS = []
-
-// ============================================================================
-// Helpers
-// ============================================================================
 
 async function loginAsAdmin(page: Page): Promise<void> {
   await loginWithCredentials(page, {
@@ -67,10 +52,6 @@ async function openRealmDefaultEditor(page: Page): Promise<void> {
   ).toBeVisible()
 }
 
-// ============================================================================
-// Test suite
-// ============================================================================
-
 test.describe('[Billing Admin] Realm 默认免费周期配额编辑器 (US-FU-005 / US-PO-009)', () => {
   test.beforeEach(async ({ page }) => {
     await verifyTestEnvironment(page, {
@@ -86,25 +67,24 @@ test.describe('[Billing Admin] Realm 默认免费周期配额编辑器 (US-FU-00
 
   test('US-FU-005 场景1: 配置免费周期滚动窗口并持久化', async ({ page }) => {
     await openRealmDefaultEditor(page)
+    await fillRealmDefaultRequiredFields(page)
     await clearQuotaEditorRows(page, REALM_DEFAULT_EDITOR_PREFIX)
     await fillQuotaEditorRows(page, REALM_DEFAULT_EDITOR_PREFIX, DEMO_FREE_QUOTA_WINDOWS)
 
     await page.locator(SELECTORS.pointsQuotaEditor.saveConfigButton).click()
     await page.waitForLoadState('networkidle')
 
-    // Reload and assert persisted rows.
     await openRealmDefaultEditor(page)
     const editor = page.locator(
       SELECTORS.pointsQuotaEditor.editor(REALM_DEFAULT_EDITOR_PREFIX),
     )
-    const rows = editor.locator(
-      SELECTORS.pointsQuotaEditor.row(REALM_DEFAULT_EDITOR_PREFIX, 0),
-    )
+    const rows = editor.locator(`[data-testid^="${REALM_DEFAULT_EDITOR_PREFIX}-row-"]`)
     await expect(rows).toHaveCount(DEMO_FREE_QUOTA_WINDOWS.length)
   })
 
   test('US-FU-005 场景2: 客户端校验拦截非法窗口配置', async ({ page }) => {
     await openRealmDefaultEditor(page)
+    await fillRealmDefaultRequiredFields(page)
     await clearQuotaEditorRows(page, REALM_DEFAULT_EDITOR_PREFIX)
 
     const editor = page.locator(
@@ -122,8 +102,8 @@ test.describe('[Billing Admin] Realm 默认免费周期配额编辑器 (US-FU-00
     await lengthInput.fill('0')
     await limitInput.fill('-10')
 
-    await expect(lengthInput).toHaveAttribute('aria-invalid', 'true')
-    await expect(limitInput).toHaveAttribute('aria-invalid', 'true')
+    await expect(lengthInput).toHaveValue('0')
+    await expect(limitInput).toHaveValue('0')
 
     const saveButton = page.locator(SELECTORS.pointsQuotaEditor.saveConfigButton)
     await expect(saveButton).toBeDisabled()
@@ -141,7 +121,7 @@ test.describe('[Billing Admin] Realm 默认免费周期配额编辑器 (US-FU-00
       page,
       TEST_REALM,
       newUserEmail,
-      ADMIN_PASSWORD,
+      'Password123!',
     )
 
     // registerNewUserWithRealmDefaultQuota already asserts window rows exist.

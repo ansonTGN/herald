@@ -1,9 +1,9 @@
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { m } from '@/paraglide/messages'
-import type { QuotaWindowViewDto } from '@/lib/api-generated'
+import type { QuotaWindowViewResponse } from '@/lib/api-generated'
 import type { DerivedBucketCard } from './user-points-view'
 
 interface PointsUsageDashboardProps {
@@ -42,7 +42,7 @@ function formatResetsDuration(resetsAt?: string | null): string | null {
 }
 
 function windowBarColor(
-  window: QuotaWindowViewDto
+  window: QuotaWindowViewResponse
 ): 'bg-primary' | 'bg-amber-500' | 'bg-destructive' {
   if (window.exhausted) {
     return 'bg-destructive'
@@ -57,14 +57,9 @@ export function PointsUsageDashboard({ card, loading }: PointsUsageDashboardProp
   if (loading) {
     return (
       <Card data-testid="points-usage-dashboard">
-        <CardHeader>
-          <CardTitle>{m['points.spendable_total']()}</CardTitle>
-        </CardHeader>
-        <CardContent>
+        <CardContent className="pt-6">
           <div className="space-y-4">
-            <Skeleton className="h-10 w-40" />
-            <Skeleton className="h-4 w-72" />
-            <div className="space-y-3 pt-2">
+            <div className="space-y-3">
               <Skeleton className="h-16 w-full" />
               <Skeleton className="h-16 w-full" />
             </div>
@@ -98,20 +93,7 @@ export function PointsUsageDashboard({ card, loading }: PointsUsageDashboardProp
 
   return (
     <Card data-testid={`points-usage-dashboard-${bucketId}`}>
-      <CardHeader>
-        <CardTitle>{m['points.spendable_total']()}</CardTitle>
-      </CardHeader>
       <CardContent className="space-y-4">
-        {/* Spendable total + formula */}
-        <div className="space-y-1">
-          <div className="text-4xl font-bold" data-testid="points-spendable-now">
-            {spendableTotal.toLocaleString()}
-          </div>
-          <div className="text-muted-foreground text-sm" data-testid="points-spendable-formula">
-            {m['points.spendable_formula']()}
-          </div>
-        </div>
-
         {/* Tightest constraint alert (quota is the limiting factor) */}
         {spendableFromQuota >= 0 && hasWindows && (
           <Alert className="border-amber-500/50 text-amber-700 dark:text-amber-400">

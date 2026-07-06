@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 
@@ -5,6 +6,37 @@ use herald_domain::billing::{ProviderApiPort, ProviderPrice, ProviderProduct};
 use herald_domain::common::entities::app_errors::CoreError;
 use serde_json::Value;
 use sqlx::PgPool;
+
+/// Coerce a provider `metadata` JSON value into a strict string→string map.
+///
+/// Both Stripe and Creem model metadata as `HashMap<String, String>`, and
+/// Stripe coerces every value to a string server-side. This mirrors that: a
+/// non-object / empty value → `None`; string values pass through; numbers /
+/// bools / null become their string form; nested objects / arrays become a
+/// compact JSON string (lossless). The result is what flows into the
+/// `provider_product_info` JSONB, so the JSONB is guaranteed string→string.
+fn coerce_metadata_to_string_map(raw: &Value) -> Option<HashMap<String, String>> {
+    let obj = raw.as_object()?;
+    if obj.is_empty() {
+        return None;
+    }
+    let mut out = HashMap::with_capacity(obj.len());
+    for (k, v) in obj {
+        out.insert(k.clone(), coerce_value_to_string(v));
+    }
+    Some(out)
+}
+
+/// Render a single metadata value as a display string (see
+/// [`coerce_metadata_to_string_map`]).
+fn coerce_value_to_string(v: &Value) -> String {
+    match v {
+        Value::String(s) => s.clone(),
+        Value::Null => String::new(),
+        // serde_json renders numbers/bools bare and containers as compact JSON.
+        other => other.to_string(),
+    }
+}
 
 #[derive(Clone)]
 pub struct ConfiguredProviderProductApi {
@@ -110,6 +142,7 @@ impl ConfiguredProviderProductApi {
                         .flatten()
                         .map(|price| {
                             let is_recurring = price["recurring"].is_object();
+                            let price_metadata = coerce_metadata_to_string_map(&price["metadata"]);
                             ProviderPrice {
                                 external_price_id: price["id"].as_str().map(str::to_string),
                                 price: price["unit_amount"].as_i64(),
@@ -125,6 +158,7 @@ impl ConfiguredProviderProductApi {
                                 billing_period: price["recurring"]["interval"]
                                     .as_str()
                                     .map(str::to_string),
+                                price_metadata,
                             }
                         })
                         .collect()
@@ -136,6 +170,7 @@ impl ConfiguredProviderProductApi {
                 external_product_id: product_id.to_string(),
                 name: product["name"].as_str().unwrap_or(product_id).to_string(),
                 description: product["description"].as_str().map(str::to_string),
+                product_metadata: coerce_metadata_to_string_map(&product["metadata"]),
                 prices,
             });
         }
@@ -171,10 +206,12 @@ impl ConfiguredProviderProductApi {
 
         let body: Value = response.json().await?;
         // Creem is product-level only: it has no Stripe-style Price object and no
-        // price id. Emit an empty `prices` vec; the sync service falls back to a
-        // single NULL-price row (`external_price_id = NULL`),
-        // which dedups via the NULLS NOT DISTINCT unique constraint. We do NOT
-        // synthesize a placeholder price id.
+        // price id, so `external_price_id` is always `None`. When the API exposes
+        // real price fields (price/currency/billing_type/billing_period) we emit a
+        // single `ProviderPrice` carrying them; when ALL four are absent we emit an
+        // empty `prices` vec, and the sync service falls back to a single NULL-price
+        // row (`external_price_id = NULL`), which dedups via the NULLS NOT DISTINCT
+        // unique constraint. We do NOT synthesize a placeholder price id.
         let products = body
             .get("items")
             .and_then(|v| v.as_array())
@@ -182,11 +219,38 @@ impl ConfiguredProviderProductApi {
             .flatten()
             .filter_map(|product| {
                 let id = product["id"].as_str()?;
+
+                let price = product["price"].as_i64();
+                let currency = product["currency"].as_str().map(str::to_string);
+                let billing_type = product["billing_type"].as_str().map(str::to_string);
+                let billing_period = product["billing_period"].as_str().map(str::to_string);
+
+                // Only emit a real ProviderPrice when at least one of the four
+                // price fields is present; otherwise fall back to the empty-prices
+                // (NULL_PRICE) path.
+                let prices = if price.is_none()
+                    && currency.is_none()
+                    && billing_type.is_none()
+                    && billing_period.is_none()
+                {
+                    Vec::new()
+                } else {
+                    vec![ProviderPrice {
+                        external_price_id: None,
+                        price,
+                        currency,
+                        billing_type,
+                        billing_period,
+                        price_metadata: None,
+                    }]
+                };
+
                 Some(ProviderProduct {
                     external_product_id: id.to_string(),
                     name: product["name"].as_str().unwrap_or(id).to_string(),
                     description: product["description"].as_str().map(str::to_string),
-                    prices: Vec::new(),
+                    product_metadata: None,
+                    prices,
                 })
             })
             .collect();

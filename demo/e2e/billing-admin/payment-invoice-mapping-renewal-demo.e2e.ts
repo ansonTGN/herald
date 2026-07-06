@@ -97,7 +97,8 @@ import { test, cleanupTestData, expect } from '../fixtures/demo-page.fixtures'
 import { verifyTestEnvironment } from '../helpers/environment-setup'
 import { DEMO_ADMIN, REALM_ADMINS } from '../helpers/auth'
 import { seedCreemConfig, seedStripeConfig } from '../secrets/realm-seed'
-import { secrets } from '../secrets/env'
+import { secrets, hasStripePayment, hasCreemPayment } from '../secrets/env'
+import { ensureMultiPriceCatalog } from '../helpers/resolve-mappings'
 import {
   deliverCreemRenewalWebhook,
   deliverStripeRenewalWebhook,
@@ -122,13 +123,11 @@ const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
  */
 const REALM_ID = 'realm-001'
 
-/**
- * Seeded Stripe recurring product in realm-001 (placeholder ids — fine for
- * simulated webhooks since the resolver matches the seeded row, not real
- * Stripe). Used to establish the Stripe subscription via checkout.session.completed.
- */
-const STRIPE_RENEWAL_PRODUCT_ID = 'prod_stripe_multi_pro'
-const STRIPE_RENEWAL_PRICE_ID = 'price_stripe_pro_monthly'
+// Real Stripe product/price ids resolved lazily on first Stripe setup
+// (replaces the removed placeholder ids prod_stripe_multi_pro /
+// price_stripe_pro_monthly). Populated by ensureStripeRenewalCatalog().
+let STRIPE_RENEWAL_PRODUCT_ID = ''
+let STRIPE_RENEWAL_PRICE_ID = ''
 
 /** Polling cap (ms) for backend write propagation after a webhook delivery. */
 const WRITE_PROPAGATION_TIMEOUT = 12_000
@@ -190,6 +189,11 @@ test.describe('[Billing][Payment-Invoice-Mapping] Simulated renewal — US-PM-00
   let testStartTime: number
 
   test.beforeEach(async ({ page, demoLogger }) => {
+    // Live dependency: at least one provider's credentials must be configured.
+    test.skip(
+      !hasStripePayment() && !hasCreemPayment(),
+      'Stripe or Creem credentials required (live test)',
+    )
     testStartTime = Date.now()
     await verifyTestEnvironment(page, {
       requiredRealms: [DEMO_ADMIN.realmId, REALM_ID],
@@ -769,11 +773,31 @@ async function setupRealmAndEstablishCreemSubscription(
     REALM_ID,
   )
   await seedCreemWebhookConfig(page)
+  // Pull the real Creem catalog into Herald (replaces the removed placeholder
+  // seed). discoverCreemProductId then resolves the first synced product.
+  await syncCreemCatalog(page)
   const creemProductId = await discoverCreemProductId(page)
   await demoLogger.testCode.log(
     `Creem realm ready (admin=${adminUserId}, product=${creemProductId})`,
   )
   return { adminUserId, creemProductId }
+}
+
+/**
+ * Trigger a Creem provider sync for realm-001 so the real Creem product(s)
+ * materialize as entitlement mappings. No-op safe to call per-test (idempotent
+ * server-side). Throws if sync fails.
+ */
+async function syncCreemCatalog(page: import('@playwright/test').Page): Promise<void> {
+  const resp = await page.request.post(
+    `${BASE_URL}/api/bill/${REALM_ID}/entitlement-mappings/sync`,
+    { data: { paymentProvider: 'creem' } },
+  )
+  if (!resp.ok()) {
+    throw new Error(
+      `Creem provider sync failed: ${resp.status()} ${await resp.text().catch(() => '')}`,
+    )
+  }
 }
 
 /**
@@ -795,9 +819,24 @@ async function setupRealmAndEstablishStripeSubscription(
     REALM_ID,
   )
   await seedStripeWebhookConfig(page)
+  // Resolve the real multi-price Stripe catalog (replaces the removed
+  // placeholder seed). Sync pulls the product into Herald so the renewal
+  // resolver can match (realm, provider, product, price).
+  if (!STRIPE_RENEWAL_PRODUCT_ID) {
+    const catalog = await ensureMultiPriceCatalog(page.request, {
+      baseUrl: BASE_URL,
+      realmId: REALM_ID,
+      stripeSecretKey: secrets.stripe.secretKey!,
+      stripePublishableKey: secrets.stripe.publishableKey!,
+      stripeWebhookSecret: secrets.stripe.webhookSecret!,
+    })
+    STRIPE_RENEWAL_PRODUCT_ID = catalog.product.productId
+    STRIPE_RENEWAL_PRICE_ID = catalog.product.monthlyPriceId
+  }
   const clientAppId = await discoverClientAppId(page)
   await demoLogger.testCode.log(
-    `Stripe realm ready (admin=${adminUserId}, clientApp=${clientAppId})`,
+    `Stripe realm ready (admin=${adminUserId}, clientApp=${clientAppId}, ` +
+      `product=${STRIPE_RENEWAL_PRODUCT_ID}, price=${STRIPE_RENEWAL_PRICE_ID})`,
   )
   return { adminUserId, clientAppId }
 }
@@ -1064,7 +1103,7 @@ async function discoverCreemProductId(
   if (typeof productId !== 'string' || productId.length === 0) {
     throw new Error(
       `No Creem entitlement mapping found in realm ${REALM_ID}. ` +
-        'Run scripts/demo_seed.py to seed realm-001 with a Creem mapping.',
+        'Ensure CREEM_PRODUCT_ID is set in demo/.env.demo and a Creem provider sync has been triggered.',
     )
   }
   return productId

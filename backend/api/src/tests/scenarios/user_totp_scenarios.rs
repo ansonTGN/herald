@@ -18,6 +18,7 @@
 //
 // =============================================================================
 
+use crate::tests::helpers::test_setup_helpers::record_test_user_consent;
 use crate::tests::schema_test_context::SchemaTestContext as TestContext;
 use axum::{
     body::Body,
@@ -52,6 +53,8 @@ async fn create_test_user(ctx: &TestContext, email: &str, password: &str) -> Str
     .execute(&ctx._app_state.pool)
     .await
     .expect("Failed to create test user");
+
+    record_test_user_consent(&ctx._app_state.pool, user_uuid, &ctx._realm_id).await;
 
     user_uuid.to_string()
 }

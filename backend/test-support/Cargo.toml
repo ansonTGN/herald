@@ -24,6 +24,7 @@ chrono = { workspace = true }
 test-context = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+reqwest = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full"] }

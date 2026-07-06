@@ -101,7 +101,49 @@ pub async fn create_test_user(ctx: &mut TestContext, email: &str, password: &str
     .await
     .expect("Failed to create test user");
 
+    // Register-time consent is recorded by the real register handler. Test users
+    // created via SQL bypass that path, so mirror it here to prevent the legal-
+    // consent gate (BE-D08) from blocking their logins.
+    record_test_user_consent(&ctx._app_state.pool, user_uuid, &ctx._realm_id).await;
+
     user_uuid
+}
+
+/// Record consent to the current effective ToS and Privacy Policy for a test user.
+/// Mirrors the registration-time consent recording so that subsequent logins do
+/// not get blocked by the legal-consent gate (BE-D08).
+pub async fn record_test_user_consent(pool: &sqlx::PgPool, user_id: Uuid, realm_id: &str) {
+    for agreement_type in ["terms_of_service", "privacy_policy"] {
+        let version_id: Option<Uuid> = sqlx::query_scalar(
+            "SELECT id FROM legal_agreement_version
+             WHERE agreement_type = $1
+               AND (realm_id = $2 OR realm_id IS NULL)
+             ORDER BY CASE WHEN realm_id = $2 THEN 0 ELSE 1 END, version_no DESC
+             LIMIT 1",
+        )
+        .bind(agreement_type)
+        .bind(realm_id)
+        .fetch_optional(pool)
+        .await
+        .expect("Failed to look up effective agreement version");
+
+        if let Some(version_id) = version_id {
+            sqlx::query(
+                "INSERT INTO user_agreement_consent (id, user_id, realm_id, agreement_type, consented_version_id)
+                 VALUES ($1, $2, $3, $4, $5)
+                 ON CONFLICT (user_id, agreement_type)
+                 DO UPDATE SET consented_version_id = EXCLUDED.consented_version_id, consented_at = NOW()",
+            )
+            .bind(Uuid::now_v7())
+            .bind(user_id)
+            .bind(realm_id)
+            .bind(agreement_type)
+            .bind(version_id)
+            .execute(pool)
+            .await
+            .expect("Failed to record test user consent");
+        }
+    }
 }
 
 /// Perform login and return authentication token

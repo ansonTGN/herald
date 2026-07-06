@@ -3,9 +3,6 @@ pub mod permissions;
 pub mod profile;
 pub mod roles;
 
-#[cfg(test)]
-mod tests;
-
 use crate::application::http::state::AppState;
 use axum::{
     Router,

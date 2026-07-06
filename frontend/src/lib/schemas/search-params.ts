@@ -48,6 +48,18 @@ export const apiKeysSearchSchema = z.object({
   pageSize: z.number().int().min(1).max(100).optional(),
 })
 
+/**
+ * Search params for the purchase-points page. The payment provider redirects
+ * back here with `attemptId` (so the page can resume polling) and `status`
+ * (`success` for a completed checkout bounce, `cancel` for a Stripe cancel
+ * bounce — Creem has no cancel_url). Payment status itself is confirmed via
+ * webhook; these params only drive the UX bounce.
+ */
+export const purchasePointsSearchSchema = z.object({
+  attemptId: z.string().uuid().optional(),
+  status: z.enum(['success', 'cancel']).optional(),
+})
+
 export type PaginationParams = z.infer<typeof paginationSchema>
 export type LoginSearchParams = z.infer<typeof loginSearchSchema>
 export type UsersSearchParams = z.infer<typeof usersSearchSchema>
@@ -55,3 +67,4 @@ export type RealmsSearchParams = z.infer<typeof realmsSearchSchema>
 export type ClientAppsSearchParams = z.infer<typeof clientAppsSearchSchema>
 export type AuditSearchParams = z.infer<typeof auditSearchSchema>
 export type ApiKeysSearchParams = z.infer<typeof apiKeysSearchSchema>
+export type PurchasePointsSearchParams = z.infer<typeof purchasePointsSearchSchema>

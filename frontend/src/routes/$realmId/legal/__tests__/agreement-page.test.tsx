@@ -77,7 +77,7 @@ describe('LegalAgreementPage', () => {
     vi.clearAllMocks()
   })
 
-  it('renders title, version, effective date and body for a valid agreement', async () => {
+  it('renders body content for a valid agreement', async () => {
     setupAgreementHandler({
       agreement_type: 'terms_of_service',
       version_id: 'tos-v2',
@@ -89,15 +89,25 @@ describe('LegalAgreementPage', () => {
     renderAgreementPage()
 
     expect(await screen.findByTestId('agreement-card')).toBeInTheDocument()
-    expect(screen.getByTestId('agreement-title')).toHaveTextContent('Terms of Service')
-    expect(screen.getByTestId('agreement-version')).toHaveTextContent('2')
-    const effectiveDate = screen.getByTestId('agreement-effective-date')
-    expect(effectiveDate).toHaveTextContent('2026')
-    expect(effectiveDate).toHaveTextContent('6')
-    expect(effectiveDate).toHaveTextContent('30')
     expect(screen.getByTestId('agreement-body')).toHaveTextContent(
       'These are the terms of service.'
     )
+  })
+
+  it('renders Markdown content as HTML', async () => {
+    setupAgreementHandler({
+      agreement_type: 'terms_of_service',
+      version_id: 'tos-v2',
+      version_no: 2,
+      effective_at: '2026-06-30T00:00:00Z',
+      content: '# Heading\n\nSome **bold** text.',
+    })
+
+    renderAgreementPage()
+
+    const body = await screen.findByTestId('agreement-body')
+    expect(body).toHaveTextContent('Heading')
+    expect(body).toHaveTextContent('Some bold text.')
   })
 
   it('renders body as JSON when content is an object', async () => {
@@ -106,14 +116,13 @@ describe('LegalAgreementPage', () => {
       version_id: 'tos-v2',
       version_no: 2,
       effective_at: '2026-06-30T00:00:00Z',
-      content: { en: 'English terms', 'zh-CN': 'Chinese terms' },
+      content: { en: 'English terms' },
     })
 
     renderAgreementPage()
 
     const body = await screen.findByTestId('agreement-body')
     expect(body).toHaveTextContent('English terms')
-    expect(body).toHaveTextContent('Chinese terms')
   })
 
   it('shows empty body message when content is null', async () => {

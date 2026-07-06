@@ -13,11 +13,9 @@
 //
 // **When**:
 // - The admin calls `PATCH /api/bill/{realmId}/entitlement-mappings/{mappingId}` with:
-//   - grantPeriodType: "monthly"
 //   - pointsPerPeriod: 1000
-//   - validityDays: 30
+//   - validityDays: 30 (one-time expiration policy)
 //   - grantOnSubscribe: true
-//   - maxPeriods: 12
 //
 // **Then**:
 // - Response contains all submitted values
@@ -25,6 +23,7 @@
 //
 // =============================================================================
 
+use crate::tests::helpers::test_setup_helpers::record_test_user_consent;
 use crate::tests::scenarios::points::fixtures::*;
 use crate::tests::schema_test_context::SchemaTestContext as TestContext;
 use axum::{
@@ -44,7 +43,8 @@ async fn test_scenario_admin_update_entitlement_points_policy(ctx: &mut TestCont
 
     let admin_email = "admin24@example.com";
     let admin_password = "admin123";
-    create_test_admin(&ctx._app_state.pool, &ctx._realm_id, admin_email).await;
+    let admin_user_id = create_test_admin(&ctx._app_state.pool, &ctx._realm_id, admin_email).await;
+    record_test_user_consent(&ctx._app_state.pool, admin_user_id, &ctx._realm_id).await;
 
     let mapping_id =
         create_test_entitlement_mapping(&ctx._app_state.pool, &ctx._realm_id, "pro-monthly", 2999)
@@ -85,18 +85,14 @@ async fn test_scenario_admin_update_entitlement_points_policy(ctx: &mut TestCont
 
     println!("[Step 3] Admin updates entitlement mapping points policy");
 
-    let grant_period_type = "monthly";
     let points_per_period = 1000;
     let validity_days = 30;
     let grant_on_subscribe = true;
-    let max_periods = Some(12i64);
 
     let update_payload = json!({
-        "grantPeriodType": grant_period_type,
         "pointsPerPeriod": points_per_period,
         "validityDays": validity_days,
-        "grantOnSubscribe": grant_on_subscribe,
-        "maxPeriods": max_periods
+        "grantOnSubscribe": grant_on_subscribe
     });
 
     let request = Request::builder()
@@ -121,11 +117,6 @@ async fn test_scenario_admin_update_entitlement_points_policy(ctx: &mut TestCont
         serde_json::from_slice(&body_bytes).expect("Failed to parse JSON");
 
     assert_eq!(
-        body["grantPeriodType"].as_str(),
-        Some(grant_period_type),
-        "Grant period type should match"
-    );
-    assert_eq!(
         body["pointsPerPeriod"].as_i64(),
         Some(points_per_period),
         "Points per period should match"
@@ -139,11 +130,6 @@ async fn test_scenario_admin_update_entitlement_points_policy(ctx: &mut TestCont
         body["grantOnSubscribe"].as_bool(),
         Some(grant_on_subscribe),
         "Grant on subscribe should match"
-    );
-    assert_eq!(
-        body["maxPeriods"].as_i64(),
-        max_periods,
-        "Max periods should match"
     );
 
     println!("\n✅ Scenario 24 完成：管理员成功更新积分套餐配置");

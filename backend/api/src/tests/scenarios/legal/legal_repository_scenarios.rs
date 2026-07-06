@@ -771,3 +771,259 @@ async fn test_consent_status_false_when_up_to_date(ctx: &mut TestContext) {
     assert_eq!(tos.current_version_id, current.id);
     assert_eq!(tos.consented_version_id, Some(current.id));
 }
+
+// =============================================================================
+// Scenario: draft lifecycle (save / get / publish-from-draft / isolation)
+// =============================================================================
+//
+// WHY this matters: drafts are staged in a separate table and must NEVER affect
+// `current_effective`, `has_custom`, the version_no sequence, or consent. Only
+// `publish_from_draft` flips those. These tests encode that invariant at the
+// service/repository layer.
+
+#[test_context(TestContext)]
+#[tokio::test]
+async fn test_save_draft_upsert_is_idempotent_and_isolated_from_versions(ctx: &mut TestContext) {
+    let realm_id = ctx._realm_id.clone();
+    let svc = ctx.app_state.legal_service.clone();
+
+    // Effective version before any draft exists.
+    let pre_effective = svc
+        .current_effective(&realm_id, AgreementType::TermsOfService)
+        .await
+        .expect("current_effective must resolve")
+        .expect("seeded default ToS must exist");
+
+    // No draft initially.
+    assert!(
+        svc.get_draft(&realm_id, AgreementType::TermsOfService)
+            .await
+            .expect("get_draft must resolve")
+            .is_none(),
+        "no draft should exist initially"
+    );
+
+    // Save once.
+    let first = svc
+        .save_draft(
+            &realm_id,
+            AgreementType::TermsOfService,
+            serde_json::json!({ "en": "first draft" }),
+            Some("label one".to_string()),
+            "admin@scene",
+        )
+        .await
+        .expect("first save_draft must succeed");
+
+    // Save again — overwrites (idempotent upsert), same row scope.
+    let second = svc
+        .save_draft(
+            &realm_id,
+            AgreementType::TermsOfService,
+            serde_json::json!({ "en": "second draft" }),
+            None,
+            "admin@scene",
+        )
+        .await
+        .expect("second save_draft must succeed");
+
+    assert_eq!(first.id, second.id, "upsert keeps the same draft id");
+    assert_eq!(
+        second.content,
+        serde_json::json!({ "en": "second draft" }),
+        "second save must overwrite content"
+    );
+    assert!(
+        second.version_label.is_none(),
+        "second save must overwrite (clear) version_label"
+    );
+
+    // CRITICAL INVARIANT: saving a draft must not move the effective version,
+    // flip has_custom, or touch the version table at all.
+    let post_effective = svc
+        .current_effective(&realm_id, AgreementType::TermsOfService)
+        .await
+        .expect("current_effective must resolve")
+        .expect("effective ToS must still exist");
+    assert_eq!(
+        pre_effective.id, post_effective.id,
+        "saving a draft must not change the effective version"
+    );
+    let has_custom = svc
+        .has_custom(&realm_id, AgreementType::TermsOfService)
+        .await
+        .expect("has_custom must resolve");
+    assert!(
+        !has_custom,
+        "saving a draft must not flip has_custom (drafts are not published versions)"
+    );
+}
+
+#[test_context(TestContext)]
+#[tokio::test]
+async fn test_publish_from_draft_creates_version_and_clears_draft(ctx: &mut TestContext) {
+    let realm_id = ctx._realm_id.clone();
+    let svc = ctx.app_state.legal_service.clone();
+
+    let pre_custom_max = sqlx::query_scalar::<_, Option<i64>>(
+        "SELECT MAX(version_no) FROM legal_agreement_version
+         WHERE realm_id = $1 AND agreement_type = 'terms_of_service'",
+    )
+    .bind(&realm_id)
+    .fetch_one(&ctx.app_state.pool)
+    .await
+    .expect("read pre-custom max must resolve")
+    .unwrap_or(0);
+
+    // Publish with no draft → DraftNotFound (CoreError::NotFound).
+    let err = svc
+        .publish_from_draft(
+            &realm_id,
+            AgreementType::TermsOfService,
+            None,
+            "admin@scene",
+            make_audit_actor_meta(Uuid::now_v7()),
+        )
+        .await
+        .expect_err("publish with no draft must fail");
+    assert!(
+        matches!(err, CoreError::NotFound),
+        "publish with no draft must surface NotFound, got {err:?}"
+    );
+
+    // Stage a draft, then publish from it.
+    svc.save_draft(
+        &realm_id,
+        AgreementType::TermsOfService,
+        serde_json::json!({ "en": "ready to publish" }),
+        Some("draft label".to_string()),
+        "admin@scene",
+    )
+    .await
+    .expect("save_draft must succeed");
+
+    let published = svc
+        .publish_from_draft(
+            &realm_id,
+            AgreementType::TermsOfService,
+            None,
+            "admin@scene",
+            make_audit_actor_meta(Uuid::now_v7()),
+        )
+        .await
+        .expect("publish_from_draft must succeed");
+
+    assert!(
+        published.version_no as i64 > pre_custom_max,
+        "published version_no ({}) must exceed prior custom max ({})",
+        published.version_no,
+        pre_custom_max
+    );
+    assert_eq!(
+        published.content,
+        serde_json::json!({ "en": "ready to publish" }),
+        "published content must match the staged draft"
+    );
+    assert_eq!(
+        published.version_label.as_deref(),
+        Some("draft label"),
+        "publish must reuse the draft's version_label when no override is given"
+    );
+    assert_eq!(published.source, AgreementSource::Custom);
+
+    // Draft must be cleared after publish.
+    assert!(
+        svc.get_draft(&realm_id, AgreementType::TermsOfService)
+            .await
+            .expect("get_draft must resolve")
+            .is_none(),
+        "draft must be cleared after publish_from_draft"
+    );
+}
+
+#[test_context(TestContext)]
+#[tokio::test]
+async fn test_discard_draft_is_idempotent(ctx: &mut TestContext) {
+    let realm_id = ctx._realm_id.clone();
+    let svc = ctx.app_state.legal_service.clone();
+
+    // Discarding a missing draft is a no-op.
+    svc.discard_draft(&realm_id, AgreementType::TermsOfService)
+        .await
+        .expect("discard of missing draft must succeed (idempotent)");
+
+    // Save then discard.
+    svc.save_draft(
+        &realm_id,
+        AgreementType::TermsOfService,
+        serde_json::json!({ "en": "transient" }),
+        None,
+        "admin@scene",
+    )
+    .await
+    .expect("save_draft must succeed");
+    svc.discard_draft(&realm_id, AgreementType::TermsOfService)
+        .await
+        .expect("discard must succeed");
+    assert!(
+        svc.get_draft(&realm_id, AgreementType::TermsOfService)
+            .await
+            .expect("get_draft must resolve")
+            .is_none(),
+        "draft must be gone after discard"
+    );
+}
+
+// =============================================================================
+// Scenario: get_version_by_id resolves a published version with full body
+// =============================================================================
+
+/// User Story: US-RA-019 (admin views past version body)
+/// Covers: the admin history "view past version" path. `list_history` only
+/// returns summaries (no content body, to keep the list payload small); the
+/// "view" action fetches a single version by id with its full localized
+/// `content`.
+///
+/// WHY this matters: returning the wrong id's body (or None for a real id)
+/// would either show an admin content from an unrelated version or silently
+/// fail to render the body they expected to audit. The lookup is by primary
+/// key so it must hit exactly one row.
+#[test_context(TestContext)]
+#[tokio::test]
+async fn test_get_version_by_id_returns_full_body(ctx: &mut TestContext) {
+    let realm_id = ctx._realm_id.clone();
+    let svc = ctx.app_state.legal_service.clone();
+
+    let published = svc
+        .publish_custom(
+            &realm_id,
+            AgreementType::TermsOfService,
+            serde_json::json!({ "en": "viewable body" }),
+            Some("history label".to_string()),
+            "admin@scene",
+            make_audit_actor_meta(Uuid::now_v7()),
+        )
+        .await
+        .expect("publish_custom must succeed");
+
+    let fetched = svc
+        .get_version_by_id(published.id)
+        .await
+        .expect("get_version_by_id must resolve")
+        .expect("a just-published id must resolve");
+    assert_eq!(fetched.id, published.id);
+    assert_eq!(fetched.version_no, published.version_no);
+    assert_eq!(fetched.version_label.as_deref(), Some("history label"));
+    assert_eq!(
+        fetched.content,
+        serde_json::json!({ "en": "viewable body" }),
+        "get_version_by_id must return the full localized content body"
+    );
+
+    // An unknown id must resolve to None (handler maps this to 404), never error.
+    let missing = svc
+        .get_version_by_id(Uuid::now_v7())
+        .await
+        .expect("get_version_by_id for unknown id must not error");
+    assert!(missing.is_none(), "unknown version id must resolve to None");
+}

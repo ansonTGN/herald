@@ -2,8 +2,8 @@ use axum::{
     Extension,
     extract::{Path, State},
 };
+use herald_api_base::application::http::common::auth_utils::AdminIdentity;
 use herald_core::domain::authentication::Identity;
-use herald_core::domain::authorization::PermissionService;
 
 use crate::admin::permission_definitions::types::{ErrorResponse, PermissionResponse};
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
@@ -31,33 +31,10 @@ pub async fn list_permissions(
     Extension(identity): Extension<Identity>,
     Path(realm_id): Path<String>,
 ) -> Result<ApiResult<Vec<PermissionResponse>>, ApiError> {
-    let current_user_id = identity.user_id();
-
-    if identity.realm_id() != realm_id {
-        return Err(ApiError::forbidden(
-            "Access denied: cannot view permissions in a different realm",
-        ));
-    }
-
-    let has_permission = state
-        .permission_checker
-        .check_permission(&realm_id, &current_user_id, "permissions", "view")
-        .await
-        .map_err(|e| {
-            tracing::error!(
-                current_user_id = %current_user_id,
-                realm_id = %realm_id,
-                error = %e,
-                "Failed to check permissions.view permission"
-            );
-            ApiError::internal("Failed to check permission")
-        })?;
-
-    if !has_permission {
-        return Err(ApiError::forbidden(
-            "Insufficient permissions: requires permissions.view",
-        ));
-    }
+    let admin = AdminIdentity::require(identity, &realm_id, "permission definitions")?;
+    admin
+        .require_permission(&state, "permissions", "view")
+        .await?;
 
     let rows = sqlx::query_as::<_, PermissionResponse>(
         r#"

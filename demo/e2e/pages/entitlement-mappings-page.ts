@@ -42,11 +42,6 @@ export class EntitlementMappingsPage extends BasePage {
   readonly webhookPriceUnresolvedBanner: Locator
   readonly emptyState: Locator
 
-  // Toolbar filters
-  readonly providerFilterSelect: Locator
-  readonly productFilterSelect: Locator
-  readonly entitlementKeyFilterSelect: Locator
-
   // Master list (left pane)
   readonly mappingProductList: Locator
 
@@ -57,7 +52,6 @@ export class EntitlementMappingsPage extends BasePage {
 
   // Provider sync controls (wrapper div + inner Button)
   readonly providerSyncButton: Locator
-  readonly syncProviderSelect: Locator
   readonly syncButton: Locator
   readonly syncResultProducts: Locator
   readonly syncResultPrices: Locator
@@ -78,12 +72,6 @@ export class EntitlementMappingsPage extends BasePage {
     )
     this.emptyState = page.locator(SELECTORS.multiPriceMapping.emptyState)
 
-    this.providerFilterSelect = page.locator(SELECTORS.multiPriceMapping.providerFilterSelect)
-    this.productFilterSelect = page.locator(SELECTORS.multiPriceMapping.productFilterSelect)
-    this.entitlementKeyFilterSelect = page.locator(
-      SELECTORS.multiPriceMapping.entitlementKeyFilterSelect,
-    )
-
     this.mappingProductList = page.locator(SELECTORS.multiPriceMapping.mappingProductList)
 
     this.mappingDetailPanel = page.locator(SELECTORS.multiPriceMapping.mappingDetailPanel)
@@ -91,13 +79,9 @@ export class EntitlementMappingsPage extends BasePage {
     this.saveMappingButton = page.locator(SELECTORS.multiPriceMapping.saveMappingButton)
 
     // `provider-sync-button` is a wrapper `<div>`; the actionable controls live
-    // inside it. Resolve via the wrapper scope so multiple sync buttons (if any)
-    // never collide.
+    // inside it. One sync Button is rendered per configured provider, each
+    // carrying `data-testid="sync-button"` + `data-provider="<platform>"`.
     this.providerSyncButton = page.locator(SELECTORS.multiPriceMapping.providerSyncButton)
-    // The sync controls live DIRECTLY inside the wrapper `<div data-testid="provider-sync-button">`.
-    // Do NOT re-scope by the wrapper testid (that would require the wrapper to
-    // contain itself and resolve to 0 elements).
-    this.syncProviderSelect = this.providerSyncButton.locator('[data-testid="sync-provider-select"]')
     this.syncButton = this.providerSyncButton.locator(SELECTORS.multiPriceMapping.syncButton)
     this.syncResultProducts = this.providerSyncButton.locator(
       SELECTORS.multiPriceMapping.syncResultProducts,
@@ -189,14 +173,6 @@ export class EntitlementMappingsPage extends BasePage {
     return current === 'true'
   }
 
-  /**
-   * Filter mappings by payment provider using the Radix Select dropdown.
-   */
-  async filterByProvider(provider: string): Promise<void> {
-    await this.selectRadixOption(this.providerFilterSelect, provider)
-    await this.page.waitForLoadState('domcontentloaded')
-  }
-
   // ==================== Detail panel ====================
 
   /**
@@ -207,6 +183,52 @@ export class EntitlementMappingsPage extends BasePage {
    */
   getPriceEditRow(priceKey: string): Locator {
     return this.mappingDetailPanel.locator(SELECTORS.multiPriceMapping.priceEditRow(priceKey))
+  }
+
+  getMetadataBlock(priceKey: string): Locator {
+    return this.mappingDetailPanel.locator(
+      SELECTORS.multiPriceMapping.priceMetadataBlock(priceKey),
+    )
+  }
+
+  getMetadataEntry(scope: 'product' | 'price', key: string): Locator {
+    return this.mappingDetailPanel.locator(
+      SELECTORS.multiPriceMapping.metadataEntry(scope, key),
+    )
+  }
+
+  async getMetadataEntryValue(scope: 'product' | 'price', key: string): Promise<string> {
+    return (await this.getMetadataEntry(scope, key).textContent())?.trim() ?? ''
+  }
+
+  async getProductRowLabel(productId: string): Promise<string> {
+    return (
+      await this.page
+        .locator(SELECTORS.multiPriceMapping.mappingProductRow(productId))
+        .textContent()
+    )?.trim() ?? ''
+  }
+
+  async getDetailHeadLabel(): Promise<string> {
+    return (await this.detailHead.textContent())?.trim() ?? ''
+  }
+
+  getBillingTypeInput(priceKey: string): Locator {
+    return this.getPriceEditRow(priceKey).locator(
+      SELECTORS.multiPriceMapping.priceBillingType(priceKey),
+    )
+  }
+
+  getBillingPeriodInput(priceKey: string): Locator {
+    return this.getReadonlyFieldInput(priceKey, 'Period')
+  }
+
+  async getPriceDisplayValue(priceKey: string): Promise<string> {
+    return this.getReadonlyFieldValue(priceKey, 'Price')
+  }
+
+  async getBillingPeriodValue(priceKey: string): Promise<string> {
+    return this.getReadonlyFieldValue(priceKey, 'Period')
   }
 
   /**
@@ -286,6 +308,20 @@ export class EntitlementMappingsPage extends BasePage {
     }
   }
 
+  private async getReadonlyFieldValue(priceKey: string, label: string): Promise<string> {
+    const input = this.getReadonlyFieldInput(priceKey, label)
+    await expect(input).toBeVisible()
+    return await input.inputValue()
+  }
+
+  private getReadonlyFieldInput(priceKey: string, label: string): Locator {
+    const row = this.getPriceEditRow(priceKey)
+    const field = row
+      .locator(`xpath=./div[1]//label[normalize-space()='${label}']`)
+      .locator('xpath=ancestor::div[starts-with(@class,"space-y-1")][1]')
+    return field.locator('input').first()
+  }
+
   /**
    * Toggle the enabled switch on a single price row.
    *
@@ -355,9 +391,10 @@ export class EntitlementMappingsPage extends BasePage {
   /**
    * Trigger a provider product sync via the toolbar sync button.
    *
-   * Selects the provider in the sync-provider dropdown, clicks Sync, and waits
-   * for the result spans to surface. Returns the parsed {productsSynced,
-   * pricesSynced} counts from the result spans.
+   * One Button is rendered per configured provider (e.g. "Sync Stripe"). This
+   * clicks the button matching the requested provider via its `data-provider`
+   * attribute, then waits for the result spans to surface. Returns the parsed
+   * {productsSynced, pricesSynced} counts from the result spans.
    *
    * @param provider 'stripe' | 'creem'
    */
@@ -365,11 +402,15 @@ export class EntitlementMappingsPage extends BasePage {
     provider: 'stripe' | 'creem',
   ): Promise<{ productsSynced: number; pricesSynced: number }> {
     await expect(this.providerSyncButton).toBeVisible()
-    await this.selectRadixOption(this.syncProviderSelect, provider)
+    // One sync button per configured provider; scope by data-provider so the
+    // correct provider's button is clicked when both are configured.
+    const providerSyncButton = this.providerSyncButton.locator(
+      `[data-testid="sync-button"][data-provider="${provider}"]`
+    )
 
-    // Click the inner sync button, then wait for either the result spans or a
-    // toast (sync may fail with test credentials). Resolve counts if present.
-    await this.smartClick(this.syncButton)
+    // Click the provider's sync button, then wait for either the result spans
+    // or a toast (sync may fail with test credentials). Resolve counts if present.
+    await this.smartClick(providerSyncButton)
 
     // Best-effort: wait for result spans (completed/partial sync renders them).
     const resultVisible = await this.syncResultProducts

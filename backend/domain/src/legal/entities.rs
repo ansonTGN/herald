@@ -157,3 +157,23 @@ pub struct LegalAgreementSummary {
     pub title: Option<String>,
     pub summary: Option<String>,
 }
+
+/// Per-realm draft of a custom legal agreement, staged before publish.
+///
+/// Maps 1:1 to `herald_entity::LegalAgreementDraftEntity`. Distinct from
+/// [`LegalAgreementVersion`] (which is append-only and published): a draft is
+/// mutable, has no `version_no`, and never affects end-user resolution or the
+/// consent gate. Exactly one row exists per `(realm_id, agreement_type)`
+/// (enforced by `legal_agreement_draft_realm_type_unique`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct LegalAgreementDraft {
+    pub id: Uuid,
+    pub realm_id: String,
+    pub agreement_type: AgreementType,
+    /// locale → body map (e.g. `{ "en": "..." }`), same shape as a published
+    /// version's `content`.
+    pub content: serde_json::Value,
+    pub version_label: Option<String>,
+    pub updated_at: DateTime<Utc>,
+    pub updated_by: Option<String>,
+}

@@ -1,14 +1,10 @@
 /**
  * Points Quota Demo Helpers
  *
- * Reusable helpers for the `points-grant-redesign` demo E2E suite.
- *
  * User stories covered:
  * - US-PU-010: 滚动窗口额度与充值余额的可用性体验
  * - US-PO-009: 配置多时间窗滚动配额
  * - US-FU-005: 免费周期积分改为滚动窗口配额
- *
- * All selectors flow through `../selectors.ts`; no hard-coded testid strings.
  */
 
 import { Page, expect, type Locator } from '@playwright/test'
@@ -20,10 +16,6 @@ import { initiatePurchaseFlow } from './unified-purchase.helpers'
 import type { QuotaWindowFixture } from '../fixtures/points-quota.fixtures'
 
 export type { QuotaWindowFixture }
-
-// ============================================================================
-// Types
-// ============================================================================
 
 export interface ConsumePointsExtApiBody {
   userId: string
@@ -38,12 +30,8 @@ export interface ConsumePointsResult {
   body: unknown
 }
 
-// ============================================================================
-// Low-level editor primitives
-// ============================================================================
-
 /**
- * Clear all rows in a `MultiWindowQuotaEditor` so it is safe to re-fill.
+ * Clear all rows in a `MultiWindowQuotaEditor`.
  *
  * Repeatedly clicks the first delete button until no data rows remain.
  */
@@ -114,24 +102,24 @@ export async function fillQuotaEditorRows(
   }
 }
 
-// ============================================================================
-// Admin quota configuration helpers
-// ============================================================================
+/**
+ * Fill the required non-quota fields on the realm default config form.
+ *
+ * The quota editor is embedded in a larger form; saving quota rows is gated by
+ * these required fields as well as the row values.
+ */
+export async function fillRealmDefaultRequiredFields(page: Page): Promise<void> {
+  await page.locator(SELECTORS.points.freePeriodicPointsAmountInput).fill('50')
+  await page.locator(SELECTORS.points.freePeriodicValidityDaysInput).fill('1')
+
+  const periodSelect = page.locator(SELECTORS.points.freePeriodicGrantPeriodTypeSelect)
+  await periodSelect.click()
+  await page.getByRole('option', { name: /daily/i }).click()
+}
 
 /**
  * Create (or overwrite) multi-window quota configuration on an entitlement
  * mapping.
- *
- * Flow:
- * 1. Log in as realm admin.
- * 2. Navigate to the entitlement mappings page.
- * 3. Select the product by `externalProductId`.
- * 4. Open the first price row's Advanced section.
- * 5. Clear and fill the quota editor.
- * 6. Save the mapping batch.
- *
- * @param productHint External product id used in the master list
- *                    (e.g. `prod_stripe_multi_pro`).
  */
 export async function createEntitlementMappingWithQuotaWindows(
   page: Page,
@@ -168,12 +156,7 @@ export async function createEntitlementMappingWithQuotaWindows(
   await page.waitForLoadState('networkidle')
 }
 
-/**
- * Set the realm default free-periodic quota windows.
- *
- * Navigates to the default config page, clears the existing free-periodic
- * window rows, fills the new configuration, and saves.
- */
+/** Set the realm default free-periodic quota windows. */
 export async function setRealmDefaultFreePeriodicQuota(
   page: Page,
   realmId: string,
@@ -186,16 +169,13 @@ export async function setRealmDefaultFreePeriodicQuota(
   const prefix = 'realm-default-window'
   await expect(page.locator(SELECTORS.pointsQuotaEditor.editor(prefix))).toBeVisible()
 
+  await fillRealmDefaultRequiredFields(page)
   await clearQuotaEditorRows(page, prefix)
   await fillQuotaEditorRows(page, prefix, windows)
 
   await page.locator(SELECTORS.pointsQuotaEditor.saveConfigButton).click()
   await page.waitForLoadState('networkidle')
 }
-
-// ============================================================================
-// User / purchase / consume helpers
-// ============================================================================
 
 /**
  * Purchase a subscription that is configured with quota windows.
@@ -249,16 +229,18 @@ export async function consumePointsViaExtApi(
   return { status, body: responseBody }
 }
 
-/**
- * Register a new user and assert that the realm-default free-periodic quota
- * windows render on the user points page.
- */
+/** Register a new user and assert the realm-default quota windows render. */
 export async function registerNewUserWithRealmDefaultQuota(
   page: Page,
   realmId: string,
   email: string,
   password: string = 'password123',
 ): Promise<void> {
+  await page.context().clearCookies()
+  await page.evaluate(() => {
+    localStorage.clear()
+    sessionStorage.clear()
+  })
   await registerUser(page, realmId, email, password)
   await loginWithCredentials(page, { realmId, email, password })
 
@@ -274,11 +256,6 @@ export async function registerNewUserWithRealmDefaultQuota(
   await expect(windowRows).toHaveCount(2)
 }
 
-// ============================================================================
-// Dashboard reading helpers
-// ============================================================================
-
-/** Resolve a specific quota window row on the user balance dashboard. */
 export function getWindowRow(
   page: Page,
   bucketId: string,
@@ -307,8 +284,7 @@ export async function getWindowRemaining(
 /**
  * Read the resets-in copy from a window row.
  *
- * The dedicated `points-window-resets-in-*` testid is not emitted (FE-A07
- * P2-1); the copy is the second text span inside the row.
+ * The dedicated testid is not emitted; the copy is the last text span inside the row.
  */
 export async function getWindowResetsIn(
   page: Page,
@@ -324,7 +300,6 @@ export async function getWindowResetsIn(
   return text.trim()
 }
 
-/** Read the current spendable total from the dashboard. */
 export async function getSpendableNow(page: Page): Promise<number> {
   const el = page.locator(SELECTORS.pointsUsageDashboard.spendableNow)
   await expect(el).toBeVisible()
@@ -332,9 +307,35 @@ export async function getSpendableNow(page: Page): Promise<number> {
   return parseAmount(text)
 }
 
-// ============================================================================
-// Utilities
-// ============================================================================
+/**
+ * Read the demo user's `spendable_from_pool` (topup + registration + granted
+ * balances) for a bucket directly from the wallets API.
+ *
+ * Used by the total-formula test to assert `spendableNow === smallestRemaining
+ * + pool` without hard-coding the pool value, which accumulates across demo
+ * runs because the ext grant API has no idempotency key.
+ */
+export async function getSpendableFromPool(
+  page: Page,
+  realmId: string,
+  bucketId: string,
+): Promise<number> {
+  const baseUrl =
+    process.env.API_BASE_URL ||
+    process.env.BASE_URL?.replace(/:\d+/, ':8080') ||
+    'http://localhost:8080'
+  const resp = await page.context().request.get(
+    `${baseUrl}/api/points/${realmId}/wallets`,
+  )
+  if (!resp.ok()) return 0
+  const body = await resp.json()
+  const items = (body?.items ?? []) as {
+    bucketId?: string
+    spendableFromPool?: number | null
+  }[]
+  const match = items.find((i) => i.bucketId === bucketId)
+  return match?.spendableFromPool ?? 0
+}
 
 function parseAmount(text: string | undefined | null): number {
   if (!text) return 0

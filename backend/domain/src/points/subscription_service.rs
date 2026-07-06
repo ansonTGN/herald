@@ -1,16 +1,3 @@
-// points-grant-redesign (BE-D06): the subscription lifecycle no longer
-// writes / reclaims `points_credit_ledger` rows for subscription credit.
-// Instead it grants / revokes **window-quota entitlements**
-// (`points_quota_entitlements`, design §5.4). Availability is computed from
-// the consume stream + the entitlement's effective interval (design §4.1);
-// there is no per-period ledger issuance and no chained pre-grant of the
-// next period. Renewals re-grant on the next webhook event, idempotency-keyed
-// to the period/event anchor.
-// Already-consumed usage is NOT reverse-adjusted on revoke: it ages out
-// naturally as the sliding window advances.
-// This service works with the PointsService and Repository directly to avoid
-// circular dependencies.
-
 use chrono::{DateTime, Utc};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -23,7 +10,7 @@ use crate::points::{
     dtos::RevokePointsOutput,
     entities::{
         CreditSourceType, CreditType, PointsCreditLedger, QuotaEntitlementStatus, QuotaSourceType,
-        QuotaWindow,
+        QuotaWindow, RevocationType,
     },
     ports::PointsRepository,
     service::PointsService,
@@ -36,8 +23,7 @@ const ERROR_ENTITLEMENT_NO_GRANT: &str = "Entitlement does not grant points on s
 pub enum CancelMode {
     /// Cancel at period end - entitlement stays active until `effective_until`
     /// (no-op here; the entitlement's `effective_until` already encodes the
-    /// period end from the grant). Kept for signature compatibility with
-    /// webhook callers (BE-D10).
+    /// period end from the grant).
     DefaultCancel,
     /// Cancel immediately - revoke the subscription's active quota entitlement
     /// (consumed amounts NOT reverse-adjusted).
@@ -47,19 +33,14 @@ pub enum CancelMode {
 /// Subscription Service for handling subscription lifecycle events
 ///
 /// This service manages subscription upgrades, downgrades, and cancellations
-/// via grant/revoke of window-quota entitlements (design §5.4). It works with
+/// via grant/revoke of window-quota entitlements. It works with
 /// the PointsService and Repository.
 pub struct SubscriptionService<R, P>
 where
     R: PointsRepository + Send + Sync,
     P: crate::points::policies::PointsPolicy,
 {
-    // points-grant-redesign (BE-D06): `points_service` is retained on the
-    // constructor signature (callers in api/test-support still supply it) but
-    // is no longer read after the lifecycle moved to grant/revoke entitlements.
-    // Underscore-prefixed to match the existing `_grant_scheduler` convention
-    // and keep the public constructor signature stable for BE-D10.
-    _points_service: Arc<PointsService<R, P>>,
+    points_service: Arc<PointsService<R, P>>,
     repo: Arc<R>,
     _grant_scheduler: Option<Arc<crate::points::services::GrantScheduler<R, P>>>,
 }
@@ -76,23 +57,22 @@ where
         _grant_scheduler: Option<Arc<crate::points::services::GrantScheduler<R, P>>>,
     ) -> Self {
         Self {
-            _points_service: points_service,
+            points_service,
             repo,
             _grant_scheduler,
         }
     }
 
     /// Grant a window-quota entitlement for a subscription / free-periodic
-    /// credit (design §5.4). Replaces per-period ledger issuance for the
-    /// window credit types: availability is computed from the consume stream
-    /// and this entitlement's effective interval, not from a pre-granted
-    /// ledger row.
+    /// credit. Replaces per-period ledger issuance for the window credit types:
+    /// availability is computed from the consume stream and this entitlement's
+    /// effective interval, not from a pre-granted ledger row.
     ///
     /// Delegates to `repository.grant_quota_entitlement_atomic`, which is
     /// idempotent on the entitlement's `idempotency_key`
-    /// (`UNIQUE(realm_id, user_id, bucket_id, credit_type, idempotency_key)`,
-    /// design §4.3.2): a replayed grant (e.g. redelivered webhook event)
-    /// returns the pre-existing entitlement row without re-writing.
+    /// (`UNIQUE(realm_id, user_id, bucket_id, credit_type, idempotency_key)`):
+    /// a replayed grant (e.g. redelivered webhook event) returns the
+    /// pre-existing entitlement row without re-writing.
     ///
     /// # Idempotency-key semantics
     /// `idempotency_key` MUST be a stable per-grant anchor so a redelivered
@@ -106,11 +86,8 @@ where
     ///   entitlement row.
     /// - Free periodic grant: the registration / schedule anchor.
     ///
-    /// `quota_windows` is snapshotted at grant time (A2): later config edits
-    /// to the mapping / realm default do not affect this active entitlement.
-    ///
-    /// Infra impl lands in BE-D04; lifecycle callers (BE-D06 subscription,
-    /// BE-D07 registration) and webhook callers (BE-D10) wire to this method.
+    /// `quota_windows` is snapshotted at grant time: later config edits to the
+    /// mapping / realm default do not affect this active entitlement.
     pub async fn grant_quota_entitlement(
         &self,
         realm_id: &str,
@@ -161,7 +138,7 @@ where
     }
 
     /// Revoke the active window-quota entitlement identified by
-    /// `(realm_id, user_id, bucket_id, credit_type, source_id)` (design §5.4).
+    /// `(realm_id, user_id, bucket_id, credit_type, source_id)`.
     ///
     /// Delegates to `repository.revoke_quota_entitlement_atomic`, which sets
     /// `status = 'revoked'` and `effective_until = revoke_at`. The revoke is
@@ -170,13 +147,10 @@ where
     ///
     /// # Consumed-amount-not-reversed
     /// Already-consumed usage is NOT reverse-adjusted: it ages out naturally
-    /// as the sliding window advances (design §4.1). Revocation only ends the
-    /// entitlement's effective interval, so window availability drops as the
-    /// consume stream stops receiving new window-side deductions — past
-    /// consumes remain in the window until they slide out.
-    ///
-    /// Used by lifecycle (BE-D06: cancel/refund/upgrade) and webhook (BE-D10)
-    /// paths. Infra impl lands in BE-D04.
+    /// as the sliding window advances. Revocation only ends the entitlement's
+    /// effective interval, so window availability drops as the consume stream
+    /// stops receiving new window-side deductions — past consumes remain in the
+    /// window until they slide out.
     pub async fn revoke_quota_entitlement(
         &self,
         realm_id: &str,
@@ -218,25 +192,21 @@ where
     /// (`effective_from = now`, `effective_until = period_end`).
     ///
     /// Already-consumed usage under the old entitlement is NOT reverse-
-    /// adjusted (design §4.1); it ages out via window slide.
+    /// adjusted; it ages out via window slide.
     ///
     /// `subscription_id` is the entitlement `source_id` locator used by both
     /// the revoke (old entitlement) and the grant (new entitlement). It MUST
     /// match the `source_id` used at the initial/renewal grant so the revoke
-    /// resolves the correct active entitlement. (Pre-redesign this method
-    /// keyed revocation on `entitlement_key`, which was a ledger-row reclaim
-    /// locator and no longer applies under the quota-entitlement model.)
+    /// resolves the correct active entitlement.
     ///
-    /// # quota_windows read (BE-D09 wiring)
     /// The new mapping's `quota_windows` is read via `resolve_quota_windows`.
-    /// Until BE-D09 extends the mapping read path, the field is empty and the
-    /// grant is skipped with a `warn` (consistent with `handle_subscription_paid`).
+    /// If the field is empty the grant is skipped with a `warn` (consistent
+    /// with `handle_subscription_paid`).
     ///
-    /// # Return value (signature stability for BE-D10)
     /// Returns a **non-persisted grant receipt** (`PointsCreditLedger`,
     /// amounts = 0, `id` = new entitlement id) — no ledger row is written for
-    /// subscription credit under the new model. Production callers discard
-    /// the `Ok` value; it exists only to keep the signature stable.
+    /// subscription credit. Production callers discard the `Ok` value; it
+    /// exists only to keep the signature stable.
     pub async fn handle_subscription_upgrade(
         &self,
         user_id: Uuid,
@@ -266,22 +236,60 @@ where
         )
         .await?;
 
-        // Grant the new entitlement from the new mapping's quota_windows.
+        // Grant the new entitlement from the new mapping's quota_windows, or
+        // fall back to legacy points_per_period ledger semantics for mappings
+        // that have not moved to window quotas.
         let quota_windows = resolve_quota_windows(new_mapping);
         if quota_windows.is_empty() {
-            // BE-D09 will wire the mapping quota_windows read; until then the
-            // upgrade revokes the old entitlement but cannot grant the new
-            // window-model entitlement. Fail-loud warn so the gap is visible.
-            tracing::warn!(
-                realm_id = %realm_id,
-                user_id = %user_id,
-                subscription_id = %subscription_id,
-                new_entitlement_key = %new_entitlement_key,
-                old_entitlement_key = %old_entitlement_key,
-                "Subscription upgrade: new mapping has no quota_windows (BE-D09 wiring pending); old entitlement revoked, new grant skipped"
-            );
+            let revoke_output = self
+                .points_service
+                .revoke_points_by_credit_type(
+                    realm_id,
+                    user_id,
+                    bucket_id,
+                    CreditType::SubscriptionCredit,
+                    RevocationType::UpgradeRevoke,
+                    "Subscription upgrade".to_string(),
+                )
+                .await?;
+            let Some(points_per_period) = new_mapping.points_per_period else {
+                return Ok(grant_receipt(
+                    generate_uuid_v7(),
+                    user_id,
+                    realm_id,
+                    bucket_id,
+                    CreditType::SubscriptionCredit,
+                    CreditSourceType::SubscriptionUpgrade,
+                    &source_id,
+                    now,
+                    Some(period_end),
+                ));
+            };
+            let ledger_id = self
+                .points_service
+                .grant_points_internal(
+                    realm_id,
+                    user_id,
+                    bucket_id,
+                    CreditType::SubscriptionCredit,
+                    CreditSourceType::SubscriptionUpgrade,
+                    points_per_period,
+                    Some(period_end),
+                    None,
+                    Some(source_id.clone()),
+                    Some(format!(
+                        "Subscription upgrade: {} points granted after revoking {}",
+                        points_per_period, revoke_output.total_revoked
+                    )),
+                    Some(format!(
+                        "sub_upgrade:{}:{}",
+                        subscription_id,
+                        period_end.timestamp()
+                    )),
+                )
+                .await?;
             return Ok(grant_receipt(
-                generate_uuid_v7(),
+                ledger_id,
                 user_id,
                 realm_id,
                 bucket_id,
@@ -341,8 +349,8 @@ where
     ///
     /// Logs the downgrade event but does NOT revoke the active entitlement.
     /// The user keeps their current window quota until the entitlement's
-    /// `effective_until`; the next renewal webhook (BE-D10) grants a fresh
-    /// entitlement from the new mapping's `quota_windows`.
+    /// `effective_until`; the next renewal webhook grants a fresh entitlement
+    /// from the new mapping's `quota_windows`.
     pub async fn handle_subscription_downgrade(
         &self,
         user_id: Uuid,
@@ -370,22 +378,20 @@ where
 
     /// Handle subscription paid event (initial or renewal)
     ///
-    /// Grants a window-quota entitlement for the subscription period (design
-    /// §5.4). Availability is computed from the consume stream + the
-    /// entitlement's effective interval `[effective_from, effective_until]` =
+    /// Grants a window-quota entitlement for the subscription period.
+    /// Availability is computed from the consume stream + the entitlement's
+    /// effective interval `[effective_from, effective_until]` =
     /// `[period_start, period_end]`; no `points_credit_ledger` row is written
-    /// for subscription credit and the next period is NOT pre-granted (the
-    /// new model grants lazily on each renewal webhook event).
+    /// for subscription credit and the next period is NOT pre-granted (grants
+    /// happen lazily on each renewal webhook event).
     ///
     /// **Idempotency**: anchored to the subscription period via
     /// `idempotency_key = sub:{subscription_id}:period:{period_start}`.
     /// Redelivered webhook events for the same period converge on the same
-    /// entitlement row (infra `UNIQUE` constraint, design §4.3.2).
+    /// entitlement row (infra `UNIQUE` constraint).
     ///
-    /// **quota_windows read (BE-D09 wiring)**: the mapping's `quota_windows`
-    /// snapshot is read via `resolve_quota_windows`. Until BE-D09 extends the
-    /// mapping read path to expose `quota_windows`, the snapshot is empty and
-    /// the grant is skipped with a `warn` (A1 destructive rebuild: subscription
+    /// The mapping's `quota_windows` snapshot is read via `resolve_quota_windows`.
+    /// If the snapshot is empty the grant is skipped with a `warn` (subscription
     /// credit uniformly uses the window model; empty `quota_windows` ⟹ no
     /// grant, mirroring `create_placeholder_transaction_with_ref`). When
     /// `grant_on_subscribe = false` the entitlement is ignored the same way.
@@ -393,11 +399,10 @@ where
     /// The grant routes to `subscription.bucket_id`, bound eagerly at
     /// subscription creation. The caller supplies the resolved `bucket_id`.
     ///
-    /// # Return value (signature stability for BE-D10)
     /// Returns a **non-persisted grant receipt** (`PointsCreditLedger`,
     /// amounts = 0, `id` = entitlement id when granted) — no ledger row is
-    /// written under the new model. Production callers discard the `Ok`
-    /// value; it exists only to keep the signature stable.
+    /// written. Production callers discard the `Ok` value; it exists only to
+    /// keep the signature stable.
     pub async fn handle_subscription_paid(
         &self,
         user_id: Uuid,
@@ -416,9 +421,8 @@ where
         let entitlement_key = mapping.entitlement_key.as_str();
         let source_id = subscription_id.to_string();
 
-        // `grant_on_subscribe=false` ⟹ graceful skip (same contract as the
-        // pre-redesign path: an entitlement configured not to grant on
-        // subscribe is ignored, not a data-integrity error).
+        // `grant_on_subscribe=false` ⟹ graceful skip: an entitlement configured
+        // not to grant on subscribe is ignored, not a data-integrity error.
         if !mapping.grant_on_subscribe {
             tracing::info!(
                 realm_id = %realm_id,
@@ -430,24 +434,51 @@ where
                 .await;
         }
 
-        // A1 destructive rebuild: subscription credit uniformly uses the
-        // window-quota model. The mapping's `quota_windows` snapshot is the
-        // grant input. Until BE-D09 wires the mapping read, an empty
-        // snapshot skips the grant with a warn (no fallback to the removed
-        // points_per_period ledger path).
+        // Window-quota mappings grant quota entitlements. Mappings without
+        // quota_windows keep the legacy points_per_period ledger semantics.
         let quota_windows = resolve_quota_windows(mapping);
         if quota_windows.is_empty() {
-            tracing::warn!(
-                realm_id = %realm_id,
-                user_id = %user_id,
-                subscription_id = %subscription_id,
-                entitlement_key = %entitlement_key,
-                is_renewal,
-                "Subscription paid: mapping has no quota_windows (BE-D09 wiring pending); skipping quota entitlement grant"
-            );
-            return self
-                .create_placeholder_transaction_with_ref(user_id, realm_id, &event_id)
-                .await;
+            let Some(points_per_period) = mapping.points_per_period else {
+                return self
+                    .create_placeholder_transaction_with_ref(user_id, realm_id, &event_id)
+                    .await;
+            };
+            let source_type = if is_renewal {
+                CreditSourceType::SubscriptionRenewal
+            } else {
+                CreditSourceType::SubscriptionInitial
+            };
+            let ledger_id = self
+                .points_service
+                .grant_points_internal(
+                    realm_id,
+                    user_id,
+                    bucket_id,
+                    CreditType::SubscriptionCredit,
+                    source_type,
+                    points_per_period,
+                    Some(period_end),
+                    None,
+                    Some(source_id.clone()),
+                    Some(format!(
+                        "{}: {} points granted",
+                        source_type.as_str(),
+                        points_per_period
+                    )),
+                    Some(event_id.clone()),
+                )
+                .await?;
+            return Ok(grant_receipt(
+                ledger_id,
+                user_id,
+                realm_id,
+                bucket_id,
+                CreditType::SubscriptionCredit,
+                source_type,
+                &source_id,
+                period_start,
+                Some(period_end),
+            ));
         }
 
         let source_type = if is_renewal {
@@ -513,8 +544,8 @@ where
     /// Create placeholder transaction with external ref (for idempotency when
     /// grant_on_subscribe = false or quota_windows is empty). Records the
     /// event id under the historical idempotency namespace and returns the
-    /// pre-redesign "no grant" error so the webhook layer (BE-D10) can
-    /// classify the graceful skip consistently.
+    /// "no grant" error so the webhook layer can classify the graceful skip
+    /// consistently.
     async fn create_placeholder_transaction_with_ref(
         &self,
         _user_id: Uuid,
@@ -533,28 +564,23 @@ where
 
     /// Handle subscription cancellation
     ///
-    /// Two modes (signatures preserved for BE-D10 webhook callers):
+    /// Two modes:
     /// - `DefaultCancel`: the entitlement's `effective_until` already encodes
     ///   the period end from the grant, so no write is needed — the
-    ///   entitlement stays active until it expires naturally. (Pre-redesign
-    ///   this set ledger `expires_at`; under the quota model the grant already
-    ///   captured `period_end` as `effective_until`.)
+    ///   entitlement stays active until it expires naturally.
     /// - `ImmediateCancel`: revoke the subscription's active quota entitlement
     ///   (`source_id = subscription_id`). Already-consumed usage is NOT
-    ///   reverse-adjusted (design §4.1).
+    ///   reverse-adjusted.
     ///
     /// `subscription_id` is the entitlement `source_id` locator (REQUIRED for
-    /// the new revoke semantics — the pre-redesign `entitlement_key` was a
-    /// ledger-row reclaim locator and no longer applies). BE-D10 wires it from
-    /// the synced subscription. The `entitlement_key` parameter is retained on
+    /// the revoke semantics). The `entitlement_key` parameter is retained on
     /// the signature for caller compatibility but is not used to locate the
     /// entitlement under the quota model.
     ///
-    /// # Return value (signature stability for BE-D10)
     /// Returns a `RevokePointsOutput` carrier: `ledger_ids` is empty (no
     /// ledger rows are touched) and `total_revoked = 0` (consumed amounts are
-    /// not reverse-adjusted). BE-D10 / test slot read the revocation fact from
-    /// the entitlement row, not from this carrier.
+    /// not reverse-adjusted). Callers read the revocation fact from the
+    /// entitlement row, not from this carrier.
     pub async fn handle_subscription_cancel(
         &self,
         user_id: Uuid,
@@ -598,6 +624,18 @@ where
                 )
                 .await?;
 
+                let legacy_revoke = self
+                    .points_service
+                    .revoke_points_by_credit_type(
+                        realm_id,
+                        user_id,
+                        bucket_id,
+                        CreditType::SubscriptionCredit,
+                        RevocationType::CancelRevoke,
+                        "Subscription cancelled".to_string(),
+                    )
+                    .await?;
+
                 tracing::info!(
                     realm_id = %realm_id,
                     user_id = %user_id,
@@ -607,12 +645,7 @@ where
                     "Subscription cancelled immediately - quota entitlement revoked (idempotent; consumed amounts not reverse-adjusted)"
                 );
 
-                Ok(RevokePointsOutput {
-                    revocation_id: generate_uuid_v7(),
-                    ledger_ids: Vec::new(),
-                    total_revoked: 0,
-                    revoked_at: now,
-                })
+                Ok(legacy_revoke)
             }
         }
     }
@@ -620,19 +653,16 @@ where
 
 /// Resolve the `quota_windows` snapshot from an entitlement mapping.
 ///
-/// Reads `mapping.quota_windows` (hydrated by the billing infra repository from
-/// the `provider_entitlement_mappings.quota_windows` JSONB column — BE-D09).
 /// `None`/empty ⟹ empty vec (no window-model grant); the caller's grant path
-/// treats an empty snapshot as "warn + skip grant" (design A1: subscription
-/// credit uniformly uses the window model; there is no fallback to the removed
+/// treats an empty snapshot as "warn + skip grant" (subscription credit
+/// uniformly uses the window model; there is no fallback to the removed
 /// `points_per_period` ledger path). Callers do not change.
 fn resolve_quota_windows(mapping: &EntitlementMapping) -> Vec<QuotaWindow> {
     mapping.quota_windows.clone().unwrap_or_default()
 }
 
 /// Build a **non-persisted grant receipt** shaped as `PointsCreditLedger` so
-/// the subscription lifecycle methods keep their pre-redesign return type
-/// (signature stability for BE-D10 webhook call sites).
+/// the subscription lifecycle methods keep their existing return type.
 ///
 /// This is NOT a database row: no ledger row is written for subscription
 /// credit under the window-quota model. The amounts are zeroed and the `id`

@@ -11,7 +11,7 @@ export function usePermission() {
   const { permissions, roles, isLoading } = useAuth()
 
   // Handle null/undefined permissions safely
-  const safePermissions = permissions || []
+  const safePermissions = (permissions || []).map((permission) => permission.replace(':', '.'))
   const safeRoles = roles || []
 
   return {

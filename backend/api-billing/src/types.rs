@@ -1,13 +1,29 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-/// Response from checkout session creation
-#[derive(Debug, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateCheckoutResponse {
-    pub checkout_url: String,
-    pub checkout_id: Uuid,
+/// Structured view of the `provider_product_info` JSONB synced from the
+/// provider (design §5.7).
+///
+/// Field names are intentionally snake_case (no `rename_all`) so they match
+/// the stored JSONB keys written by `build_provider_product_info` — the value
+/// round-trips through `serde_json::from_value` without renaming. Every field
+/// is optional because the backend stores the union of what each provider
+/// exposes. `product_metadata` / `price_metadata` are strict string→string
+/// maps (coerced at sync time in the provider adapter), matching how Stripe
+/// and Creem model metadata.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ProviderProductInfo {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub price: Option<i64>,
+    pub currency: Option<String>,
+    pub billing_type: Option<String>,
+    pub billing_period: Option<String>,
+    pub product_metadata: Option<HashMap<String, String>>,
+    pub price_metadata: Option<HashMap<String, String>>,
 }
 
 /// Response for a single entitlement mapping
@@ -29,31 +45,27 @@ pub struct EntitlementMappingResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub points_per_period: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub grant_period_type: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub validity_days: Option<i64>,
     pub grant_on_subscribe: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_periods: Option<i64>,
     pub enabled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub provider_product_info: Option<serde_json::Value>,
+    pub provider_product_info: Option<ProviderProductInfo>,
     /// Subscription quota window config (design §4.3.2). `None` ⟺ no
     /// window-model grant. Each window carries the stable display `key`
     /// (derived from `windowSeconds`), the limit, and the window length.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub quota_windows: Option<Vec<EntitlementQuotaWindowDto>>,
+    pub quota_windows: Option<Vec<EntitlementQuotaWindowResponse>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub synced_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
 
-/// Read-side quota window view (response DTO). Mirrors the domain `QuotaWindow`
+/// Read-side quota window view. Mirrors the domain `QuotaWindow`
 /// snapshot carried on an entitlement mapping.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct EntitlementQuotaWindowDto {
+pub struct EntitlementQuotaWindowResponse {
     /// Sliding window length in seconds.
     pub window_seconds: i64,
     /// Quota limit.
@@ -95,18 +107,14 @@ pub struct UpdateEntitlementMappingRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub points_per_period: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub grant_period_type: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub validity_days: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub grant_on_subscribe: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_periods: Option<i64>,
     /// Subscription quota window config (design §4.3.2). `None` ⟺ leave the
     /// stored value untouched; `Some([])` ⟺ clear (no window grant);
     /// `Some([...])` ⟺ replace. Same validation as batch update.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub quota_windows: Option<Vec<QuotaWindowInputDto>>,
+    pub quota_windows: Option<Vec<QuotaWindowInput>>,
 }
 
 /// Request to sync provider products
@@ -126,13 +134,13 @@ pub struct SyncProviderResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub partial_errors: Vec<PartialSyncErrorDto>,
+    pub partial_errors: Vec<PartialSyncError>,
 }
 
 /// Partial sync error detail
 #[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct PartialSyncErrorDto {
+pub struct PartialSyncError {
     pub external_id: String,
     pub reason: String,
 }
@@ -146,7 +154,7 @@ pub struct OneTimeMappingItem {
     /// Bound credit bucket (non-null; matches domain entity).
     pub bucket_id: Uuid,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub provider_product_info: Option<serde_json::Value>,
+    pub provider_product_info: Option<ProviderProductInfo>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub points_per_period: Option<i64>,
     pub payment_provider: String,
@@ -251,27 +259,16 @@ pub struct CancelSubscriptionResponse {
 
 /// Request to create checkout session.
 ///
-/// Purchase target is price-level: callers pass the entitlement **mapping** id.
-/// The checkout handler resolves the mapping to its
-/// entitlement key / provider product / price and routes to the payment
-/// provider. Replaces the former `entitlement_key`-only contract.
-#[derive(Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateCheckoutSessionRequest {
-    pub mapping_id: Uuid,
-    pub payment_provider: String,
-}
-
-/// Input DTO for one quota window in a mapping batch save (design §4.3.2).
+/// Input for one quota window in a mapping batch save (design §4.3.2).
 ///
 /// Carries only the editable fields; the stable display `key` is derived by
 /// the backend from `windowSeconds` (via `derive_window_key`) before
 /// persistence, so callers cannot drift window identity. Mirrors the
-/// points-domain `QuotaWindowInputDto` shape; kept local to billing so
+/// points-domain quota-window input shape; kept local to billing so
 /// api-billing does not depend on api-points.
 #[derive(Debug, Deserialize, ToSchema, validator::Validate)]
 #[serde(rename_all = "camelCase")]
-pub struct QuotaWindowInputDto {
+pub struct QuotaWindowInput {
     /// Sliding window length in seconds. Must be > 0.
     #[validate(range(min = 1))]
     pub window_seconds: i64,
@@ -290,28 +287,21 @@ pub struct QuotaWindowInputDto {
 #[serde(rename_all = "camelCase")]
 pub struct PriceMappingUpdate {
     pub mapping_id: Uuid,
-    pub entitlement_key: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub billing_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub billing_period: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub points_per_period: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub grant_period_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub validity_days: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub grant_on_subscribe: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_periods: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
     /// Quota window config (design §4.3.2). `None` ⟺ leave unchanged;
     /// `Some([])` ⟺ clear (no window grant); `Some(non-empty)` ⟺ set.
     /// Non-empty triggers the `points.manage` credit-field permission gate.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub quota_windows: Option<Vec<QuotaWindowInputDto>>,
+    pub quota_windows: Option<Vec<QuotaWindowInput>>,
 }
 
 /// PUT `/api/bill/{realmId}/entitlement-mappings/batch` request body.

@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useRealmId } from '@/stores/auth-store'
-import { permissionsQueryOptions } from '@/data/query-options'
+import { adminPermissionsQueryOptions } from '@/data/query-options'
 import { PermissionTable } from '@/components/permissions/permission-table'
 import { CreatePermissionDialog } from '@/components/permissions/create-permission-dialog'
 import { Card, CardContent } from '@/components/ui/card'
@@ -22,7 +22,7 @@ function PermissionsPage() {
     isLoading,
     error,
   } = useQuery({
-    ...permissionsQueryOptions(realmId),
+    ...adminPermissionsQueryOptions(realmId),
   })
 
   return (

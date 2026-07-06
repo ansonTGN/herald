@@ -45,9 +45,7 @@
 //
 // =============================================================================
 
-use crate::tests::helpers::points_helpers::{
-    assert_derived_balance, get_user_ledgers_by_credit_type,
-};
+use crate::tests::helpers::points_helpers::{assert_derived_balance, get_user_quota_entitlements};
 use crate::tests::helpers::webhook_helpers::{
     assert_webhook_success, generate_test_event_id, send_stripe_webhook_with_signature,
     send_webhook_with_signature, setup_test_entitlement_mapping_for_webhook,
@@ -242,14 +240,14 @@ async fn test_stripe_subscription_top_level_period_normalized(ctx: &mut SchemaTe
     let response = send_stripe_webhook_with_signature(&app, &realm_id, event, webhook_secret).await;
     assert_webhook_success(&response);
 
-    // Then: a subscription_credit ledger WAS written — the top-level period
-    // resolved and drove `handle_subscription_paid`.
-    let ledgers =
-        get_user_ledgers_by_credit_type(ctx, user_id, CreditType::SubscriptionCredit).await;
+    // Then: a subscription_credit quota entitlement WAS written — the top-level
+    // period resolved and drove `handle_subscription_paid`.
+    let entitlements =
+        get_user_quota_entitlements(ctx, user_id, CreditType::SubscriptionCredit).await;
     assert!(
-        !ledgers.is_empty(),
+        !entitlements.is_empty(),
         "Stripe top-level current_period_* must normalize to Some and drive a grant; \
-         got 0 subscription_credit ledgers"
+         got 0 subscription_credit quota entitlements"
     );
 
     // The current-period grant (effective_at = period_start <= now) is
@@ -338,12 +336,12 @@ async fn test_stripe_subscription_item_level_period_normalized(ctx: &mut SchemaT
     let response = send_stripe_webhook_with_signature(&app, &realm_id, event, webhook_secret).await;
     assert_webhook_success(&response);
 
-    let ledgers =
-        get_user_ledgers_by_credit_type(ctx, user_id, CreditType::SubscriptionCredit).await;
+    let entitlements =
+        get_user_quota_entitlements(ctx, user_id, CreditType::SubscriptionCredit).await;
     assert!(
-        !ledgers.is_empty(),
+        !entitlements.is_empty(),
         "Stripe item-level current_period_* (single item) must normalize to Some and \
-         drive a grant; got 0 subscription_credit ledgers"
+         drive a grant; got 0 subscription_credit quota entitlements"
     );
 
     assert_derived_balance(
@@ -447,16 +445,16 @@ async fn test_stripe_multi_item_period_unresolvable_skips_pregrant(ctx: &mut Sch
     // EntitlementMappingNotFound graceful-skip behavior.
     assert_webhook_success(&response);
 
-    // Then: NO subscription_credit ledger was written. Neither the formal
-    // current-period grant NOR a next-period pre-grant may appear — P0
-    // forbids writing a ledger with an invented period.
-    let ledgers =
-        get_user_ledgers_by_credit_type(ctx, user_id, CreditType::SubscriptionCredit).await;
+    // Then: NO subscription_credit quota entitlement was written. Neither the
+    // formal current-period grant NOR a next-period pre-grant may appear — P0
+    // forbids writing an entitlement with an invented period.
+    let entitlements =
+        get_user_quota_entitlements(ctx, user_id, CreditType::SubscriptionCredit).await;
     assert!(
-        ledgers.is_empty(),
-        "Stripe multi-item disagreeing periods must SKIP grant and write NO ledger \
-         (P0 — never guess); got {} subscription_credit ledgers",
-        ledgers.len()
+        entitlements.is_empty(),
+        "Stripe multi-item disagreeing periods must SKIP grant and write NO entitlement \
+         (P0 — never guess); got {} subscription_credit quota entitlements",
+        entitlements.len()
     );
 
     // And: derived available balance is 0 (no ledger row exists).
@@ -533,13 +531,13 @@ async fn test_stripe_no_period_anywhere_skips_pregrant(ctx: &mut SchemaTestConte
     let response = send_stripe_webhook_with_signature(&app, &realm_id, event, webhook_secret).await;
     assert_webhook_success(&response);
 
-    let ledgers =
-        get_user_ledgers_by_credit_type(ctx, user_id, CreditType::SubscriptionCredit).await;
+    let entitlements =
+        get_user_quota_entitlements(ctx, user_id, CreditType::SubscriptionCredit).await;
     assert!(
-        ledgers.is_empty(),
+        entitlements.is_empty(),
         "Stripe payload with NO period anywhere must SKIP grant (P0); \
-         got {} subscription_credit ledgers",
-        ledgers.len()
+         got {} subscription_credit quota entitlements",
+        entitlements.len()
     );
 
     assert_derived_balance(ctx, user_id, &realm_id, CreditType::SubscriptionCredit, 0).await;
@@ -605,12 +603,12 @@ async fn test_creem_period_normalized(ctx: &mut SchemaTestContext) {
     let response = send_webhook_with_signature(&app, &realm_id, event, "test_webhook_secret").await;
     assert_webhook_success(&response);
 
-    let ledgers =
-        get_user_ledgers_by_credit_type(ctx, user_id, CreditType::SubscriptionCredit).await;
+    let entitlements =
+        get_user_quota_entitlements(ctx, user_id, CreditType::SubscriptionCredit).await;
     assert!(
-        !ledgers.is_empty(),
+        !entitlements.is_empty(),
         "Creem currentPeriodStart/End must normalize to Some and drive a grant; \
-         got 0 subscription_credit ledgers"
+         got 0 subscription_credit quota entitlements"
     );
 
     assert_derived_balance(
@@ -680,13 +678,13 @@ async fn test_creem_period_missing_skips_pregrant(ctx: &mut SchemaTestContext) {
     let response = send_webhook_with_signature(&app, &realm_id, event, "test_webhook_secret").await;
     assert_webhook_success(&response);
 
-    let ledgers =
-        get_user_ledgers_by_credit_type(ctx, user_id, CreditType::SubscriptionCredit).await;
+    let entitlements =
+        get_user_quota_entitlements(ctx, user_id, CreditType::SubscriptionCredit).await;
     assert!(
-        ledgers.is_empty(),
+        entitlements.is_empty(),
         "Creem payload with NO period fields must SKIP grant (P0 — never guess \
-         from event time); got {} subscription_credit ledgers",
-        ledgers.len()
+         from event time); got {} subscription_credit quota entitlements",
+        entitlements.len()
     );
 
     assert_derived_balance(ctx, user_id, &realm_id, CreditType::SubscriptionCredit, 0).await;

@@ -4,6 +4,7 @@ use axum::{
     extract::{Path, State},
     http::HeaderMap,
 };
+use herald_api_base::application::http::common::auth_utils::AdminIdentity;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
@@ -36,6 +37,9 @@ pub async fn delete_user(
     Path((realm_id, target_user_id)): Path<(String, Uuid)>,
     _headers: HeaderMap,
 ) -> Result<ApiResult<()>, ApiError> {
+    let admin = AdminIdentity::require(identity, &realm_id, "user management")?;
+    admin.require_permission(&state, "users", "manage").await?;
+
     tracing::info!(
         realm_id = %realm_id,
         user_id = %target_user_id,
@@ -47,7 +51,7 @@ pub async fn delete_user(
 
     // Call service layer
     admin_user_service
-        .delete_user(identity, &realm_id, target_user_id)
+        .delete_user(admin.identity().clone(), &realm_id, target_user_id)
         .await
         .map_err(|e| match e {
             UserAdminError::PermissionDenied(msg) => {

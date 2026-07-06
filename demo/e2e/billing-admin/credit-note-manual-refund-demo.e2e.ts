@@ -21,6 +21,7 @@ import {
   issueInvoice,
 } from './helpers/invoice-helpers'
 import {
+  closeInvoiceDetailDialog,
   createAndPayManualInvoice,
   getAccountIdByEmail,
   getInvoiceIdByNumber,
@@ -66,6 +67,7 @@ test.describe('[Billing Admin] Manual Credit Note Refund Demo Tests', () => {
       invoiceNumber = await createAndPayManualInvoice(page, DEMO_ADMIN.realmId, {
         accountId,
         billingName: 'Manual Refund Demo',
+        billingEmail: 'manual-refund-demo@example.com',
         sellerName: 'Herald Demo',
         lineItems: [{ name: 'Service', quantity: '1', unitPrice: 10000 }],
         dueDate: '2026-12-31',
@@ -94,6 +96,10 @@ test.describe('[Billing Admin] Manual Credit Note Refund Demo Tests', () => {
       await expect(page.getByTestId('record-refund-dialog')).toBeHidden({ timeout: 10000 })
     })
 
+    await test.step('When: close invoice detail dialog to return to admin table', async () => {
+      await closeInvoiceDetailDialog(page)
+    })
+
     await test.step('Then: refund chip appears in the admin table', async () => {
       await verifyRefundChipInAdminTable(page, invoiceNumber)
     })
@@ -104,8 +110,8 @@ test.describe('[Billing Admin] Manual Credit Note Refund Demo Tests', () => {
 
     await test.step('Then: refund summary shows refunded and remaining amounts', async () => {
       await expect(page.getByTestId('invoice-refund-summary')).toBeVisible({ timeout: 5000 })
-      await expect(page.getByTestId('invoice-refunded-amount')).toHaveText('-$30.00')
-      await expect(page.getByTestId('invoice-remaining-amount')).toHaveText('$70.00')
+      await expect(page.getByTestId('invoice-refunded-amount')).toHaveText('-CN¥30.00')
+      await expect(page.getByTestId('invoice-remaining-amount')).toHaveText('CN¥70.00')
     })
 
     await test.step('Then: manual credit note list contains the active credit note', async () => {
@@ -135,6 +141,7 @@ test.describe('[Billing Admin] Manual Credit Note Refund Demo Tests', () => {
       invoiceNumber = await createAndPayManualInvoice(page, DEMO_ADMIN.realmId, {
         accountId,
         billingName: 'Over Refund Validation',
+        billingEmail: 'over-refund-validation@example.com',
         sellerName: 'Herald Demo',
         lineItems: [{ name: 'Service', quantity: '1', unitPrice: 5000 }],
         dueDate: '2026-12-31',
@@ -179,6 +186,7 @@ test.describe('[Billing Admin] Manual Credit Note Refund Demo Tests', () => {
       invoiceNumber = await createInvoice(page, DEMO_ADMIN.realmId, {
         accountId,
         billingName: 'Unpaid Refund Button Check',
+        billingEmail: 'unpaid-refund-button-check@example.com',
         sellerName: 'Herald Demo',
         lineItems: [{ name: 'Service', quantity: '1', unitPrice: 3000 }],
         dueDate: '2026-12-31',

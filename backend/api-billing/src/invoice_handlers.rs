@@ -32,10 +32,6 @@ use crate::handlers::require_billing_permission;
 use crate::invoice_eligibility::determine_invoice_apply_route;
 use crate::invoice_types::*;
 
-// ============================================================================
-// Helper functions
-// ============================================================================
-
 /// Extract the user ID from an Identity, if it represents a user session.
 fn actor_user_id_from_identity(identity: &Identity) -> Option<Uuid> {
     if identity.is_user() {
@@ -231,10 +227,6 @@ fn parse_optional_paid_at(
         .transpose()
 }
 
-// ============================================================================
-// Seller Config Handlers
-// ============================================================================
-
 #[utoipa::path(
     get,
     path = "/api/bill/{realmId}/invoice-seller-config",
@@ -323,10 +315,6 @@ pub async fn upsert_seller_config(
         .await?;
     Ok(Json(SellerConfigResponse::from(saved)))
 }
-
-// ============================================================================
-// Invoice CRUD Handlers
-// ============================================================================
 
 #[utoipa::path(
     post,
@@ -472,10 +460,6 @@ pub async fn list_invoices(
     }))
 }
 
-// ============================================================================
-// Attribution Anomalies — admin read-only discovery
-// ============================================================================
-
 /// Lookback window for "payment without invoice": succeeded attempts older than
 /// this are considered out of scope for active anomaly triage. 90 days matches
 /// typical billing-investigation cadences without scanning the full history.
@@ -531,8 +515,6 @@ pub async fn list_attribution_anomalies(
     tracing::info!("Listing attribution anomalies for realm: {}", realm_id);
     require_billing_permission(&state, &identity, &realm_id, "view").await?;
 
-    // --- unattributed invoices: reuse the existing list path with the
-    // attribution=missing filter. Capped at page_size=100 (infra clamps to 100).
     let unattributed_filters = InvoiceListFilters {
         attribution: Some(AttributionFilter::Missing),
         page: Some(1),
@@ -549,9 +531,6 @@ pub async fn list_attribution_anomalies(
         .map(summary_to_response)
         .collect();
 
-    // --- payments_without_invoice: succeeded renewal / one-time attempts within
-    // the lookback window that have no invoice linked via payment_attempt_id.
-    //
     // Shapes covered:
     //   - renewal AND one-time: target_type = 'entitlement_mapping', status = 'Succeeded'
     // (The renewal writer uses target_type = 'entitlement_mapping' too — migration
@@ -742,10 +721,6 @@ pub async fn update_invoice(
     Ok(Json(invoice_to_detail_response(detail)))
 }
 
-// ============================================================================
-// Status Transition Handlers
-// ============================================================================
-
 #[utoipa::path(
     post,
     path = "/api/bill/{realmId}/invoices/{invoiceId}/issue",
@@ -893,12 +868,14 @@ pub async fn void_invoice(
         ));
     }
 
-    // Status-transition validation. `paid` is normally terminal, but a paid
-    // invoice with no active refund credit notes (i.e. only voided notes or none
-    // at all) is allowed to be voided. Already-void invoices are still rejected
-    // here via the terminal-state check (no active notes can exist for them).
-    let allow_paid_void = detail.invoice.status == InvoiceStatus::Paid;
-    if !allow_paid_void {
+    // Status-transition validation. A paid manual invoice normally remains
+    // terminal, but a paid invoice that only has historical voided credit notes
+    // is allowed to be voided: those notes are audit-only and have already been
+    // reversed out of refunded/remaining totals.
+    let has_voided_note = credit_notes
+        .iter()
+        .any(|note| note.status == CreditNoteStatus::Voided);
+    if !(detail.invoice.status == InvoiceStatus::Paid && has_voided_note) {
         validate_status_transition(
             detail.invoice.status,
             InvoiceStatus::Void,
@@ -998,10 +975,6 @@ pub async fn mark_paid(
 
     Ok(Json(invoice_to_detail_response(detail)))
 }
-
-// ============================================================================
-// User-Facing Invoice Handlers
-// ============================================================================
 
 #[utoipa::path(
     post,
@@ -1233,10 +1206,6 @@ pub async fn apply_invoice(
 )]
 /// Per-resource invoice apply-eligibility (read-only, context-level).
 ///
-/// Phase B of P0-2 (`.ai/future/invoice_ux.md`): lets the frontend gate the
-/// Apply Invoice button on a specific payment_attempt/subscription BEFORE
-/// submit, instead of relying on post-submit backend rejection.
-///
 /// Decision order: ownership → provider → policy → seller config →
 /// external-invoice-exists, then delegates the verdict to the pure
 /// `determine_invoice_apply_route`. The endpoint resolves facts; the pure
@@ -1268,7 +1237,6 @@ pub async fn get_invoice_apply_eligibility(
         }
     };
 
-    // ---- Ownership: 404 if resource absent in realm, 403 if owned by another user.
     // Note: we do NOT reuse `validate_resource_ownership` here because that
     // helper returns 400 (bad_request) for not-found, but the spec requires 404
     // for the eligibility endpoint. We mirror its SQL instead.
@@ -1299,7 +1267,6 @@ pub async fn get_invoice_apply_eligibility(
         }
     }
 
-    // ---- Provider resolution: payment_attempts first, fall back to subscription.
     // Mirrors the write-path SQL in `validate_invoice_creation_policy` exactly.
     let provider: Option<String> = match resource {
         OwnedResource::PaymentAttempt => {
@@ -1320,18 +1287,15 @@ pub async fn get_invoice_apply_eligibility(
         .map_err(|e| ApiError::internal(format!("Database error: {}", e)))?,
     };
 
-    // ---- Policy: shared reader (same as write path & realm-level eligibility).
     let policy_config = get_invoice_policy(&state, &realm_id).await?;
     let policy = policy_config.policy.clone();
 
-    // ---- Seller config presence.
     let has_seller_config = state
         .invoice_repository
         .find_seller_config(&realm_id)
         .await?
         .is_some();
 
-    // ---- External-sync invoice already exists for this resource.
     // No repository method exists for this lookup; this is the minimal SQL.
     // Columns confirmed against migration 20260508_invoice.sql:
     //   invoice.realm_id, invoice.source, invoice.payment_attempt_id,
@@ -1358,7 +1322,6 @@ pub async fn get_invoice_apply_eligibility(
         .map_err(|e| ApiError::internal(format!("Database error: {}", e)))?,
     };
 
-    // ---- Pure verdict — rules live in one place (single home).
     let verdict = determine_invoice_apply_route(
         provider.as_deref(),
         &policy,
@@ -1455,9 +1418,9 @@ pub async fn get_my_invoice(
         .find_by_invoice_id(&realm_id, invoice_id)
         .await?;
 
-    // User-side filtering (design 4.2.2): strip Stripe-internal identifiers and
-    // admin user IDs so regular users see only refund amount/currency/source,
-    // not external IDs or internal operator UUIDs.
+    // Strip Stripe-internal identifiers and admin user IDs so regular users
+    // see only refund amount/currency/source, not external IDs or internal
+    // operator UUIDs.
     let credit_notes = credit_notes
         .into_iter()
         .map(|mut cn| {
@@ -1475,10 +1438,6 @@ pub async fn get_my_invoice(
 
     Ok(Json(response))
 }
-
-// ============================================================================
-// PDF Download Handlers
-// ============================================================================
 
 /// Validate that an invoice status allows PDF download (not draft).
 fn validate_pdf_status(status: InvoiceStatus) -> Result<(), ApiError> {
@@ -1674,7 +1633,7 @@ mod tests {
     fn make_detail(provider: InvoiceProvider, external_pdf_url: Option<&str>) -> InvoiceDetail {
         InvoiceDetail {
             invoice: Invoice {
-                id: Uuid::new_v4(),
+                id: Uuid::now_v7(),
                 realm_id: "test-realm".to_string(),
                 invoice_number: "INV-001".to_string(),
                 source: InvoiceSource::AdminManual,

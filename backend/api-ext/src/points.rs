@@ -398,6 +398,18 @@ pub async fn consume_points_ext(
         return resp.into_response();
     }
 
+    let client_app_id = match request.client_app_id.parse::<Uuid>() {
+        Ok(uuid) => uuid,
+        Err(_) => {
+            tracing::warn!("Invalid client_app_id format: {}", request.client_app_id);
+            return json_error(StatusCode::BAD_REQUEST, ErrorCode::InvalidClientAppIdFormat);
+        }
+    };
+
+    if let Err(resp) = ensure_client_app_scope(&state, &identity, client_app_id).await {
+        return resp;
+    }
+
     // 2. Check idempotency if key is provided
     if let Some(ref idempotency_key) = request.idempotency_key {
         let idempotency_service = &state.idempotency_service;
@@ -536,19 +548,6 @@ pub async fn consume_points_ext(
             return json_error(StatusCode::BAD_REQUEST, ErrorCode::InvalidUserIdFormat);
         }
     };
-
-    // 4. Parse client_app_id
-    let client_app_id = match request.client_app_id.parse::<Uuid>() {
-        Ok(uuid) => uuid,
-        Err(_) => {
-            tracing::warn!("Invalid client_app_id format: {}", request.client_app_id);
-            return json_error(StatusCode::BAD_REQUEST, ErrorCode::InvalidClientAppIdFormat);
-        }
-    };
-
-    if let Err(resp) = ensure_client_app_scope(&state, &identity, client_app_id).await {
-        return resp;
-    }
 
     // 5. Create input DTO
     let input = ConsumePointsInput {
@@ -1150,7 +1149,7 @@ pub async fn get_transaction_ext(
     // 3. Get transaction
     let transaction = match state
         .points_service
-        .get_transaction(identity, &realm_id, transaction_id)
+        .get_transaction(identity.clone(), &realm_id, transaction_id)
         .await
     {
         Ok(transaction) => transaction,
@@ -1170,6 +1169,12 @@ pub async fn get_transaction_ext(
             };
         }
     };
+
+    if let Some(client_app_id) = transaction.client_app_id
+        && let Err(resp) = ensure_client_app_scope(&state, &identity, client_app_id).await
+    {
+        return resp;
+    }
 
     let response = transaction_to_response(&transaction);
 

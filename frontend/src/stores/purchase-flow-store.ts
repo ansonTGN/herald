@@ -8,7 +8,7 @@
 import { create } from 'zustand'
 import { persist, devtools } from 'zustand/middleware'
 import { useShallow } from 'zustand/react/shallow'
-import type { PaymentContextDto } from '@/lib/api-generated'
+import type { PaymentContextResponse } from '@/lib/api-generated'
 
 /**
  * Valid target types for purchase flow.
@@ -29,7 +29,7 @@ export interface PurchaseFlowState {
   // Payment attempt state
   attemptId: string | null
   attemptStatus: string | null
-  paymentContext: PaymentContextDto | null
+  paymentContext: PaymentContextResponse | null
   expiresAt: string | null
 }
 
@@ -45,7 +45,7 @@ export interface PurchaseFlowActions {
   setPaymentAttempt: (
     attemptId: string,
     status: string,
-    context: PaymentContextDto,
+    context: PaymentContextResponse,
     expiresAt: string
   ) => void
 

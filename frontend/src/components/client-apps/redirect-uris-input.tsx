@@ -171,7 +171,7 @@ export function RedirectUrisInput({
               className={cn(
                 'w-full px-4 py-2.5 rounded-lg border border-input bg-background transition-all',
                 'focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent',
-                'placeholder:text-muted-foreground',
+                'placeholder:text-placeholder',
                 errors.get('new') && 'border-destructive focus:ring-destructive'
               )}
               aria-invalid={errors.get('new') !== undefined}

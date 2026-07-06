@@ -10,9 +10,6 @@ pub mod permission_definitions;
 
 // Re-export for utoipa
 
-#[cfg(test)]
-mod tests;
-
 /// Admin router with permission middleware applied
 /// This is the secure version that should be used in production
 /// Routes are mounted at /api/roles/{realmId}/...

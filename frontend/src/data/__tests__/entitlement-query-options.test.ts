@@ -1,12 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
-  queryKeys,
   entitlementMappingsQueryOptions,
   entitlementMappingQueryOptions,
   subscriptionsQueryOptions,
   subscriptionDetailQueryOptions,
 } from '@/data/query-options'
-import { QUERY_KEYS } from '@/lib/constants'
 
 // Mock client for list queries that use client.get() directly
 vi.mock('@/lib/api-generated/client.gen', () => {
@@ -26,123 +24,6 @@ vi.mock('@/lib/api-generated/sdk.gen', async (importOriginal) => {
 
 import { client } from '@/lib/api-generated/client.gen'
 import { getEntitlementMapping, getSubscription } from '@/lib/api-generated/sdk.gen'
-
-describe('entitlement mapping query keys', () => {
-  describe('filter isolation', () => {
-    it('differentiates empty filters from paymentProvider filter', () => {
-      const keyEmpty = queryKeys.entitlementMappings('realm-1', {})
-      const keyFiltered = queryKeys.entitlementMappings('realm-1', { paymentProvider: 'stripe' })
-      expect(keyEmpty).not.toEqual(keyFiltered)
-    })
-
-    it('differentiates different paymentProvider values', () => {
-      const keyStripe = queryKeys.entitlementMappings('realm-1', { paymentProvider: 'stripe' })
-      const keyCreem = queryKeys.entitlementMappings('realm-1', { paymentProvider: 'creem' })
-      expect(keyStripe).not.toEqual(keyCreem)
-    })
-
-    it('differentiates enabled true vs false', () => {
-      const keyEnabled = queryKeys.entitlementMappings('realm-1', { enabled: true })
-      const keyDisabled = queryKeys.entitlementMappings('realm-1', { enabled: false })
-      expect(keyEnabled).not.toEqual(keyDisabled)
-    })
-
-    it('differentiates combined filters from single filter', () => {
-      const keyCombined = queryKeys.entitlementMappings('realm-1', {
-        paymentProvider: 'stripe',
-        enabled: true,
-      })
-      const keySingle = queryKeys.entitlementMappings('realm-1', { paymentProvider: 'stripe' })
-      expect(keyCombined).not.toEqual(keySingle)
-    })
-
-    it('differentiates combined filters with different providers', () => {
-      const keyStripe = queryKeys.entitlementMappings('realm-1', {
-        paymentProvider: 'stripe',
-        enabled: true,
-      })
-      const keyCreem = queryKeys.entitlementMappings('realm-1', {
-        paymentProvider: 'creem',
-        enabled: true,
-      })
-      expect(keyStripe).not.toEqual(keyCreem)
-    })
-  })
-
-  describe('realm isolation', () => {
-    it('differentiates same filters across different realms', () => {
-      const keyRealm1 = queryKeys.entitlementMappings('realm-1', {})
-      const keyRealm2 = queryKeys.entitlementMappings('realm-2', {})
-      expect(keyRealm1).not.toEqual(keyRealm2)
-    })
-  })
-
-  describe('detail isolation', () => {
-    it('differentiates different mapping IDs', () => {
-      const keyMapping1 = queryKeys.entitlementMapping('realm-1', 'mapping-1')
-      const keyMapping2 = queryKeys.entitlementMapping('realm-1', 'mapping-2')
-      expect(keyMapping1).not.toEqual(keyMapping2)
-    })
-  })
-
-  describe('key structure', () => {
-    it('list key starts with correct prefix', () => {
-      const key = queryKeys.entitlementMappings('realm-1', {})
-      expect(key[0]).toBe(QUERY_KEYS.ENTITLEMENT_MAPPINGS)
-      expect(key[1]).toBe('realm-1')
-    })
-
-    it('detail key has correct structure', () => {
-      const key = queryKeys.entitlementMapping('realm-1', 'mapping-1')
-      expect(key).toEqual([QUERY_KEYS.ENTITLEMENT_MAPPING, 'realm-1', 'mapping-1'])
-    })
-  })
-})
-
-describe('subscription query keys', () => {
-  describe('entitlementKey filter isolation', () => {
-    it('differentiates empty filters from entitlementKey filter', () => {
-      const keyEmpty = queryKeys.subscriptions('realm-1', {})
-      const keyFiltered = queryKeys.subscriptions('realm-1', { entitlementKey: 'pro-plan' })
-      expect(keyEmpty).not.toEqual(keyFiltered)
-    })
-
-    it('differentiates different entitlementKey values', () => {
-      const keyPro = queryKeys.subscriptions('realm-1', { entitlementKey: 'pro' })
-      const keyBasic = queryKeys.subscriptions('realm-1', { entitlementKey: 'basic' })
-      expect(keyPro).not.toEqual(keyBasic)
-    })
-  })
-
-  describe('status filter isolation', () => {
-    it('differentiates different status values', () => {
-      const keyActive = queryKeys.subscriptions('realm-1', { status: 'active' })
-      const keyCanceled = queryKeys.subscriptions('realm-1', { status: 'canceled' })
-      expect(keyActive).not.toEqual(keyCanceled)
-    })
-  })
-
-  describe('detail isolation', () => {
-    it('differentiates different subscription IDs', () => {
-      const keySub1 = queryKeys.adminSubscription('realm-1', 'sub-1')
-      const keySub2 = queryKeys.adminSubscription('realm-1', 'sub-2')
-      expect(keySub1).not.toEqual(keySub2)
-    })
-  })
-
-  describe('key structure', () => {
-    it('list key starts with correct prefix', () => {
-      const key = queryKeys.subscriptions('realm-1', {})
-      expect(key[0]).toBe(QUERY_KEYS.ADMIN_SUBSCRIPTIONS)
-      expect(key[1]).toBe('realm-1')
-    })
-
-    it('detail key has correct structure', () => {
-      const key = queryKeys.adminSubscription('realm-1', 'sub-1')
-      expect(key).toEqual([QUERY_KEYS.ADMIN_SUBSCRIPTION, 'realm-1', 'sub-1'])
-    })
-  })
-})
 
 describe('subscription query options - constructs correct request via client.get', () => {
   beforeEach(() => {

@@ -130,8 +130,8 @@ pub async fn setup_test_entitlement_mapping_with_points(
     sqlx::query(
         "INSERT INTO provider_entitlement_mappings
             (id, realm_id, payment_provider, external_product_id, entitlement_key,
-             grant_on_subscribe, enabled, bucket_id, quota_windows, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())",
+             grant_on_subscribe, enabled, bucket_id, points_per_period, quota_windows, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())",
     )
     .bind(mapping_id)
     .bind(realm_id)
@@ -141,6 +141,7 @@ pub async fn setup_test_entitlement_mapping_with_points(
     .bind(grant_on_subscribe)
     .bind(enabled)
     .bind(bucket_id)
+    .bind(points_per_period)
     .bind(quota_windows)
     .execute(&ctx.app_state.pool)
     .await
@@ -190,9 +191,9 @@ pub async fn setup_test_entitlement_mapping_full(
     sqlx::query(
         "INSERT INTO provider_entitlement_mappings
             (id, realm_id, payment_provider, external_product_id, external_price_id, entitlement_key,
-             billing_type, billing_period, grant_period_type, validity_days,
+             billing_type, billing_period, grant_period_type, validity_days, points_per_period,
              grant_on_subscribe, max_periods, enabled, provider_product_info, bucket_id, quota_windows, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW(), NOW())",
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW(), NOW())",
     )
     .bind(mapping_id)
     .bind(realm_id)
@@ -204,6 +205,7 @@ pub async fn setup_test_entitlement_mapping_full(
     .bind(billing_period)
     .bind(grant_period_type)
     .bind(validity_days)
+    .bind(points_per_period)
     .bind(grant_on_subscribe)
     .bind(max_periods)
     .bind(enabled)

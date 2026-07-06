@@ -25,6 +25,7 @@
 //
 // =============================================================================
 
+use crate::tests::helpers::test_setup_helpers::record_test_user_consent;
 use crate::tests::scenarios::points::fixtures::*;
 use crate::tests::schema_test_context::SchemaTestContext as TestContext;
 use axum::{
@@ -152,7 +153,8 @@ async fn create_admin_and_login(
     password: &'static str,
 ) -> String {
     println!("[Auth] Creating admin user: {}", email);
-    create_test_admin(&ctx._app_state.pool, &ctx._realm_id, email).await;
+    let admin_user_id = create_test_admin(&ctx._app_state.pool, &ctx._realm_id, email).await;
+    record_test_user_consent(&ctx._app_state.pool, admin_user_id, &ctx._realm_id).await;
 
     println!("[Auth] Admin logging in: {}", email);
     let login_payload = json!({
@@ -199,6 +201,7 @@ async fn create_user_and_login(
     println!("[Auth] Creating user: {}", email);
     let user_id =
         create_test_user_with_auth(&ctx._app_state.pool, &ctx._realm_id, email, password).await;
+    record_test_user_consent(&ctx._app_state.pool, user_id, &ctx._realm_id).await;
 
     println!("[Auth] User logging in: {}", email);
     let login_payload = json!({

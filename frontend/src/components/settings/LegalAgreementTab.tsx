@@ -1,10 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { z } from 'zod'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import {
   Table,
   TableBody,
@@ -26,17 +27,22 @@ import {
 import { useAppForm, AppForm } from '@/components/ui/tanstack-form'
 import { TextareaField } from '@/components/shared/form-fields/textarea-field'
 import { TextField } from '@/components/shared/form-fields/text-field'
+import { MarkdownContent } from '@/components/legal/MarkdownContent'
 import {
   legalAdminAgreementsQueryOptions,
+  legalDraftQueryOptions,
+  legalVersionQueryOptions,
   queryKeys,
-  publishCustomAgreementMutation,
+  publishFromDraftMutation,
   revertToDefaultAgreementMutation,
+  saveDraftMutation,
+  discardDraftMutation,
 } from '@/data/query-options'
 import { useFormMutation } from '@/hooks/use-form-mutation'
 import { m } from '@/paraglide/messages'
 import { formatDate } from '@/lib/date-utils'
 import { AlertCircle } from 'lucide-react'
-import type { AdminAgreementView, AgreementType, PublishCustomRequest } from '@/lib/api-generated'
+import type { AdminAgreementView, AgreementType } from '@/lib/api-generated'
 
 const publishSchema = z
   .object({
@@ -44,14 +50,13 @@ const publishSchema = z
       error: () => m['settings.legal.version_label_max_length'](),
     }),
     contentEn: z.string(),
-    contentZh: z.string(),
   })
-  .refine((value) => value.contentEn.trim().length > 0 || value.contentZh.trim().length > 0, {
+  .refine((value) => value.contentEn.trim().length > 0, {
     error: () => m['settings.legal.content_required'](),
     path: ['contentEn'],
   })
 
-const SUPPORTED_LOCALES = ['en', 'zh-CN'] as const
+const SUPPORTED_LOCALES = ['en'] as const
 
 function getAgreementTitle(agreementType: AgreementType): string {
   if (agreementType === 'terms_of_service') {
@@ -72,7 +77,13 @@ function SourceBadge({ source }: { source: 'default' | 'custom' }) {
   )
 }
 
-function HistoryTable({ view }: { view: AdminAgreementView }) {
+function HistoryTable({
+  view,
+  onView,
+}: {
+  view: AdminAgreementView
+  onView: (entry: AdminAgreementView['history'][number]) => void
+}) {
   if (view.history.length === 0) {
     return (
       <p
@@ -92,6 +103,7 @@ function HistoryTable({ view }: { view: AdminAgreementView }) {
           <TableHead>{m['settings.legal.version_label_label']()}</TableHead>
           <TableHead>{m['settings.legal.history_source']()}</TableHead>
           <TableHead>{m['settings.legal.history_effective_date']()}</TableHead>
+          <TableHead className="sr-only">{m['settings.legal.history_view_button']()}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -106,6 +118,17 @@ function HistoryTable({ view }: { view: AdminAgreementView }) {
               <SourceBadge source={entry.source} />
             </TableCell>
             <TableCell>{formatDate(entry.effective_at)}</TableCell>
+            <TableCell>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => onView(entry)}
+                data-testid={`legal-history-view-button-${view.agreement_type}-${entry.version_id}`}
+              >
+                {m['settings.legal.history_view_button']()}
+              </Button>
+            </TableCell>
           </TableRow>
         ))}
       </TableBody>
@@ -123,18 +146,65 @@ function AgreementCard({
   canManage: boolean
 }) {
   const [revertOpen, setRevertOpen] = useState(false)
+  const [discardOpen, setDiscardOpen] = useState(false)
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const [activeVersion, setActiveVersion] = useState<{
+    versionId: string
+    versionNo: number
+  } | null>(null)
   const agreementType = view.agreement_type
   const title = getAgreementTitle(agreementType)
 
+  // Draft state for this (realm, agreement_type). `null` means no draft staged
+  // yet (a backend 404); a populated draft seeds the edit form so an admin can
+  // resume an in-progress edit across sessions/browsers.
+  const { data: draft } = useQuery(legalDraftQueryOptions(realmId, agreementType))
+  const draftContentEn =
+    draft && typeof draft.content === 'object' && draft.content !== null
+      ? String((draft.content as Record<string, unknown>).en ?? '')
+      : ''
+
+  // Lazily fetch the full body of a past version when an admin opens it from the
+  // history table. Gated on `activeVersion` so nothing is fetched until a row's
+  // "View" button is clicked; the history list itself only carries summaries.
+  const { data: activeVersionDetail, isLoading: isLoadingVersion } = useQuery({
+    ...legalVersionQueryOptions(realmId, activeVersion?.versionId ?? ''),
+    enabled: !!activeVersion,
+  })
+
+  // Save draft (upsert). Invalidating the draft key refreshes the seeded form.
+  const saveDraft = useFormMutation({
+    mutationFn: (data: { contentEn: string; versionLabel: string }) => {
+      const content: Record<string, string> = {}
+      if (data.contentEn.trim()) {
+        content[SUPPORTED_LOCALES[0]] = data.contentEn.trim()
+      }
+      return saveDraftMutation(realmId, agreementType, {
+        content,
+        version_label: data.versionLabel.trim() || null,
+      })
+    },
+    getSuccessMessage: () => m['settings.legal.draft_saved_success'](),
+    invalidateQueries: [queryKeys.legalDraft(realmId, agreementType)],
+  })
+
+  // Publish from draft. The backend reads the staged draft, creates a new
+  // immutable version (advancing version_no, triggering reconsent), and clears
+  // the draft. We pass the form's current version_label as an override so the
+  // admin can adjust the label at publish time without a separate save.
   const publish = useFormMutation({
-    mutationFn: (data: PublishCustomRequest) =>
-      publishCustomAgreementMutation(realmId, agreementType, data),
+    mutationFn: (versionLabel: string | null) =>
+      publishFromDraftMutation(realmId, agreementType, versionLabel),
     getSuccessMessage: () => m['settings.legal.publish_success'](),
     invalidateQueries: [
       queryKeys.legalAdminAgreements(realmId),
       queryKeys.legalAgreements(realmId),
       queryKeys.consentStatus(realmId),
+      queryKeys.legalDraft(realmId, agreementType),
     ],
+    onSuccess: () => {
+      form.reset({ versionLabel: '', contentEn: '' })
+    },
   })
 
   const revert = useFormMutation({
@@ -148,32 +218,66 @@ function AgreementCard({
     onSuccess: () => setRevertOpen(false),
   })
 
+  const discard = useFormMutation({
+    mutationFn: () => discardDraftMutation(realmId, agreementType),
+    getSuccessMessage: () => m['settings.legal.discard_draft_success'](),
+    invalidateQueries: [queryKeys.legalDraft(realmId, agreementType)],
+    onSuccess: () => {
+      setDiscardOpen(false)
+      form.reset({ versionLabel: '', contentEn: '' })
+    },
+  })
+
   const form = useAppForm({
     schema: publishSchema,
     defaultValues: {
       versionLabel: '',
       contentEn: '',
-      contentZh: '',
     },
-    onSubmit: async ({ value }) => {
-      const content: Record<string, string> = {}
-      if (value.contentEn.trim()) {
-        content[SUPPORTED_LOCALES[0]] = value.contentEn.trim()
-      }
-      if (value.contentZh.trim()) {
-        content[SUPPORTED_LOCALES[1]] = value.contentZh.trim()
-      }
-
-      await publish.mutate({
-        content,
-        version_label: value.versionLabel.trim() || null,
-      })
-      form.reset({ versionLabel: '', contentEn: '', contentZh: '' })
+    onSubmit: async () => {
+      // The form has no direct submit button: Publish/Save Draft each call
+      // handleSubmit() then route to the right mutation. This no-op onSubmit
+      // keeps the schema validation path used by form.handleSubmit intact.
     },
   })
 
+  // Seed the form once the draft loads. A draft is fetched per
+  // (realm, agreement_type); until it resolves the form stays blank so an admin
+  // never edits a published version's content by mistake. When a draft resolves,
+  // prefill both fields; `form.reset` re-runs validation against the new values.
+  useEffect(() => {
+    if (draft !== undefined) {
+      form.reset({
+        versionLabel: draft?.version_label ?? '',
+        contentEn: draftContentEn,
+      })
+    }
+    // draftContentEn derives from `draft`; form is stable across renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft, draftContentEn])
+
+  // Publish = save the current edit as a draft, then publish that draft.
+  async function handlePublish() {
+    await form.handleSubmit()
+    if (!form.state.isValid) return
+    const { contentEn, versionLabel } = form.state.values
+    await saveDraft.mutate({ contentEn, versionLabel })
+    await publish.mutate(versionLabel.trim() || null)
+  }
+
+  async function handleSaveDraft() {
+    await form.handleSubmit()
+    if (!form.state.isValid) return
+    const { contentEn, versionLabel } = form.state.values
+    await saveDraft.mutate({ contentEn, versionLabel })
+  }
+
   async function handleRevert() {
     await revert.mutate(undefined)
+  }
+
+  async function handleDiscard() {
+    await discard.mutate(undefined)
   }
 
   return (
@@ -197,7 +301,7 @@ function AgreementCard({
               id={`legal-publish-form-${agreementType}`}
               onSubmit={(e) => {
                 e.preventDefault()
-                void form.handleSubmit()
+                void handleSaveDraft()
               }}
               className="space-y-4"
             >
@@ -207,7 +311,7 @@ function AgreementCard({
                 label={m['settings.legal.version_label_label']()}
                 inputId={`legal-version-label-${agreementType}`}
                 dataTestId={`legal-version-label-input-${agreementType}`}
-                disabled={publish.isSubmitting}
+                disabled={saveDraft.isSubmitting || publish.isSubmitting}
                 placeholder={m['settings.legal.version_label_placeholder']()}
               />
               <TextareaField
@@ -216,27 +320,59 @@ function AgreementCard({
                 label={m['settings.legal.content_en_label']()}
                 inputId={`legal-content-en-${agreementType}`}
                 dataTestId={`legal-content-en-input-${agreementType}`}
-                disabled={publish.isSubmitting}
+                disabled={saveDraft.isSubmitting || publish.isSubmitting}
                 rows={6}
+                helpText={m['settings.legal.content_help']()}
               />
-              <TextareaField
-                form={form}
-                name="contentZh"
-                label={m['settings.legal.content_zh_label']()}
-                inputId={`legal-content-zh-${agreementType}`}
-                dataTestId={`legal-content-zh-input-${agreementType}`}
-                disabled={publish.isSubmitting}
-                rows={6}
-              />
-              <Button
-                type="submit"
-                disabled={publish.isSubmitting}
-                data-testid={`legal-publish-button-${agreementType}`}
-              >
-                {publish.isSubmitting
-                  ? m['settings.legal.publishing_button']()
-                  : m['settings.legal.publish_button']()}
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="submit"
+                  variant="outline"
+                  disabled={saveDraft.isSubmitting || publish.isSubmitting}
+                  data-testid={`legal-save-draft-button-${agreementType}`}
+                >
+                  {saveDraft.isSubmitting
+                    ? m['settings.legal.saving_draft_button']()
+                    : m['settings.legal.save_draft_button']()}
+                </Button>
+                <form.Subscribe
+                  selector={(state) => state.values.contentEn}
+                  children={(contentEn) => (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setPreviewOpen(true)}
+                      disabled={publish.isSubmitting || !contentEn?.trim()}
+                      data-testid={`legal-preview-button-${agreementType}`}
+                    >
+                      {m['settings.legal.preview_button']()}
+                    </Button>
+                  )}
+                />
+                <Button
+                  type="button"
+                  onClick={() => void handlePublish()}
+                  disabled={saveDraft.isSubmitting || publish.isSubmitting}
+                  data-testid={`legal-publish-button-${agreementType}`}
+                >
+                  {publish.isSubmitting
+                    ? m['settings.legal.publishing_button']()
+                    : m['settings.legal.publish_from_draft_button']()}
+                </Button>
+                {draft && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setDiscardOpen(true)}
+                    disabled={discard.isSubmitting}
+                    data-testid={`legal-discard-draft-button-${agreementType}`}
+                  >
+                    {discard.isSubmitting
+                      ? m['settings.legal.discarding_draft_button']()
+                      : m['settings.legal.discard_draft_button']()}
+                  </Button>
+                )}
+              </div>
             </form>
           </AppForm>
         ) : (
@@ -270,8 +406,65 @@ function AgreementCard({
           >
             {m['settings.legal.history_title']()}
           </h4>
-          <HistoryTable view={view} />
+          <HistoryTable
+            view={view}
+            onView={(entry) =>
+              setActiveVersion({ versionId: entry.version_id, versionNo: entry.version_no })
+            }
+          />
         </div>
+
+        {/* Preview dialog: renders the current textarea value as Markdown using
+            the same renderer the public agreement page uses. Pure client-side. */}
+        <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+          <DialogContent
+            className="max-w-3xl max-h-[85vh] overflow-y-auto"
+            data-testid={`legal-preview-dialog-${agreementType}`}
+          >
+            <DialogHeader>
+              <DialogTitle>{title}</DialogTitle>
+            </DialogHeader>
+            <MarkdownContent
+              content={form.state.values.contentEn || m['settings.legal.preview_empty']()}
+            />
+          </DialogContent>
+        </Dialog>
+
+        {/* Past-version dialog: shows the full body of a selected history entry,
+            fetched on demand (the history list only carries summaries). Renders
+            with the same Markdown renderer as the preview dialog. */}
+        <Dialog
+          open={!!activeVersion}
+          onOpenChange={(open) => {
+            if (!open) setActiveVersion(null)
+          }}
+        >
+          <DialogContent
+            className="max-w-3xl max-h-[85vh] overflow-y-auto"
+            data-testid={`legal-version-dialog-${agreementType}`}
+          >
+            <DialogHeader>
+              <DialogTitle>
+                {activeVersion
+                  ? m['settings.legal.version_dialog_title']({ versionNo: activeVersion.versionNo })
+                  : ''}
+              </DialogTitle>
+            </DialogHeader>
+            {isLoadingVersion || !activeVersionDetail ? (
+              <p className="text-sm text-muted-foreground">
+                {m['settings.legal.version_dialog_loading']()}
+              </p>
+            ) : (
+              <MarkdownContent
+                content={
+                  activeVersionDetail.content && typeof activeVersionDetail.content === 'object'
+                    ? String((activeVersionDetail.content as Record<string, unknown>).en ?? '')
+                    : ''
+                }
+              />
+            )}
+          </DialogContent>
+        </Dialog>
 
         <AlertDialog open={revertOpen} onOpenChange={setRevertOpen}>
           <AlertDialogContent>
@@ -301,6 +494,39 @@ function AgreementCard({
                 {revert.isSubmitting
                   ? m['settings.legal.reverting_button']()
                   : m['settings.legal.revert_button']()}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog open={discardOpen} onOpenChange={setDiscardOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle data-testid={`legal-discard-draft-dialog-title-${agreementType}`}>
+                {m['settings.legal.discard_draft_dialog_title']()}
+              </AlertDialogTitle>
+              <AlertDialogDescription
+                data-testid={`legal-discard-draft-dialog-description-${agreementType}`}
+              >
+                {m['settings.legal.discard_draft_dialog_description']()}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel
+                onClick={() => setDiscardOpen(false)}
+                disabled={discard.isSubmitting}
+                data-testid={`legal-discard-draft-cancel-${agreementType}`}
+              >
+                {m['common.cancel']()}
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDiscard}
+                disabled={discard.isSubmitting}
+                data-testid={`legal-discard-draft-confirm-${agreementType}`}
+              >
+                {discard.isSubmitting
+                  ? m['settings.legal.discarding_draft_button']()
+                  : m['settings.legal.discard_draft_button']()}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

@@ -274,7 +274,9 @@ impl PermissionService for RedisPermissionChecker {
     /// - Permissions inherited from roles
     /// - Direct permissions assigned to the user
     ///
-    /// Returns permission strings in format "resource:action" (e.g., "users.view", "roles.manage")
+    /// Returns permission strings in dot form "resource.action"
+    /// (e.g., "users.view", "roles.manage"), matching the canonical permission
+    /// names stored in the database and consumed by the frontend.
     ///
     /// # Arguments
     /// * `realm_id` - Realm ID for multi-tenant isolation
@@ -326,7 +328,7 @@ impl PermissionService for RedisPermissionChecker {
                 })?;
 
             for policy in role_permissions {
-                permissions.push(format!("{}:{}", policy.resource, policy.action));
+                permissions.push(format!("{}.{}", policy.resource, policy.action));
             }
         }
 
@@ -342,7 +344,7 @@ impl PermissionService for RedisPermissionChecker {
             })?;
 
         for policy in direct_permissions {
-            permissions.push(format!("{}:{}", policy.resource, policy.action));
+            permissions.push(format!("{}.{}", policy.resource, policy.action));
         }
 
         // 4. Remove duplicates while preserving order

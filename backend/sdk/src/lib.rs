@@ -179,7 +179,7 @@ pub struct BalancesByType {
 }
 
 /// Quota window read view (`QuotaWindowView`), mirrors the api-points
-/// `QuotaWindowViewDto` (points-grant-redesign §4.2.2).
+/// `QuotaWindowViewResponse` (points-grant-redesign §4.2.2).
 ///
 /// One row per distinct window `key` for a (user, bucket). `key` is the stable
 /// display identity derived from the window length (e.g. `5h`/`week`/`month`),

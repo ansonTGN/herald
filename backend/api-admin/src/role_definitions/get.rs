@@ -3,10 +3,10 @@ use axum::{
     Extension,
     extract::{Path, State},
 };
+use herald_api_base::application::http::common::auth_utils::AdminIdentity;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
-use herald_core::domain::authorization::permission_service::PermissionService;
 use uuid::Uuid;
 
 /// Get role by ID
@@ -30,30 +30,8 @@ pub async fn get_role(
     Extension(identity): Extension<Identity>,
     Path((realm_id, id)): Path<(String, Uuid)>,
 ) -> Result<ApiResult<RoleResponse>, ApiError> {
-    // Extract user_id from identity
-    let current_user_id = identity.user_id();
-    let identity_realm_id = identity.realm_id();
-
-    // Check realm boundary
-    if identity_realm_id != realm_id {
-        return Err(ApiError::forbidden(
-            "Access denied: cannot access roles from a different realm",
-        ));
-    }
-
-    // Check roles.view permission
-    let allowed = state
-        .permission_checker
-        .check_permission(&realm_id, &current_user_id, "roles", "view")
-        .await
-        .map_err(|e| {
-            tracing::error!("Permission check error: {e}");
-            ApiError::internal("Failed to check permission")
-        })?;
-
-    if !allowed {
-        return Err(ApiError::forbidden("Insufficient permissions to get role"));
-    }
+    let admin = AdminIdentity::require(identity, &realm_id, "role definitions")?;
+    admin.require_permission(&state, "roles", "view").await?;
     let row = sqlx::query_as::<_, RoleResponse>(
         r#"
         SELECT id, name, description, realm_id, client_id, is_builtin

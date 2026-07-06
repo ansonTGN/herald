@@ -436,10 +436,17 @@ pub async fn build_app_state_with_migrations(
     let webhook_event_repository = Arc::new(WebhookEventRepository::new(pg_pool.clone()));
     let webhook_service = Arc::new(WebhookService::new(webhook_event_repository));
 
+    // Shared HTTP client for outbound calls (Turnstile siteverify, etc.)
+    let http_client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| anyhow::anyhow!("Failed to build HTTP client: {}", e))?;
+
     let state = Arc::new(AppState {
         service: application_service,
         pool: pg_pool.clone(),
         db: Arc::new(db),
+        http_client,
         redis_manager: redis_manager.clone(),
         billing_repository,
         invoice_repository,

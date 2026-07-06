@@ -27,6 +27,7 @@ use crate::tests::helpers::points_helpers::{
     assert_derived_balance, count_future_effective_active_rows,
     create_credit_ledger_entry_with_effective_at,
 };
+use crate::tests::helpers::test_setup_helpers::record_test_user_consent;
 use crate::tests::scenarios::points::fixtures::*;
 use crate::tests::schema_test_context::SchemaTestContext as TestContext;
 use axum::{
@@ -88,16 +89,16 @@ async fn create_wallet_row_post_be_d11(
     .expect("Failed to fetch wallet after ensure")
 }
 
-/// Seed a `points_transactions` grant-type row whose `external_ref_id` matches
+/// Seed a `points_transactions` recharge row whose `external_ref_id` matches
 /// the production `find_transactions` LEFT JOIN pattern
 /// (`t.external_ref_id LIKE (l.source_id || ':%')`) so the row resolves
 /// `effective_at` from the linked ledger. Returns the txn id.
 ///
 /// `wallet_id`/`bucket_id` MUST pre-exist (FK). `ledger_source_id` is the
-/// linked ledger row's `source_id` — production grants write the transaction
-/// `external_ref_id` as `"<source_id>:<txn_id>"` (see
+/// linked ledger row's `source_id` — production topup/recharge writes the
+/// transaction `external_ref_id` as `"<source_id>:<txn_id>"` (see
 /// `find_transactions` doc comment).
-async fn seed_grant_transaction_linked_to_ledger(
+async fn seed_topup_transaction_linked_to_ledger(
     ctx: &mut TestContext,
     user_id: Uuid,
     realm_id: &str,
@@ -131,11 +132,11 @@ async fn seed_grant_transaction_linked_to_ledger(
     .bind(bucket_id)
     .bind(txn_type)
     .bind(amount)
-    .bind(CreditType::SubscriptionCredit.to_string())
+    .bind(CreditType::TopupCredit.to_string())
     .bind(&external_ref_id)
     .execute(&ctx._app_state.pool)
     .await
-    .expect("Failed to seed grant transaction linked to ledger");
+    .expect("Failed to seed topup transaction linked to ledger");
 
     txn_id
 }
@@ -196,12 +197,13 @@ async fn test_user_transaction_response_hides_effective_at_for_view(ctx: &mut Te
     let app = ctx.create_unified_test_router();
 
     // Given: a regular user (`points.view` only) with a future-effective
-    // pre-grant ledger row + a linked grant transaction row whose
+    // topup ledger row + a linked recharge transaction row whose
     // `external_ref_id` matches the production LEFT JOIN pattern.
     let email = "be-t09-view@example.com";
     let password = "password123";
     let user_id =
         create_test_user_with_auth(&ctx._app_state.pool, &realm_id, email, password).await;
+    record_test_user_consent(&ctx._app_state.pool, user_id, &realm_id).await;
 
     let wallet_id = create_wallet_row_post_be_d11(ctx, user_id, &realm_id).await;
 
@@ -211,8 +213,8 @@ async fn test_user_transaction_response_hides_effective_at_for_view(ctx: &mut Te
         ctx,
         user_id,
         &realm_id,
-        CreditType::SubscriptionCredit,
-        CreditSourceType::SubscriptionRenewal,
+        CreditType::TopupCredit,
+        CreditSourceType::Topup,
         ledger_source_id.clone(),
         5_000,
         None,
@@ -220,13 +222,13 @@ async fn test_user_transaction_response_hides_effective_at_for_view(ctx: &mut Te
     )
     .await;
 
-    let txn_id = seed_grant_transaction_linked_to_ledger(
+    let txn_id = seed_topup_transaction_linked_to_ledger(
         ctx,
         user_id,
         &realm_id,
         wallet_id,
         &ledger_source_id,
-        "subscription_renewal",
+        "recharge",
         5_000,
     )
     .await;
@@ -265,8 +267,8 @@ async fn test_user_transaction_response_hides_effective_at_for_view(ctx: &mut Te
         .expect("response should contain items[]");
     let matching = items
         .iter()
-        .find(|item| item["transactionType"].as_str() == Some("subscription_renewal"))
-        .expect("the seeded subscription_renewal transaction should be in the response");
+        .find(|item| item["transactionType"].as_str() == Some("recharge"))
+        .expect("the seeded recharge transaction should be in the response");
 
     // ...and its `effectiveAt` key is ABSENT — NOT just null. The
     // `skip_serializing_if` attribute must drop the key entirely on the
@@ -308,7 +310,7 @@ async fn test_admin_transaction_response_includes_effective_at_for_manage(ctx: &
     let realm_id = ctx._realm_id.clone();
     let app = ctx.create_unified_test_router();
 
-    // Given: a regular user owns the future-effective ledger + linked grant
+    // Given: a regular user owns the future-effective ledger + linked recharge
     // transaction (the data subject). An admin (`points.manage`) then queries
     // the realm-wide transactions list.
     let user_email = "be-t09-manage-user@example.com";
@@ -316,6 +318,7 @@ async fn test_admin_transaction_response_includes_effective_at_for_manage(ctx: &
     let user_id =
         create_test_user_with_auth(&ctx._app_state.pool, &realm_id, user_email, user_password)
             .await;
+    record_test_user_consent(&ctx._app_state.pool, user_id, &realm_id).await;
 
     let wallet_id = create_wallet_row_post_be_d11(ctx, user_id, &realm_id).await;
 
@@ -325,21 +328,21 @@ async fn test_admin_transaction_response_includes_effective_at_for_manage(ctx: &
         ctx,
         user_id,
         &realm_id,
-        CreditType::SubscriptionCredit,
-        CreditSourceType::SubscriptionRenewal,
+        CreditType::TopupCredit,
+        CreditSourceType::Topup,
         ledger_source_id.clone(),
         7_000,
         None,
         Some(future_effective_at),
     )
     .await;
-    seed_grant_transaction_linked_to_ledger(
+    seed_topup_transaction_linked_to_ledger(
         ctx,
         user_id,
         &realm_id,
         wallet_id,
         &ledger_source_id,
-        "subscription_renewal",
+        "recharge",
         7_000,
     )
     .await;
@@ -348,7 +351,8 @@ async fn test_admin_transaction_response_includes_effective_at_for_manage(ctx: &
     // `points.manage`).
     let admin_email = "be-t09-admin@example.com";
     let admin_password = "admin123";
-    create_test_admin(&ctx._app_state.pool, &realm_id, admin_email).await;
+    let admin_user_id = create_test_admin(&ctx._app_state.pool, &realm_id, admin_email).await;
+    record_test_user_consent(&ctx._app_state.pool, admin_user_id, &realm_id).await;
 
     // When: the admin lists realm transactions (no user_id filter ⟹ realm-wide
     // cross-user view).
@@ -378,8 +382,8 @@ async fn test_admin_transaction_response_includes_effective_at_for_manage(ctx: &
         .expect("response should contain items[]");
     let matching = items
         .iter()
-        .find(|item| item["transactionType"].as_str() == Some("subscription_renewal"))
-        .expect("the seeded subscription_renewal transaction should be in the response");
+        .find(|item| item["transactionType"].as_str() == Some("recharge"))
+        .expect("the seeded recharge transaction should be in the response");
 
     assert!(
         matching.get("effectiveAt").is_some(),
@@ -433,8 +437,8 @@ async fn test_admin_list_wallets_excludes_future_effective(ctx: &mut TestContext
     let app = ctx.create_unified_test_router();
 
     // Given: two regular users in the same realm/bucket.
-    //   * user_future  — only future-effective subscription_credit rows.
-    //   * user_now     — only immediately-available subscription_credit rows.
+    //   * user_future  — only future-effective topup_credit rows.
+    //   * user_now     — only immediately-available topup_credit rows.
     // Both wallet rows are pre-created (post-migration schema: analytics-only).
     let user_future_email = "be-t09-lw-future@example.com";
     let user_now_email = "be-t09-lw-now@example.com";
@@ -442,8 +446,10 @@ async fn test_admin_list_wallets_excludes_future_effective(ctx: &mut TestContext
     let user_future =
         create_test_user_with_auth(&ctx._app_state.pool, &realm_id, user_future_email, user_pwd)
             .await;
+    record_test_user_consent(&ctx._app_state.pool, user_future, &realm_id).await;
     let user_now =
         create_test_user_with_auth(&ctx._app_state.pool, &realm_id, user_now_email, user_pwd).await;
+    record_test_user_consent(&ctx._app_state.pool, user_now, &realm_id).await;
 
     let wallet_future = create_wallet_row_post_be_d11(ctx, user_future, &realm_id).await;
     let wallet_now = create_wallet_row_post_be_d11(ctx, user_now, &realm_id).await;
@@ -454,8 +460,8 @@ async fn test_admin_list_wallets_excludes_future_effective(ctx: &mut TestContext
         ctx,
         user_future,
         &realm_id,
-        CreditType::SubscriptionCredit,
-        CreditSourceType::SubscriptionRenewal,
+        CreditType::TopupCredit,
+        CreditSourceType::Topup,
         format!("be-t09-lw-fut-a-{}", Uuid::now_v7()),
         2_500,
         None,
@@ -466,8 +472,8 @@ async fn test_admin_list_wallets_excludes_future_effective(ctx: &mut TestContext
         ctx,
         user_future,
         &realm_id,
-        CreditType::SubscriptionCredit,
-        CreditSourceType::SubscriptionRenewal,
+        CreditType::TopupCredit,
+        CreditSourceType::Topup,
         format!("be-t09-lw-fut-b-{}", Uuid::now_v7()),
         1_500,
         None,
@@ -479,8 +485,8 @@ async fn test_admin_list_wallets_excludes_future_effective(ctx: &mut TestContext
         ctx,
         user_now,
         &realm_id,
-        CreditType::SubscriptionCredit,
-        CreditSourceType::SubscriptionInitial,
+        CreditType::TopupCredit,
+        CreditSourceType::Topup,
         format!("be-t09-lw-now-{}", Uuid::now_v7()),
         3_000,
         None,
@@ -503,22 +509,8 @@ async fn test_admin_list_wallets_excludes_future_effective(ctx: &mut TestContext
         .expect("Failed to stamp analytics on user_now wallet");
 
     // Cross-check (a): the derived predicate excludes the future-only user.
-    assert_derived_balance(
-        ctx,
-        user_future,
-        &realm_id,
-        CreditType::SubscriptionCredit,
-        0,
-    )
-    .await;
-    assert_derived_balance(
-        ctx,
-        user_now,
-        &realm_id,
-        CreditType::SubscriptionCredit,
-        3_000,
-    )
-    .await;
+    assert_derived_balance(ctx, user_future, &realm_id, CreditType::TopupCredit, 0).await;
+    assert_derived_balance(ctx, user_now, &realm_id, CreditType::TopupCredit, 3_000).await;
     assert_eq!(
         count_future_effective_active_rows(ctx, user_future, &realm_id).await,
         2,
@@ -528,7 +520,8 @@ async fn test_admin_list_wallets_excludes_future_effective(ctx: &mut TestContext
     // Admin login (points.manage).
     let admin_email = "be-t09-lw-admin@example.com";
     let admin_password = "admin123";
-    create_test_admin(&ctx._app_state.pool, &realm_id, admin_email).await;
+    let admin_user_id = create_test_admin(&ctx._app_state.pool, &realm_id, admin_email).await;
+    record_test_user_consent(&ctx._app_state.pool, admin_user_id, &realm_id).await;
     let token = login(ctx, "3.3.4.3", admin_email, admin_password).await;
 
     // When: the admin calls list_wallets (cross-user realm-wide view).
@@ -574,9 +567,9 @@ async fn test_admin_list_wallets_excludes_future_effective(ctx: &mut TestContext
          future-effective rows must NOT leak into the admin available-balance view"
     );
     assert_eq!(
-        row_future["balancesByType"]["subscription"].as_i64(),
+        row_future["balancesByType"]["topup"].as_i64(),
         Some(0),
-        "user_future typed subscription balance must be 0 (future-effective excluded)"
+        "user_future typed topup balance must be 0 (future-effective excluded)"
     );
 
     // Sanity: user_now shows the immediately-available 3_000 in both total and
@@ -596,9 +589,26 @@ async fn test_admin_list_wallets_excludes_future_effective(ctx: &mut TestContext
         "user_now (immediately-available) bucketTotal should equal the active ledger sum"
     );
     assert_eq!(
-        row_now["balancesByType"]["subscription"].as_i64(),
+        row_now["balancesByType"]["topup"].as_i64(),
         Some(3_000),
-        "user_now typed subscription balance should equal the immediately-available row"
+        "user_now typed topup balance should equal the immediately-available row"
+    );
+
+    // spendableFromPool regression guard: a pool-only bucket (topup_credit, no
+    // quota entitlement) MUST surface its real pool balance, not null. The
+    // gating predicate is "non-zero OR has window view"; a zero-pool bucket
+    // with no windows (user_future below) stays null. Without this guard,
+    // user_now would render "充值余额 0" in the UI despite holding 3_000 topup.
+    assert_eq!(
+        row_now["spendableFromPool"].as_i64(),
+        Some(3_000),
+        "user_now (pool-only bucket, active topup) must surface spendableFromPool=3000, \
+         not null — pool-only buckets report their real pool balance"
+    );
+    assert!(
+        row_future["spendableFromPool"].is_null(),
+        "user_future (zero active pool balance, no quota windows) must keep \
+         spendableFromPool null — both sides zero omits the field"
     );
 
     println!(

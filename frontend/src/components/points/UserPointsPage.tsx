@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -8,7 +9,11 @@ import { PointsUsageDashboard } from './PointsUsageDashboard'
 import { TransactionHistoryTable } from './TransactionHistoryTable'
 import { TransactionFilters } from './TransactionFilters'
 import { deriveUserPointsView } from './user-points-view'
-import { walletsByBucketQueryOptions, pointsTransactionsQueryOptions } from '@/data/query-options'
+import {
+  walletsByBucketQueryOptions,
+  pointsTransactionsQueryOptions,
+  featureAvailabilityQueryOptions,
+} from '@/data/query-options'
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants'
 import type { TransactionFilters as TransactionFiltersType } from '@/lib/schemas/points-forms'
 import { m } from '@/paraglide/messages'
@@ -56,6 +61,11 @@ export function UserPointsPage({
   const { data: walletsData, isLoading: walletsLoading } = useQuery(
     walletsByBucketQueryOptions(realmId)
   )
+
+  // Feature visibility drives the inline purchase block. Mirrors the
+  // featureAvailabilityQueryOptions usage in profile-sidebar.tsx.
+  const { data: features } = useQuery(featureAvailabilityQueryOptions(realmId))
+  const pointsAreaVisible = features?.user?.pointsVisible === true
 
   // Bucket name lookup for the Bucket Select + Bucket column. The admin-only
   // credit-buckets directory (`/billing/credit-buckets`) 403s for regular users
@@ -129,6 +139,22 @@ export function UserPointsPage({
         <h1 className="text-xl font-semibold">{m['points.user_points_page_title']()}</h1>
       </div>
 
+      {pointsAreaVisible && (
+        <Card data-testid="points-purchase-inline-block">
+          <CardContent className="flex flex-col items-start justify-between gap-4 py-4 sm:flex-row sm:items-center">
+            <div className="text-sm font-medium">{m['points.purchase_points_cta']()}</div>
+            {/* TODO(ui-spec §8.3): add quick-pack chips (one_time packs) that
+                deep-link to the purchase page with a preselected price once the
+                purchase-page preselect interaction is finalized by /t-design. */}
+            <Button asChild size="sm" data-testid="points-purchase-cta">
+              <Link to="/$realmId/user/purchase-points" params={{ realmId }}>
+                {m['points.purchase_points_cta']()}
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Cross-bucket total bar — only when the user holds >= 2 buckets */}
       {showTotalBar && (
         <Card data-testid="user-points-cross-bucket-total">
@@ -187,13 +213,7 @@ export function UserPointsPage({
             loading
           />
         </div>
-      ) : cards.length === 0 ? (
-        <Card data-testid="points-balance-empty">
-          <CardContent className="py-8 text-center text-muted-foreground">
-            {m['points.bucket_card_empty']()}
-          </CardContent>
-        </Card>
-      ) : (
+      ) : cards.length === 0 ? null : (
         <div className="space-y-4">
           {cards.map((card) => (
             <div key={card.bucketId || 'unnamed'} className="space-y-4">
@@ -204,50 +224,56 @@ export function UserPointsPage({
         </div>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <History className="h-4 w-4" />
-            {m['points.user_points_transaction_history']()}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <TransactionFilters
-            filters={effectiveFilters}
-            onChange={handleFiltersChange}
-            onClear={handleFiltersClear}
-            buckets={bucketOptions}
-            admin={false}
-            loading={transactionsLoading}
-          />
-          <TransactionHistoryTable
-            transactions={transactions}
-            loading={transactionsLoading && loadedPages === 1}
-            filters={effectiveFilters}
-            buckets={bucketOptions}
-            admin={false}
-          />
-          {reachedLimit && (
-            <p className="text-center text-sm text-muted-foreground">
-              {m['points.transaction_load_limit_reached']({
-                count: MAX_VISIBLE_TRANSACTIONS.toLocaleString(),
-              })}
-            </p>
-          )}
-          {canLoadMore && (
-            <div className="flex justify-center">
-              <Button
-                variant="outline"
-                onClick={() => setLoadedPages((pages) => pages + 1)}
-                disabled={transactionsLoading}
-                data-testid="transaction-load-more"
-              >
-                {m['points.transaction_load_more']()}
-              </Button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {/* Hide the entire transaction history card when the user has no
+          transactions and the query is not loading (e.g. a brand-new user
+          with no pools/activity). Keeps the page quiet instead of showing
+          an empty "Transaction History" section. */}
+      {!transactionsLoading && transactions.length === 0 ? null : (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <History className="h-4 w-4" />
+              {m['points.user_points_transaction_history']()}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <TransactionFilters
+              filters={effectiveFilters}
+              onChange={handleFiltersChange}
+              onClear={handleFiltersClear}
+              buckets={bucketOptions}
+              admin={false}
+              loading={transactionsLoading}
+            />
+            <TransactionHistoryTable
+              transactions={transactions}
+              loading={transactionsLoading && loadedPages === 1}
+              filters={effectiveFilters}
+              buckets={bucketOptions}
+              admin={false}
+            />
+            {reachedLimit && (
+              <p className="text-center text-sm text-muted-foreground">
+                {m['points.transaction_load_limit_reached']({
+                  count: MAX_VISIBLE_TRANSACTIONS.toLocaleString(),
+                })}
+              </p>
+            )}
+            {canLoadMore && (
+              <div className="flex justify-center">
+                <Button
+                  variant="outline"
+                  onClick={() => setLoadedPages((pages) => pages + 1)}
+                  disabled={transactionsLoading}
+                  data-testid="transaction-load-more"
+                >
+                  {m['points.transaction_load_more']()}
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

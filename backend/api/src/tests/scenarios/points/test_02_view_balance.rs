@@ -29,6 +29,7 @@ use crate::tests::helpers::points_helpers::{
     assert_derived_balance, count_future_effective_active_rows,
     create_credit_ledger_entry_with_effective_at,
 };
+use crate::tests::helpers::test_setup_helpers::record_test_user_consent;
 use crate::tests::scenarios::points::fixtures::*;
 use crate::tests::schema_test_context::SchemaTestContext as TestContext;
 use axum::{
@@ -57,6 +58,7 @@ async fn test_scenario_user_view_own_balance(ctx: &mut TestContext) {
     let password = "password123";
     let user_id =
         create_test_user_with_auth(&ctx._app_state.pool, &ctx._realm_id, email, password).await;
+    record_test_user_consent(&ctx._app_state.pool, user_id, &ctx._realm_id).await;
 
     let balance = 5000;
     let total_recharged = 10000;
@@ -197,6 +199,7 @@ async fn test_scenario_get_wallet_auto_creates_empty_wallet(ctx: &mut TestContex
     let password = "password123";
     let user_id =
         create_test_user_with_auth(&ctx._app_state.pool, &ctx._realm_id, email, password).await;
+    record_test_user_consent(&ctx._app_state.pool, user_id, &ctx._realm_id).await;
 
     let wallet_count_before: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM points_wallets WHERE user_id = $1")
@@ -312,6 +315,7 @@ async fn test_user_balance_excludes_future_effective(ctx: &mut TestContext) {
     let password = "password123";
     let user_id =
         create_test_user_with_auth(&ctx._app_state.pool, &realm_id, email, password).await;
+    record_test_user_consent(&ctx._app_state.pool, user_id, &realm_id).await;
 
     let amount_immediate = 2_000;
     let amount_future = 3_000;

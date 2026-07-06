@@ -3,8 +3,9 @@ import { useState, useEffect, useMemo } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { AlertCircle, ArrowLeft, ArrowRight, Loader2, Check } from 'lucide-react'
+import { AlertCircle, ArrowLeft, ArrowRight, Loader2, Check, CheckCircle2 } from 'lucide-react'
 import { createPaymentAttempt, cancelPaymentAttempt } from '@/lib/api-generated'
 import type { PaymentAttemptStatusResponse, PurchaseOptionView } from '@/lib/api-generated'
 import {
@@ -23,43 +24,19 @@ import { useAuthStore } from '@/stores/auth-store'
 import { formatInvoiceAmount } from '@/lib/invoice-utils'
 import { deriveSharedKeyColor } from '@/components/billing/shared-key-color'
 import { toast } from 'sonner'
+import { purchasePointsSearchSchema } from '@/lib/schemas/search-params'
 
 export const Route = createFileRoute('/$realmId/user/purchase-points')({
   beforeLoad: ({ context, params }) =>
-    requireFeature(context.queryClient, params.realmId, (f) => f.user.pointsPurchaseVisible, {
+    requireFeature(context.queryClient, params.realmId, (f) => f.user.pointsVisible, {
       to: '/$realmId/user/points',
       params: { realmId: params.realmId },
     }),
+  validateSearch: purchasePointsSearchSchema,
   component: PurchasePointsRoute,
 })
 
 type PurchaseStep = 'packages' | 'payment' | 'processing' | 'complete'
-type BillingPeriod = 'month' | 'year'
-
-/**
- * Filter the flat purchase-option list to the cards visible in a given period
- * pane.
- *
- * Contract:
- * - `recurring` items appear ONLY in the pane whose `billingPeriod` matches.
- * - `one_time` items are period-agnostic and appear in BOTH panes (a one-time
- *   pack is neither monthly nor annual; hiding it under either toggle would
- *   regress vs. always listing it).
- *
- * Exported pure function so the filtering intent is unit-testable without
- * mounting the Route component.
- */
-// eslint-disable-next-line react-refresh/only-export-components -- exported for unit testing
-export function selectPeriodPane(
-  items: PurchaseOptionView[],
-  period: BillingPeriod
-): PurchaseOptionView[] {
-  return items.filter((item) => {
-    // one_time packs are period-agnostic: always visible.
-    if (item.billingType !== 'recurring') return true
-    return item.billingPeriod === period
-  })
-}
 
 /**
  * Reason a price card is not purchasable, or null when it is purchasable.
@@ -82,6 +59,11 @@ export function disabledReason(
 
 function PurchasePointsRoute() {
   const { realmId } = Route.useParams()
+  // The provider bounces the user back here with `attemptId` (+ `status`) in
+  // the query string after a checkout. This is a UX bounce only — payment
+  // status is confirmed via webhook + the polling in PurchasePointsPage. See
+  // purchasePointsSearchSchema.
+  const { attemptId: queryAttemptId, status: queryStatus } = Route.useSearch()
 
   // clientAppId is not in useAuthStore or the route param; resolve it by listing
   // the realm's client apps and taking the first (same pattern as the
@@ -101,23 +83,24 @@ function PurchasePointsRoute() {
     )
   }
 
-  return <PurchasePointsPage realmId={realmId} clientAppId={clientAppId} />
+  return (
+    <PurchasePointsPage
+      realmId={realmId}
+      clientAppId={clientAppId}
+      queryAttemptId={queryAttemptId}
+      queryStatus={queryStatus}
+    />
+  )
 }
 
 function PriceCard({
   option,
   isSelected,
   onSelect,
-  periodSuffix,
 }: {
   option: PurchaseOptionView
   isSelected: boolean
   onSelect: () => void
-  /**
-   * Appended to the testid in the Annual pane (`-annual`) so the same priceId
-   * can be disambiguated across panes. Empty for Monthly.
-   */
-  periodSuffix: '' | '-annual'
 }) {
   const reason = disabledReason(option)
   const isDisabled = reason !== null
@@ -125,6 +108,16 @@ function PriceCard({
   // priceId falls back to mappingId for price-less providers (Creem) so the
   // testid is always stable and non-empty.
   const priceId = option.externalPriceId ?? option.mappingId
+
+  // Billing-type badge + period suffix (ui-spec §3.2). one_time renders an
+  // "One-time" badge + `once` suffix; recurring renders "Subscription" + a
+  // period suffix derived from billingPeriod.
+  const isOneTime = option.billingType !== 'recurring'
+  const periodSuffixKey = isOneTime
+    ? 'purchase.period_suffix_once'
+    : option.billingPeriod === 'year'
+      ? 'purchase.period_suffix_year'
+      : 'purchase.period_suffix_month'
 
   return (
     <Card
@@ -134,7 +127,7 @@ function PriceCard({
           : 'border-muted-foreground/25 hover:border-muted-foreground/50'
       } ${isDisabled ? 'opacity-60' : ''}`}
       onClick={isDisabled ? undefined : onSelect}
-      data-testid={`purchase-price-card-${priceId}${periodSuffix}`}
+      data-testid={`purchase-price-card-${priceId}`}
     >
       <CardContent className="p-4">
         <div className="flex w-full items-start justify-between gap-3">
@@ -149,6 +142,11 @@ function PriceCard({
               />
               <div className="font-medium">{option.displayName || option.entitlementKey}</div>
             </div>
+            <Badge variant="secondary" data-testid={`price-card-billing-type-${priceId}`}>
+              {isOneTime
+                ? m['purchase.billing_type_one_time']()
+                : m['purchase.billing_type_subscription']()}
+            </Badge>
             {option.pointsPerPeriod != null && (
               <div className="text-sm text-muted-foreground">
                 {option.pointsPerPeriod.toLocaleString()} points
@@ -156,7 +154,8 @@ function PriceCard({
             )}
             {option.amount != null && option.currency ? (
               <div className="text-sm font-medium">
-                {formatInvoiceAmount(option.amount, option.currency)}
+                {formatInvoiceAmount(option.amount, option.currency)}{' '}
+                <span className="text-muted-foreground">{m[periodSuffixKey]()}</span>
               </div>
             ) : (
               <div className="text-sm text-muted-foreground">{m['purchase.unavailable']()}</div>
@@ -164,7 +163,7 @@ function PriceCard({
             {isDisabled && reason && (
               <div
                 className="text-xs text-muted-foreground"
-                data-testid={`purchase-price-card-${priceId}${periodSuffix}-reason`}
+                data-testid={`purchase-price-card-${priceId}-reason`}
               >
                 {m[reason.key]()}
               </div>
@@ -184,9 +183,16 @@ function PriceCard({
 export function PurchasePointsPage({
   realmId,
   clientAppId,
+  queryAttemptId,
+  queryStatus,
 }: {
   realmId: string
   clientAppId: string
+  // Carried from the route's validated search params on a provider redirect
+  // bounce. `queryAttemptId` resumes polling; `queryStatus: 'cancel'` steps
+  // back to payment. Undefined on normal navigation.
+  queryAttemptId?: string
+  queryStatus?: 'success' | 'cancel'
 }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -197,7 +203,6 @@ export function PurchasePointsPage({
   // derived from the selected option, not picked separately.
   const [currentStep, setCurrentStep] = useState<PurchaseStep>('packages')
   const [selectedMappingId, setSelectedMappingId] = useState<string | null>(null)
-  const [period, setPeriod] = useState<BillingPeriod>('month')
 
   // Store actions
   const { setPurchaseState, setPaymentAttempt, clearPurchaseState, canRecover } =
@@ -217,7 +222,21 @@ export function PurchasePointsPage({
     paymentProvidersQueryOptions(realmId)
   )
 
-  const periodPane = useMemo(() => selectPeriodPane(options ?? [], period), [options, period])
+  // Subscriptions section (recurring) shows all recurring options together;
+  // Credit packs section (one_time) is always shown when present.
+  const subscriptionOptions = useMemo(
+    () => (options ?? []).filter((o) => o.billingType === 'recurring'),
+    [options]
+  )
+  const creditPackOptions = useMemo(
+    () => (options ?? []).filter((o) => o.billingType !== 'recurring'),
+    [options]
+  )
+  const hasRecurring = useMemo(
+    () => (options ?? []).some((o) => o.billingType === 'recurring'),
+    [options]
+  )
+  const hasAnyOptions = (options?.length ?? 0) > 0
 
   const selectedOption = useMemo(
     () => options?.find((o) => o.mappingId === selectedMappingId),
@@ -255,6 +274,36 @@ export function PurchasePointsPage({
     checkRecovery()
   }, [attemptId, canRecover])
 
+  // Resume from a provider redirect bounce. When the user returns with
+  // `?attemptId=...`, sync the store so the polling effect above picks it up
+  // — this works even if localStorage was cleared (query is the source of
+  // truth, persist is only a same-browser fallback). A `cancel` bounce means
+  // the user abandoned checkout at Stripe, so drop the attempt and step back.
+  useEffect(() => {
+    if (!queryAttemptId) return
+    if (queryStatus === 'cancel') {
+      clearPurchaseState()
+      setCurrentStep('payment')
+      return
+    }
+    // success or no status: ensure the store carries this attemptId so polling
+    // (gated on `attemptId`) fires. Skip if the store already tracks it — the
+    // webhook/polling will have updated status and we must not clobber it.
+    // The paymentContext is empty on bounce: the user already paid, so the
+    // checkout URL is irrelevant and PaymentAttemptStatus won't render a
+    // redirect prompt once status leaves Pending.
+    if (queryAttemptId !== attemptId) {
+      setPaymentAttempt(
+        queryAttemptId,
+        'Pending',
+        {},
+        new Date(Date.now() + 15 * 60 * 1000).toISOString()
+      )
+      setCurrentStep('processing')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queryAttemptId, queryStatus])
+
   useEffect(() => {
     if (paymentStatus) {
       if (paymentStatus.status === 'Succeeded') {
@@ -275,6 +324,17 @@ export function PurchasePointsPage({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paymentStatus])
+
+  // Whether the dedicated "Select Payment Method" step is reachable. When the
+  // selected price's provider resolves to at most one matching provider, the
+  // provider is fully determined and that step is redundant (we jump straight
+  // from selection to processing). Mirrors the branch in `handleNextStep` so
+  // the step indicator only lists steps the user can actually visit.
+  const paymentStepSkipped = useMemo(() => {
+    if (!selectedOption?.paymentProvider) return true
+    const matching = providers?.filter((p) => p.platform === selectedOption.paymentProvider) ?? []
+    return matching.length <= 1
+  }, [providers, selectedOption?.paymentProvider])
 
   // Create payment attempt. The targetType/targetId shape is unchanged from the
   // prior flow (entitlement_mapping + mappingId); only the selection model that
@@ -309,8 +369,26 @@ export function PurchasePointsPage({
           data.expiresAt || new Date(Date.now() + 15 * 60 * 1000).toISOString()
         )
 
-        setCurrentStep('processing')
         queryClient.invalidateQueries({ queryKey: ['payment-attempt-status', realmId, data.id] })
+
+        // Same-tab redirect to the provider's checkout page — no "processing"
+        // interstitial, no new tab. The provider bounces the user back to this
+        // route with `?attemptId=...`, which re-enters the processing step
+        // solely to poll for the webhook-confirmed final status. When no
+        // checkout URL was returned (degraded), fall back to the processing
+        // step so its degraded UI can offer retry/cancel.
+        const provider = selectedOption?.paymentProvider ?? null
+        const checkoutUrl =
+          provider === 'stripe'
+            ? (data.paymentContext?.stripeCheckoutUrl ?? null)
+            : provider === 'creem'
+              ? (data.paymentContext?.creemCheckoutUrl ?? null)
+              : null
+        if (checkoutUrl) {
+          window.location.href = checkoutUrl
+          return
+        }
+        setCurrentStep('processing')
       }
     },
     onError: (error: Error) => {
@@ -337,7 +415,17 @@ export function PurchasePointsPage({
 
   const handleNextStep = () => {
     if (currentStep === 'packages' && selectedMappingId) {
-      setCurrentStep('payment')
+      const provider = selectedOption?.paymentProvider
+      const availableForOption = providers?.filter((p) => p.platform === provider) ?? []
+      // When the selected price determines exactly one (or no) provider, the
+      // provider is fully determined and the "Select Payment Method" step is
+      // redundant; proceed straight to creating the payment attempt. Only show
+      // the payment step when more than one provider actually matches.
+      if (provider && availableForOption.length <= 1) {
+        createPaymentMutation.mutate({ mappingId: selectedMappingId, provider })
+      } else {
+        setCurrentStep('payment')
+      }
     } else if (currentStep === 'payment' && selectedMappingId && selectedOption?.paymentProvider) {
       createPaymentMutation.mutate({
         mappingId: selectedMappingId,
@@ -356,17 +444,6 @@ export function PurchasePointsPage({
   const handleCancel = () => cancelPaymentMutation.mutate()
   const handleComplete = () => navigate({ to: `/${realmId}/user/points` })
 
-  // Switch the billing-period toggle. A recurring selection only makes sense
-  // in its own pane: switching month<->year with a recurring card selected
-  // would otherwise leave Next enabled on a now-hidden card (one_time is
-  // period-agnostic, so its selection is retained).
-  const switchPeriod = (next: BillingPeriod) => {
-    setPeriod(next)
-    if (selectedOption?.billingType === 'recurring' && selectedOption.billingPeriod !== next) {
-      setSelectedMappingId(null)
-    }
-  }
-
   const isNextDisabled = () => {
     if (currentStep === 'packages') return !selectedMappingId
     if (currentStep === 'payment')
@@ -380,51 +457,16 @@ export function PurchasePointsPage({
     switch (currentStep) {
       case 'packages':
         return (
-          <div className="space-y-6" data-testid="purchase-step-packages">
+          <div className="space-y-8" data-testid="purchase-step-packages">
             <div>
               <h2 className="text-2xl font-bold">{m['purchase.choose_plan']()}</h2>
-            </div>
-
-            {/* Period toggle. Switching re-renders a different card set;
-                one_time packs stay in both panes (selectPeriodPane). */}
-            <div
-              className="inline-flex items-center gap-1 rounded-lg border p-1"
-              data-testid="purchase-period-toggle"
-              role="group"
-              aria-label="Billing period"
-            >
-              <button
-                type="button"
-                onClick={() => switchPeriod('month')}
-                className={`rounded-md px-4 py-1.5 text-sm font-medium transition-colors ${
-                  period === 'month' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
-                }`}
-                data-testid="purchase-period-toggle-month"
-                aria-pressed={period === 'month'}
-              >
-                {m['purchase.period_monthly']()}
-              </button>
-              <button
-                type="button"
-                onClick={() => switchPeriod('year')}
-                className={`flex items-center gap-2 rounded-md px-4 py-1.5 text-sm font-medium transition-colors ${
-                  period === 'year' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
-                }`}
-                data-testid="purchase-period-toggle-year"
-                aria-pressed={period === 'year'}
-              >
-                {m['purchase.period_annual']()}
-                <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">
-                  {m['purchase.save_percent']({ percent: '20' })}
-                </span>
-              </button>
             </div>
 
             {optionsLoading ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
               </div>
-            ) : periodPane.length === 0 ? (
+            ) : !hasAnyOptions ? (
               <div
                 className="rounded-lg border border-dashed p-8 text-center text-muted-foreground"
                 data-testid="purchase-empty-state"
@@ -432,20 +474,63 @@ export function PurchasePointsPage({
                 {m['points.purchase_no_mappings']()}
               </div>
             ) : (
-              <div
-                className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3"
-                data-testid={`purchase-price-grid-${period}`}
-              >
-                {periodPane.map((option) => (
-                  <PriceCard
-                    key={option.mappingId}
-                    option={option}
-                    isSelected={selectedMappingId === option.mappingId}
-                    onSelect={() => setSelectedMappingId(option.mappingId)}
-                    periodSuffix={period === 'year' ? '-annual' : ''}
-                  />
-                ))}
-              </div>
+              <>
+                {/* Subscriptions section — recurring only. All recurring options
+                    are shown together (monthly + annual); no period toggle. */}
+                {hasRecurring && (
+                  <section className="space-y-4" data-testid="purchase-section-subscriptions">
+                    <div>
+                      <h3 className="text-lg font-semibold">
+                        {m['purchase.section_subscriptions']()}
+                      </h3>
+                      <p className="text-sm text-muted-foreground">
+                        {m['purchase.section_subscriptions_meta']()}
+                      </p>
+                    </div>
+
+                    <div
+                      className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3"
+                      data-testid="purchase-price-grid-subscriptions"
+                    >
+                      {subscriptionOptions.map((option) => (
+                        <PriceCard
+                          key={option.mappingId}
+                          option={option}
+                          isSelected={selectedMappingId === option.mappingId}
+                          onSelect={() => setSelectedMappingId(option.mappingId)}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {/* Credit packs section — one_time only, no period toggle. */}
+                {creditPackOptions.length > 0 && (
+                  <section className="space-y-4" data-testid="purchase-section-credit-packs">
+                    <div>
+                      <h3 className="text-lg font-semibold">
+                        {m['purchase.section_credit_packs']()}
+                      </h3>
+                      <p className="text-sm text-muted-foreground">
+                        {m['purchase.section_credit_packs_meta']()}
+                      </p>
+                    </div>
+                    <div
+                      className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3"
+                      data-testid="purchase-price-grid-credit-packs"
+                    >
+                      {creditPackOptions.map((option) => (
+                        <PriceCard
+                          key={option.mappingId}
+                          option={option}
+                          isSelected={selectedMappingId === option.mappingId}
+                          onSelect={() => setSelectedMappingId(option.mappingId)}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                )}
+              </>
             )}
           </div>
         )
@@ -535,21 +620,7 @@ export function PurchasePointsPage({
         return (
           <div className="space-y-6 text-center" data-testid="purchase-step-complete">
             <div className="flex justify-center">
-              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
-                <svg
-                  className="h-8 w-8 text-green-600"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M5 13l4 4L19 7"
-                  />
-                </svg>
-              </div>
+              <CheckCircle2 className="h-16 w-16 text-green-600" />
             </div>
             <div>
               <h2 className="text-2xl font-bold">{m['points.purchase_complete_title']()}</h2>
@@ -578,10 +649,18 @@ export function PurchasePointsPage({
                 {m['points.purchase_step_select']()}
               </span>
               <span>→</span>
-              <span className={currentStep === 'payment' ? 'font-bold text-primary' : ''}>
-                {m['points.purchase_step_payment']()}
-              </span>
-              <span>→</span>
+              {/* The "Payment" step only appears when more than one provider
+                  matches the selected price (see `paymentStepSkipped`). When
+                  skipped we omit it from the indicator so the trail reflects
+                  the steps the user will actually visit. */}
+              {!paymentStepSkipped && (
+                <>
+                  <span className={currentStep === 'payment' ? 'font-bold text-primary' : ''}>
+                    {m['points.purchase_step_payment']()}
+                  </span>
+                  <span>→</span>
+                </>
+              )}
               <span className={currentStep === 'processing' ? 'font-bold text-primary' : ''}>
                 {m['points.purchase_step_processing']()}
               </span>

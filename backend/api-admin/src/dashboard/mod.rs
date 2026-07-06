@@ -2,12 +2,12 @@ use axum::Router;
 use axum::extract::{Extension, Path, State};
 use axum::routing::get;
 use herald_core::domain::authentication::Identity;
-use herald_core::domain::authorization::PermissionService;
 use herald_core::domain::dashboard::DashboardRepository;
 use herald_core::infrastructure::dashboard::PostgresDashboardRepository;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use herald_api_base::application::http::common::auth_utils::AdminIdentity;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
 
@@ -56,31 +56,10 @@ pub async fn get_dashboard_stats(
     Path(realm_id): Path<String>,
     Extension(identity): Extension<Identity>,
 ) -> Result<ApiResult<DashboardStatsResponse>, ApiError> {
-    let has_permission = state
-        .permission_checker
-        .check_permission(
-            &identity.realm_id(),
-            &identity.user_id(),
-            "dashboard",
-            "view",
-        )
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to check dashboard access permission: {e}");
-            ApiError::internal("Failed to check permission")
-        })?;
-
-    if !has_permission {
-        return Err(ApiError::forbidden(
-            "Insufficient permissions to view dashboard statistics",
-        ));
-    }
-
-    if !identity.has_access_to_realm(&realm_id) {
-        return Err(ApiError::forbidden(
-            "Access denied: cannot view dashboard for a different realm",
-        ));
-    }
+    let admin = AdminIdentity::require(identity, &realm_id, "dashboard statistics")?;
+    admin
+        .require_permission(&state, "dashboard", "view")
+        .await?;
 
     let repo = PostgresDashboardRepository::new(state.db.clone(), state.pool.clone());
     let stats = repo.get_stats(&realm_id).await.map_err(|e| {

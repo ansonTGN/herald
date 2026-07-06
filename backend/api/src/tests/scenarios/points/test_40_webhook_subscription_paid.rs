@@ -2,10 +2,16 @@
 // Test: Subscription Paid Webhook
 // =============================================================================
 //
-// Tests for subscription.paid webhook events (initial subscription and renewals).
+// Tests for subscription.paid webhook events (initial subscription and renewals)
+// under the window-quota model.
 //
 // User Story: docs/user-stories/points-billing-events.md
 // Covers: US-PO-06 (Subscription grants and renewals)
+//
+// Under the quota model, subscription.paid creates ONE PointsQuotaEntitlement
+// row per (subscription, period). There are no points_credit_ledger rows, no
+// points_grant_schedules, no points_grant_records, and no chained next-period
+// pre-grants.
 //
 // =============================================================================
 
@@ -14,16 +20,16 @@ use crate::tests::helpers::webhook_helpers::*;
 use crate::tests::scenarios::points::fixtures::*;
 use crate::tests::schema_test_context::SchemaTestContext;
 use herald_core::domain::billing::BillingRepository;
-use herald_core::domain::points::entities::{CreditLedgerStatus, CreditSourceType, CreditType};
+use herald_core::domain::points::entities::{CreditType, QuotaEntitlementStatus, QuotaSourceType};
 use test_context::test_context;
 use uuid::Uuid;
 
 /// Resolve the price-level EntitlementMapping for a key in these scenarios.
 ///
-/// The price-level mapping refactor changed `handle_subscription_paid` to consume the price-level mapping
-/// directly. These scenarios seed a single mapping per
-/// entitlement_key, so resolving by key is identity-equivalent to the
-/// price-level mapping the webhook path resolves.
+/// The price-level mapping refactor changed `handle_subscription_paid` to consume
+/// the price-level mapping directly. These scenarios seed a single mapping per
+/// entitlement_key, so resolving by key is identity-equivalent to the price-level
+/// mapping the webhook path resolves.
 async fn mapping_for_key(
     ctx: &SchemaTestContext,
     realm_id: &str,
@@ -37,6 +43,40 @@ async fn mapping_for_key(
         .unwrap_or_else(|| panic!("mapping for key '{key}' should be Some"))
 }
 
+/// Seed a `subscription` row bound to the realm's legacy test bucket and
+/// return its id. Used by subscription tests so the `subscription_id` and
+/// the grant target `bucket_id` are known ahead of the service call.
+async fn seed_subscription_row(
+    ctx: &mut SchemaTestContext,
+    user_id: Uuid,
+    realm_id: &str,
+    entitlement_key: &str,
+) -> Uuid {
+    use crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm;
+    let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, realm_id).await;
+    let subscription_id = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO subscription
+            (id, realm_id, user_id, status, entitlement_key,
+             external_subscription_id, external_product_id, payment_provider,
+             current_period_start, current_period_end, cancel_at_period_end,
+             bucket_id, created_at, updated_at)
+         VALUES ($1, $2, $3, 'active', $4, $5, $6, 'creem',
+                 NOW(), NOW() + INTERVAL '30 days', false, $7, NOW(), NOW())",
+    )
+    .bind(subscription_id)
+    .bind(realm_id)
+    .bind(user_id)
+    .bind(entitlement_key)
+    .bind(format!("sub_be_t04_{}", subscription_id))
+    .bind(format!("prod_be_t04_{}", entitlement_key))
+    .bind(bucket_id)
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("Failed to seed subscription row");
+    subscription_id
+}
+
 // ============================================================================
 // Test 1: Initial Subscription Grant
 // ============================================================================
@@ -47,7 +87,7 @@ async fn mapping_for_key(
 #[tokio::test]
 async fn test_subscription_paid_initial_grant(ctx: &mut SchemaTestContext) {
     // Given
-    let realm_id = ctx._realm_id.clone(); // Clone to avoid borrow issues
+    let realm_id = ctx._realm_id.clone();
     let user_id = create_test_user(&ctx.app_state.pool, &realm_id, "user1@example.com").await;
     let plan_id = Uuid::now_v7();
     let event_id = generate_test_event_id();
@@ -74,34 +114,36 @@ async fn test_subscription_paid_initial_grant(ctx: &mut SchemaTestContext) {
     // Then
     assert_webhook_success(&response);
 
-    // Verify subscription_credit ledger was created
-    let ledgers =
-        get_user_ledgers_by_credit_type(ctx, user_id, CreditType::SubscriptionCredit).await;
+    // Verify subscription_credit quota entitlement was created
+    let entitlements =
+        get_user_quota_entitlements(ctx, user_id, CreditType::SubscriptionCredit).await;
     assert_eq!(
-        ledgers.len(),
+        entitlements.len(),
         1,
-        "Should create one subscription credit ledger"
+        "Should create one subscription quota entitlement"
     );
 
-    let ledger = &ledgers[0];
-    assert_eq!(ledger.credit_type, CreditType::SubscriptionCredit);
-    assert_eq!(ledger.source_type, CreditSourceType::SubscriptionInitial);
-    assert_eq!(ledger.granted_amount, 1000); // Amount from setup_test_plan_config
-    assert_eq!(ledger.remaining_amount, 1000);
-    assert_eq!(ledger.status, CreditLedgerStatus::Active);
+    let entitlement = &entitlements[0];
+    assert_eq!(entitlement.credit_type, CreditType::SubscriptionCredit);
+    assert_eq!(
+        entitlement.source_type,
+        QuotaSourceType::SubscriptionInitial
+    );
+    assert_eq!(
+        entitlement.quota_windows.len(),
+        1,
+        "Should have one quota window"
+    );
+    assert_eq!(
+        entitlement.quota_windows[0].limit,
+        1000, // Amount from setup_test_plan_config
+        "Window limit should equal points_per_period"
+    );
+    assert_eq!(entitlement.status, QuotaEntitlementStatus::Active);
     assert!(
-        ledger.expires_at.is_some(),
-        "Subscription credits should have expiry"
+        entitlement.effective_until.is_some(),
+        "Subscription entitlement should have effective_until"
     );
-
-    // Verify transaction record
-    assert_transaction_exists_by_type(
-        ctx,
-        user_id,
-        herald_core::domain::points::entities::TransactionType::SubscriptionGrant,
-        1000,
-    )
-    .await;
 }
 
 // ============================================================================
@@ -114,7 +156,7 @@ async fn test_subscription_paid_initial_grant(ctx: &mut SchemaTestContext) {
 #[tokio::test]
 async fn test_subscription_paid_renewal_grant(ctx: &mut SchemaTestContext) {
     // Given
-    let realm_id = ctx._realm_id.clone(); // Clone to avoid borrow issues
+    let realm_id = ctx._realm_id.clone();
     let user_id = create_test_user(&ctx.app_state.pool, &realm_id, "user2@example.com").await;
     let plan_id = Uuid::now_v7();
     let event_id = generate_test_event_id();
@@ -140,26 +182,22 @@ async fn test_subscription_paid_renewal_grant(ctx: &mut SchemaTestContext) {
     // Then
     assert_webhook_success(&response);
 
-    // Verify subscription_credit ledger was created with renewal source type
-    let ledgers =
-        get_user_ledgers_by_credit_type(ctx, user_id, CreditType::SubscriptionCredit).await;
-    assert_eq!(ledgers.len(), 1);
+    // Verify subscription_credit quota entitlement was created with renewal source type
+    let entitlements =
+        get_user_quota_entitlements(ctx, user_id, CreditType::SubscriptionCredit).await;
+    assert_eq!(entitlements.len(), 1);
 
-    let ledger = &ledgers[0];
-    assert_eq!(ledger.credit_type, CreditType::SubscriptionCredit);
-    assert_eq!(ledger.source_type, CreditSourceType::SubscriptionRenewal);
-    assert_eq!(ledger.granted_amount, 1000);
-    assert_eq!(ledger.remaining_amount, 1000);
-    assert_eq!(ledger.status, CreditLedgerStatus::Active);
-
-    // Verify transaction record
-    assert_transaction_exists_by_type(
-        ctx,
-        user_id,
-        herald_core::domain::points::entities::TransactionType::SubscriptionRenewal,
-        1000,
-    )
-    .await;
+    let entitlement = &entitlements[0];
+    assert_eq!(entitlement.credit_type, CreditType::SubscriptionCredit);
+    assert_eq!(
+        entitlement.source_type,
+        QuotaSourceType::SubscriptionRenewal
+    );
+    assert_eq!(
+        entitlement.quota_windows[0].limit, 1000,
+        "Window limit should equal points_per_period"
+    );
+    assert_eq!(entitlement.status, QuotaEntitlementStatus::Active);
 }
 
 // ============================================================================
@@ -206,95 +244,37 @@ async fn test_subscription_paid_idempotency(ctx: &mut SchemaTestContext) {
         send_webhook_with_signature(&app, &realm_id, event, "test_webhook_secret").await;
     assert_webhook_success(&response2);
 
-    // Then: Should only create one subscription credit ledger entry
-    let ledgers =
-        get_user_ledgers_by_credit_type(ctx, user_id, CreditType::SubscriptionCredit).await;
-    assert_eq!(
-        ledgers.len(),
-        1,
-        "Should not duplicate credit ledger on retry"
-    );
+    // Then: Should only create one subscription quota entitlement row
+    let count = count_subscription_quota_entitlements(ctx, user_id).await;
+    assert_eq!(count, 1, "Should not duplicate quota entitlement on retry");
 
-    let ledger = &ledgers[0];
+    let entitlements =
+        get_user_quota_entitlements(ctx, user_id, CreditType::SubscriptionCredit).await;
+    let entitlement = &entitlements[0];
     assert_eq!(
-        ledger.granted_amount, 1000,
-        "Granted amount should be exactly one plan allocation"
+        entitlement.quota_windows[0].limit, 1000,
+        "Granted window limit should be exactly one plan allocation"
     );
-    assert_eq!(ledger.remaining_amount, 1000);
+    assert_eq!(entitlement.status, QuotaEntitlementStatus::Active);
 }
 
 // ============================================================================
-// Subscription pre-grant, period-level idempotency,
-// chained pre-grant, expires_at correction (P0)
+// Subscription activation / renewal window-quota idempotency
 // ============================================================================
 //
-// These tests exercise the period-aware `handle_subscription_paid` path.
-// They invoke the real `subscription_service.handle_subscription_paid`
-// directly with a pre-seeded `subscription` + `points_grant_schedules` row
-// (`base_time` = first_period_start, `subscription_id` bound) so the
-// period-level business idempotency gate (`points_grant_records(schedule_id,
-// period_number)` UNIQUE) and the chained next-period pre-grant
-// (`pregrant_next_period_atomic`) are exercised. Provider event-level
-// idempotency is covered separately in `test_subscription_renewal_event_idempotency`
-// via the webhook HTTP path.
-//
-// Why direct service invocation (not webhook HTTP):
-//   - `handle_subscription_paid`'s new period-level behavior is the unit under
-//     test; the HTTP/webhook plumbing is already covered by tests 1-3 above.
-//   - The `find_grant_schedule_by_subscription(subscription_id)` lookup keys
-//     on the subscription id, which is minted inside `sync_creem_subscription`
-//     during webhook processing and not knowable ahead of time. Direct service
-//     invocation lets the test bind a known `subscription_id` to the seeded
-//     schedule, exercising the period path deterministically.
-
-/// Seed a `subscription` row bound to the realm's legacy test bucket and
-/// return its id. Used by subscription tests so the schedule's `subscription_id`
-/// and the grant target `bucket_id` are known ahead of the service call.
-async fn seed_subscription_row(
-    ctx: &mut SchemaTestContext,
-    user_id: Uuid,
-    realm_id: &str,
-    entitlement_key: &str,
-) -> Uuid {
-    use crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm;
-    let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, realm_id).await;
-    let subscription_id = Uuid::now_v7();
-    sqlx::query(
-        "INSERT INTO subscription
-            (id, realm_id, user_id, status, entitlement_key,
-             external_subscription_id, external_product_id, payment_provider,
-             current_period_start, current_period_end, cancel_at_period_end,
-             bucket_id, created_at, updated_at)
-         VALUES ($1, $2, $3, 'active', $4, $5, $6, 'creem',
-                 NOW(), NOW() + INTERVAL '30 days', false, $7, NOW(), NOW())",
-    )
-    .bind(subscription_id)
-    .bind(realm_id)
-    .bind(user_id)
-    .bind(entitlement_key)
-    .bind(format!("sub_be_t04_{}", subscription_id))
-    .bind(format!("prod_be_t04_{}", entitlement_key))
-    .bind(bucket_id)
-    .execute(&ctx.app_state.pool)
-    .await
-    .expect("Failed to seed subscription row");
-    subscription_id
-}
+// These tests exercise the period-aware `handle_subscription_paid` path
+// directly with a pre-seeded `subscription` row. Direct service invocation
+// lets the test bind a known `subscription_id` and assert on the resulting
+// `points_quota_entitlements` rows deterministically.
 
 /// User Story: US-PU-009 (use current-period points without distribution delay).
-/// Covers (P0 — 订阅预生成):
-///   - Subscription activation grants the CURRENT period (`effective_at =
-///     period_start <= now` ⟺ immediately available) AND pre-grants the NEXT
-///     period (`effective_at = next_period_start`, future) atomically.
-///   - Derived available balance EXCLUDES the next-period row before its
-///     `effective_at` arrives (availability predicate), and INCLUDES it after
-///     the clock advances past `effective_at` (zero-delay availability: only
-///     time-advance, no worker/state transition).
+/// Covers (P0 — 订阅当前周期配额):
+///   - Subscription activation grants the CURRENT period only.
+///   - Derived available balance equals one period's worth.
+///   - NO next-period pre-grant entitlement is written.
 #[test_context(SchemaTestContext)]
 #[tokio::test]
-async fn test_subscription_activation_writes_current_and_pregrants_next(
-    ctx: &mut SchemaTestContext,
-) {
+async fn test_subscription_activation_grants_current_period_only(ctx: &mut SchemaTestContext) {
     let realm_id = ctx._realm_id.clone();
     let user_id = create_test_user(
         &ctx.app_state.pool,
@@ -306,10 +286,7 @@ async fn test_subscription_activation_writes_current_and_pregrants_next(
     let entitlement_key = format!("be-t04-act-{}", Uuid::now_v7());
     let points_per_period: i64 = 1000;
 
-    // Entitlement mapping (grant_on_subscribe=true, monthly). Routed to the
-    // realm's legacy bucket — same one `ensure_test_bucket_for_realm` returns,
-    // which `seed_subscription_row` also binds.
-    crate::tests::helpers::webhook_helpers::setup_test_entitlement_mapping_for_webhook(
+    setup_test_entitlement_mapping_for_webhook(
         ctx,
         &realm_id,
         "creem",
@@ -322,27 +299,11 @@ async fn test_subscription_activation_writes_current_and_pregrants_next(
     .await;
 
     let subscription_id = seed_subscription_row(ctx, user_id, &realm_id, &entitlement_key).await;
+    let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, &realm_id).await;
 
-    // Schedule anchored to a first_period_start 30 days ago — so the current
-    // period (period_number=2) has period_start = -30d + 30d ≈ now and the
-    // next period starts ~30 days in the future.
     let now = chrono::Utc::now();
-    let first_period_start = now - chrono::Duration::days(30);
-    let current_period_start = now - chrono::Duration::seconds(10); // <= now ⟺ immediately available
-    let current_period_end = current_period_start + chrono::Duration::days(30);
-
-    let _schedule_id = create_subscription_grant_schedule(
-        ctx,
-        user_id,
-        &realm_id,
-        subscription_id,
-        &entitlement_key,
-        points_per_period,
-        current_period_start, // next_grant_time = current period start
-        first_period_start,
-        0, // granted_periods
-    )
-    .await;
+    let current_period_start = now - chrono::Duration::seconds(10);
+    let current_period_end = now + chrono::Duration::days(30);
 
     // --- When: subscription activation fires handle_subscription_paid -------
     let mapping = mapping_for_key(ctx, &realm_id, &entitlement_key).await;
@@ -352,11 +313,7 @@ async fn test_subscription_activation_writes_current_and_pregrants_next(
         .handle_subscription_paid(
             user_id,
             subscription_id,
-            crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
-                &ctx.app_state.pool,
-                &realm_id,
-            )
-            .await,
+            bucket_id,
             &realm_id,
             &mapping,
             false, // initial activation
@@ -367,17 +324,32 @@ async fn test_subscription_activation_writes_current_and_pregrants_next(
         .await;
     assert!(result.is_ok(), "activation grant failed: {:?}", result);
 
-    // --- Then: ledger has current period (available) + next period (future) --
-    let ledgers =
-        get_user_ledgers_by_credit_type(ctx, user_id, CreditType::SubscriptionCredit).await;
-    assert!(
-        ledgers.len() >= 2,
-        "activation should write current period AND pre-grant next period, got {} ledgers",
-        ledgers.len()
+    // --- Then: exactly one active entitlement for the current period ---------
+    let entitlements =
+        get_user_quota_entitlements(ctx, user_id, CreditType::SubscriptionCredit).await;
+    assert_eq!(
+        entitlements.len(),
+        1,
+        "activation should create exactly one current-period quota entitlement, got {}",
+        entitlements.len()
     );
 
-    // Derived available balance must be EXACTLY one period's worth — the
-    // future-effective next-period row is excluded by the predicate.
+    let entitlement = &entitlements[0];
+    assert_eq!(entitlement.credit_type, CreditType::SubscriptionCredit);
+    assert_eq!(
+        entitlement.source_type,
+        QuotaSourceType::SubscriptionInitial
+    );
+    assert_eq!(entitlement.status, QuotaEntitlementStatus::Active);
+    assert_eq!(
+        entitlement.quota_windows.first().map(|w| w.limit),
+        Some(points_per_period)
+    );
+    assert!(
+        entitlement.effective_until.is_some(),
+        "current-period entitlement should have effective_until"
+    );
+
     assert_derived_balance(
         ctx,
         user_id,
@@ -387,61 +359,17 @@ async fn test_subscription_activation_writes_current_and_pregrants_next(
     )
     .await;
 
-    let future_before = count_future_effective_active_rows(ctx, user_id, &realm_id).await;
     assert_eq!(
-        future_before, 1,
-        "exactly one future-effective active row (the pre-granted next period)"
-    );
-
-    // --- When: clock advances past the next period's effective_at (SQL UPDATE
-    // simulates time-advance; NO worker / state transition runs).
-    let next_period_row_id: Uuid = sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM points_credit_ledger
-         WHERE user_id = $1 AND realm_id = $2
-           AND credit_type = 'subscription_credit'
-           AND effective_at IS NOT NULL AND effective_at > NOW()
-         ORDER BY created_at DESC LIMIT 1",
-    )
-    .bind(user_id)
-    .bind(&realm_id)
-    .fetch_one(&ctx.app_state.pool)
-    .await
-    .expect("future-effective row must exist before clock-advance");
-
-    // Bring the row's effective_at into the past while honoring the DB CHECK
-    // `effective_at <= expires_at` (keep expires_at unchanged).
-    sqlx::query(
-        "UPDATE points_credit_ledger
-         SET effective_at = NOW() - INTERVAL '1 second', updated_at = NOW()
-         WHERE id = $1 AND (expires_at IS NULL OR expires_at > NOW() - INTERVAL '1 second')",
-    )
-    .bind(next_period_row_id)
-    .execute(&ctx.app_state.pool)
-    .await
-    .expect("clock-advance UPDATE failed");
-
-    // --- Then: derived balance now includes BOTH periods (zero-delay) -------
-    assert_derived_balance(
-        ctx,
-        user_id,
-        &realm_id,
-        CreditType::SubscriptionCredit,
-        points_per_period * 2,
-    )
-    .await;
-    let future_after = count_future_effective_active_rows(ctx, user_id, &realm_id).await;
-    assert_eq!(
-        future_after, 0,
-        "no future-effective rows remain after clock-advance"
+        count_subscription_quota_entitlements(ctx, user_id).await,
+        1,
+        "no next-period pre-grant should exist"
     );
 }
 
-/// User Story: US-PU-009 (renewal must not double-grant).
-/// Covers (P0 — 续费幂等 + P1 business idempotency dimension
-/// shift): when a pre-grant and a formal renewal webhook converge on the same
-/// `(schedule_id, period_number)`, the `points_grant_records` UNIQUE constraint
-/// is the primary dedup. The renewal must NOT re-grant; it only CORRECTS the
-/// pre-granted ledger's `expires_at` to the provider's actual `period_end`.
+/// User Story: US-PU-009 (renewal must not double-grant the same period).
+/// Covers (P0 — 续费周期幂等): calling `handle_subscription_paid` twice with
+/// the same `(subscription_id, period_start)` produces exactly one quota
+/// entitlement row.
 #[test_context(SchemaTestContext)]
 #[tokio::test]
 async fn test_subscription_renewal_period_idempotency(ctx: &mut SchemaTestContext) {
@@ -456,7 +384,7 @@ async fn test_subscription_renewal_period_idempotency(ctx: &mut SchemaTestContex
     let entitlement_key = format!("be-t04-pi-{}", Uuid::now_v7());
     let points_per_period: i64 = 500;
 
-    crate::tests::helpers::webhook_helpers::setup_test_entitlement_mapping_for_webhook(
+    setup_test_entitlement_mapping_for_webhook(
         ctx,
         &realm_id,
         "creem",
@@ -469,70 +397,17 @@ async fn test_subscription_renewal_period_idempotency(ctx: &mut SchemaTestContex
     .await;
 
     let subscription_id = seed_subscription_row(ctx, user_id, &realm_id, &entitlement_key).await;
-    let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
-        &ctx.app_state.pool,
-        &realm_id,
-    )
-    .await;
+    let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, &realm_id).await;
 
-    // Truncate to microsecond precision: Postgres `TIMESTAMPTZ` stores
-    // microseconds, so values derived from `chrono::Utc::now()` (nanosecond)
-    // lose sub-microsecond nanos on the DB round-trip. Truncating the seed
-    // keeps strict equality assertions (e.g. `expires_at == provider_actual_period_end`)
-    // exact without loosening them.
-    let now = trunc_to_micros(chrono::Utc::now());
-    let first_period_start = now - chrono::Duration::days(60);
-    let period_start = now - chrono::Duration::days(30);
-    let estimate_expires = period_start + chrono::Duration::days(30);
+    let now = chrono::Utc::now();
+    let period_start = now - chrono::Duration::seconds(10);
+    let period_end = now + chrono::Duration::days(30);
 
-    let schedule_id = create_subscription_grant_schedule(
-        ctx,
-        user_id,
-        &realm_id,
-        subscription_id,
-        &entitlement_key,
-        points_per_period,
-        period_start,
-        first_period_start,
-        0,
-    )
-    .await;
-
-    // --- Given: a PRE-GRANT for period_number=2 already exists (estimated
-    // expires_at, future effective_at is irrelevant for idempotency; we set it
-    // in the past so the pre-grant is "available").
-    let pregrant_ledger_id = create_credit_ledger_entry_with_effective_at(
-        ctx,
-        user_id,
-        &realm_id,
-        CreditType::SubscriptionCredit,
-        CreditSourceType::SubscriptionRenewal,
-        format!("schedule:{}:period:2", schedule_id),
-        points_per_period,
-        Some(estimate_expires),
-        Some(period_start),
-    )
-    .await;
-
-    create_grant_record(
-        ctx,
-        schedule_id,
-        2, // period_number
-        points_per_period,
-        period_start,
-        pregrant_ledger_id,
-    )
-    .await;
-
-    let ledger_count_before =
-        get_user_ledgers_by_credit_type(ctx, user_id, CreditType::SubscriptionCredit)
-            .await
-            .len();
-
-    // --- When: formal renewal webhook fires for the SAME period/schedule -----
-    let provider_actual_period_end = estimate_expires + chrono::Duration::days(2);
     let mapping = mapping_for_key(ctx, &realm_id, &entitlement_key).await;
-    let result = ctx
+    let event_id = format!("evt_be_t04_pi_{}", Uuid::now_v7());
+
+    // --- When: first renewal for this period --------------------------------
+    let result1 = ctx
         .app_state
         .subscription_service
         .handle_subscription_paid(
@@ -543,65 +418,67 @@ async fn test_subscription_renewal_period_idempotency(ctx: &mut SchemaTestContex
             &mapping,
             true, // renewal
             period_start,
-            provider_actual_period_end,
-            format!("evt_be_t04_pi_{}", Uuid::now_v7()),
+            period_end,
+            event_id.clone(),
         )
         .await;
-    assert!(result.is_ok(), "renewal should succeed: {:?}", result);
-
-    // --- Then: NO duplicate grant for the current period --------------------
-    let ledger_count_after =
-        get_user_ledgers_by_credit_type(ctx, user_id, CreditType::SubscriptionCredit)
-            .await
-            .len();
-    // The renewal chains a pre-grant for the NEXT period (period_number=3,
-    // future-effective). So ledger count grows by exactly 1 (the next-period
-    // pre-grant), NOT by a duplicate current-period grant.
-    assert_eq!(
-        ledger_count_after,
-        ledger_count_before + 1,
-        "renewal must not duplicate current-period grant; only the chained next-period pre-grant may add a row"
-    );
-
     assert!(
-        grant_record_exists(ctx, schedule_id, 2).await,
-        "period_number=2 grant_record must still exist"
+        result1.is_ok(),
+        "first renewal should succeed: {:?}",
+        result1
     );
 
-    // --- And: the pre-granted ledger's expires_at was CORRECTED to the
-    // provider's actual period_end.
-    let corrected_ledger = get_ledger_by_id(ctx, pregrant_ledger_id).await;
+    // --- Then: one entitlement exists ---------------------------------------
+    let count1 = count_subscription_quota_entitlements(ctx, user_id).await;
     assert_eq!(
-        corrected_ledger.expires_at,
-        Some(provider_actual_period_end),
-        "pre-grant expires_at must be corrected to provider period_end on renewal hit"
+        count1, 1,
+        "first renewal should create exactly one quota entitlement"
     );
 
-    // --- And: the chained next-period pre-grant (period_number=3) exists ----
+    // --- When: same period is processed again -------------------------------
+    let result2 = ctx
+        .app_state
+        .subscription_service
+        .handle_subscription_paid(
+            user_id,
+            subscription_id,
+            bucket_id,
+            &realm_id,
+            &mapping,
+            true,
+            period_start,
+            period_end,
+            event_id,
+        )
+        .await;
     assert!(
-        grant_record_exists(ctx, schedule_id, 3).await,
-        "chained pre-grant for period_number=3 must be written"
+        result2.is_ok(),
+        "duplicate renewal should be idempotent: {:?}",
+        result2
     );
 
-    // Derived balance: current period (available) only; next-period chained
-    // pre-grant is future-effective and excluded.
-    assert_derived_balance(
-        ctx,
-        user_id,
-        &realm_id,
-        CreditType::SubscriptionCredit,
-        points_per_period,
-    )
-    .await;
+    // --- Then: still exactly one entitlement, still active ------------------
+    let count2 = count_subscription_quota_entitlements(ctx, user_id).await;
+    assert_eq!(
+        count2, 1,
+        "duplicate renewal must not create additional quota entitlement rows"
+    );
+
+    let entitlements =
+        get_user_quota_entitlements(ctx, user_id, CreditType::SubscriptionCredit).await;
+    let entitlement = &entitlements[0];
+    assert_eq!(entitlement.status, QuotaEntitlementStatus::Active);
+    assert_eq!(
+        entitlement.source_type,
+        QuotaSourceType::SubscriptionRenewal
+    );
 }
 
 /// User Story: US-PU-009 (duplicate provider webhook delivery must not
 /// double-grant).
 /// Covers (P0 — provider event-level idempotency preserved):
-/// when the SAME `event_id` is delivered twice, the webhook layer's
-/// idempotency_service (`creem_{event_id}` key) returns the cached result on
-/// the second hit and does NOT re-enter `handle_subscription_paid`. This is
-/// the defense-in-depth backstop ABOVE the period-level business idempotency.
+/// when the SAME `event_id` is delivered twice, the webhook layer deduplicates
+/// the delivery and does NOT re-enter `handle_subscription_paid`.
 #[test_context(SchemaTestContext)]
 #[tokio::test]
 async fn test_subscription_renewal_event_idempotency(ctx: &mut SchemaTestContext) {
@@ -619,13 +496,17 @@ async fn test_subscription_renewal_event_idempotency(ctx: &mut SchemaTestContext
     setup_test_plan_config(ctx, &realm_id, plan_id).await;
     create_points_wallet(ctx, user_id, &realm_id).await;
 
-    // Build a subscription.paid webhook with `currentPeriodStart` so the
-    // period-normalization layer resolves a real window (P0). The default
-    // `build_subscription_paid_event` helper omits `currentPeriodStart`.
+    // Build a subscription.paid renewal webhook with explicit period bounds.
     let now = chrono::Utc::now();
     let period_start_str = now.to_rfc3339();
     let period_end_str = (now + chrono::Duration::days(30)).to_rfc3339();
-    let base = build_subscription_paid_event(event_id.clone(), user_id, plan_id, false, &realm_id);
+    let base = build_subscription_paid_event(
+        event_id.clone(),
+        user_id,
+        plan_id,
+        true, // renewal
+        &realm_id,
+    );
     let mut event = base.clone();
     event["data"]["object"]["currentPeriodStart"] = serde_json::Value::String(period_start_str);
     event["data"]["object"]["currentPeriodEnd"] = serde_json::Value::String(period_end_str);
@@ -637,17 +518,10 @@ async fn test_subscription_renewal_event_idempotency(ctx: &mut SchemaTestContext
         send_webhook_with_signature(&app, &realm_id, event.clone(), "test_webhook_secret").await;
     assert_webhook_success(&response1);
 
-    // Capture ledger state AFTER the first delivery but BEFORE the duplicate.
-    // The first delivery may produce 1 (current period only) or 2 (current +
-    // chained next-period pre-grant) ledgers.
-    let ledgers_after_first =
-        get_user_ledgers_by_credit_type(ctx, user_id, CreditType::SubscriptionCredit)
-            .await
-            .len();
-    assert!(
-        ledgers_after_first == 1 || ledgers_after_first == 2,
-        "first delivery should produce 1 (current period only) or 2 (current + chained next-period pre-grant) ledgers; got {}",
-        ledgers_after_first
+    let count_after_first = count_subscription_quota_entitlements(ctx, user_id).await;
+    assert_eq!(
+        count_after_first, 1,
+        "first delivery should create exactly one quota entitlement"
     );
 
     // --- When: second webhook delivery (SAME event_id) ----------------------
@@ -656,32 +530,32 @@ async fn test_subscription_renewal_event_idempotency(ctx: &mut SchemaTestContext
     assert_webhook_success(&response2);
 
     // --- Then: the duplicate delivery must NOT add any additional row -------
-    let ledgers_after_second =
-        get_user_ledgers_by_credit_type(ctx, user_id, CreditType::SubscriptionCredit)
-            .await
-            .len();
+    let count_after_second = count_subscription_quota_entitlements(ctx, user_id).await;
     assert_eq!(
-        ledgers_after_first, ledgers_after_second,
-        "duplicate webhook event_id must not create additional ledger rows (event-level idempotency backstop)"
+        count_after_first, count_after_second,
+        "duplicate webhook event_id must not create additional entitlement rows"
     );
 
-    // --- And: the event-level idempotency key is recorded in the SQL
-    // `idempotency_keys` table. The outer Creem webhook handler keys its Redis
-    // cache on `creem_{event_id}`, but the SQL row (the durable, dup-delivery
-    // backstop asserted here) is written by the inner
-    // `handle_subscription_paid_atomic` under the `sub_paid:{event_id}` key
-    // (IDEMPOTENCY_KEY_SUBSCRIPTION_PAID prefix, subscription_service.rs:387).
-    assert_idempotency_key_exists(ctx, &format!("sub_paid:{}", event_id)).await;
+    // Verify the business idempotency key is anchored to (subscription, period).
+    // The quota model stores this key on the entitlement row itself.
+    let entitlements =
+        get_user_quota_entitlements(ctx, user_id, CreditType::SubscriptionCredit).await;
+    assert_eq!(entitlements.len(), 1);
+    let entitlement = &entitlements[0];
+    let expected_key = format!("sub:{}:period:{}", entitlement.source_id, now.timestamp());
+    assert_eq!(
+        entitlement.idempotency_key, expected_key,
+        "entitlement idempotency key must be sub:{{subscription_id}}:period:{{period_start}}"
+    );
 }
 
-/// User Story: US-PU-009 (always one period ahead — no distribution vacuum).
-/// Covers (P0 — 链式预生成): after a renewal webhook hits
-/// (whether it grants the current period fresh or hits an existing
-/// pre-grant), the service CHAINS a pre-grant for `period_number + 1` so
-/// there is always one future-period ledger row waiting.
+/// User Story: US-PU-009 (no chained next-period pre-grant under window-quota).
+/// Covers (P0 — 续费不预生成下一周期): after a renewal webhook hits, the service
+/// creates exactly one active entitlement for the current period and nothing
+/// else.
 #[test_context(SchemaTestContext)]
 #[tokio::test]
-async fn test_subscription_renewal_chains_next_period_pregrant(ctx: &mut SchemaTestContext) {
+async fn test_subscription_renewal_does_not_pregrant_next_period(ctx: &mut SchemaTestContext) {
     let realm_id = ctx._realm_id.clone();
     let user_id =
         create_test_user(&ctx.app_state.pool, &realm_id, "be_t04_chain@example.com").await;
@@ -689,7 +563,7 @@ async fn test_subscription_renewal_chains_next_period_pregrant(ctx: &mut SchemaT
     let entitlement_key = format!("be-t04-chain-{}", Uuid::now_v7());
     let points_per_period: i64 = 800;
 
-    crate::tests::helpers::webhook_helpers::setup_test_entitlement_mapping_for_webhook(
+    setup_test_entitlement_mapping_for_webhook(
         ctx,
         &realm_id,
         "creem",
@@ -702,44 +576,13 @@ async fn test_subscription_renewal_chains_next_period_pregrant(ctx: &mut SchemaT
     .await;
 
     let subscription_id = seed_subscription_row(ctx, user_id, &realm_id, &entitlement_key).await;
-    let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
-        &ctx.app_state.pool,
-        &realm_id,
-    )
-    .await;
+    let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, &realm_id).await;
 
     let now = chrono::Utc::now();
-    let first_period_start = now - chrono::Duration::days(60);
-    // Renewal grants the CURRENT period, which must still be ongoing for the
-    // granted credit to be available under the derived predicate
-    // (`expires_at > NOW()`). Anchor the current period to have started ~10s
-    // ago and end ~30d in the future, so the just-granted current-period row
-    // is available AND the chained next-period pre-grant lands at
-    // `period_end` (≈ now+30d) which is unambiguously future-effective.
-    // (Mirrors the activation test's windowing convention.)
     let current_period_start = now - chrono::Duration::seconds(10);
     let current_period_end = now + chrono::Duration::days(30);
 
-    let schedule_id = create_subscription_grant_schedule(
-        ctx,
-        user_id,
-        &realm_id,
-        subscription_id,
-        &entitlement_key,
-        points_per_period,
-        current_period_start,
-        first_period_start,
-        0,
-    )
-    .await;
-
-    // --- Given: NO pre-grant for the current period exists ------------------
-    assert!(
-        !grant_record_exists(ctx, schedule_id, 2).await,
-        "precondition: current period grant_record should not exist yet"
-    );
-
-    // --- When: renewal webhook fires (no pre-grant → fresh grant path) ------
+    // --- When: renewal webhook fires ----------------------------------------
     let mapping = mapping_for_key(ctx, &realm_id, &entitlement_key).await;
     let result = ctx
         .app_state
@@ -750,7 +593,7 @@ async fn test_subscription_renewal_chains_next_period_pregrant(ctx: &mut SchemaT
             bucket_id,
             &realm_id,
             &mapping,
-            true,
+            true, // renewal
             current_period_start,
             current_period_end,
             format!("evt_be_t04_chain_{}", Uuid::now_v7()),
@@ -758,33 +601,29 @@ async fn test_subscription_renewal_chains_next_period_pregrant(ctx: &mut SchemaT
         .await;
     assert!(result.is_ok(), "renewal grant failed: {:?}", result);
 
-    // --- Then: current period grant_record is written -----------------------
-    assert!(
-        grant_record_exists(ctx, schedule_id, 2).await,
-        "current period (period_number=2) grant_record must exist after renewal"
+    // --- Then: exactly one active entitlement for the current period --------
+    let entitlements =
+        get_user_quota_entitlements(ctx, user_id, CreditType::SubscriptionCredit).await;
+    assert_eq!(
+        entitlements.len(),
+        1,
+        "renewal should create exactly one current-period quota entitlement"
     );
 
-    // --- And: chained pre-grant for period_number=3 is written (future) -----
-    assert!(
-        grant_record_exists(ctx, schedule_id, 3).await,
-        "chained pre-grant for period_number=3 must exist after renewal"
+    let entitlement = &entitlements[0];
+    assert_eq!(entitlement.credit_type, CreditType::SubscriptionCredit);
+    assert_eq!(
+        entitlement.source_type,
+        QuotaSourceType::SubscriptionRenewal
+    );
+    assert_eq!(entitlement.status, QuotaEntitlementStatus::Active);
+
+    assert_eq!(
+        count_subscription_quota_entitlements(ctx, user_id).await,
+        1,
+        "no next-period pre-grant should exist"
     );
 
-    // --- And: the chained pre-grant ledger is future-effective --------------
-    let chained_ledger_id = find_ledger_id_by_schedule_period(ctx, schedule_id, 3)
-        .await
-        .expect("chained pre-grant ledger must be resolvable via grant_record FK");
-    let chained_ledger = get_ledger_by_id(ctx, chained_ledger_id).await;
-    assert!(
-        chained_ledger
-            .effective_at
-            .map(|t| t > now)
-            .unwrap_or(false),
-        "chained next-period pre-grant must be future-effective (effective_at > now); got {:?}",
-        chained_ledger.effective_at
-    );
-
-    // Derived balance excludes the chained pre-grant.
     assert_derived_balance(
         ctx,
         user_id,

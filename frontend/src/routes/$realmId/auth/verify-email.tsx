@@ -1,11 +1,14 @@
 import { useState, useEffect } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { useQuery } from '@tanstack/react-query'
 import { verifyEmailConfirm, verifyEmailTrigger } from '@/lib/api-generated'
 import { getErrorMessage } from '@/lib/error-utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { TurnstileWidget } from '@/components/auth/turnstile-widget'
+import { turnstileStatusQueryOptions } from '@/data/query-options'
 import { toast } from 'sonner'
 import { m } from '@/paraglide/messages'
 
@@ -28,11 +31,16 @@ function VerifyEmailPage() {
 
   const [code, setCode] = useState('')
   const [email, setEmail] = useState('')
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
   const [countdown, setCountdown] = useState(RESEND_COUNTDOWN_SECONDS)
   const [canResend, setCanResend] = useState(false)
   const [verificationError, setVerificationError] = useState<string | null>(null)
   const [isVerifying, setIsVerifying] = useState(false)
   const [isResending, setIsResending] = useState(false)
+
+  const { data: turnstileStatus, isLoading: loadingTurnstile } = useQuery(
+    turnstileStatusQueryOptions(realmId)
+  )
 
   async function handleVerify(e: React.FormEvent) {
     e.preventDefault()
@@ -67,7 +75,7 @@ function VerifyEmailPage() {
     try {
       await verifyEmailTrigger({
         path: { realmId },
-        body: { email, turnstileToken: undefined },
+        body: { email, turnstileToken },
         throwOnError: true,
       })
 
@@ -146,6 +154,14 @@ function VerifyEmailPage() {
               <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
                 {verificationError}
               </div>
+            )}
+
+            {canResend && !loadingTurnstile && turnstileStatus?.enabled && (
+              <TurnstileWidget
+                siteKey={turnstileStatus.site_key || ''}
+                onTokenChange={setTurnstileToken}
+                onError={(error) => console.error('Turnstile error:', error)}
+              />
             )}
 
             <div className="text-center">

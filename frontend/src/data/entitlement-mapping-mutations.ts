@@ -22,10 +22,8 @@ interface EntitlementMappingUpdateFormData {
   entitlementKey: string
   enabled: boolean
   pointsPerPeriod: number | null
-  grantPeriodType: 'once' | 'daily' | 'weekly' | 'monthly' | null
   validityDays: number | null
   grantOnSubscribe: boolean
-  maxPeriods: number | null
 }
 
 // ==================== Protected-price 409 detection ====================
@@ -80,10 +78,8 @@ export function useUpdateEntitlementMapping(realmId: string, mappingId: string) 
         entitlementKey: values.entitlementKey,
         enabled: values.enabled,
         pointsPerPeriod: values.pointsPerPeriod ?? undefined,
-        grantPeriodType: values.grantPeriodType ?? undefined,
         validityDays: values.validityDays ?? undefined,
         grantOnSubscribe: values.grantOnSubscribe,
-        maxPeriods: values.maxPeriods ?? undefined,
         // bucketId is intentionally NOT sent: the PATCH handler preserves the
         // existing attribution (assignment is owned by the Credit Bucket
         // directory page). See entitlement-mapping-detail-dialog.tsx.

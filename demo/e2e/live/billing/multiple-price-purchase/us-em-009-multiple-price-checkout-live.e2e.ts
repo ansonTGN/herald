@@ -80,12 +80,17 @@ import {
   selectPeriod,
   selectPriceCard,
   initiateMultiPriceCheckout,
-  type PurchasePeriod,
 } from '../../../helpers/multi-price-purchase.helpers'
 import {
   MULTI_PRICE_REALM_ID,
   MULTI_PRICE_PAYMENT_PROVIDER,
 } from '../../../helpers/multi-price-seed-ids'
+import {
+  ensureMultiPriceProduct,
+  archiveProduct,
+  MONTHLY_POINTS_STRATEGY,
+  ANNUAL_POINTS_STRATEGY,
+} from '../../../helpers/multi-price-live-product'
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
 const REALM_ID = MULTI_PRICE_REALM_ID // 'realm-001'
@@ -98,168 +103,6 @@ let annualPriceId: string | null = null
 // Herald-side mapping ids resolved after provider sync.
 let annualMappingId: string | null = null
 let monthlyMappingId: string | null = null
-
-// Strategy constants pinned from the design — exposed explicitly (not derived
-// from the seed-id placeholder module, which is for non-live demos) so a
-// regression that drifts both rows to the same value still fails.
-const ANNUAL_POINTS_STRATEGY = 12000
-const MONTHLY_POINTS_STRATEGY = 1000
-
-/**
- * Verify (via Stripe API) whether a multi-price "pro-plan" product already
- * exists in the test account; if so, reuse its monthly/annual recurring price
- * ids. Otherwise create the product + two recurring prices. Returns the real
- * Stripe ids.
- *
- * We DO NOT assume the account's contents — the planner could not verify them.
- * Lookup key: product name "Herald Live Multi-Price Pro". Two recurring prices
- * must exist with interval month (1000 = $10.00) and year (12000 = $120.00).
- */
-async function ensureMultiPriceProduct(
-  secretKey: string,
-): Promise<{ productId: string; monthlyPriceId: string; annualPriceId: string; created: boolean }> {
-  const productName = 'Herald Live Multi-Price Pro'
-
-  // 1. Look for an existing product of that name.
-  const listResp = await fetch('https://api.stripe.com/v1/products?limit=100', {
-    headers: { Authorization: `Bearer ${secretKey}` },
-  })
-  if (!listResp.ok) {
-    throw new Error(`Stripe list products failed: ${listResp.status} ${await listResp.text()}`)
-  }
-  const listBody = (await listResp.json()) as { data: Array<{ id: string; name: string }> }
-  const existing = listBody.data.find((p) => p.name === productName)
-
-  if (existing) {
-    // Find its recurring prices.
-    const pricesResp = await fetch(
-      `https://api.stripe.com/v1/prices?product=${existing.id}&limit=100`,
-      { headers: { Authorization: `Bearer ${secretKey}` } },
-    )
-    if (!pricesResp.ok) {
-      throw new Error(`Stripe list prices failed: ${pricesResp.status} ${await pricesResp.text()}`)
-    }
-    const pricesBody = (await pricesResp.json()) as {
-      data: Array<{
-        id: string
-        type: string
-        recurring?: { interval: string }
-        unit_amount: number
-        active: boolean
-      }>
-    }
-    const monthly = pricesBody.data.find(
-      (pr) => pr.type === 'recurring' && pr.recurring?.interval === 'month',
-    )
-    const annual = pricesBody.data.find(
-      (pr) => pr.type === 'recurring' && pr.recurring?.interval === 'year',
-    )
-    if (monthly && annual) {
-      return {
-        productId: existing.id,
-        monthlyPriceId: monthly.id,
-        annualPriceId: annual.id,
-        created: false,
-      }
-    }
-    // Product exists but missing one price — create the missing one(s) on it.
-    const monthlyFinal =
-      monthly?.id ??
-      (
-        await createRecurringPrice(secretKey, existing.id, 'month', MONTHLY_POINTS_STRATEGY)
-      ).id
-    const annualFinal =
-      annual?.id ??
-      (
-        await createRecurringPrice(secretKey, existing.id, 'year', ANNUAL_POINTS_STRATEGY)
-      ).id
-    return {
-      productId: existing.id,
-      monthlyPriceId: monthlyFinal,
-      annualPriceId: annualFinal,
-      created: false,
-    }
-  }
-
-  // 2. Create the product.
-  const productResp = await fetch('https://api.stripe.com/v1/products', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${secretKey}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: new URLSearchParams({ name: productName }).toString(),
-  })
-  if (!productResp.ok) {
-    throw new Error(`Stripe create product failed: ${productResp.status} ${await productResp.text()}`)
-  }
-  const product = (await productResp.json()) as { id: string }
-  const monthlyCreated = await createRecurringPrice(
-    secretKey,
-    product.id,
-    'month',
-    MONTHLY_POINTS_STRATEGY,
-  )
-  const annualCreated = await createRecurringPrice(
-    secretKey,
-    product.id,
-    'year',
-    ANNUAL_POINTS_STRATEGY,
-  )
-  return {
-    productId: product.id,
-    monthlyPriceId: monthlyCreated.id,
-    annualPriceId: annualCreated.id,
-    created: true,
-  }
-}
-
-async function createRecurringPrice(
-  secretKey: string,
-  productId: string,
-  interval: PurchasePeriod,
-  unitAmount: number,
-): Promise<{ id: string }> {
-  const params = new URLSearchParams({
-    product: productId,
-    currency: 'usd',
-    unit_amount: String(unitAmount),
-    'recurring[interval]': interval,
-  })
-  const resp = await fetch('https://api.stripe.com/v1/prices', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${secretKey}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: params.toString(),
-  })
-  if (!resp.ok) {
-    throw new Error(
-      `Stripe create ${interval} price failed: ${resp.status} ${await resp.text()}`,
-    )
-  }
-  return (await resp.json()) as { id: string }
-}
-
-/**
- * Archive the product (and thereby deactivate its prices) for cleanup. Stripe
- * does not delete products/prices; archiving is the supported cleanup.
- */
-async function archiveProduct(secretKey: string, productId: string): Promise<void> {
-  const resp = await fetch(`https://api.stripe.com/v1/products/${productId}`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${secretKey}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: new URLSearchParams({ active: 'false' }).toString(),
-  })
-  if (!resp.ok) {
-    // Non-fatal: log only.
-    console.error(`[cleanup] Stripe archive product ${productId} failed: ${resp.status}`)
-  }
-}
 
 test.describe('[Live][Billing Multiple-Price] US-EM-009 / US-EM-008 multi-price purchase + price-level grant', () => {
   test.beforeAll(async () => {
@@ -350,18 +193,15 @@ test.describe('[Live][Billing Multiple-Price] US-EM-009 / US-EM-008 multi-price 
     await test.step('And both mappings share the pro-plan key with per-price strategies (PUT batch)', async () => {
       // Use a run-unique shared key derived from the real Stripe product id.
       // The backend's shared-key rename guard rejects a batch PUT when renaming
-      // to a key would affect mappings OUTSIDE this (provider, product). The
-      // demo seed plants `pro-plan` rows for the placeholder product
-      // `prod_stripe_multi_pro` in this same realm (realm-001); reusing the
-      // literal `pro-plan` here collides with those seeded rows and trips the
-      // guard with `shared-key rename would affect 2 mapping(s) outside ...`.
+      // to a key would affect mappings OUTSIDE this (provider, product). A
+      // product-scoped key keeps the rename within this product's rows.
       // The load-bearing invariant for US-EM-008/009 is that BOTH prices share
       // ONE key while carrying DIFFERENT strategies (12000 vs 1000) — the key
       // STRING itself is not load-bearing, so a product-scoped unique key
-      // preserves the invariant without colliding with the seed.
+      // preserves the invariant.
       // Entitlement-key regex is `^[a-z0-9-]{1,64}$` (lowercase only). Derive a
       // product-scoped suffix from the Stripe product id, lowercased and stripped
-      // to the allowed charset, so it never collides with the seeded `pro-plan`.
+      // to the allowed charset.
       const keySuffix = createdProductId!.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(-12)
       const liveSharedKey = `pro-plan-${keySuffix}`
       const batchResp = await page.request.put(
@@ -423,8 +263,11 @@ test.describe('[Live][Billing Multiple-Price] US-EM-009 / US-EM-008 multi-price 
       await expect(page.locator(SELECTORS.purchasePriceCard.page)).toBeVisible({
         timeout: 15000,
       })
-      // The Annual pane must be selected so the annual card renders (the card
-      // testid carries the -annual suffix only in the Annual pane).
+      // The purchase page has no period toggle: all recurring options (monthly
+      // + annual) render together under the Subscriptions grid
+      // (`purchase-price-grid-subscriptions`). `selectPeriod` is now a no-op
+      // that only waits for that grid to attach; the annual card is selected
+      // directly by its priceId.
       await selectPeriod(page, 'year')
       await selectPriceCard(page, annualPriceId!, 'year')
     })
@@ -445,10 +288,15 @@ test.describe('[Live][Billing Multiple-Price] US-EM-009 / US-EM-008 multi-price 
     let checkoutSessionId: string | null = null
     await test.step('Then the checkout response references a real Stripe session', async () => {
       const checkoutBody = await checkoutResponse!.json()
-      // The response carries the Stripe checkout URL and (depending on the
-      // backend serialization) a checkout id. We accept either shape the
-      // backend emits for the redirect target.
-      checkoutUrl = checkoutBody.checkoutUrl ?? checkoutBody.stripeCheckoutUrl ?? null
+      // The create-payment-attempt response (CreatePaymentAttemptResponse)
+      // carries the redirect URL nested under `paymentContext.stripeCheckoutUrl`
+      // (Stripe) / `paymentContext.creemCheckoutUrl` (Creem), not at the top
+      // level. The top-level `checkoutUrl` shape belongs to a different
+      // backend type (CreateCheckoutResponse) not used by this flow.
+      checkoutUrl =
+        checkoutBody?.paymentContext?.stripeCheckoutUrl ??
+        checkoutBody?.paymentContext?.creemCheckoutUrl ??
+        null
       expect(checkoutUrl, 'expected a checkout URL in the response').toBeTruthy()
       // Extract the Stripe session id (cs_live_... or cs_test_...) from the
       // checkout URL. The backend returns Stripe's session `url` verbatim
@@ -483,11 +331,14 @@ test.describe('[Live][Billing Multiple-Price] US-EM-009 / US-EM-008 multi-price 
         `https://api.stripe.com/v1/checkout/sessions/${checkoutSessionId}?expand[]=line_items`,
         { headers: { Authorization: `Bearer ${secrets.stripe.secretKey}` } },
       )
+      // Read the body exactly once; an eagerly-evaluated message in
+      // `expect(msg)` would otherwise consume the stream before `.json()`.
+      const sessionBody = await sessionResp.text()
       expect(
         sessionResp.ok,
-        `Stripe retrieve session failed: ${sessionResp.status} ${await sessionResp.text().catch(() => '')}`,
+        `Stripe retrieve session failed: ${sessionResp.status} ${sessionBody}`,
       ).toBeTruthy()
-      const session = (await sessionResp.json()) as {
+      const session = JSON.parse(sessionBody) as {
         line_items?: {
           data: Array<{ price?: { id: string } | null }>
         }

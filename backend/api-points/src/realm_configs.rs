@@ -5,11 +5,10 @@ use axum::{
 use validator::Validate;
 
 use crate::types::{
-    CreateRealmConfigRequest, QuotaWindowInputDto, RealmDefaultConfigResponse,
+    CreateRealmConfigRequest, QuotaWindowInput, RealmDefaultConfigResponse,
     UpdateRealmConfigRequest,
 };
-use herald_api_base::application::http::auth::util::require_permission;
-use herald_api_base::application::http::common::auth_utils::require_authenticated_user_in_realm;
+use herald_api_base::application::http::common::auth_utils::AdminIdentity;
 use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
@@ -20,7 +19,7 @@ use herald_core::domain::points::{
 
 /// Convert domain `RealmDefaultConfig` to API response. The stored
 /// `free_periodic_quota_windows` (domain `Vec<QuotaWindow>`) maps to
-/// `Option<Vec<QuotaWindowInputDto>>`: empty ⟹ `None` (no window grant).
+/// `Option<Vec<QuotaWindowInput>>`: empty ⟹ `None` (no window grant).
 fn realm_config_to_response(
     config: herald_core::domain::points::RealmDefaultConfig,
 ) -> RealmDefaultConfigResponse {
@@ -31,11 +30,11 @@ fn realm_config_to_response(
             config
                 .free_periodic_quota_windows
                 .into_iter()
-                .map(|w| QuotaWindowInputDto {
+                .map(|w| QuotaWindowInput {
                     // Re-derive the key from the canonical length so the
                     // response always carries the stable identity (the stored
                     // key is the snapshot, but the response is the editable
-                    // config view — `QuotaWindowInputDto` carries no key, so
+                    // config view — `QuotaWindowInput` carries no key, so
                     // this round-trip keeps the editor length-driven).
                     window_seconds: w.window_seconds,
                     limit: w.limit,
@@ -55,7 +54,7 @@ fn realm_config_to_response(
     }
 }
 
-/// Materialize the request-side `QuotaWindowInputDto` list into the domain
+/// Materialize the request-side `QuotaWindowInput` list into the domain
 /// `Vec<QuotaWindow>` (deriving the stable `key` per window) with edge
 /// validation (design §4.2.2 / §4.4.3):
 /// - each window's `validate()` runs (`windowSeconds > 0`, `limit >= 0`);
@@ -68,7 +67,7 @@ fn realm_config_to_response(
 /// so this is defense-in-depth at the API edge (cheaper, surfaces 400 before
 /// the service boundary).
 fn materialize_quota_windows(
-    windows: Option<Vec<QuotaWindowInputDto>>,
+    windows: Option<Vec<QuotaWindowInput>>,
 ) -> Result<Option<Vec<QuotaWindow>>, ApiError> {
     let Some(windows) = windows else {
         return Ok(None);
@@ -114,21 +113,12 @@ pub async fn get_realm_default_config(
     Extension(identity): Extension<Identity>,
     Path(realm_id): Path<String>,
 ) -> Result<Json<RealmDefaultConfigResponse>, ApiError> {
-    let user_id =
-        require_authenticated_user_in_realm(&identity, &realm_id, "realm default config")?;
-    require_permission(
-        &state,
-        &realm_id,
-        &user_id.to_string(),
-        "settings",
-        "view",
-        "settings.view",
-    )
-    .await?;
+    let admin = AdminIdentity::require(identity, &realm_id, "realm default config")?;
+    admin.require_permission(&state, "settings", "view").await?;
 
     match state
         .realm_config_service
-        .get_realm_config(identity, &realm_id)
+        .get_realm_config(admin.identity().clone(), &realm_id)
         .await
     {
         Ok(config) => Ok(Json(realm_config_to_response(config))),
@@ -159,17 +149,10 @@ pub async fn create_realm_default_config(
     Path(realm_id): Path<String>,
     Json(request): Json<CreateRealmConfigRequest>,
 ) -> Result<Json<RealmDefaultConfigResponse>, ApiError> {
-    let user_id =
-        require_authenticated_user_in_realm(&identity, &realm_id, "realm default config")?;
-    require_permission(
-        &state,
-        &realm_id,
-        &user_id.to_string(),
-        "settings",
-        "manage",
-        "settings.manage",
-    )
-    .await?;
+    let admin = AdminIdentity::require(identity, &realm_id, "realm default config")?;
+    admin
+        .require_permission(&state, "settings", "manage")
+        .await?;
 
     request
         .validate()
@@ -188,7 +171,7 @@ pub async fn create_realm_default_config(
 
     match state
         .realm_config_service
-        .create_realm_config(identity, input)
+        .create_realm_config(admin.identity().clone(), input)
         .await
     {
         Ok(config) => Ok(Json(realm_config_to_response(config))),
@@ -220,17 +203,10 @@ pub async fn update_realm_default_config(
     Path(realm_id): Path<String>,
     Json(request): Json<UpdateRealmConfigRequest>,
 ) -> Result<Json<RealmDefaultConfigResponse>, ApiError> {
-    let user_id =
-        require_authenticated_user_in_realm(&identity, &realm_id, "realm default config")?;
-    require_permission(
-        &state,
-        &realm_id,
-        &user_id.to_string(),
-        "settings",
-        "manage",
-        "settings.manage",
-    )
-    .await?;
+    let admin = AdminIdentity::require(identity, &realm_id, "realm default config")?;
+    admin
+        .require_permission(&state, "settings", "manage")
+        .await?;
 
     request
         .validate()
@@ -248,7 +224,7 @@ pub async fn update_realm_default_config(
 
     match state
         .realm_config_service
-        .update_realm_config(identity, &realm_id, input)
+        .update_realm_config(admin.identity().clone(), &realm_id, input)
         .await
     {
         Ok(config) => Ok(Json(realm_config_to_response(config))),

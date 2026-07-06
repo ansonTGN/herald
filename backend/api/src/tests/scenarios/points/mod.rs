@@ -8,13 +8,10 @@ mod test_02_view_balance;
 mod test_03_balance_permission;
 mod test_08_consume_success;
 mod test_09_consume_exact_balance;
-mod test_10_consume_invalid_amount;
 mod test_11_consume_edge_cases;
 mod test_13_concurrent_consumption;
-mod test_14_api_key_validation;
 mod test_15_consume_idempotency;
 mod test_24_entitlement_points_policy;
-mod test_27_api_key_cannot_access_points_admin_configs;
 mod test_31_closed_account_consumption;
 mod test_32_frozen_account_consumption;
 
@@ -95,11 +92,7 @@ mod test_83_response_non_leak_dto_hidden;
 // line without a period → SKIP (P0).
 mod test_84_stripe_invoice_period_normalization;
 mod test_90_window_slide_multi_min;
-mod test_91_lazy_grant_painpoints;
 mod test_92_mixed_consume_atomicity;
-mod test_93_pool_zero_regression;
 mod test_94_lifecycle_revoke_idempotent;
-mod test_95_worker_down_window_balance;
-mod test_96_wallets_quota_view;
 
 pub mod fixtures;

@@ -8,6 +8,7 @@ use herald_core::domain::authentication::Identity;
 use uuid::Uuid;
 
 use crate::client_apps::types::{ClientAppItem, ClientAppUpdateRequest};
+use herald_api_base::application::http::common::auth_utils::AdminIdentity;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::client::ports::ClientService;
@@ -35,17 +36,18 @@ use herald_core::domain::client::value_objects::UpdateClientAppRequest;
 pub async fn update_client_app(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
-    Path((_realm_id, id)): Path<(String, Uuid)>,
+    Path((realm_id, id)): Path<(String, Uuid)>,
     _headers: HeaderMap,
     Valid(Json(payload)): Valid<Json<ClientAppUpdateRequest>>,
 ) -> Result<ApiResult<ClientAppItem>, ApiError> {
-    // Extract identity from request extension (injected by inject_identity middleware)
-    let identity_realm_id = identity.realm_id();
-    let current_user_id = identity.user_id();
+    let admin = AdminIdentity::require(identity, &realm_id, "client applications")?;
+    admin
+        .require_permission(&state, "clients", "manage")
+        .await?;
 
     tracing::debug!(
-        realm_id = %identity_realm_id,
-        user_id = %current_user_id,
+        realm_id = %realm_id,
+        user_id = %admin.user_id_string(),
         "Updating client app"
     );
 
@@ -65,7 +67,7 @@ pub async fn update_client_app(
     // Call service layer
     let client_service = state.service.client_service();
     let client_app = client_service
-        .update_client_app(identity, id, service_request)
+        .update_client_app(admin.identity().clone(), id, service_request)
         .await
         .map_err(|e| match e {
             herald_core::domain::common::entities::app_errors::CoreError::NotFound => {

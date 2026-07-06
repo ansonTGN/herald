@@ -5,5 +5,11 @@ export const Route = createFileRoute('/$realmId/legal')({
 })
 
 function LegalLayout() {
-  return <Outlet />
+  return (
+    <div className="h-screen overflow-y-auto bg-gradient-to-b from-background to-muted/30">
+      <div className="flex min-h-screen items-center justify-center px-4 py-8">
+        <Outlet />
+      </div>
+    </div>
+  )
 }

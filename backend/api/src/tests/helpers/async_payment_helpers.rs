@@ -11,6 +11,7 @@
 #![allow(dead_code)]
 
 use crate::tests::helpers::billing_helpers::setup_test_entitlement_mapping_full;
+use crate::tests::helpers::test_setup_helpers::record_test_user_consent;
 use crate::tests::schema_test_context::SchemaTestContext;
 use uuid::Uuid;
 
@@ -29,6 +30,12 @@ pub async fn create_test_user(ctx: &SchemaTestContext, realm_id: &str, email: &s
     .execute(&ctx.app_state.pool)
     .await
     .expect("Failed to create test user");
+
+    // Register-time consent is recorded by the real register handler. Test users
+    // created via SQL bypass that path, so mirror it here to prevent the legal-
+    // consent gate (BE-D08) from blocking their logins.
+    record_test_user_consent(&ctx.app_state.pool, user_id, realm_id).await;
+
     user_id
 }
 
@@ -199,7 +206,13 @@ pub async fn get_topup_balance(ctx: &SchemaTestContext, user_id: Uuid, realm_id:
     .unwrap_or(0)
 }
 
-/// Get subscription window availability for a user's wallet.
+/// Get subscription balance for a user's wallet.
+///
+/// Under the hybrid points model this sums the window-quota availability
+/// (new Creem/renewal path) with any active legacy `points_credit_ledger`
+/// rows (Stripe initial-subscription path still writes these). Tests that
+/// only care about quota availability should call `compute_window_available`
+/// directly.
 pub async fn get_subscription_balance(
     ctx: &SchemaTestContext,
     user_id: Uuid,
@@ -210,12 +223,30 @@ pub async fn get_subscription_balance(
         realm_id,
     )
     .await;
-    crate::tests::helpers::points_helpers::compute_window_available(
+
+    let window_available = crate::tests::helpers::points_helpers::compute_window_available(
         ctx,
         realm_id,
         user_id,
         bucket_id,
         herald_core::domain::points::entities::CreditType::SubscriptionCredit,
     )
+    .await;
+
+    let ledger_remaining: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(remaining_amount), 0)::BIGINT FROM points_credit_ledger \
+         WHERE realm_id = $1 AND user_id = $2 AND bucket_id = $3 \
+           AND credit_type = 'subscription_credit' \
+           AND status = 'active' AND remaining_amount > 0 \
+           AND (effective_at IS NULL OR effective_at <= NOW()) \
+           AND (expires_at IS NULL OR expires_at > NOW())",
+    )
+    .bind(realm_id)
+    .bind(user_id)
+    .bind(bucket_id)
+    .fetch_one(&ctx.app_state.pool)
     .await
+    .expect("Failed to sum subscription credit ledger remaining amount");
+
+    window_available + ledger_remaining
 }

@@ -39,8 +39,10 @@ import { Route as RealmIdManageApiKeysRouteImport } from './routes/$realmId/mana
 import { Route as RealmIdLegalAgreementTypeRouteImport } from './routes/$realmId/legal/$agreementType'
 import { Route as RealmIdDeviceUserCodeRouteImport } from './routes/$realmId/device.$userCode'
 import { Route as RealmIdAuthVerifyEmailRouteImport } from './routes/$realmId/auth/verify-email'
+import { Route as RealmIdAuthResetPasswordRouteImport } from './routes/$realmId/auth/reset-password'
 import { Route as RealmIdAuthRegisterRouteImport } from './routes/$realmId/auth/register'
 import { Route as RealmIdAuthLoginRouteImport } from './routes/$realmId/auth/login'
+import { Route as RealmIdAuthForgotPasswordRouteImport } from './routes/$realmId/auth/forgot-password'
 import { Route as RealmIdUserSecurityIndexRouteImport } from './routes/$realmId/user/security/index'
 import { Route as RealmIdUserInvoicesIndexRouteImport } from './routes/$realmId/user/invoices/index'
 import { Route as RealmIdManageClientAppsIndexRouteImport } from './routes/$realmId/manage/client-apps/index'
@@ -227,6 +229,12 @@ const RealmIdAuthVerifyEmailRoute = RealmIdAuthVerifyEmailRouteImport.update({
   path: '/verify-email',
   getParentRoute: () => RealmIdAuthRouteRoute,
 } as any)
+const RealmIdAuthResetPasswordRoute =
+  RealmIdAuthResetPasswordRouteImport.update({
+    id: '/reset-password',
+    path: '/reset-password',
+    getParentRoute: () => RealmIdAuthRouteRoute,
+  } as any)
 const RealmIdAuthRegisterRoute = RealmIdAuthRegisterRouteImport.update({
   id: '/register',
   path: '/register',
@@ -237,6 +245,12 @@ const RealmIdAuthLoginRoute = RealmIdAuthLoginRouteImport.update({
   path: '/login',
   getParentRoute: () => RealmIdAuthRouteRoute,
 } as any)
+const RealmIdAuthForgotPasswordRoute =
+  RealmIdAuthForgotPasswordRouteImport.update({
+    id: '/forgot-password',
+    path: '/forgot-password',
+    getParentRoute: () => RealmIdAuthRouteRoute,
+  } as any)
 const RealmIdUserSecurityIndexRoute =
   RealmIdUserSecurityIndexRouteImport.update({
     id: '/',
@@ -411,8 +425,10 @@ export interface FileRoutesByFullPath {
   '/$realmId/manage': typeof RealmIdManageRouteRouteWithChildren
   '/$realmId/user': typeof RealmIdUserRouteRouteWithChildren
   '/$realmId/device': typeof RealmIdDeviceRouteWithChildren
+  '/$realmId/auth/forgot-password': typeof RealmIdAuthForgotPasswordRoute
   '/$realmId/auth/login': typeof RealmIdAuthLoginRoute
   '/$realmId/auth/register': typeof RealmIdAuthRegisterRoute
+  '/$realmId/auth/reset-password': typeof RealmIdAuthResetPasswordRoute
   '/$realmId/auth/verify-email': typeof RealmIdAuthVerifyEmailRoute
   '/$realmId/device/$userCode': typeof RealmIdDeviceUserCodeRoute
   '/$realmId/legal/$agreementType': typeof RealmIdLegalAgreementTypeRoute
@@ -471,8 +487,10 @@ export interface FileRoutesByTo {
   '/$realmId/auth': typeof RealmIdAuthRouteRouteWithChildren
   '/$realmId/legal': typeof RealmIdLegalRouteRouteWithChildren
   '/$realmId/user': typeof RealmIdUserRouteRouteWithChildren
+  '/$realmId/auth/forgot-password': typeof RealmIdAuthForgotPasswordRoute
   '/$realmId/auth/login': typeof RealmIdAuthLoginRoute
   '/$realmId/auth/register': typeof RealmIdAuthRegisterRoute
+  '/$realmId/auth/reset-password': typeof RealmIdAuthResetPasswordRoute
   '/$realmId/auth/verify-email': typeof RealmIdAuthVerifyEmailRoute
   '/$realmId/device/$userCode': typeof RealmIdDeviceUserCodeRoute
   '/$realmId/legal/$agreementType': typeof RealmIdLegalAgreementTypeRoute
@@ -527,8 +545,10 @@ export interface FileRoutesById {
   '/$realmId/manage': typeof RealmIdManageRouteRouteWithChildren
   '/$realmId/user': typeof RealmIdUserRouteRouteWithChildren
   '/$realmId/device': typeof RealmIdDeviceRouteWithChildren
+  '/$realmId/auth/forgot-password': typeof RealmIdAuthForgotPasswordRoute
   '/$realmId/auth/login': typeof RealmIdAuthLoginRoute
   '/$realmId/auth/register': typeof RealmIdAuthRegisterRoute
+  '/$realmId/auth/reset-password': typeof RealmIdAuthResetPasswordRoute
   '/$realmId/auth/verify-email': typeof RealmIdAuthVerifyEmailRoute
   '/$realmId/device/$userCode': typeof RealmIdDeviceUserCodeRoute
   '/$realmId/legal/$agreementType': typeof RealmIdLegalAgreementTypeRoute
@@ -591,8 +611,10 @@ export interface FileRouteTypes {
     | '/$realmId/manage'
     | '/$realmId/user'
     | '/$realmId/device'
+    | '/$realmId/auth/forgot-password'
     | '/$realmId/auth/login'
     | '/$realmId/auth/register'
+    | '/$realmId/auth/reset-password'
     | '/$realmId/auth/verify-email'
     | '/$realmId/device/$userCode'
     | '/$realmId/legal/$agreementType'
@@ -651,8 +673,10 @@ export interface FileRouteTypes {
     | '/$realmId/auth'
     | '/$realmId/legal'
     | '/$realmId/user'
+    | '/$realmId/auth/forgot-password'
     | '/$realmId/auth/login'
     | '/$realmId/auth/register'
+    | '/$realmId/auth/reset-password'
     | '/$realmId/auth/verify-email'
     | '/$realmId/device/$userCode'
     | '/$realmId/legal/$agreementType'
@@ -706,8 +730,10 @@ export interface FileRouteTypes {
     | '/$realmId/manage'
     | '/$realmId/user'
     | '/$realmId/device'
+    | '/$realmId/auth/forgot-password'
     | '/$realmId/auth/login'
     | '/$realmId/auth/register'
+    | '/$realmId/auth/reset-password'
     | '/$realmId/auth/verify-email'
     | '/$realmId/device/$userCode'
     | '/$realmId/legal/$agreementType'
@@ -978,6 +1004,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RealmIdAuthVerifyEmailRouteImport
       parentRoute: typeof RealmIdAuthRouteRoute
     }
+    '/$realmId/auth/reset-password': {
+      id: '/$realmId/auth/reset-password'
+      path: '/reset-password'
+      fullPath: '/$realmId/auth/reset-password'
+      preLoaderRoute: typeof RealmIdAuthResetPasswordRouteImport
+      parentRoute: typeof RealmIdAuthRouteRoute
+    }
     '/$realmId/auth/register': {
       id: '/$realmId/auth/register'
       path: '/register'
@@ -990,6 +1023,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/$realmId/auth/login'
       preLoaderRoute: typeof RealmIdAuthLoginRouteImport
+      parentRoute: typeof RealmIdAuthRouteRoute
+    }
+    '/$realmId/auth/forgot-password': {
+      id: '/$realmId/auth/forgot-password'
+      path: '/forgot-password'
+      fullPath: '/$realmId/auth/forgot-password'
+      preLoaderRoute: typeof RealmIdAuthForgotPasswordRouteImport
       parentRoute: typeof RealmIdAuthRouteRoute
     }
     '/$realmId/user/security/': {
@@ -1192,14 +1232,18 @@ declare module '@tanstack/react-router' {
 }
 
 interface RealmIdAuthRouteRouteChildren {
+  RealmIdAuthForgotPasswordRoute: typeof RealmIdAuthForgotPasswordRoute
   RealmIdAuthLoginRoute: typeof RealmIdAuthLoginRoute
   RealmIdAuthRegisterRoute: typeof RealmIdAuthRegisterRoute
+  RealmIdAuthResetPasswordRoute: typeof RealmIdAuthResetPasswordRoute
   RealmIdAuthVerifyEmailRoute: typeof RealmIdAuthVerifyEmailRoute
 }
 
 const RealmIdAuthRouteRouteChildren: RealmIdAuthRouteRouteChildren = {
+  RealmIdAuthForgotPasswordRoute: RealmIdAuthForgotPasswordRoute,
   RealmIdAuthLoginRoute: RealmIdAuthLoginRoute,
   RealmIdAuthRegisterRoute: RealmIdAuthRegisterRoute,
+  RealmIdAuthResetPasswordRoute: RealmIdAuthResetPasswordRoute,
   RealmIdAuthVerifyEmailRoute: RealmIdAuthVerifyEmailRoute,
 }
 

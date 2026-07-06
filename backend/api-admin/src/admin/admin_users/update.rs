@@ -5,6 +5,7 @@ use axum::{
     http::HeaderMap,
 };
 use axum_valid::Valid;
+use herald_api_base::application::http::common::auth_utils::AdminIdentity;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
@@ -43,6 +44,9 @@ pub async fn update_user(
     _headers: HeaderMap,
     Valid(Json(payload)): Valid<Json<UserUpdateRequest>>,
 ) -> Result<ApiResult<UserResponse>, ApiError> {
+    let admin = AdminIdentity::require(identity, &realm_id, "user management")?;
+    admin.require_permission(&state, "users", "manage").await?;
+
     tracing::info!(
         realm_id = %realm_id,
         user_id = %target_user_id,
@@ -60,7 +64,7 @@ pub async fn update_user(
 
     // Call service layer
     let admin_user = admin_user_service
-        .update_user_admin(identity, &realm_id, target_user_id, request)
+        .update_user_admin(admin.identity().clone(), &realm_id, target_user_id, request)
         .await
         .map_err(|e| match e {
             UserAdminError::DuplicateEmail(email) => {

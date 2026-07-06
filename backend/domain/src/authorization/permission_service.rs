@@ -67,7 +67,7 @@ pub trait PermissionService: Send + Sync {
         realm_id: &str,
     ) -> impl std::future::Future<Output = Result<(), CoreError>> + Send;
 
-    /// Returns permission strings in format "resource:action"
+    /// Returns permission strings in dot form "resource.action"
     fn get_user_permissions(
         &self,
         realm_id: &str,

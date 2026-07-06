@@ -66,6 +66,10 @@ pub struct AppState {
     /// Database connection (Sea-ORM) for entity operations
     pub db: Arc<DatabaseConnection>,
 
+    /// Shared HTTP client (pooled connections) for outbound calls
+    /// (e.g. Cloudflare Turnstile siteverify).
+    pub http_client: reqwest::Client,
+
     /// Redis connection manager with DB isolation
     /// - Production: uses DB 0 (default_db)
     /// - Test: uses DB 1 (test_db) for automatic isolation

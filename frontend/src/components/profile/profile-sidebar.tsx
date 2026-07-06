@@ -48,7 +48,7 @@ export function ProfileSidebar() {
         name: 'PurchaseRecords',
         path: `/${realmId}/user/subscription-history`,
         icon: CreditCard,
-        visible: userFeatures?.pointsPurchaseVisible === true,
+        visible: userFeatures?.pointsVisible === true,
       },
       {
         name: 'Invoices',

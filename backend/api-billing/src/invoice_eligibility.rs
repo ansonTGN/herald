@@ -121,12 +121,15 @@ pub struct ApplyRouteVerdict {
 /// 2. `provider == Some("creem")` => `disabled` (Creem acts as MoR; mirrors
 ///    `validate_not_creem_mor` in the write path)
 /// 3. `!has_seller_config`   => `disabled` (mirrors the `apply_invoice` 400 path)
-/// 4. `has_external_invoice` => `external_provider` (read-only — a provider
+/// 4. `policy == "provider_first" && provider == Some("stripe")` =>
+///    `external_provider` (Stripe invoices are pushed via webhook when the
+///    realm prefers provider invoices)
+/// 5. `has_external_invoice` => `external_provider` (read-only — a provider
 ///    invoice already exists; do not offer a duplicate Herald invoice)
-/// 5. otherwise              => `manual_fallback, canApply=true`
-///    (Stripe/Shopify/WeChat WITHOUT an external invoice still permit a manual
-///    Herald invoice — the manual fallback. This preserves today's apply
-///    behavior on non-Creem provider transactions.)
+/// 6. otherwise              => `manual_fallback, canApply=true`
+///    (manual_only allows all non-MoR providers, and provider_first still
+///    permits non-Stripe/no-provider manual fallback when no external invoice
+///    exists.)
 pub(crate) fn determine_invoice_apply_route(
     provider: Option<&str>,
     policy: &str,
@@ -166,7 +169,18 @@ pub(crate) fn determine_invoice_apply_route(
         };
     }
 
-    // Rule 4: an externally-synced invoice already exists for this resource —
+    // Rule 4: with provider_first, Stripe invoices are expected to arrive via
+    // webhook. Keep the resource read-only even before the external invoice has
+    // been synced.
+    if policy == "provider_first" && provider == Some("stripe") {
+        return ApplyRouteVerdict {
+            route: "external_provider".to_string(),
+            can_apply: false,
+            reason: None,
+        };
+    }
+
+    // Rule 5: an externally-synced invoice already exists for this resource —
     // read-only. Do not offer a duplicate Herald invoice.
     if has_external_invoice {
         let provider_label = provider.unwrap_or("the provider");
@@ -180,9 +194,9 @@ pub(crate) fn determine_invoice_apply_route(
         };
     }
 
-    // Rule 5: non-Creem provider (Stripe/Shopify/WeChat) or no provider, with
-    // seller config and no external invoice. Manual fallback remains available
-    // — today users CAN apply for a manual Herald invoice on such transactions.
+    // Rule 6: manual_only for any non-MoR provider, or provider_first for
+    // non-Stripe/no provider, with seller config and no external invoice.
+    // Manual fallback remains available.
     ApplyRouteVerdict {
         route: "manual_fallback".to_string(),
         can_apply: true,
@@ -220,6 +234,8 @@ mod tests {
 
     #[test]
     fn missing_seller_config_disables_apply() {
+        // Missing seller config must disable apply before provider routing so
+        // the read path mirrors the write path's seller-config rejection.
         let v = determine_invoice_apply_route(Some("stripe"), "provider_first", false, false);
         assert_eq!(v.route, "disabled");
         assert!(!v.can_apply);
@@ -227,32 +243,38 @@ mod tests {
     }
 
     #[test]
-    fn stripe_with_seller_and_no_external_is_manual_fallback() {
-        // CRITICAL behavior-preservation: a Stripe resource with seller config
-        // and NO external-sync invoice must remain applyable as a manual
-        // Herald invoice (the manual fallback).
+    fn provider_first_stripe_is_external_provider_before_sync() {
+        // Under provider_first, Stripe invoices are pushed via webhook. Keep
+        // apply disabled even before the external invoice has landed.
         let v = determine_invoice_apply_route(Some("stripe"), "provider_first", true, false);
-        assert_eq!(v.route, "manual_fallback");
-        assert!(v.can_apply);
+        assert_eq!(v.route, "external_provider");
+        assert!(!v.can_apply);
         assert!(v.reason.is_none());
     }
 
     #[test]
-    fn stripe_with_external_invoice_is_external_provider_readonly() {
-        // Same resource, but an external_sync invoice already exists — read-only.
-        let v = determine_invoice_apply_route(Some("stripe"), "provider_first", true, true);
+    fn external_invoice_is_external_provider_for_manual_only() {
+        // Once a provider invoice exists, manual apply would create a duplicate.
+        let v = determine_invoice_apply_route(Some("stripe"), "manual_only", true, true);
         assert_eq!(v.route, "external_provider");
         assert!(!v.can_apply);
-        let reason = v.reason.as_deref().unwrap();
-        // Provider values are lowercase strings (matches DB column values).
-        assert!(reason.contains("stripe"), "reason: {}", reason);
-        assert!(reason.contains("already exists"));
+        assert!(v.reason.as_deref().unwrap().contains("stripe"));
     }
 
     #[test]
-    fn no_provider_with_seller_is_manual_fallback() {
-        // manual_only + no provider + seller configured => manual fallback.
-        let v = determine_invoice_apply_route(None, "manual_only", true, false);
+    fn manual_only_non_creem_with_seller_is_manual_fallback() {
+        // manual_only means Herald self-issues invoices for every non-MoR
+        // provider when no external invoice already exists.
+        let v = determine_invoice_apply_route(Some("stripe"), "manual_only", true, false);
+        assert_eq!(v.route, "manual_fallback");
+        assert!(v.can_apply);
+    }
+
+    #[test]
+    fn provider_first_no_provider_with_seller_is_manual_fallback() {
+        // provider_first still has a manual fallback when no external-provider
+        // route is known for the resource.
+        let v = determine_invoice_apply_route(None, "provider_first", true, false);
         assert_eq!(v.route, "manual_fallback");
         assert!(v.can_apply);
     }

@@ -434,6 +434,149 @@ Then 该价格不可购买或被禁用，并给出明确提示
 
 ---
 
+### 故事 10：同步时携带 Stripe 商户自定义 metadata，并在管理端可见 [US-BL-SYNC-001]
+
+**优先级**: P1
+
+**【用户故事】**
+**作为**：Admin Realm 管理员（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
+**我希望**：在执行 Stripe 产品同步时，把 Stripe `Product.metadata`、`Price.metadata` 这类商户自定义键值对一并同步到本地，并在 entitlement mapping 详情中可查看
+**从而**：当商户在 Stripe 后台用 metadata 标注产品用途（例如 `herald_mapping_id`、`tier`、`internal_sku`）时，我能直接在 Herald 里看到这些标注，据此配置 entitlement，而不必切换回 Stripe 后台
+
+> 说明：Creem 的 Product 对象在官方 API 响应中无 `metadata` 字段（其 `metadata` 是 checkout 会话级），因此本故事仅适用于 Stripe。Creem 产品不要求 metadata 同步。
+
+**【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
+
+**场景 1：同步一个带 metadata 的 Stripe 产品**
+```gherkin
+Given Stripe 后台的产品 P 带有 metadata {"tier":"pro","internal_sku":"H-001"}
+And 该产品下有一个活跃价格 price_abc
+When 管理员在 entitlement mappings 页对 Stripe 触发同步
+Then 同步完成后，mapping 详情里能看到这些 metadata（tier=pro、internal_sku=H-001）
+And 既有字段（产品名、价格、币种、计费类型）继续存在，不被覆盖丢失
+```
+
+**场景 2：同步一个不带 metadata 的 Stripe 产品**
+```gherkin
+Given Stripe 后台的产品 P 没有任何 metadata
+When 管理员触发同步
+Then 该 mapping 的 metadata 视为空（显示为「无」或省略），不报错
+And 产品名、价格等其它字段照常同步
+```
+
+**场景 3：Creem 产品不涉及 metadata**
+```gherkin
+Given 一条 Creem 产品的 mapping
+When 管理员查看其详情
+Then 其 metadata 视为空（显示为「无」或省略），不报错、不显示伪造字段
+And 产品名、价格等其它字段照常展示
+```
+
+**场景 4：重复同步以最新为准**
+```gherkin
+Given 上一次同步后商户在 Stripe 后台把 P 的 metadata 从 {"tier":"pro"} 改成 {"tier":"team"}
+When 管理员再次触发同步
+Then mapping 详情里看到的 metadata 变为 tier=team
+```
+
+---
+
+### 故事 11：在 mapping 列表里看到产品名，便于识别 [US-BL-SYNC-002]
+
+**优先级**: P0
+
+**【用户故事】**
+**作为**：Admin Realm 管理员
+**我希望**：在 entitlement mappings 列表（尤其是按产品分组后的卡片/行）里直接看到从 provider 同步过来的产品名，而不只看到一串外部 id
+**从而**：一眼识别每个外部产品/价格对应哪个商品，不必点开详情或对照 Stripe/Creem 后台
+
+**【验收标准】**
+
+**场景 1：列表显示产品名**
+```gherkin
+Given 一条 mapping 的同步展示信息里已存有 name="Pro 月度订阅"
+When 管理员打开 entitlement mappings 列表
+Then 该产品分组或行显示 "Pro 月度订阅"
+And 当 name 缺失时退回到外部产品 id 作为可识别标签
+```
+
+**场景 2：产品名过滤器**
+```gherkin
+Given 管理员在产品过滤器里输入 "Pro"
+Then 列表只保留产品名或外部 id 命中 "Pro" 的分组
+```
+
+---
+
+### 故事 12：产品价格按 provider 单位正确展示，不混淆 Stripe 与 Creem [US-BL-SYNC-003]
+
+**优先级**: P0
+
+**【用户故事】**
+**作为**：Admin Realm 管理员
+**我希望**：在 entitlement mapping 详情/列表里看到的价格金额，Stripe 产品按整数最小货币单位（分）换算展示，Creem 产品按其原值展示，不会因为我用了哪个 provider 而出现金额错位
+**从而**：我能正确识别每条 mapping 对应的真实售价，避免误配 entitlement
+
+**【验收标准】**
+
+**场景 1：Stripe 价格正确展示**
+```gherkin
+Given 一条 Stripe 同步来的 mapping，其价格为最小货币单位整数（例如 999 表示 9.99）
+When 管理员查看该 mapping
+Then 展示价格按 Stripe 单位正确换算（例如 9.99），不会被当成 Creem 字符串值再除以 100
+```
+
+**场景 2：Creem 价格正确展示**
+```gherkin
+Given 一条 Creem 同步来的 mapping，价格为字符串 "9.99"
+When 管理员查看该 mapping
+Then 展示为 9.99，不会因为同步路径混用而被二次缩放
+```
+
+---
+
+### 故事 13：计费周期以 Stripe 为准、只读且不被人工覆盖 [US-BL-SYNC-004]
+
+> Creem `billing_period` 取值形如 `every-month` / `every-year`，前端做文案映射，缺失时显示原文；Stripe `Price.recurring.interval` 为原始语义来源。
+
+**优先级**: P0
+
+**【用户故事】**
+**作为**：Admin Realm 管理员
+**我希望**：每条 entitlement mapping 的计费周期（订阅周期，如 month / year）始终与 Stripe `Price.recurring.interval` 一致，前端只读、不接受我手动输入；保存/更新时即使提交了周期值也不覆盖同步值
+**从而**：Herald 创建 Stripe Checkout / 订阅时使用的周期与商户在 Stripe 后台配置的真实计费周期一致，避免" Stripe 上是年订阅、Herald 却按月下单"这类导致真实扣款周期错误的严重问题
+
+> 说明：计费周期在 Stripe 端的语义来源是 `Price.recurring.interval`（day/week/month/year），Herald 不做独立配置或人工覆盖。Creem 侧以其产品响应中的 `billing_period` 字段（取值形如 `every-month` / `every-year`）为同步来源并只读展示，字段缺失时按空（"—"）展示，不推断、不伪造。
+
+**【验收标准】**
+
+**场景 1：Stripe 产品周期正确展示且只读**
+```gherkin
+Given 一条 Stripe 同步来的 mapping，其 Price.recurring.interval = "year"
+When 管理员查看该 mapping
+Then 计费周期展示为 "year"（或等价的周期文案），且该字段为只读，无法手动编辑
+```
+
+**场景 2：人工提交值不覆盖同步值**
+```gherkin
+Given 一条 Stripe 同步来的 mapping，同步周期为 "month"
+When 通过保存/更新接口提交了一个与同步值不一致的计费周期（如 "year"）
+Then 持久化的计费周期仍以同步值为准（month），不接受人工覆盖
+And 下次同步仍以 Stripe 当前 interval 覆盖本地
+```
+
+**场景 3：Creem 产品周期展示同步值**
+```gherkin
+Given 一条 Creem 同步来的 mapping，其产品响应含 billing_period
+When 管理员查看该 mapping
+Then 计费周期展示为同步值（如 every-month 映射为「月」），映射缺失时显示原文，不报错
+And 若该 Creem 产品响应不含 billing_period 字段，则按空（"—"）展示，不伪造
+```
+
+---
+
 ## 业务规则总结
 
 ### Provider Ownership 边界
@@ -479,11 +622,24 @@ Then 该价格不可购买或被禁用，并给出明确提示
 5. **Price-aware 解析**：webhook 解析优先使用 metadata 的 herald_entitlement_key，回退时按 (支付方, 产品, 价格) 命中映射；无法唯一确定时 fail loud
 6. **Price-aware 购买**：checkout 引用真实 provider 价格（对有 price 概念的支付方），不再为每次购买重建临时价格
 
+### 产品同步展示规则（sync-payment）
+1. **产品名主标签**：列表/分组的主标签优先取同步产品名，缺失时回退外部产品 id，二者皆不可用时给可识别占位；不显示空标签
+2. **价格按 provider 区分单位**：Stripe 取最小货币单位整数换算为主货币单位；Creem 按原值展示；单位换算由 provider 来源驱动，不跨 provider 共享换算分支
+3. **计费周期以 Stripe 为准且只读**：计费周期取 Stripe `Price.recurring.interval`（Creem 取其产品响应 `billing_period`，缺失按"—"），前端只读，保存/更新不得以人工值覆盖同步值；重新同步以 provider 当前值为准
+4. **metadata 同步仅适用 Stripe**：Stripe `Product.metadata`/`Price.metadata` 跟随同步进入本地展示信息，只读、不编辑、不回写；Creem Product 无原生 metadata，按空处理，不伪造
+5. **同步覆盖展示字段**：重新同步时 name/description/价格/metadata/计费周期以最新一次为准；entitlement_key、points、grant 策略、quota 等业务字段不被同步覆盖
+6. **credit/额度周期与计费周期解耦**：`billing_period` 与 `quota_windows` 独立、不整除、不对齐；同步不读取/校验 quota_windows；额度授予由续费 webhook 事件驱动按 (period_start, period_end) 锚定，非日历清零；支持纯窗口、无周期总额模型
+7. **缺失即空**：provider 未提供 name/description/metadata/计费周期时按空处理，不报错、不阻塞同步
+8. **展示位**：所有同步展示信息（含 metadata）存放于既有 provider_product_info 结构内，作为展示数据，不作为计费/扣点依据
+9. **权限可见性**：产品名、价格、metadata 仅在 Admin Realm（具备 entitlement mapping 管理权限）页面可见；普通用户侧不展示 provider 内部信息
+
 ---
 
 ## 相关文档
 
 - **PRD**: [docs/prd/billing/subscription.md](/docs/prd/billing/subscription.md) - 订阅计费 PRD（含 Entitlement 映射、Metadata 契约）
 - **PRD**: [docs/prd/billing/points.md](/docs/prd/billing/points.md) - 积分系统 PRD
+- **PRD**: [docs/prd/billing/support-multiple-price.md](/docs/prd/billing/support-multiple-price.md) - 多价格 Entitlement 映射 PRD
+- **PRD**: [docs/prd/billing/sync-payment.md](/docs/prd/billing/sync-payment.md) - 支付产品同步增强 PRD（产品名/价格单位/metadata/计费周期）
 - **技术研究**: [.ai/tech-research/product_reduce.md](/.ai/tech-research/product_reduce.md) - 技术预研报告
 - **需求来源**: Product and Subscription Local Model Reduction — 移除本地 Product/Plan 商业目录，将目录和订阅生命周期交给支付方

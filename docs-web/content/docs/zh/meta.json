@@ -1,0 +1,17 @@
+{
+  "title": "教程",
+  "pages": [
+    "getting-started",
+    "architecture",
+    "configuration",
+    "deployment",
+    "billing-overview",
+    "billing-stripe-payment",
+    "billing-creem-payment",
+    "billing-invoice",
+    "billing-credit-note",
+    "third-party-integration",
+    "points-grant-redesign",
+    "openapi"
+  ]
+}

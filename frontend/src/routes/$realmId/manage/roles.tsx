@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useRealmId } from '@/stores/auth-store'
-import { rolesQueryOptions } from '@/data/query-options'
+import { adminRolesQueryOptions } from '@/data/query-options'
 import { RoleTable } from '@/components/roles/role-table'
 import { CreateRoleDialog } from '@/components/roles/create-role-dialog'
 import { Card, CardContent } from '@/components/ui/card'
@@ -22,7 +22,7 @@ function RolesPage() {
     isLoading,
     error,
   } = useQuery({
-    ...rolesQueryOptions(realmId),
+    ...adminRolesQueryOptions(realmId),
   })
 
   return (

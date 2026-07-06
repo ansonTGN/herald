@@ -1,7 +1,7 @@
 use axum::Json;
 use axum::extract::{Extension, Path, State};
 use axum_valid::Valid;
-use herald_api_base::application::http::auth::util::require_permission;
+use herald_api_base::application::http::common::auth_utils::AdminIdentity;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
@@ -35,16 +35,8 @@ pub async fn get_api_key_roles(
     Extension(identity): Extension<Identity>,
     Path((realm_id, api_key_id)): Path<(String, String)>,
 ) -> Result<ApiResult<ApiKeyRolesResponse>, ApiError> {
-    let user_id = identity.user_id();
-    require_permission(
-        &state,
-        &realm_id,
-        &user_id,
-        "api_keys",
-        "view",
-        "api_keys.view",
-    )
-    .await?;
+    let admin = AdminIdentity::require(identity, &realm_id, "api keys")?;
+    admin.require_permission(&state, "api_keys", "view").await?;
 
     // Verify API Key exists and belongs to realm
     let api_key = state
@@ -63,7 +55,7 @@ pub async fn get_api_key_roles(
 
     let roles = state
         .role_assignment_service
-        .get_api_key_roles(identity, &realm_id, &api_key_id)
+        .get_api_key_roles(admin.identity().clone(), &realm_id, &api_key_id)
         .await
         .map_err(map_admin_error)?;
 
@@ -110,16 +102,8 @@ pub async fn update_api_key_roles(
     Path((realm_id, api_key_id)): Path<(String, String)>,
     Valid(Json(payload)): Valid<axum::Json<UpdateApiKeyRolesRequest>>,
 ) -> Result<ApiResult<()>, ApiError> {
-    let user_id = identity.user_id();
-    require_permission(
-        &state,
-        &realm_id,
-        &user_id,
-        "roles",
-        "manage",
-        "roles.manage",
-    )
-    .await?;
+    let admin = AdminIdentity::require(identity, &realm_id, "api keys")?;
+    admin.require_permission(&state, "roles", "manage").await?;
 
     // Verify API Key exists and belongs to realm
     let api_key = state
@@ -138,7 +122,12 @@ pub async fn update_api_key_roles(
 
     state
         .role_assignment_service
-        .assign_api_key_roles(identity, &realm_id, &api_key_id, payload.role_ids)
+        .assign_api_key_roles(
+            admin.identity().clone(),
+            &realm_id,
+            &api_key_id,
+            payload.role_ids,
+        )
         .await
         .map_err(map_admin_error)?;
 

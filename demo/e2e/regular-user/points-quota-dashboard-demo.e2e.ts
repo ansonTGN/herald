@@ -34,15 +34,18 @@ import {
   grantPointsViaExtApi,
   type ApiKeyWithPermission,
 } from '../helpers/grant-points-helpers'
-import { fulfillPayment } from '../helpers/payment-simulation'
+import {
+  grantQuotaEntitlement,
+  revokeQuotaEntitlement,
+} from '../helpers/quota-entitlement-helpers'
 import {
   createEntitlementMappingWithQuotaWindows,
-  purchaseSubscriptionToGetQuota,
   consumePointsViaExtApi,
   getWindowRow,
   getWindowRemaining,
   getWindowResetsIn,
   getSpendableNow,
+  getSpendableFromPool,
 } from '../helpers/points-quota-helpers'
 import { registerUser } from '../helpers/points-helpers'
 import {
@@ -50,9 +53,12 @@ import {
   QUOTA_DEMO_USER_EMAIL,
   QUOTA_DEMO_PASSWORD,
   QUOTA_DEMO_ADMIN_EMAIL,
-  QUOTA_DEMO_PRODUCT_ID,
   DEMO_QUOTA_WINDOWS,
 } from '../fixtures/points-quota.fixtures'
+import { secrets, hasStripePayment } from '../secrets/env'
+import { ensureMultiPriceCatalog } from '../helpers/resolve-mappings'
+
+const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
 
 // ============================================================================
 // Constants
@@ -63,7 +69,6 @@ const USER_EMAIL = QUOTA_DEMO_USER_EMAIL
 const USER_PASSWORD = QUOTA_DEMO_PASSWORD
 const ADMIN_EMAIL = QUOTA_DEMO_ADMIN_EMAIL
 const ADMIN_PASSWORD = QUOTA_DEMO_PASSWORD
-const PROVIDER_HINT = 'stripe'
 const TOPUP_GRANT_AMOUNT = 1_000
 const CONSUME_SMALL_AMOUNT = 50
 
@@ -71,6 +76,16 @@ const CONSUME_SMALL_AMOUNT = 50
  * WinKey of the smallest window (5h). This is the window the tests will exhaust.
  */
 const SMALLEST_WINDOW_KEY = '5h'
+
+/**
+ * Stable anchor for the internal quota-entitlement grant used across tests.
+ * The fast suite grants quota directly via the internal API (see
+ * `quota-entitlement-helpers.ts`) instead of driving a real Stripe purchase —
+ * seeded price IDs are placeholders that must never reach Stripe (DE-D01 §27).
+ * Each test revokes then re-grants using this fixed source_id for a clean
+ * baseline.
+ */
+const QUOTA_SOURCE_ID = 'demo-quota-dashboard'
 
 // ============================================================================
 // Shared setup context
@@ -95,6 +110,8 @@ let setupStartTime = 0
 // ============================================================================
 
 test.beforeAll(async ({ browser }) => {
+  // Skip gracefully when Stripe credentials are absent (live dependency).
+  test.skip(!hasStripePayment(), 'Stripe credentials required (live test)')
   setupStartTime = Date.now()
 
   const context = await browser.newContext()
@@ -108,13 +125,24 @@ test.beforeAll(async ({ browser }) => {
       password: ADMIN_PASSWORD,
     })
 
-    // 2. Configure the pro-plan entitlement mapping with multi-window quota.
+    // 2. Resolve the real multi-price Stripe product + sync its catalog into
+    //    Herald. Replaces the removed placeholder seed id.
+    const catalog = await ensureMultiPriceCatalog(page.context().request, {
+      baseUrl: BASE_URL,
+      realmId: TEST_REALM,
+      stripeSecretKey: secrets.stripe.secretKey!,
+      stripePublishableKey: secrets.stripe.publishableKey!,
+      stripeWebhookSecret: secrets.stripe.webhookSecret!,
+    })
+    const realProductId = catalog.product.productId
+
+    // 3. Configure the pro-plan entitlement mapping with multi-window quota.
     //    This makes the subscription purchase grant quota entitlements instead
     //    of legacy ledger rows.
     await createEntitlementMappingWithQuotaWindows(
       page,
       TEST_REALM,
-      QUOTA_DEMO_PRODUCT_ID,
+      realProductId,
       DEMO_QUOTA_WINDOWS,
     )
 
@@ -178,18 +206,26 @@ test.beforeAll(async ({ browser }) => {
       clientAppId,
     )
 
-    // 7. Seed a separate top-up balance for the total-formula assertion.
-    const grant = await grantPointsViaExtApi(apiKey.apiKey, TEST_REALM, {
-      userId,
-      amount: TOPUP_GRANT_AMOUNT,
-      bucketId: primary.id,
-      reason: 'DE-D02 setup: deterministic top-up balance for total formula',
-      validityDays: 365,
-    })
-    if (grant.status !== 200) {
-      throw new Error(
-        `[DE-D02 beforeAll] Top-up grant failed: status=${grant.status} body=${JSON.stringify(grant.responseBody)}`,
-      )
+    // 7. Seed a top-up balance for the total-formula assertion — but only if
+    //    none exists yet. The ext grant API has no idempotency key, so an
+    //    unconditional grant would accumulate across demo runs and make the
+    //    pool (and thus `points-empty-state` for the empty test) non-
+    //    deterministic. Seeding once keeps the pool stable at
+    //    TOPUP_GRANT_AMOUNT.
+    const existingPool = await getSpendableFromPool(page, TEST_REALM, primary.id)
+    if (existingPool < TOPUP_GRANT_AMOUNT) {
+      const grant = await grantPointsViaExtApi(apiKey.apiKey, TEST_REALM, {
+        userId,
+        amount: TOPUP_GRANT_AMOUNT - existingPool,
+        bucketId: primary.id,
+        reason: 'DE-D02 setup: deterministic top-up balance for total formula',
+        validityDays: 365,
+      })
+      if (grant.status !== 200) {
+        throw new Error(
+          `[DE-D02 beforeAll] Top-up grant failed: status=${grant.status} body=${JSON.stringify(grant.responseBody)}`,
+        )
+      }
     }
 
     setupCtx = {
@@ -204,6 +240,18 @@ test.beforeAll(async ({ browser }) => {
 })
 
 test.afterEach(async ({ page }) => {
+  // Revoke the seeded quota entitlement so no window-quota leaks across demo
+  // files (the kept demo user persists between runs).
+  const ctx = setupCtx
+  if (ctx) {
+    await revokeQuotaEntitlement(page.context().request, TEST_REALM, {
+      userId: ctx.userId,
+      bucketId: ctx.bucketId,
+      sourceId: QUOTA_SOURCE_ID,
+    }).catch(() => {
+      /* best-effort; cleanupTestData still runs below */
+    })
+  }
   await cleanupTestData(page, TEST_REALM, {
     keepUsers: [USER_EMAIL],
   })
@@ -219,26 +267,39 @@ function assertSetup(): SetupContext {
 }
 
 /**
- * Purchase a subscription for the demo user and fulfill it via the internal
- * simulation endpoint so the quota entitlement is granted deterministically.
+ * Seed a clean window-quota entitlement for the demo user via the internal API.
+ *
+ * Revokes any prior grant under the fixed `QUOTA_SOURCE_ID` (idempotent no-op
+ * if none), then grants a fresh one from `DEMO_QUOTA_WINDOWS`. This replaces the
+ * legacy purchase→fulfill flow: the internal fulfill path does NOT issue quota
+ * entitlements (only the Stripe webhook does), and seeded price IDs are
+ * placeholders that must never reach Stripe (DE-D01 §27), so fast demos seed
+ * quota directly here.
  */
-async function purchaseAndFulfillQuota(page: Page): Promise<void> {
-  const attemptId = await purchaseSubscriptionToGetQuota(
-    page,
-    TEST_REALM,
-    USER_EMAIL,
-    USER_PASSWORD,
-    PROVIDER_HINT,
-  )
+async function seedQuotaEntitlement(page: Page): Promise<void> {
+  const { userId, bucketId } = assertSetup()
+  const request = page.context().request
 
-  const fulfillResult = await fulfillPayment(
-    page.context().request,
-    TEST_REALM,
-    attemptId,
-  )
+  // Clean baseline: revoke any prior active entitlement under this source.
+  const revokeResult = await revokeQuotaEntitlement(request, TEST_REALM, {
+    userId,
+    bucketId,
+    sourceId: QUOTA_SOURCE_ID,
+  })
   expect(
-    fulfillResult.success,
-    `subscription fulfillment failed: ${fulfillResult.error ?? ''}`,
+    revokeResult.success,
+    `quota revoke failed: ${revokeResult.error ?? ''}`,
+  ).toBeTruthy()
+
+  const grantResult = await grantQuotaEntitlement(request, TEST_REALM, {
+    userId,
+    bucketId,
+    sourceId: QUOTA_SOURCE_ID,
+    windows: DEMO_QUOTA_WINDOWS,
+  })
+  expect(
+    grantResult.success,
+    `quota grant failed: ${grantResult.error ?? ''}`,
   ).toBeTruthy()
 }
 
@@ -268,10 +329,10 @@ test.describe('[Regular User] 积分配额仪表盘 (US-PU-010)', () => {
       requiredUsers: [USER_EMAIL],
     })
 
-    // Re-seed a fresh subscription quota for each test so consume scenarios
-    // start from a known baseline.
+    // Re-seed a fresh window-quota entitlement for each test so consume
+    // scenarios start from a known baseline (revoke-then-grant).
     await loginPage.loginAsUser(USER_EMAIL, USER_PASSWORD, TEST_REALM)
-    await purchaseAndFulfillQuota(page)
+    await seedQuotaEntitlement(page)
 
     await page.goto(`/${TEST_REALM}/user/points`)
     await expect(
@@ -359,7 +420,15 @@ test.describe('[Regular User] 积分配额仪表盘 (US-PU-010)', () => {
       SMALLEST_WINDOW_KEY,
     )
     const spendableNow = await getSpendableNow(page)
-    const expected = smallestRemaining + TOPUP_GRANT_AMOUNT
+    // The pool (topup/registration/granted) balance accumulates across demo
+    // runs — the ext grant API has no idempotency key — so read the live value
+    // from the wallets API instead of hard-coding TOPUP_GRANT_AMOUNT.
+    const poolBalance = await getSpendableFromPool(
+      page,
+      TEST_REALM,
+      bucketId,
+    )
+    const expected = smallestRemaining + poolBalance
 
     expect(spendableNow).toBe(expected)
   })
@@ -475,7 +544,11 @@ test('US-PU-010 空态: 无配额且无余额的用户显示空态提示', async
 
   await page.goto(`/${TEST_REALM}/user/points`)
   await expect(page.locator(SELECTORS.pointsUser.page)).toBeVisible()
+  // A brand-new user holds no points buckets at all, so the page renders the
+  // "no pools" empty card (`points-balance-empty`). This is distinct from
+  // `points-empty-state`, which renders INSIDE a bucket card when the bucket
+  // exists but has no quota and no balance.
   await expect(
-    page.locator(SELECTORS.pointsUsageDashboard.emptyState),
+    page.locator(SELECTORS.pointsUser.balanceEmpty),
   ).toBeVisible({ timeout: 15000 })
 })

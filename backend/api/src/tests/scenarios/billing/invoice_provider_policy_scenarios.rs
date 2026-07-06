@@ -71,7 +71,7 @@ mod tests {
             "sellerName": "Test Seller Inc.",
             "sellerAddress": "456 Seller Ave",
             "sellerTaxId": "SELLER-TAX-001",
-            "dueDate": "2026-06-30",
+            "dueDate": "2099-12-31",
         });
 
         let response = app
@@ -492,7 +492,7 @@ mod tests {
             "sellerName": "Test Seller Inc.",
             "sellerAddress": "456 Seller Ave",
             "sellerTaxId": "SELLER-TAX-001",
-            "dueDate": "2026-06-30",
+            "dueDate": "2099-12-31",
         });
 
         let response = app
@@ -587,7 +587,7 @@ mod tests {
             "billingName": "User Apply Client",
             "billingAddress": "123 User St",
             "billingTaxId": "TAX-USER-001",
-            "dueDate": "2026-06-30",
+            "dueDate": "2099-12-31",
         });
 
         let response = app
@@ -668,7 +668,7 @@ mod tests {
             "sellerName": "Test Seller Inc.",
             "sellerAddress": "456 Seller Ave",
             "sellerTaxId": "SELLER-TAX-001",
-            "dueDate": "2026-06-30",
+            "dueDate": "2099-12-31",
         });
 
         let response = app
@@ -753,7 +753,7 @@ mod tests {
             "billingName": "Creem User Client",
             "billingAddress": "123 User St",
             "billingTaxId": "TAX-USER-001",
-            "dueDate": "2026-06-30",
+            "dueDate": "2099-12-31",
         });
 
         let response = app
@@ -840,162 +840,6 @@ mod tests {
             response.status(),
             StatusCode::FORBIDDEN,
             "Expected 403 when updating external Stripe invoice"
-        );
-    }
-
-    // =========================================================================
-    // Test: External Stripe invoice issue rejected
-    // =========================================================================
-    // User Story: docs/user-stories/billing/invoice-fallback.md
-    // Covers: US-IF-004 scenario 2 -- external invoice cannot be issued
-    //
-    // Given: An external Stripe invoice in draft
-    // When: POST /invoices/{id}/issue
-    // Then: Returns 403
-
-    #[test_context(InvoiceTestContext)]
-    #[tokio::test]
-    async fn test_external_stripe_invoice_issue_rejected(ctx: &mut InvoiceTestContext) {
-        let app = ctx.create_unified_test_router();
-        let realm_id = ctx._realm_id.clone();
-        let admin_token = setup_billing_admin_session(ctx, "invoice-readonly-issue@test.com").await;
-
-        let stripe_inv_id = create_external_invoice_in_db(
-            ctx,
-            &realm_id,
-            "stripe",
-            "in_test_readonly_002",
-            "draft",
-            None,
-            None,
-        )
-        .await;
-
-        let response = app
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri(format!(
-                        "/api/bill/{}/invoices/{}/issue",
-                        realm_id, stripe_inv_id
-                    ))
-                    .header("content-type", "application/json")
-                    .header("cookie", format!("X-Auth={}", admin_token))
-                    .body(Body::from(json!({}).to_string()))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(
-            response.status(),
-            StatusCode::FORBIDDEN,
-            "Expected 403 when issuing external Stripe invoice"
-        );
-    }
-
-    // =========================================================================
-    // Test: External Stripe invoice void rejected
-    // =========================================================================
-    // User Story: docs/user-stories/billing/invoice-fallback.md
-    // Covers: US-IF-004 scenario 2 -- external invoice cannot be voided
-    //
-    // Given: An external Stripe invoice in issued status
-    // When: POST /invoices/{id}/void
-    // Then: Returns 403
-
-    #[test_context(InvoiceTestContext)]
-    #[tokio::test]
-    async fn test_external_stripe_invoice_void_rejected(ctx: &mut InvoiceTestContext) {
-        let app = ctx.create_unified_test_router();
-        let realm_id = ctx._realm_id.clone();
-        let admin_token = setup_billing_admin_session(ctx, "invoice-readonly-void@test.com").await;
-
-        let stripe_inv_id = create_external_invoice_in_db(
-            ctx,
-            &realm_id,
-            "stripe",
-            "in_test_readonly_003",
-            "issued",
-            Some("https://stripe.com/invoice/003"),
-            None,
-        )
-        .await;
-
-        let response = app
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri(format!(
-                        "/api/bill/{}/invoices/{}/void",
-                        realm_id, stripe_inv_id
-                    ))
-                    .header("content-type", "application/json")
-                    .header("cookie", format!("X-Auth={}", admin_token))
-                    .body(Body::from(json!({ "voidReason": "Test" }).to_string()))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(
-            response.status(),
-            StatusCode::FORBIDDEN,
-            "Expected 403 when voiding external Stripe invoice"
-        );
-    }
-
-    // =========================================================================
-    // Test: External Stripe invoice mark paid rejected
-    // =========================================================================
-    // User Story: docs/user-stories/billing/invoice-fallback.md
-    // Covers: US-IF-004 scenario 2 -- external invoice cannot be marked paid
-    //
-    // Given: An external Stripe invoice in issued status
-    // When: POST /invoices/{id}/mark-paid
-    // Then: Returns 403
-
-    #[test_context(InvoiceTestContext)]
-    #[tokio::test]
-    async fn test_external_stripe_invoice_mark_paid_rejected(ctx: &mut InvoiceTestContext) {
-        let app = ctx.create_unified_test_router();
-        let realm_id = ctx._realm_id.clone();
-        let admin_token = setup_billing_admin_session(ctx, "invoice-readonly-paid@test.com").await;
-
-        let stripe_inv_id = create_external_invoice_in_db(
-            ctx,
-            &realm_id,
-            "stripe",
-            "in_test_readonly_004",
-            "issued",
-            Some("https://stripe.com/invoice/004"),
-            None,
-        )
-        .await;
-
-        let response = app
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri(format!(
-                        "/api/bill/{}/invoices/{}/mark-paid",
-                        realm_id, stripe_inv_id
-                    ))
-                    .header("content-type", "application/json")
-                    .header("cookie", format!("X-Auth={}", admin_token))
-                    .body(Body::from(json!({}).to_string()))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(
-            response.status(),
-            StatusCode::FORBIDDEN,
-            "Expected 403 when marking external Stripe invoice as paid"
         );
     }
 

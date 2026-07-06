@@ -21,6 +21,7 @@
 //
 // =============================================================================
 
+use crate::tests::helpers::test_setup_helpers::record_test_user_consent;
 use crate::tests::scenarios::points::fixtures::*;
 use crate::tests::schema_test_context::SchemaTestContext as TestContext;
 use axum::{
@@ -48,9 +49,11 @@ async fn test_scenario_user_cannot_view_other_user_balance(ctx: &mut TestContext
     let password_a = "password123";
     let user_a_id =
         create_test_user_with_auth(&ctx._app_state.pool, &ctx._realm_id, email_a, password_a).await;
+    record_test_user_consent(&ctx._app_state.pool, user_a_id, &ctx._realm_id).await;
 
     let user_b_id =
         create_test_user(&ctx._app_state.pool, &ctx._realm_id, "user3b@example.com").await;
+    record_test_user_consent(&ctx._app_state.pool, user_b_id, &ctx._realm_id).await;
     let balance_b = 5000;
 
     let account_b_id = create_test_points_wallet(&ctx._app_state.pool, user_b_id, balance_b).await;

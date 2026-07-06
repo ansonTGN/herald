@@ -1170,15 +1170,16 @@ pub async fn setup_test_plan_config_with_points(
     sqlx::query(
         "INSERT INTO provider_entitlement_mappings
             (id, realm_id, payment_provider, external_product_id, entitlement_key,
-             billing_type, billing_period, grant_on_subscribe,
+             billing_type, billing_period, points_per_period, grant_on_subscribe,
              validity_days, enabled, bucket_id, quota_windows, created_at, updated_at)
-         VALUES ($1, $2, 'creem', $3, $4, 'recurring', 'monthly', true, 30, true, $5, $6, NOW(), NOW())
+         VALUES ($1, $2, 'creem', $3, $4, 'recurring', 'monthly', $5, true, 30, true, $6, $7, NOW(), NOW())
          ON CONFLICT DO NOTHING",
     )
     .bind(plan_id)
     .bind(realm_id)
     .bind(&external_product_id)
     .bind(&entitlement_key)
+    .bind(points_per_period)
     .bind(bucket_id)
     .bind(&quota_windows)
     .execute(&ctx.app_state.pool)
@@ -1191,14 +1192,15 @@ pub async fn setup_test_plan_config_with_points(
     sqlx::query(
         "INSERT INTO provider_entitlement_mappings
             (id, realm_id, payment_provider, external_product_id, entitlement_key,
-             billing_type, billing_period, grant_on_subscribe,
+             billing_type, billing_period, points_per_period, grant_on_subscribe,
              validity_days, enabled, bucket_id, quota_windows, created_at, updated_at)
-         VALUES ($1, $2, 'creem', 'prod_test_monthly', $3, 'recurring', 'monthly', true, 30, true, $4, $5, NOW(), NOW())
+         VALUES ($1, $2, 'creem', 'prod_test_monthly', $3, 'recurring', 'monthly', $4, true, 30, true, $5, $6, NOW(), NOW())
          ON CONFLICT DO NOTHING",
     )
     .bind(generic_mapping_id)
     .bind(realm_id)
     .bind(&entitlement_key)
+    .bind(points_per_period)
     .bind(bucket_id)
     .bind(&quota_windows)
     .execute(&ctx.app_state.pool)
@@ -1247,14 +1249,15 @@ pub async fn setup_test_entitlement_mapping_for_webhook(
     sqlx::query(
         "INSERT INTO provider_entitlement_mappings
             (id, realm_id, payment_provider, external_product_id, entitlement_key,
-             grant_on_subscribe, enabled, bucket_id, quota_windows, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())",
+             points_per_period, grant_on_subscribe, enabled, bucket_id, quota_windows, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())",
     )
     .bind(mapping_id)
     .bind(realm_id)
     .bind(provider)
     .bind(external_product_id)
     .bind(entitlement_key)
+    .bind(points_per_period)
     .bind(grant_on_subscribe)
     .bind(enabled)
     .bind(bucket_id)

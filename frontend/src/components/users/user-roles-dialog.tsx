@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { RoleSelector } from '@/components/shared/role-selector'
 import { useRealmId } from '@/stores/auth-store'
-import { adminUserRolesQueryOptions, queryKeys, rolesQueryOptions } from '@/data/query-options'
+import { adminRolesQueryOptions, adminUserRolesQueryOptions, queryKeys } from '@/data/query-options'
 import { updateUserRoles } from '@/lib/api-generated'
 import {
   Dialog,
@@ -29,7 +29,7 @@ export function UserRolesDialog({ open, onOpenChange, userId, userEmail }: UserR
   const [isSaving, setIsSaving] = useState(false)
 
   // Fetch available roles
-  const { data: rolesData, isLoading: isLoadingRoles } = useQuery(rolesQueryOptions(realmId))
+  const { data: rolesData, isLoading: isLoadingRoles } = useQuery(adminRolesQueryOptions(realmId))
 
   // Fetch user's current roles using admin API
   const { data: userRolesResponse, isLoading: isLoadingUserRoles } = useQuery({

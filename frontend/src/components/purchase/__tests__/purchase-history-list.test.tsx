@@ -7,7 +7,7 @@ import { screen, waitFor } from '@testing-library/react'
 import { userEvent } from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { PurchaseHistoryList } from '../purchase-history-list'
-import type { PurchaseHistoryItemDto } from '@/lib/api-generated'
+import type { PurchaseHistoryItem } from '@/lib/api-generated'
 import { server } from '@/test/mocks/server'
 import { renderWithProviders } from '@/test/utils/render'
 
@@ -15,17 +15,26 @@ const REALM_ID = 'test-realm'
 const BASE_URL = 'http://localhost:3000'
 const ATTEMPT_ID = 'attempt-1'
 
-const purchase: PurchaseHistoryItemDto = {
+const purchase: PurchaseHistoryItem = {
   attemptId: ATTEMPT_ID,
   targetMappingId: 'mapping-1',
   productName: 'Test Product',
   points: 100,
   amount: 999,
   currency: 'USD',
-  paymentProvider: 'stripe',
+  // Non-Stripe provider: Stripe invoices are pushed via webhook and the apply
+  // button is hidden for Stripe purchases, so the default fixture uses a
+  // non-Stripe provider to exercise the manual-fallback apply path.
+  paymentProvider: 'manual',
   status: 'Succeeded',
   completedAt: '2025-01-01T00:05:00Z',
   createdAt: '2025-01-01T00:00:00Z',
+}
+
+const stripePurchase: PurchaseHistoryItem = {
+  ...purchase,
+  attemptId: 'attempt-stripe',
+  paymentProvider: 'stripe',
 }
 
 const BUTTON_TESTID = `purchase-history-invoice-button-${ATTEMPT_ID}`
@@ -143,6 +152,25 @@ describe('PurchaseHistoryList invoice action', () => {
       )
 
       expect(screen.queryByTestId(BUTTON_TESTID)).not.toBeInTheDocument()
+    })
+
+    it('does not render invoice button for Stripe purchases (webhook-pushed)', () => {
+      // Stripe invoices arrive via webhook; users never apply manually. The
+      // button must not be rendered for Stripe payment attempts even when
+      // realm-level invoicesVisible is on (realmId + onApplyInvoice provided).
+      renderWithProviders(
+        <PurchaseHistoryList
+          purchases={[stripePurchase]}
+          isLoading={false}
+          onDetailsClick={vi.fn()}
+          realmId={REALM_ID}
+          onApplyInvoice={vi.fn()}
+        />
+      )
+
+      expect(
+        screen.queryByTestId(`purchase-history-invoice-button-${stripePurchase.attemptId}`)
+      ).not.toBeInTheDocument()
     })
   })
 })

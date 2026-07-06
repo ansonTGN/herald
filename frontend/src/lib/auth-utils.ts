@@ -25,23 +25,44 @@ export interface LoginFlowResult {
 }
 
 /**
+ * Tracks the realm for which auth data has already been initialized this
+ * session. Module-scoped: survives in-app navigation (so the root loader does
+ * not re-fetch on every page switch) but resets on a full page reload (F5),
+ * which re-runs the module and re-validates the session cookie once.
+ */
+let initializedRealm: string | null = null
+
+/**
  * Initialize authentication state
- * Fetches auth data from the API and populates the Zustand store
+ *
+ * Fetches auth data from the API and populates the Zustand store on first call
+ * per realm. Subsequent calls for the same realm reuse the store state without
+ * hitting the API — auth data is session-scoped, not per-navigation.
  *
  * @param realmId - The realm ID to initialize auth for
- * @param forceRefresh - Force a fresh fetch even if already authenticated (default: false)
+ * @param forceRefresh - Force a fresh fetch even if already initialized (default: false)
  * @returns Object containing auth status and redirect path
  */
 export async function initializeAuth(
   realmId: string,
-  _forceRefresh: boolean = false
+  forceRefresh: boolean = false
 ): Promise<{
   authenticated: boolean
   redirectPath: string
 }> {
   const store = useAuthStore.getState()
 
-  // Always fetch fresh auth data from API
+  // Reuse already-initialized store state for this realm (skip on full reload)
+  if (initializedRealm === realmId && !forceRefresh) {
+    const redirectPath = hasAdminPermission(store.permissions)
+      ? DEFAULT_ADMIN_REDIRECT
+      : DEFAULT_USER_REDIRECT
+    return {
+      authenticated: store.isAuthenticated,
+      redirectPath,
+    }
+  }
+
   store.setIsLoading(true)
 
   try {
@@ -51,6 +72,8 @@ export async function initializeAuth(
     store.setAuthStatus(authStatus.authenticated, authStatus.realmId || realmId)
     store.setUserPermissions(userPermissions.permissions, userPermissions.roles)
     store.setUserProfile(userProfile)
+
+    initializedRealm = realmId
 
     // Determine redirect path based on permissions
     const redirectPath = hasAdminPermission(userPermissions.permissions)
@@ -64,6 +87,7 @@ export async function initializeAuth(
   } catch {
     // On error, clear auth state
     store.reset()
+    initializedRealm = null
     return {
       authenticated: false,
       redirectPath: DEFAULT_USER_REDIRECT,
@@ -71,20 +95,6 @@ export async function initializeAuth(
   } finally {
     store.setIsLoading(false)
   }
-}
-
-/**
- * Refresh authentication data
- * Forces a fresh fetch of auth data from the API
- *
- * @param realmId - The realm ID to refresh auth for
- * @returns Object containing auth status and redirect path
- */
-export async function refreshAuth(realmId: string): Promise<{
-  authenticated: boolean
-  redirectPath: string
-}> {
-  return await initializeAuth(realmId)
 }
 
 /**
@@ -130,6 +140,8 @@ export async function loginFlow(
     store.setUserPermissions(userPermissions.permissions, userPermissions.roles)
     store.setUserProfile(userProfile)
 
+    initializedRealm = userRealmId
+
     const redirectPath = hasAdminPermission(userPermissions.permissions)
       ? DEFAULT_ADMIN_REDIRECT
       : DEFAULT_USER_REDIRECT
@@ -161,6 +173,7 @@ export async function logoutFlow(realmId: string): Promise<void> {
   } finally {
     // Always reset the store and clear persisted storage
     store.reset()
+    initializedRealm = null
     store.setIsLoading(false)
 
     // Clear localStorage to ensure all auth data is removed
@@ -239,6 +252,8 @@ export async function completeLoginAfterTotp(
     store.setAuthStatus(authStatus.authenticated, authStatus.realmId || realmId)
     store.setUserPermissions(userPermissions.permissions, userPermissions.roles)
     store.setUserProfile(userProfile)
+
+    initializedRealm = realmId
 
     return { redirectPath: getRedirectPath() }
   } catch (error) {

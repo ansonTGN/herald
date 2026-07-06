@@ -4,6 +4,7 @@ use axum::{
     extract::{Path, State},
 };
 use axum_valid::Valid;
+use herald_api_base::application::http::common::auth_utils::AdminIdentity;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::audit::{
@@ -11,7 +12,6 @@ use herald_core::domain::audit::{
     NewAuditEvent,
 };
 use herald_core::domain::authentication::Identity;
-use herald_core::domain::authorization::PermissionService;
 use uuid::Uuid;
 
 /// Update role
@@ -41,80 +41,8 @@ pub async fn update_role(
     Extension(identity): Extension<Identity>,
     Valid(Json(payload)): Valid<Json<RoleUpdateRequest>>,
 ) -> Result<ApiResult<RoleResponse>, ApiError> {
-    // Check permission: requires roles.manage
-    let current_user_id = identity.user_id();
-    let identity_realm_id = identity.realm_id();
-
-    // Realm boundary check
-    if identity_realm_id != realm_id {
-        if let Err(e) = state
-            .audit_event_repository
-            .create(NewAuditEvent {
-                realm_id: realm_id.clone(),
-                category: AuditCategory::Rbac,
-                action: AuditAction::RoleUpdate,
-                actor_id: identity.user_id().to_string(),
-                actor_type: Some(ActorType::Admin),
-                actor_name: identity.as_user().map(|u| u.email.clone()),
-                target_type: AuditTargetType::Role,
-                target_id: id.to_string(),
-                target_name: None,
-                result: AuditResult::Failure,
-                details: Some(serde_json::json!({"reason": "realm_boundary_violation"})),
-                ip_address: None,
-                user_agent: None,
-                trace_id: None,
-            })
-            .await
-        {
-            tracing::warn!(error = %e, "Failed to record audit event");
-        }
-        return Err(ApiError::forbidden(
-            "Access denied: cannot manage roles in a different realm",
-        ));
-    }
-
-    let has_permission = state
-        .permission_checker
-        .check_permission(&realm_id, &current_user_id, "roles", "manage")
-        .await
-        .map_err(|e| {
-            tracing::error!(
-                current_user_id = %current_user_id,
-                realm_id = %realm_id,
-                error = %e,
-                "Failed to check roles.manage permission"
-            );
-            ApiError::internal("Failed to check permission")
-        })?;
-
-    if !has_permission {
-        if let Err(e) = state
-            .audit_event_repository
-            .create(NewAuditEvent {
-                realm_id: realm_id.clone(),
-                category: AuditCategory::Rbac,
-                action: AuditAction::RoleUpdate,
-                actor_id: identity.user_id().to_string(),
-                actor_type: Some(ActorType::Admin),
-                actor_name: identity.as_user().map(|u| u.email.clone()),
-                target_type: AuditTargetType::Role,
-                target_id: id.to_string(),
-                target_name: None,
-                result: AuditResult::Failure,
-                details: Some(serde_json::json!({"reason": "insufficient_permissions", "required": "roles.manage"})),
-                ip_address: None,
-                user_agent: None,
-                trace_id: None,
-            })
-            .await
-        {
-            tracing::warn!(error = %e, "Failed to record audit event");
-        }
-        return Err(ApiError::forbidden(
-            "Insufficient permissions: requires roles.manage",
-        ));
-    }
+    let admin = AdminIdentity::require(identity.clone(), &realm_id, "role definitions")?;
+    admin.require_permission(&state, "roles", "manage").await?;
     // Check if role exists and get current data
     let current_role: Option<(bool, String)> =
         sqlx::query_as("SELECT is_builtin, name FROM roles WHERE id = $1 AND realm_id = $2")

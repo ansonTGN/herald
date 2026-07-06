@@ -5,6 +5,7 @@ use axum::{
 use herald_core::domain::authentication::Identity;
 
 use crate::client_apps::types::{ClientAppItem, ListQuery};
+use herald_api_base::application::http::common::auth_utils::AdminIdentity;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult, PageResponse};
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::client::ports::ClientService;
@@ -37,13 +38,12 @@ pub async fn list_client_apps(
     Query(query): Query<ListQuery>,
     _headers: HeaderMap,
 ) -> Result<ApiResult<PageResponse<ClientAppItem>>, ApiError> {
-    // Extract identity from request extension (injected by inject_identity middleware)
-    let identity_realm_id = identity.realm_id();
-    let current_user_id = identity.user_id();
+    let admin = AdminIdentity::require(identity, &realm_id, "client applications")?;
+    admin.require_permission(&state, "clients", "view").await?;
 
     tracing::debug!(
-        realm_id = %identity_realm_id,
-        user_id = %current_user_id,
+        realm_id = %realm_id,
+        user_id = %admin.user_id_string(),
         "Listing client apps"
     );
 
@@ -52,7 +52,7 @@ pub async fn list_client_apps(
     let page = query.page as u64;
     let page_size = query.page_size as u64;
     let (client_apps, total_count) = client_service
-        .list_client_apps_paginated(identity, realm_id, page, page_size)
+        .list_client_apps_paginated(admin.identity().clone(), realm_id, page, page_size)
         .await
         .map_err(|e| {
             tracing::error!("Failed to list client apps: {}", e);

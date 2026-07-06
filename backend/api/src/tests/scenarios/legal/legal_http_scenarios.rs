@@ -1444,3 +1444,371 @@ fn pick_locale(content: &Value, locale: Option<&str>) -> Value {
         .map(|(_, body)| body.clone())
         .unwrap_or_else(|| content.clone())
 }
+
+// =============================================================================
+// Scenario: admin draft lifecycle (save / get / discard / publish-from-draft)
+// =============================================================================
+//
+// Covers the draft feature end-to-end over HTTP:
+//   - GET    .../agreements/{type}/draft      → 404 when no draft, 200 after save
+//   - PUT    .../agreements/{type}/draft      → upsert, body echoed back
+//   - DELETE .../agreements/{type}/draft      → 204, idempotent on missing draft
+//   - POST   .../agreements/{type}/publish    → publishes from draft, clears draft
+//
+// WHY this matters: drafts are staged in a separate table and must NEVER affect
+// end-user resolution, the source indicator, version_no sequence, or the consent
+// gate. Only POST /publish flips those. These tests encode that invariant.
+
+#[test_context(TestContext)]
+#[tokio::test]
+async fn test_draft_save_get_and_discard_does_not_publish(ctx: &mut TestContext) {
+    let app = ctx.create_unified_test_router();
+    let realm_id = ctx._realm_id.clone();
+
+    let (admin_token, admin_user_id) =
+        crate::tests::helpers::auth_helpers::create_admin_session_with_user(
+            ctx,
+            "legal-draft-admin@test.com",
+            1800,
+        )
+        .await;
+    grant_settings_role(ctx, &admin_user_id, &realm_id, "manage").await;
+
+    // No draft yet → GET returns 404.
+    let get_before = app
+        .clone()
+        .oneshot(authed_request(
+            "GET",
+            &format!("/api/legal/admin/{realm_id}/agreements/terms_of_service/draft"),
+            &admin_token,
+            None,
+        ))
+        .await
+        .expect("GET draft must dispatch");
+    assert_eq!(
+        get_before.status(),
+        StatusCode::NOT_FOUND,
+        "missing draft must be 404"
+    );
+
+    // Capture the effective version BEFORE saving a draft.
+    let pre_effective = read_effective_version_id(&app, &realm_id, "terms_of_service").await;
+
+    // Save a draft.
+    let save_resp = app
+        .clone()
+        .oneshot(authed_request(
+            "PUT",
+            &format!("/api/legal/admin/{realm_id}/agreements/terms_of_service/draft"),
+            &admin_token,
+            Some(
+                json!({
+                    "content": { "en": "draft body, not yet live" },
+                    "version_label": "draft v1"
+                })
+                .to_string(),
+            ),
+        ))
+        .await
+        .expect("PUT draft must dispatch");
+    assert_eq!(save_resp.status(), StatusCode::OK, "save draft must be 200");
+    let saved: Value = crate::tests::response_json(save_resp).await;
+    assert_eq!(saved["version_label"].as_str(), Some("draft v1"));
+    assert_eq!(
+        saved["content"]["en"].as_str(),
+        Some("draft body, not yet live")
+    );
+
+    // GET now returns the draft.
+    let get_after = app
+        .clone()
+        .oneshot(authed_request(
+            "GET",
+            &format!("/api/legal/admin/{realm_id}/agreements/terms_of_service/draft"),
+            &admin_token,
+            None,
+        ))
+        .await
+        .expect("GET draft must dispatch");
+    assert_eq!(get_after.status(), StatusCode::OK);
+    let fetched: Value = crate::tests::response_json(get_after).await;
+    assert_eq!(
+        fetched["content"]["en"].as_str(),
+        Some("draft body, not yet live")
+    );
+
+    // CRITICAL INVARIANT: a saved draft must NOT change the effective version
+    // (drafts live in a separate table and never feed version resolution).
+    let post_effective = read_effective_version_id(&app, &realm_id, "terms_of_service").await;
+    assert_eq!(
+        pre_effective, post_effective,
+        "saving a draft must not change the effective agreement version"
+    );
+
+    // Discard the draft.
+    let discard_resp = app
+        .clone()
+        .oneshot(authed_request(
+            "DELETE",
+            &format!("/api/legal/admin/{realm_id}/agreements/terms_of_service/draft"),
+            &admin_token,
+            None,
+        ))
+        .await
+        .expect("DELETE draft must dispatch");
+    assert_eq!(discard_resp.status(), StatusCode::NO_CONTENT);
+
+    // Discard again is idempotent.
+    let discard_again = app
+        .oneshot(authed_request(
+            "DELETE",
+            &format!("/api/legal/admin/{realm_id}/agreements/terms_of_service/draft"),
+            &admin_token,
+            None,
+        ))
+        .await
+        .expect("DELETE draft must dispatch");
+    assert_eq!(discard_again.status(), StatusCode::NO_CONTENT);
+}
+
+#[test_context(TestContext)]
+#[tokio::test]
+async fn test_publish_from_draft_publishes_new_version_and_clears_draft(ctx: &mut TestContext) {
+    let app = ctx.create_unified_test_router();
+    let realm_id = ctx._realm_id.clone();
+
+    let (admin_token, admin_user_id) =
+        crate::tests::helpers::auth_helpers::create_admin_session_with_user(
+            ctx,
+            "legal-publish-draft-admin@test.com",
+            1800,
+        )
+        .await;
+    grant_settings_role(ctx, &admin_user_id, &realm_id, "manage").await;
+
+    // A user consents to the current version first, so we can assert reconsent
+    // flips after publish-from-draft.
+    let (user_token, _user_id) =
+        crate::tests::helpers::auth_helpers::create_admin_session_with_user(
+            ctx,
+            "legal-publish-draft-user@test.com",
+            1800,
+        )
+        .await;
+    let initial_version_id = read_effective_version_id(&app, &realm_id, "terms_of_service").await;
+    let consent_resp = app
+        .clone()
+        .oneshot(authed_request(
+            "POST",
+            &format!("/api/legal/{realm_id}/consent"),
+            &user_token,
+            Some(
+                json!({
+                    "agreements": [{
+                        "agreement_type": "terms_of_service",
+                        "version_id": initial_version_id
+                    }]
+                })
+                .to_string(),
+            ),
+        ))
+        .await
+        .expect("POST consent must dispatch");
+    assert_eq!(consent_resp.status(), StatusCode::NO_CONTENT);
+
+    let pre_custom_max = max_custom_version_no(ctx, &realm_id, "terms_of_service").await;
+
+    // Publish with no draft saved → 404. The body is an empty JSON object
+    // (publish takes an optional version_label override; none given here).
+    let publish_no_draft = app
+        .clone()
+        .oneshot(authed_request(
+            "POST",
+            &format!("/api/legal/admin/{realm_id}/agreements/terms_of_service/publish"),
+            &admin_token,
+            Some(json!({}).to_string()),
+        ))
+        .await
+        .expect("POST publish must dispatch");
+    assert_eq!(
+        publish_no_draft.status(),
+        StatusCode::NOT_FOUND,
+        "publish with no draft must be 404"
+    );
+
+    // Save a draft, then publish from it.
+    let save_resp = app
+        .clone()
+        .oneshot(authed_request(
+            "PUT",
+            &format!("/api/legal/admin/{realm_id}/agreements/terms_of_service/draft"),
+            &admin_token,
+            Some(
+                json!({
+                    "content": { "en": "published-from-draft body" },
+                    "version_label": "draft label"
+                })
+                .to_string(),
+            ),
+        ))
+        .await
+        .expect("PUT draft must dispatch");
+    assert_eq!(save_resp.status(), StatusCode::OK);
+
+    let publish_resp = app
+        .clone()
+        .oneshot(authed_request(
+            "POST",
+            &format!("/api/legal/admin/{realm_id}/agreements/terms_of_service/publish"),
+            &admin_token,
+            Some(json!({ "version_label": "final override label" }).to_string()),
+        ))
+        .await
+        .expect("POST publish must dispatch");
+    assert_eq!(
+        publish_resp.status(),
+        StatusCode::OK,
+        "publish from draft must be 200"
+    );
+
+    let published: Value = crate::tests::response_json(publish_resp).await;
+    assert!(
+        published["version_no"].as_i64() > Some(pre_custom_max),
+        "published version_no ({}) must exceed the realm's prior custom max ({})",
+        published["version_no"],
+        pre_custom_max
+    );
+
+    // The draft must be cleared after publish.
+    let get_draft_after = app
+        .clone()
+        .oneshot(authed_request(
+            "GET",
+            &format!("/api/legal/admin/{realm_id}/agreements/terms_of_service/draft"),
+            &admin_token,
+            None,
+        ))
+        .await
+        .expect("GET draft must dispatch");
+    assert_eq!(
+        get_draft_after.status(),
+        StatusCode::NOT_FOUND,
+        "draft must be cleared after publish"
+    );
+
+    // Publish advanced the effective version and flips reconsent.
+    let status_resp = app
+        .oneshot(authed_request(
+            "GET",
+            &format!("/api/legal/{realm_id}/consent/status"),
+            &user_token,
+            None,
+        ))
+        .await
+        .expect("GET status must dispatch");
+    let body: Value = crate::tests::response_json(status_resp).await;
+    let tos = status_item(&body, "terms_of_service");
+    assert!(
+        tos["needs_reconsent"].as_bool() == Some(true),
+        "publish-from-draft must flip needs_reconsent=true, got: {tos}"
+    );
+}
+
+// =============================================================================
+// Scenario: admin GET version-by-id returns the full body; 404 for unknown id
+// =============================================================================
+
+/// User Story: US-RA-019 (admin views a past version's body)
+/// Covers: Design §4.2.1 (admin endpoint list) — `GET
+/// /api/legal/admin/{realmId}/agreements/versions/{versionId}` returns the
+/// full localized `content` for a single history entry (the list endpoint only
+/// returns summaries, so the body is fetched on demand for the "view" dialog).
+/// Requires `settings.view` + `has_access_to_realm`. An unknown id → 404.
+///
+/// WHY this matters: this is the only admin path that exposes a historical
+/// version's body; returning the wrong body, leaking another realm's, or 500ing
+/// on a missing id would all break the audit trail an admin relies on to review
+/// what users were bound to at a given time.
+#[test_context(TestContext)]
+#[tokio::test]
+async fn test_admin_get_version_returns_full_body_and_404_for_unknown(ctx: &mut TestContext) {
+    let app = ctx.create_unified_test_router();
+    let realm_id = ctx._realm_id.clone();
+
+    let (admin_token, admin_user_id) =
+        crate::tests::helpers::auth_helpers::create_admin_session_with_user(
+            ctx,
+            "legal-view-version@test.com",
+            1800,
+        )
+        .await;
+    // GET version requires settings.view; publish (to create a history entry
+    // with a known id) requires settings.manage, so grant both.
+    grant_settings_role(ctx, &admin_user_id, &realm_id, "view").await;
+    grant_settings_role(ctx, &admin_user_id, &realm_id, "manage").await;
+
+    // Publish one custom version so we have a real id + body to fetch.
+    let publish_resp = app
+        .clone()
+        .oneshot(authed_request(
+            "PUT",
+            &format!("/api/legal/admin/{realm_id}/agreements/terms_of_service"),
+            &admin_token,
+            Some(
+                json!({ "content": { "en": "history body text" }, "version_label": "h1" })
+                    .to_string(),
+            ),
+        ))
+        .await
+        .expect("PUT publish must dispatch");
+    assert_eq!(publish_resp.status(), StatusCode::OK);
+    let published: Value = crate::tests::response_json(publish_resp).await;
+    let version_id = published["version_id"]
+        .as_str()
+        .expect("publish response must include version_id")
+        .to_string();
+
+    // Fetch the version by id → full body, no other realm leakage (path-scoped).
+    let resp = app
+        .clone()
+        .oneshot(authed_request(
+            "GET",
+            &format!("/api/legal/admin/{realm_id}/agreements/versions/{version_id}"),
+            &admin_token,
+            None,
+        ))
+        .await
+        .expect("GET version must dispatch");
+    assert_eq!(
+        resp.status(),
+        StatusCode::OK,
+        "known version id must return 200"
+    );
+    let body: Value = crate::tests::response_json(resp).await;
+    assert_eq!(body["agreement_type"].as_str(), Some("terms_of_service"));
+    assert_eq!(
+        body["content"]["en"].as_str(),
+        Some("history body text"),
+        "GET version must return the full localized content body"
+    );
+    assert_eq!(body["version_label"].as_str(), Some("h1"));
+
+    // Unknown id → 404 (not 500).
+    let missing = app
+        .oneshot(authed_request(
+            "GET",
+            &format!(
+                "/api/legal/admin/{realm_id}/agreements/versions/{}",
+                Uuid::now_v7()
+            ),
+            &admin_token,
+            None,
+        ))
+        .await
+        .expect("GET missing version must dispatch");
+    assert_eq!(
+        missing.status(),
+        StatusCode::NOT_FOUND,
+        "unknown version id must return 404"
+    );
+}

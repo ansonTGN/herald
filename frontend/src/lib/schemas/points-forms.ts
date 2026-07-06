@@ -72,7 +72,7 @@ export type GrantPointsFormData = z.infer<typeof grantPointsSchema>
 /**
  * Schema for a single quota window (design §4.2.2 / §4.3.2).
  *
- * Mirrors {@link QuotaWindowInputDto}: `windowSeconds` is the sliding window
+ * Mirrors {@link QuotaWindowInput}: `windowSeconds` is the sliding window
  * length in seconds (must be > 0) and `limit` is the quota cap (>= 0; 0 is a
  * valid "grants nothing" edge case). Used by `MultiWindowQuotaEditor` and by
  * `pointsDefaultConfigSchema.freePeriodicQuotaWindows` below.

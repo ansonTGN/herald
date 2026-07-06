@@ -8,14 +8,12 @@ import { makeMapping } from '@/test/fixtures/entitlement-mappings'
 
 // Unit-level Zod contracts for the price-granularity batch editor. Mirrors
 // the generated `PriceMappingUpdate` / `BatchUpdateEntitlementMappingsRequest`.
-// Asserts boundary values, regex accept/reject, required fields, cross-field
-// propagation, and defaults shape. No MSW, no rendering.
+// Asserts required fields, numeric/enum guards, and defaults shape. No MSW, no rendering.
 
-/** Factory for a single valid update payload (entitlement-keyed by pro-plan). */
+/** Factory for a single valid update payload. */
 function validUpdate(overrides: Record<string, unknown> = {}) {
   return {
     mappingId: 'map_pro_monthly',
-    entitlementKey: 'pro-plan',
     ...overrides,
   }
 }
@@ -29,35 +27,6 @@ function validBatch(overrides: Record<string, unknown> = {}) {
     ...overrides,
   }
 }
-
-describe('priceMappingUpdateSchema entitlement_key regex', () => {
-  describe('accepts valid keys', () => {
-    it.each([
-      ['lowercase with hyphen', 'pro-plan'],
-      ['single character', 'a'],
-      ['digits with hyphens', '1-2-3'],
-      ['exactly 64 chars of [a-z0-9-]', 'a'.repeat(64)],
-      ['mixed lowercase alnum', 'abc123def'],
-    ])('accepts %s: %s', (_label, key) => {
-      const result = priceMappingUpdateSchema.safeParse(validUpdate({ entitlementKey: key }))
-      expect(result.success).toBe(true)
-    })
-  })
-
-  describe('rejects invalid keys', () => {
-    it.each([
-      ['uppercase letter', 'Pro-Plan'],
-      ['underscore', 'pro_plan'],
-      ['space', 'pro plan'],
-      ['empty string', ''],
-      ['65 chars (over limit)', 'a'.repeat(65)],
-      ['dot', 'pro.'],
-    ])('rejects %s: %s', (_label, key) => {
-      const result = priceMappingUpdateSchema.safeParse(validUpdate({ entitlementKey: key }))
-      expect(result.success).toBe(false)
-    })
-  })
-})
 
 describe('priceMappingUpdateSchema required fields', () => {
   it('fails when mappingId is missing', () => {
@@ -74,19 +43,9 @@ describe('priceMappingUpdateSchema required fields', () => {
     expect(result.success).toBe(false)
   })
 
-  it('fails when entitlementKey is missing', () => {
-    const { entitlementKey: _omit, ...withoutKey } = validUpdate()
-    void _omit
-
-    const result = priceMappingUpdateSchema.safeParse(withoutKey)
-
-    expect(result.success).toBe(false)
-  })
-
-  it('accepts a row with only the two required fields (optionals omitted)', () => {
+  it('accepts a row with only mappingId (optionals omitted)', () => {
     const result = priceMappingUpdateSchema.safeParse({
       mappingId: 'map_1',
-      entitlementKey: 'pro-plan',
     })
     expect(result.success).toBe(true)
   })
@@ -97,7 +56,6 @@ describe('priceMappingUpdateSchema numeric / enum guards', () => {
     ['negative pointsPerPeriod', { pointsPerPeriod: -1 }],
     ['fractional pointsPerPeriod', { pointsPerPeriod: 1.5 }],
     ['zero validityDays', { validityDays: 0 }],
-    ['grantPeriodType outside enum', { grantPeriodType: 'hourly' }],
   ])('rejects %s', (_label, overrides) => {
     const result = priceMappingUpdateSchema.safeParse(validUpdate(overrides))
     expect(result.success).toBe(false)
@@ -105,10 +63,7 @@ describe('priceMappingUpdateSchema numeric / enum guards', () => {
 
   it.each([
     ['zero pointsPerPeriod', { pointsPerPeriod: 0 }],
-    ['grantPeriodType once', { grantPeriodType: 'once' }],
-    ['grantPeriodType daily', { grantPeriodType: 'daily' }],
-    ['grantPeriodType weekly', { grantPeriodType: 'weekly' }],
-    ['grantPeriodType monthly', { grantPeriodType: 'monthly' }],
+    ['validityDays', { validityDays: 30 }],
   ])('accepts %s', (_label, overrides) => {
     const result = priceMappingUpdateSchema.safeParse(validUpdate(overrides))
     expect(result.success).toBe(true)
@@ -143,19 +98,6 @@ describe('batchEntitlementMappingsSchema', () => {
     expect(result.success).toBe(false)
   })
 
-  it('fails the WHOLE batch when any update has a bad entitlementKey (cross-field propagation)', () => {
-    const result = batchEntitlementMappingsSchema.safeParse({
-      paymentProvider: 'stripe',
-      externalProductId: 'prod_pro',
-      updates: [
-        validUpdate({ entitlementKey: 'pro-plan' }),
-        validUpdate({ entitlementKey: 'Pro_Plan' }), // regex violation
-      ],
-    })
-
-    expect(result.success).toBe(false)
-  })
-
   it('accepts a batch seeded from a real fixture mapping', () => {
     const mapping = makeMapping()
     const result = batchEntitlementMappingsSchema.safeParse({
@@ -164,7 +106,6 @@ describe('batchEntitlementMappingsSchema', () => {
       updates: [
         {
           mappingId: mapping.id,
-          entitlementKey: mapping.entitlementKey,
           billingType: mapping.billingType,
           billingPeriod: mapping.billingPeriod,
           enabled: mapping.enabled,
@@ -198,7 +139,7 @@ describe('getBatchEntitlementMappingsDefaults', () => {
   })
 
   it('seeds the updates array from config without mutating the input', () => {
-    const seededUpdates = [{ mappingId: 'map_1', entitlementKey: 'pro-plan' }]
+    const seededUpdates = [{ mappingId: 'map_1' }]
 
     const defaults = getBatchEntitlementMappingsDefaults({
       paymentProvider: 'stripe',

@@ -54,6 +54,7 @@ docs/
 | [stripe-payment.md](billing/stripe-payment.md) | Stripe 支付集成 | Realm Admin |
 | [invoice.md](billing/invoice.md) | Invoice 发票管理（含 Provider 发票同步和自研 Fallback） | Realm Admin, Regular User |
 | [payment-invoice-mapping.md](billing/payment-invoice-mapping.md) | 支付-发票强制映射（订阅续费支付记录、外部发票本地归属、归属异常可观测） | Realm Admin, System |
+| [sync-payment.md](billing/sync-payment.md) | 支付产品同步增强（产品名主标签 / 价格单位修正 / Stripe metadata 同步 / 计费周期只读） | Admin Realm |
 
 ### Integration 集成与扩展
 

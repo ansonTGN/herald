@@ -8,10 +8,12 @@ use uuid::Uuid;
 
 use herald_domain::common::entities::app_errors::CoreError;
 use herald_domain::legal::UserAgreementConsent;
-use herald_domain::legal::entities::{AgreementSource, AgreementType, LegalAgreementVersion};
+use herald_domain::legal::entities::{
+    AgreementSource, AgreementType, LegalAgreementDraft, LegalAgreementVersion,
+};
 use herald_domain::legal::error::LegalError;
 use herald_domain::legal::ports::{LegalAgreementRepository, UserConsentRepository};
-use herald_entity::{legal_agreement_version, user_agreement_consent};
+use herald_entity::{legal_agreement_draft, legal_agreement_version, user_agreement_consent};
 
 /// PostgreSQL implementation of [`LegalAgreementRepository`].
 ///
@@ -47,6 +49,24 @@ impl PostgresLegalAgreementRepository {
             source: AgreementSource::from(model.source.as_str()),
             published_at: chrono::DateTime::<chrono::Utc>::from(model.published_at),
             published_by: model.published_by,
+        })
+    }
+
+    /// Map a `legal_agreement_draft` row to the domain entity. An
+    /// `agreement_type` parse failure is surfaced as `InternalServerError`
+    /// (same policy as the version mapping above).
+    fn to_draft_domain(
+        model: legal_agreement_draft::Model,
+    ) -> Result<LegalAgreementDraft, CoreError> {
+        Ok(LegalAgreementDraft {
+            id: model.id,
+            realm_id: model.realm_id,
+            agreement_type: AgreementType::try_from(model.agreement_type.as_str())
+                .map_err(CoreError::InternalServerError)?,
+            content: model.content,
+            version_label: model.version_label,
+            updated_at: chrono::DateTime::<chrono::Utc>::from(model.updated_at),
+            updated_by: model.updated_by,
         })
     }
 
@@ -142,6 +162,17 @@ impl LegalAgreementRepository for PostgresLegalAgreementRepository {
         Ok(combined)
     }
 
+    /// Fetch a single version by primary key (with full content body).
+    async fn get_version_by_id(
+        &self,
+        version_id: Uuid,
+    ) -> Result<Option<LegalAgreementVersion>, CoreError> {
+        let row = legal_agreement_version::Entity::find_by_id(version_id)
+            .one(&self.db)
+            .await?;
+        row.map(Self::to_domain).transpose()
+    }
+
     /// Whether the realm has any custom version for the type.
     async fn has_custom(
         &self,
@@ -154,6 +185,110 @@ impl LegalAgreementRepository for PostgresLegalAgreementRepository {
             .count(&self.db)
             .await?;
         Ok(count > 0)
+    }
+
+    /// Get the staged draft for `(realm_id, agreement_type)`, if any. Drafts
+    /// live in a separate table and never feed into version resolution.
+    async fn get_draft(
+        &self,
+        realm_id: &str,
+        agreement_type: AgreementType,
+    ) -> Result<Option<LegalAgreementDraft>, CoreError> {
+        let row = legal_agreement_draft::Entity::find()
+            .filter(legal_agreement_draft::Column::RealmId.eq(realm_id))
+            .filter(legal_agreement_draft::Column::AgreementType.eq(agreement_type.as_str()))
+            .one(&self.db)
+            .await?;
+        row.map(Self::to_draft_domain).transpose()
+    }
+
+    /// Upsert the draft. `INSERT ... ON CONFLICT (realm_id, agreement_type) DO
+    /// UPDATE` keeps exactly one draft per (realm, type); a repeat save
+    /// overwrites `content` / `version_label` / `updated_at` / `updated_by`
+    /// (last-write-wins). `id` is let-default on insert; on conflict the
+    /// existing id is retained.
+    async fn upsert_draft(
+        &self,
+        realm_id: &str,
+        agreement_type: AgreementType,
+        content: serde_json::Value,
+        version_label: Option<String>,
+        updated_by: &str,
+    ) -> Result<LegalAgreementDraft, CoreError> {
+        // Pre-extract owned/copied captures so the insert closure borrows no
+        // value the conflict-retry path must also move (mirrors
+        // `publish_custom_version`). `as_str()` is `&'static str` (Copy).
+        let type_str = agreement_type.as_str();
+        let realm_owned = realm_id.to_string();
+        let by_owned = updated_by.to_string();
+        let db = &self.db;
+
+        // Find-then-insert/update. The (realm_id, agreement_type) unique index
+        // is the arbiter; the whole row is small (one per scope) so the
+        // read-modify-write is cheap and matches the consent upsert pattern.
+        let existing = legal_agreement_draft::Entity::find()
+            .filter(legal_agreement_draft::Column::RealmId.eq(realm_id))
+            .filter(legal_agreement_draft::Column::AgreementType.eq(type_str))
+            .one(db)
+            .await?;
+
+        if let Some(model) = existing {
+            let mut active: legal_agreement_draft::ActiveModel = model.into_active_model();
+            active.content = Set(content);
+            active.version_label = Set(version_label);
+            active.updated_at = Set(chrono::Utc::now().into());
+            active.updated_by = Set(Some(by_owned));
+            let updated = active.update(db).await?;
+            return Self::to_draft_domain(updated);
+        }
+
+        let active = legal_agreement_draft::ActiveModel {
+            id: NotSet,
+            realm_id: Set(realm_owned.clone()),
+            agreement_type: Set(type_str.to_string()),
+            content: Set(content.clone()),
+            version_label: Set(version_label.clone()),
+            updated_at: NotSet,
+            updated_by: Set(Some(by_owned.clone())),
+        };
+        match active.insert(db).await {
+            Ok(model) => Self::to_draft_domain(model),
+            Err(err) if is_unique_violation(&err, "legal_agreement_draft_realm_type_unique") => {
+                // Lost the find-then-insert race: re-fetch and update in place.
+                let existing = legal_agreement_draft::Entity::find()
+                    .filter(legal_agreement_draft::Column::RealmId.eq(&realm_owned))
+                    .filter(legal_agreement_draft::Column::AgreementType.eq(type_str))
+                    .one(db)
+                    .await?
+                    .ok_or_else(|| {
+                        CoreError::DatabaseError(
+                            "draft row vanished between insert conflict and update retry"
+                                .to_string(),
+                        )
+                    })?;
+                let mut active: legal_agreement_draft::ActiveModel = existing.into_active_model();
+                active.content = Set(content);
+                active.version_label = Set(version_label);
+                active.updated_at = Set(chrono::Utc::now().into());
+                active.updated_by = Set(Some(by_owned));
+                Self::to_draft_domain(active.update(db).await?)
+            }
+            Err(other) => Err(CoreError::from(other)),
+        }
+    }
+
+    /// Delete the draft. Idempotent: deleting a missing draft is a no-op.
+    async fn delete_draft(
+        &self,
+        realm_id: &str,
+        agreement_type: AgreementType,
+    ) -> Result<(), CoreError> {
+        legal_agreement_draft::Entity::delete_many()
+            .filter(legal_agreement_draft::Column::RealmId.eq(realm_id))
+            .filter(legal_agreement_draft::Column::AgreementType.eq(agreement_type.as_str()))
+            .exec(&self.db)
+            .await?;
+        Ok(())
     }
 
     /// Publish a per-realm custom version.
@@ -202,7 +337,12 @@ impl LegalAgreementRepository for PostgresLegalAgreementRepository {
 
         match attempt(version_no).await {
             Ok(model) => Self::to_domain(model),
-            Err(err) if is_scope_type_version_unique_violation(&err) => {
+            Err(err)
+                if is_unique_violation(
+                    &err,
+                    "legal_agreement_version_scope_type_version_unique",
+                ) =>
+            {
                 // Recompute under the now-corrected max and retry once.
                 let next = self
                     .next_custom_version_no(realm_id, &agreement_type)
@@ -211,7 +351,12 @@ impl LegalAgreementRepository for PostgresLegalAgreementRepository {
                     Ok(model) => Self::to_domain(model),
                     // Still colliding — a concurrent publish raced ahead twice;
                     // surface a conflict so the caller re-reads current effective.
-                    Err(err2) if is_scope_type_version_unique_violation(&err2) => {
+                    Err(err2)
+                        if is_unique_violation(
+                            &err2,
+                            "legal_agreement_version_scope_type_version_unique",
+                        ) =>
+                    {
                         Err(LegalError::StaleVersion.into())
                     }
                     Err(other) => Err(CoreError::from(other)),
@@ -288,7 +433,7 @@ impl UserConsentRepository for PostgresUserConsentRepository {
         };
         match active.insert(&self.db).await {
             Ok(_) => Ok(()),
-            Err(err) if is_user_type_unique_violation(&err) => {
+            Err(err) if is_unique_violation(&err, "user_agreement_consent_user_type_unique") => {
                 // Lost the find-then-insert race against another concurrent
                 // consent for the same user/type: retry as an update.
                 let existing = user_agreement_consent::Entity::find()
@@ -329,36 +474,23 @@ impl UserConsentRepository for PostgresUserConsentRepository {
     }
 }
 
-/// Detect a `legal_agreement_version_scope_type_version_unique` violation.
+/// Detect a Postgres unique-violation (SQLSTATE 23505) for `constraint`.
 ///
-/// sea-orm 1.1 surfaces a Postgres `23505` unique violation as a `Query`/`Exec`
-/// wrapping `RuntimeErr::SqlxError`; `PgDatabaseError::code()` returns the
-/// SQLSTATE. We additionally match the explicit migration constraint name and a
-/// generic `duplicate key` token as message-level fallbacks, mirroring the
-/// billing repo's `classify_from_message` resilience against driver/constraint-
-/// name drift.
-fn is_scope_type_version_unique_violation(err: &DbErr) -> bool {
-    if let Some(sqlx_err) = sqlx_error(err) {
-        // `PgDatabaseError::code()` is the inherent `&str` SQLSTATE.
-        if sqlx_err.code() == "23505" {
-            return true;
-        }
-    }
-    let msg = err.to_string();
-    msg.contains("legal_agreement_version_scope_type_version_unique")
-        || msg.contains("duplicate key value")
-}
-
-/// Detect a `user_agreement_consent_user_type_unique` violation (same approach
-/// as the agreement-version check, specialized to that index name).
-fn is_user_type_unique_violation(err: &DbErr) -> bool {
+/// sea-orm 1.1 surfaces a Postgres `23505` as a `Query`/`Exec` wrapping
+/// `RuntimeErr::SqlxError`; `PgDatabaseError::code()` returns the SQLSTATE.
+/// When the SQLSTATE is unavailable (driver/version drift), fall back to
+/// matching the explicit `constraint` name or a generic `duplicate key` token
+/// in the message — mirroring the billing repo's `classify_from_message`
+/// resilience. Each call site touches only one table, so the constraint name
+/// is the message-level discriminator, not a real branch at runtime.
+fn is_unique_violation(err: &DbErr, constraint: &str) -> bool {
     if let Some(sqlx_err) = sqlx_error(err)
         && sqlx_err.code() == "23505"
     {
         return true;
     }
     let msg = err.to_string();
-    msg.contains("user_agreement_consent_user_type_unique") || msg.contains("duplicate key value")
+    msg.contains(constraint) || msg.contains("duplicate key value")
 }
 
 /// Unwrap the underlying sqlx `PgDatabaseError` from a sea-orm `DbErr`, if any.

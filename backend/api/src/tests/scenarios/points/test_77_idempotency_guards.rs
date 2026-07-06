@@ -4,13 +4,17 @@
 //
 // Tests that verify DB-level idempotency guards prevent duplicate operations.
 //
-// 1. grant_points_for_sdk: duplicate call returns zero-amount placeholder
-// 2. revoke_subscription_credits_by_entitlement_atomic: duplicate call returns total_revoked=0
-// 3. revoke_topup_proportional_atomic: duplicate call returns total_revoked=0
+// 1. grant_points_internal idempotency prevents duplicate ledger rows for
+//    topup/granted/registration_credit.
+// 2. subscription_service.revoke_quota_entitlement is idempotent by
+//    `(realm_id, user_id, bucket_id, credit_type, source_id)`: a second call
+//    finds no active entitlement and is a no-op.
+// 3. revoke_topup_proportional_atomic idempotency prevents duplicate topup
+//    ledger revocation.
 //
-// These guards use check_completed_idempotency_in_tx and
-// record_completed_idempotency_in_tx to prevent duplicate ledger creation
-// or revocation when the same operation is retried.
+// Subscription grants themselves are idempotent via the UNIQUE constraint on
+// `(realm_id, user_id, bucket_id, credit_type, idempotency_key)` on
+// `points_quota_entitlements`.
 //
 // =============================================================================
 
@@ -22,15 +26,16 @@ use crate::tests::helpers::webhook_helpers::{
 use crate::tests::scenarios::points::fixtures::*;
 use crate::tests::schema_test_context::SchemaTestContext;
 use herald_core::domain::points::dtos::RevokePointsOutput;
-use herald_core::domain::points::entities::{CreditSourceType, CreditType, RevocationType};
+use herald_core::domain::points::entities::{
+    CreditSourceType, CreditType, QuotaEntitlementStatus, QuotaSourceType,
+};
 use herald_core::domain::points::ports::PointsRepository;
 use test_context::test_context;
 use uuid::Uuid;
 
 /// Seed a `subscription` row bound to the realm's legacy test bucket. Used by
-/// subscription tests below so the schedule's `subscription_id` is known ahead of
-/// the service call. Mirrors `seed_subscription_row` in test_40 — kept local
-/// to avoid cross-file test helper churn.
+/// the period-level business-idempotency test below so the schedule's
+/// `subscription_id` is known ahead of the service call.
 async fn seed_subscription_row_77(
     ctx: &mut SchemaTestContext,
     user_id: Uuid,
@@ -187,130 +192,111 @@ async fn test_grant_idempotency_prevents_duplicate_ledger(ctx: &mut SchemaTestCo
 }
 
 // ============================================================================
-// Test 2: revoke_subscription_credits_by_entitlement idempotency
+// Test 2: revoke_quota_entitlement idempotency for subscription credits
 // ============================================================================
 //
 // User Story: As a billing system, when I retry a subscription credit
-// revocation with the same idempotency_key, I must not create a duplicate
-// revocation record or revoke more credits than intended.
+// revocation with the same source_id, I must not create a duplicate
+// entitlement or alter the revoked entitlement.
 //
-// Covers: revoke_subscription_credits_by_entitlement_atomic (line ~3493-3507)
-// Idempotency key: caller-provided via idempotency_key parameter
+// Covers: subscription_service.revoke_quota_entitlement
+// Idempotency: no active entitlement matches after the first revoke, so replays
+// are no-ops.
 //
 #[test_context(SchemaTestContext)]
 #[tokio::test]
-async fn test_revoke_subscription_by_entitlement_idempotency(ctx: &mut SchemaTestContext) {
+async fn test_revoke_subscription_quota_entitlement_idempotency(ctx: &mut SchemaTestContext) {
     let realm_id = ctx._realm_id.clone();
     let user_id =
         create_test_user(&ctx.app_state.pool, &realm_id, "idempotency77b@example.com").await;
 
     create_points_wallet(ctx, user_id, &realm_id).await;
 
-    // Create a subscription credit ledger with a known entitlement source_id
-    let entitlement_key = Uuid::now_v7().to_string();
-    let ledger_id = create_credit_ledger_entry_v2(
+    let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, &realm_id).await;
+    let source_id = Uuid::now_v7().to_string();
+    let now = chrono::Utc::now();
+
+    // Seed an active SubscriptionCredit quota entitlement for this user.
+    grant_quota_entitlement_for_test(
         ctx,
-        user_id,
         &realm_id,
+        user_id,
+        bucket_id,
         CreditType::SubscriptionCredit,
-        CreditSourceType::SubscriptionInitial,
-        entitlement_key.clone(),
-        1000,
-        None,
+        QuotaSourceType::SubscriptionInitial,
+        &source_id,
+        &[(2_592_000, 1_000, "period")],
+        now - chrono::Duration::hours(1),
+        Some(now + chrono::Duration::days(30)),
     )
     .await;
 
-    let idempotency_key = format!("revoke:sub:{}", entitlement_key);
-
-    // Credit-bucket: revoke now requires an explicit bucket_id target.
-    // The wallet and the subscription ledger above were both created on the
-    // realm's legacy bucket (`create_points_wallet` +
-    // `create_credit_ledger_entry_v2` route through
-    // `ensure_test_bucket_for_realm`), and `revoke_subscription_credits_by_
-    // entitlement_atomic` scopes its ledger lookup by `bucket_id`. Revoke on
-    // any other bucket would find no ledger to revoke. Target the SAME bucket
-    // the ledger actually lives in so the test exercises revoke idempotency
-    // rather than bucket routing.
-    use crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm;
-    let revoke_bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, &realm_id).await;
-
-    // First revocation should succeed
+    // First revocation should succeed and mark the entitlement revoked.
     let result1 = ctx
         .app_state
-        .points_repository
-        .revoke_subscription_credits_by_entitlement_atomic(
+        .subscription_service
+        .revoke_quota_entitlement(
             &realm_id,
             user_id,
-            revoke_bucket_id,
-            &entitlement_key,
-            RevocationType::CancelRevoke,
-            "idempotency test: first revoke".to_string(),
-            None,
-            Some(idempotency_key.clone()),
+            bucket_id,
+            CreditType::SubscriptionCredit,
+            &source_id,
+            now,
         )
         .await;
-
     assert!(
         result1.is_ok(),
         "First revoke should succeed: {:?}",
         result1
     );
-    let output1 = result1.unwrap();
+
+    let entitlements_after_first =
+        get_user_quota_entitlements(ctx, user_id, CreditType::SubscriptionCredit).await;
     assert_eq!(
-        output1.total_revoked, 1000,
-        "First revoke should revoke full 1000"
+        entitlements_after_first.len(),
+        1,
+        "Exactly one subscription entitlement should exist after first revoke"
+    );
+    assert_eq!(
+        entitlements_after_first[0].status,
+        QuotaEntitlementStatus::Revoked,
+        "Entitlement should be revoked after first call"
     );
     assert!(
-        !output1.ledger_ids.is_empty(),
-        "First revoke should include ledger IDs"
+        entitlements_after_first[0].effective_until.is_some(),
+        "Revoked entitlement should have effective_until set"
     );
 
-    // Verify the ledger is now revoked
-    let ledger = get_ledger_by_id(ctx, ledger_id).await;
-    assert_eq!(
-        ledger.revoked_amount, 1000,
-        "Ledger should show 1000 revoked after first revoke"
-    );
-
-    // Record revocation count before second call
-    let revocation_count_before = get_revocation_records(ctx, user_id).await.len();
-
-    // Second revocation with the same idempotency_key should be idempotent
+    // Second revocation with the same source_id should be idempotent.
     let result2 = ctx
         .app_state
-        .points_repository
-        .revoke_subscription_credits_by_entitlement_atomic(
+        .subscription_service
+        .revoke_quota_entitlement(
             &realm_id,
             user_id,
-            revoke_bucket_id,
-            &entitlement_key,
-            RevocationType::CancelRevoke,
-            "idempotency test: duplicate revoke".to_string(),
-            None,
-            Some(idempotency_key),
+            bucket_id,
+            CreditType::SubscriptionCredit,
+            &source_id,
+            now,
         )
         .await;
-
     assert!(
         result2.is_ok(),
         "Second revoke should succeed (idempotent response): {:?}",
         result2
     );
-    let output2 = result2.unwrap();
-    assert_eq!(
-        output2.total_revoked, 0,
-        "Second revoke should return total_revoked=0 (idempotent)"
-    );
-    assert!(
-        output2.ledger_ids.is_empty(),
-        "Second revoke should return empty ledger_ids"
-    );
 
-    // Verify no additional revocation record was created
-    let revocation_count_after = get_revocation_records(ctx, user_id).await.len();
+    let entitlements_after_second =
+        get_user_quota_entitlements(ctx, user_id, CreditType::SubscriptionCredit).await;
     assert_eq!(
-        revocation_count_before, revocation_count_after,
-        "No new revocation record should be created on duplicate call"
+        entitlements_after_second.len(),
+        1,
+        "No duplicate entitlement should be created on duplicate revoke"
+    );
+    assert_eq!(
+        entitlements_after_second[0].status,
+        QuotaEntitlementStatus::Revoked,
+        "Entitlement should stay revoked after second call"
     );
 }
 
@@ -445,9 +431,9 @@ async fn test_revoke_topup_proportional_idempotency(ctx: &mut SchemaTestContext)
 //   no-re-grant signal.
 //
 // Layer 2 — PROVIDER EVENT idempotency:
-//   `idempotency_keys` table keyed `creem_{event_id}`. Duplicate webhook
-//   deliveries with the same event_id hit the cached result and never re-enter
-//   `handle_subscription_paid`.
+//   The webhook layer caches provider events by `creem_{event_id}`. Duplicate
+//   webhook deliveries with the same event_id hit the cached result and never
+//   re-enter `handle_subscription_paid`.
 //
 // The two layers are defense-in-depth; both must hold independently.
 
@@ -573,11 +559,9 @@ async fn test_period_schedule_business_idempotency_dedup(ctx: &mut SchemaTestCon
 
 /// User Story: US-PU-009 — provider event-level idempotency preserved.
 /// Covers (P0 — event-level idempotency retained as backstop):
-/// the webhook layer's `creem_{event_id}` idempotency key intercepts a
-/// duplicate event delivery BEFORE `handle_subscription_paid` is reached. The
-/// second delivery returns the cached result and produces no additional
-/// ledger row, no additional grant_record, and the idempotency key is
-/// recorded in the `idempotency_keys` table.
+/// the webhook layer caches provider events by `creem_{event_id}`. A duplicate
+/// `subscription.paid` delivery with the same event_id returns the cached
+/// result and produces no additional `points_quota_entitlements` row.
 #[test_context(SchemaTestContext)]
 #[tokio::test]
 async fn test_event_level_idempotency_preserved(ctx: &mut SchemaTestContext) {
@@ -595,12 +579,13 @@ async fn test_event_level_idempotency_preserved(ctx: &mut SchemaTestContext) {
     setup_test_plan_config(ctx, &realm_id, plan_id).await;
     create_points_wallet(ctx, user_id, &realm_id).await;
 
-    let now = chrono::Utc::now();
-    let base = build_subscription_paid_event(event_id.clone(), user_id, plan_id, false, &realm_id);
-    let mut event = base.clone();
-    event["data"]["object"]["currentPeriodStart"] = serde_json::Value::String(now.to_rfc3339());
-    event["data"]["object"]["currentPeriodEnd"] =
-        serde_json::Value::String((now + chrono::Duration::days(30)).to_rfc3339());
+    let event = build_subscription_paid_event(
+        event_id.clone(),
+        user_id,
+        plan_id,
+        false, // initial subscription
+        &realm_id,
+    );
 
     let app = ctx.create_unified_test_router();
 
@@ -612,30 +597,23 @@ async fn test_event_level_idempotency_preserved(ctx: &mut SchemaTestContext) {
         send_webhook_with_signature(&app, &realm_id, event, "test_webhook_secret").await;
     assert_webhook_success(&response2);
 
-    // --- Then: the event-level idempotency key is recorded in the SQL
-    // `idempotency_keys` table. The outer Creem webhook handler keys its Redis
-    // cache on `creem_{event_id}`, but the durable SQL row (written by the
-    // inner `handle_subscription_paid_atomic`) uses the `sub_paid:{event_id}`
-    // key (IDEMPOTENCY_KEY_SUBSCRIPTION_PAID prefix, subscription_service.rs:387).
-    assert_idempotency_key_exists(ctx, &format!("sub_paid:{}", event_id)).await;
-
-    // --- And: NO duplicate ledger rows were created by the second delivery --
-    // The first delivery may produce 1 (current period) or 2 (current +
-    // chained next-period pre-grant) ledgers; the duplicate must not add more.
-    let ledgers =
-        get_user_ledgers_by_credit_type(ctx, user_id, CreditType::SubscriptionCredit).await;
-    assert!(
-        ledgers.len() == 1 || ledgers.len() == 2,
-        "first delivery produces 1 or 2 ledgers (current [+ chained pre-grant]); duplicate must not add more; got {}",
-        ledgers.len()
+    // --- Then: exactly ONE subscription quota entitlement was created -------
+    let count = count_subscription_quota_entitlements(ctx, user_id).await;
+    assert_eq!(
+        count, 1,
+        "duplicate event_id must not create additional subscription quota entitlement"
     );
-    let total_granted: i64 = ledgers.iter().map(|l| l.granted_amount).sum();
-    // 1000 = current period only (no chained pre-grant); 2000 = current + next
-    // period pre-grant. Any value above 2000 means the duplicate event inflated
-    // the grant — that is the regression this test guards.
-    assert!(
-        total_granted == 1000 || total_granted == 2000,
-        "duplicate event_id must not inflate total granted; expected 1000 (no pre-grant) or 2000 (with chained pre-grant), got {}",
-        total_granted
+
+    let entitlements =
+        get_user_quota_entitlements(ctx, user_id, CreditType::SubscriptionCredit).await;
+    let entitlement = &entitlements[0];
+    assert_eq!(
+        entitlement.status,
+        QuotaEntitlementStatus::Active,
+        "entitlement should remain active after duplicate delivery"
+    );
+    assert_eq!(
+        entitlement.quota_windows[0].limit, 1000,
+        "granted window limit should be exactly one plan allocation"
     );
 }

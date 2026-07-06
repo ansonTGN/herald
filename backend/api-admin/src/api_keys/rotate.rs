@@ -1,5 +1,5 @@
 use axum::extract::{Extension, Path, State};
-use herald_api_base::application::http::auth::util::require_permission;
+use herald_api_base::application::http::common::auth_utils::AdminIdentity;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
@@ -32,16 +32,10 @@ pub async fn rotate_api_key(
     Extension(identity): Extension<Identity>,
     Path((realm_id, api_key_id)): Path<(String, String)>,
 ) -> Result<ApiResult<RotateApiKeyResponse>, ApiError> {
-    let user_id = identity.user_id();
-    require_permission(
-        &state,
-        &realm_id,
-        &user_id,
-        "api_keys",
-        "manage",
-        "api_keys.manage",
-    )
-    .await?;
+    let admin = AdminIdentity::require(identity, &realm_id, "api keys")?;
+    admin
+        .require_permission(&state, "api_keys", "manage")
+        .await?;
 
     let mut api_key = state
         .api_key_repo

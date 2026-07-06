@@ -6,7 +6,6 @@ members = [
     "infra",
     "infra-creem",
     "infra-stripe",
-    "infra-wechat",
     "infra-shopify",
     "core",
     "api-base",
@@ -27,7 +26,7 @@ members = [
 
 [workspace.package]
 #name = "herald"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["Timzaak <zsy.evan@gmail.com>"]
 edition = "2024"
 license = "Apache-2.0"

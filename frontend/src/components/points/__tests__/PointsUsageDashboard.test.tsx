@@ -2,7 +2,7 @@ import { render, screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { PointsUsageDashboard } from '../PointsUsageDashboard'
 import type { DerivedBucketCard } from '../user-points-view'
-import type { QuotaWindowViewDto, WalletByBucketResponse } from '@/lib/api-generated/types.gen'
+import type { QuotaWindowViewResponse, WalletByBucketResponse } from '@/lib/api-generated/types.gen'
 
 /**
  * Factory for a single backend-precomputed quota window (design §4.2.2).
@@ -11,7 +11,9 @@ import type { QuotaWindowViewDto, WalletByBucketResponse } from '@/lib/api-gener
  * one place. The dashboard MUST consume these verbatim (no client recompute —
  * FE-T01 pins the pass-through intent one layer up).
  */
-function makeWindow(overrides: Partial<QuotaWindowViewDto> & { key: string }): QuotaWindowViewDto {
+function makeWindow(
+  overrides: Partial<QuotaWindowViewResponse> & { key: string }
+): QuotaWindowViewResponse {
   return {
     limit: 100,
     used: 0,
@@ -125,12 +127,12 @@ describe('PointsUsageDashboard', () => {
     })
     const daily = makeWindow({ key: 'daily', limit: 20, used: 5, remaining: 15, isTightest: false })
 
-    it('renders each window row keyed by bucketId+winKey, with progress bars and the backend total in spendable-now', () => {
+    it('renders each window row keyed by bucketId+winKey, with progress bars; the spendable total and formula caption are no longer surfaced', () => {
       // INTENT: winKey is the backend's stable config-derived key (not a row
       // ordinal) so downstream Playwright runs and the FE-T07 runner can target
-      // a window across reloads. spendable-now shows the BACKEND bucketTotal
-      // verbatim — the dashboard must not recompute quota+pool client-side
-      // (FE-T01 pins pass-through one layer up; this pins it at the render).
+      // a window across reloads. The "current spendable total" big number and
+      // the formula caption were intentionally removed from this card to keep it
+      // compact — the per-window rows remain the authoritative usage view.
       render(<PointsUsageDashboard card={makeCard({ quotaWindows: [monthly, daily] })} />)
 
       // Root testid carries the bucketId once resolved.
@@ -144,12 +146,10 @@ describe('PointsUsageDashboard', () => {
       expect(screen.getByTestId(`points-window-bar-${BUCKET}-monthly`)).toBeInTheDocument()
       expect(screen.getByTestId(`points-window-bar-${BUCKET}-daily`)).toBeInTheDocument()
 
-      // spendable-now = backend bucketTotal (120 from the card factory), NOT
-      // spendableFromQuota+spendableFromPool recomputed client-side.
-      expect(screen.getByTestId('points-spendable-now')).toHaveTextContent('120')
-
-      // Formula caption is present.
-      expect(screen.getByTestId('points-spendable-formula')).toBeInTheDocument()
+      // The spendable total big number and formula caption are removed (keep
+      // the card compact). Pin their absence so a regression surfaces here.
+      expect(screen.queryByTestId('points-spendable-now')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('points-spendable-formula')).not.toBeInTheDocument()
     })
 
     it('renders the progress bar fill as the backend remaining/limit ratio, capped at 100, via aria-valuenow', () => {
@@ -233,8 +233,9 @@ describe('PointsUsageDashboard', () => {
       const bar = screen.getByTestId(`points-window-bar-${BUCKET}-monthly`)
       expect(bar).toHaveAttribute('aria-valuenow', '0')
 
-      // spendable-now reflects the backend total (0 here).
-      expect(screen.getByTestId('points-spendable-now')).toHaveTextContent('0')
+      // The spendable total big number was removed from this card; pin its
+      // absence so the removal intent survives.
+      expect(screen.queryByTestId('points-spendable-now')).not.toBeInTheDocument()
     })
   })
 

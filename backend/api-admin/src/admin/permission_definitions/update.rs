@@ -3,8 +3,8 @@ use axum::{
     extract::{Path, State},
 };
 use axum_valid::Valid;
+use herald_api_base::application::http::common::auth_utils::AdminIdentity;
 use herald_core::domain::authentication::Identity;
-use herald_core::domain::authorization::PermissionService;
 use uuid::Uuid;
 
 use crate::admin::permission_definitions::types::{
@@ -40,33 +40,10 @@ pub async fn update_permission(
     Extension(identity): Extension<Identity>,
     Valid(Json(payload)): Valid<Json<PermissionUpdateRequest>>,
 ) -> Result<ApiResult<PermissionResponse>, ApiError> {
-    if identity.realm_id() != realm_id {
-        return Err(ApiError::forbidden(
-            "Cannot update permissions in a different realm",
-        ));
-    }
-
-    // Check permission: requires permissions.manage
-    let current_user_id = identity.user_id();
-    let has_permission = state
-        .permission_checker
-        .check_permission(&realm_id, &current_user_id, "permissions", "manage")
-        .await
-        .map_err(|e| {
-            tracing::error!(
-                current_user_id = %current_user_id,
-                realm_id = %realm_id,
-                error = %e,
-                "Failed to check permissions.manage permission"
-            );
-            ApiError::internal("Failed to check permission")
-        })?;
-
-    if !has_permission {
-        return Err(ApiError::forbidden(
-            "Insufficient permissions: requires permissions.manage",
-        ));
-    }
+    let admin = AdminIdentity::require(identity, &realm_id, "permission definitions")?;
+    admin
+        .require_permission(&state, "permissions", "manage")
+        .await?;
     // 从 name 中解析 resource 和 action
     // 格式: "resource.action" (如 "users.manage")
     let parts: Vec<&str> = payload.name.split('.').collect();

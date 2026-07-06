@@ -106,7 +106,6 @@ function makeFeatureAvailabilityEligible() {
     },
     user: {
       pointsVisible: true,
-      pointsPurchaseVisible: true,
       subscriptionVisible: true,
       invoicesVisible: true,
     },

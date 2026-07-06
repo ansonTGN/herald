@@ -40,7 +40,6 @@ pub struct AdminFeatureAvailability {
 #[serde(rename_all = "camelCase")]
 pub struct UserFeatureAvailability {
     pub points_visible: bool,
-    pub points_purchase_visible: bool,
     pub subscription_visible: bool,
     pub invoices_visible: bool,
 }
@@ -52,6 +51,7 @@ pub struct FeatureAvailabilityFacts {
     pub has_entitlement_mappings: bool,
     pub has_enabled_mappings: bool,
     pub has_one_time_mappings: bool,
+    pub has_recurring_mappings: bool,
     pub has_invoice_seller_config: bool,
     pub has_invoices: bool,
     pub has_subscription_history: bool,
@@ -63,6 +63,7 @@ struct FeatureFacts {
     has_entitlement_mappings: bool,
     has_enabled_mappings: bool,
     has_one_time_mappings: bool,
+    has_recurring_mappings: bool,
     has_invoice_seller_config: bool,
     has_invoices: bool,
     has_subscription_history: bool,
@@ -98,7 +99,14 @@ pub async fn get_feature_availability(
     let admin_billing_visible = can_view_billing;
     let admin_points_visible = can_view_points;
     let user_subscription_visible = facts.has_enabled_mappings;
-    let user_points_visible = facts.has_one_time_mappings;
+    // The points area (balance page, purchase page, purchase history, inline
+    // purchase CTA) is visible whenever the realm has any enabled entitlement
+    // mapping. US-CB-005 scenario 2 requires the points page to surface
+    // registration/free/system-granted credit, which is independent of any
+    // one_time mapping; a subscription-only realm still grants points to its
+    // users, so the gate follows `has_enabled_mappings` (same as
+    // `subscription_visible`) rather than `has_one_time_mappings`.
+    let user_points_visible = points_area_visible(&facts);
     let user_invoices_visible = facts.has_invoice_seller_config;
 
     // Realm-level invoice eligibility: reuse the already-loaded seller-config
@@ -118,7 +126,6 @@ pub async fn get_feature_availability(
         },
         user: UserFeatureAvailability {
             points_visible: user_points_visible,
-            points_purchase_visible: facts.has_one_time_mappings,
             subscription_visible: user_subscription_visible,
             invoices_visible: user_invoices_visible,
         },
@@ -127,6 +134,7 @@ pub async fn get_feature_availability(
             has_entitlement_mappings: facts.has_entitlement_mappings,
             has_enabled_mappings: facts.has_enabled_mappings,
             has_one_time_mappings: facts.has_one_time_mappings,
+            has_recurring_mappings: facts.has_recurring_mappings,
             has_invoice_seller_config: facts.has_invoice_seller_config,
             has_invoices: facts.has_invoices,
             has_subscription_history: facts.has_subscription_history,
@@ -178,8 +186,64 @@ async fn load_feature_facts(state: &AppState, realm_id: &str) -> Result<FeatureF
         has_entitlement_mappings: facts.has_entitlement_mappings,
         has_enabled_mappings: facts.has_enabled_mappings,
         has_one_time_mappings: facts.has_one_time_mappings,
+        has_recurring_mappings: facts.has_recurring_mappings,
         has_invoice_seller_config: facts.has_invoice_seller_config,
         has_invoices: facts.has_invoices,
         has_subscription_history: facts.has_subscription_history,
     })
+}
+
+/// Pure decision: is the user-facing points area visible for these facts?
+///
+/// Kept free of I/O so the gating rule can be unit-tested without a database.
+/// The points area (balance page, purchase page, purchase history, inline
+/// purchase CTA) is visible whenever the realm has any enabled entitlement
+/// mapping — a subscription-only realm still grants points to its users
+/// (US-CB-005 scenario 2: system-granted / registration credit must be
+/// surfaced regardless of whether a one_time pack exists).
+fn points_area_visible(facts: &FeatureFacts) -> bool {
+    facts.has_enabled_mappings
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn no_facts() -> FeatureFacts {
+        FeatureFacts {
+            has_payment_providers: false,
+            has_entitlement_mappings: false,
+            has_enabled_mappings: false,
+            has_one_time_mappings: false,
+            has_recurring_mappings: false,
+            has_invoice_seller_config: false,
+            has_invoices: false,
+            has_subscription_history: false,
+        }
+    }
+
+    #[test]
+    fn points_area_hidden_when_no_enabled_mappings() {
+        let facts = no_facts();
+        assert!(!points_area_visible(&facts));
+    }
+
+    #[test]
+    fn points_area_visible_when_only_one_time_mappings() {
+        let mut facts = no_facts();
+        facts.has_enabled_mappings = true;
+        facts.has_one_time_mappings = true;
+        assert!(points_area_visible(&facts));
+    }
+
+    #[test]
+    fn points_area_visible_when_only_recurring_mappings() {
+        // US-CB-008 / US-CB-005: a realm with recurring prices (month/year)
+        // but no one-time packs must still expose the points area — its users
+        // hold subscription-granted (and registration) credit.
+        let mut facts = no_facts();
+        facts.has_enabled_mappings = true;
+        facts.has_recurring_mappings = true;
+        assert!(points_area_visible(&facts));
+    }
 }

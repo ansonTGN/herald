@@ -19,7 +19,7 @@ import { Label } from '@/components/ui/label'
 import {
   clientAppsQueryOptions,
   queryKeys,
-  rolesQueryOptions,
+  adminRolesQueryOptions,
   updateApiKeyRolesMutation,
 } from '@/data/query-options'
 import { ArrowLeft } from 'lucide-react'
@@ -45,7 +45,7 @@ export function ApiKeyFormPage({ mode, realmId, apiKey }: ApiKeyFormPageProps) {
   const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([])
 
   const { data: rolesData } = useQuery({
-    ...rolesQueryOptions(realmId),
+    ...adminRolesQueryOptions(realmId),
     enabled: isCreate && canManageRoles,
   })
 

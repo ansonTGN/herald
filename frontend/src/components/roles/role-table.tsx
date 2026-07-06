@@ -16,7 +16,7 @@ import { RolePermissionsDialog } from './role-permissions-dialog'
 import { useDialogManager } from '@/hooks/use-dialog-state'
 import { useRealmId } from '@/stores/auth-store'
 import { useQueries } from '@tanstack/react-query'
-import { permissionsQueryOptions, rolePermissionsQueryOptions } from '@/data/query-options'
+import { adminPermissionsQueryOptions, rolePermissionsQueryOptions } from '@/data/query-options'
 import { m } from '@/paraglide/messages'
 
 interface RoleTableProps {
@@ -228,7 +228,7 @@ function RolePermissionsDataProvider({
   role: RoleResponse
 }) {
   const permissionsData = useQueries({
-    queries: [permissionsQueryOptions(realmId), rolePermissionsQueryOptions(realmId, roleId)],
+    queries: [adminPermissionsQueryOptions(realmId), rolePermissionsQueryOptions(realmId, roleId)],
     combine: (queries) => {
       const [perms, rolePerms] = queries
       return {

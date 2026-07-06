@@ -23,7 +23,12 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { AuthPageWrapper } from '@/components/auth/auth-page-wrapper'
 import { TotpVerificationForm } from '@/components/auth/totp-verification-form'
-import { publicConfigQueryOptions, toAuthConsentAgreements } from '@/data/query-options'
+import { TurnstileWidget } from '@/components/auth/turnstile-widget'
+import {
+  publicConfigQueryOptions,
+  toAuthConsentAgreements,
+  turnstileStatusQueryOptions,
+} from '@/data/query-options'
 import { Link } from '@tanstack/react-router'
 import { useOAuthLogin } from '@/hooks/use-oauth-login'
 import { useState } from 'react'
@@ -71,6 +76,9 @@ export function LoginPage() {
   const [globalError, setGlobalError] = useState<string | null>(null)
 
   const { data: publicConfig, isLoading } = useQuery(publicConfigQueryOptions(realmId))
+  const { data: turnstileStatus, isLoading: loadingTurnstile } = useQuery(
+    turnstileStatusQueryOptions(realmId)
+  )
 
   const oauthProviders = publicConfig?.oauthProviders ?? []
   const isRegistrationAllowed = publicConfig?.registration?.enabled === true
@@ -82,6 +90,7 @@ export function LoginPage() {
       username: string
       password: string
       agreements?: AuthConsentAgreement[]
+      turnstileToken?: string
     }) => {
       const isEmail = values.username.includes('@')
       const clientId = search.clientId || DEFAULT_CLIENT_ID
@@ -91,6 +100,7 @@ export function LoginPage() {
         email: isEmail ? values.username : undefined,
         username: isEmail ? undefined : values.username,
         password: values.password,
+        turnstileToken: values.turnstileToken || null,
         ...(values.agreements ? { agreements: values.agreements } : {}),
         ...(oauthParams ?? {}),
       }
@@ -147,17 +157,24 @@ export function LoginPage() {
   })
 
   const form = useForm({
-    defaultValues: { username: '', password: '' },
+    defaultValues: { username: '', password: '', turnstileToken: '' },
     onSubmit: async ({ value }) => {
       setGlobalError(null)
       if (hasPartialOAuth) return
-      loginMutation.mutate(value, {
-        onError: (error: unknown) => {
-          const message = getErrorMessage(error)
-          toast.error(message)
-          setGlobalError(message)
+      loginMutation.mutate(
+        {
+          username: value.username,
+          password: value.password,
+          turnstileToken: value.turnstileToken || undefined,
         },
-      })
+        {
+          onError: (error: unknown) => {
+            const message = getErrorMessage(error)
+            toast.error(message)
+            setGlobalError(message)
+          },
+        }
+      )
     },
   })
 
@@ -168,9 +185,10 @@ export function LoginPage() {
     const agreements = toAuthConsentAgreements(consentStep.agreements)
     const username = form.getFieldValue('username')
     const password = form.getFieldValue('password')
+    const turnstileToken = form.getFieldValue('turnstileToken') || undefined
 
     loginMutation.mutate(
-      { username, password, agreements },
+      { username, password, agreements, turnstileToken },
       {
         onError: (error: unknown) => {
           const message = getErrorMessage(error)
@@ -352,7 +370,17 @@ export function LoginPage() {
             <form.Field name="password" validators={{ onChange: loginSchema.shape.password }}>
               {(field) => (
                 <div>
-                  <Label htmlFor="password">{m['auth.login.password']()}</Label>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="password">{m['auth.login.password']()}</Label>
+                    <Link
+                      to="/$realmId/auth/forgot-password"
+                      params={{ realmId }}
+                      className="text-sm font-medium text-primary hover:text-primary/80"
+                      data-testid="forgot-password-link"
+                    >
+                      {m['auth.forgot_password.forgot_link']()}
+                    </Link>
+                  </div>
                   <Input
                     id="password"
                     type="password"
@@ -370,6 +398,18 @@ export function LoginPage() {
                 </div>
               )}
             </form.Field>
+
+            {!loadingTurnstile && turnstileStatus?.enabled && (
+              <form.Field name="turnstileToken">
+                {(field) => (
+                  <TurnstileWidget
+                    siteKey={turnstileStatus.site_key || ''}
+                    onTokenChange={(token) => field.handleChange(token || '')}
+                    onError={(error) => console.error('Turnstile error:', error)}
+                  />
+                )}
+              </form.Field>
+            )}
 
             <Button
               type="submit"
