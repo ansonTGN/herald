@@ -155,14 +155,13 @@
 
 - 用户列表：`page`（1-based，默认 1）、`page_size`（默认 20，最大 100）
 - Realm 列表与 Client App 列表：当前无分页，返回全量数据
-- **已知不一致**：用户列表 OpenAPI 注释描述为 "default 100, max 500"（`pageSize` 参数描述），实际代码默认 20、最大 100（`page_size.unwrap_or(20).clamp(1, 100)`），待修复注释
 
 ### 接口能力边界
 
 - Realm：创建、列表、详情（需对应权限；创建还需 admin realm `realm:manage` 权限）
 - User：创建、列表、详情（需对应权限，限本 Realm；admin realm 的 API Key 可跨 Realm）
 - Client App：创建、列表、详情（需对应权限，限本 Realm；admin realm 的 API Key 可跨 Realm）
-- 积分交易查询单笔（`get_transaction_ext`）：端点已挂载于 `/api/ext/points/{realmId}/transactions/{transactionId}`，但未注册到 OpenAPI 文档（`ApiDoc` 的 `paths` 中未列出），待补充注册
+- 积分交易查询单笔（`get_transaction_ext`）：端点挂载于 `/api/ext/points/{realmId}/transactions/{transactionId}`，并已注册到 OpenAPI 文档
 
 ---
 

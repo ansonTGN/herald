@@ -190,9 +190,9 @@
 
 - **创建 API Key 时绑定角色（US-RA-017）**：`CreateApiKeyRequest` 支持 `role_ids: Option<Vec<Uuid>>` 字段，创建成功后自动绑定角色。
 
-### 9.2 待修复
+### 9.2 已修复
 
-- **GET 单个 API Key roles 返回空数组**：`get.rs` 硬编码 `roles: Vec::new()`，未查询角色数据，与 `list.rs`（批量加载角色）行为不一致。`update.rs` 响应同样存在此问题。应改为调用 `user_role_repository.get_api_key_roles` 或复用 list 的批量加载逻辑。
+- ~~**GET 单个 API Key roles 返回空数组**~~：`get.rs` 已查询并填充 roles 数据，`update.rs` 同步修复，行为与 `list.rs` 一致。
 
 ### 9.3 已知冗余
 
@@ -208,9 +208,9 @@
 | `/{apiKeyId}` | DELETE | 永久删除 API Key |
 | `/{apiKeyId}/rotate` | POST | 轮换 API Key（生成新密钥，旧密钥立即失效，新明文仅返回一次） |
 
-### 9.5 待增强建议
+### 9.5 已实现
 
-- **`role_ids` 数组长度限制**：`UpdateApiKeyRolesRequest.role_ids`（`api-admin/src/api_keys/types.rs`）无最大长度约束，建议增加 `#[validate(length(max = 20))]` 或类似限制，防止一次性绑定过多角色。
+- **`role_ids` 数组长度限制**：`CreateApiKeyRequest.role_ids` 与 `UpdateApiKeyRolesRequest.role_ids`（`api-admin/src/api_keys/types.rs`）已增加 `#[validate(length(max = 20))]`，防止一次性绑定过多角色。
 
 ---
 

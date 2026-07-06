@@ -343,7 +343,7 @@
 - SDK 消耗积分时校验 API Key 对 client_app 的作用域（client_app_scope），确保 API Key 只能操作其授权范围内的 client_app 积分
 - 限流策略：realm 级别 100 次/分钟，user 级别 20 次/分钟
 - 管理接口权限：所有管理端点使用 `require_authenticated_user_in_realm` + `require_permission` 进行权限控制：
-  - 积分数据查询（wallets、transactions、user_configs、free_user_statistics）：`points.view`
+  - 积分数据查询（wallets、transactions、user_configs）：`points.view`
   - 积分配置管理（plan_configs、grant、quota_windows）：`points.manage`
   - Realm 默认积分配置（realm_default_config）：读操作 `settings.view`，写操作 `settings.manage`
 - 积分变更必须可追溯，所有发放、消费、回收操作创建交易记录
@@ -357,7 +357,7 @@
 
 **适用性**: 适用
 
-- 管理入口：租户管理员可在管理后台访问积分套餐配置、积分报表、免费用户统计、Realm 默认配置管理页面
+- 管理入口：租户管理员可在管理后台访问积分套餐配置、积分报表、Realm 默认配置管理页面
 - 用户入口：用户可在个人中心查看积分余额（窗口剩余 + 充值余额双展示）和交易历史
 - 积分充值页面：展示套餐兑换积分的比例和预期获得积分数
 - 套餐/积分策略配置页：积分策略支持配置多时间窗滚动配额（窗口长度 × 上限的集合）

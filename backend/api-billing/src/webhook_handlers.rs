@@ -19,9 +19,9 @@ use crate::webhook_subscription_helpers::{
 use crate::webhooks::verify_webhook_signature;
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::billing::{
-    BillingRepository, BillingType, ExternalInvoiceData, HistoryEventType, InvoiceProvider,
-    InvoiceRepository, InvoiceStatus, PaymentEvent, Subscription, SubscriptionStatus,
-    detect_change_type,
+    ACTOR_WEBHOOK, BillingRepository, BillingType, ExternalInvoiceData, HistoryEventType,
+    InvoiceProvider, InvoiceRepository, InvoiceStatus, PaymentEvent, Subscription,
+    SubscriptionHistoryService, SubscriptionStatus, detect_change_type,
 };
 use herald_core::domain::common::entities::app_errors::CoreError;
 use herald_core::domain::points::IdempotencyResult;
@@ -1855,6 +1855,25 @@ async fn handle_refund_created(
                     None,
                     None,
                 )
+                .await?;
+
+            // Mirror Stripe's charge.refunded handling: record a subscription
+            // history event so provider behavior stays symmetric. Topup refunds
+            // have no subscription and skip this.
+            let history_event = SubscriptionHistoryService::create_subscription_refunded_event(
+                &subscription,
+                serde_json::json!({
+                    "provider": "creem",
+                    "refundId": payload.refund_id,
+                    "amountRefunded": payload.amount,
+                    "originalAmount": payload.original_amount,
+                    "refundType": payload.refund_type,
+                }),
+                Some(ACTOR_WEBHOOK.to_string()),
+            );
+            app_state
+                .billing_repository
+                .save_history_event(history_event)
                 .await?;
 
             info!(

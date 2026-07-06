@@ -19,7 +19,8 @@ pub struct CreateApiKeyRequest {
     /// Client App to bind this API key to. Defaults to the built-in admin-api-client.
     pub client_app_id: Option<Uuid>,
 
-    /// Optional role IDs to assign to this API key after creation.
+    /// Optional role IDs to assign to this API key after creation (max 20).
+    #[validate(length(max = 20))]
     pub role_ids: Option<Vec<Uuid>>,
 }
 
@@ -115,10 +116,11 @@ pub struct ApiKeyRoleDetail {
     pub description: Option<String>,
 }
 
-/// Request to replace API Key roles (empty array clears all roles)
+/// Request to replace API Key roles (empty array clears all roles; max 20).
 #[derive(Serialize, Deserialize, ToSchema, Validate)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateApiKeyRolesRequest {
+    #[validate(length(max = 20))]
     pub role_ids: Vec<uuid::Uuid>,
 }
 

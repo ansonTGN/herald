@@ -33,6 +33,9 @@ pub struct CreateClientAppExtRequest {
     pub name: String,
     pub description: Option<String>,
     pub redirect_uris: Vec<String>,
+    /// Enable device code grant flow for this client app.
+    /// When enabled, redirect_uris may be empty (device flow has no callback).
+    pub device_code_grant_enabled: Option<bool>,
 }
 
 // ============================================================================
@@ -145,7 +148,7 @@ pub async fn create_client_app(
         icon_url: None,
         session_ttl_seconds: None,
         session_renewal_ttl_seconds: None,
-        device_code_grant_enabled: None,
+        device_code_grant_enabled: req.device_code_grant_enabled,
     };
 
     // 6. Call domain service
