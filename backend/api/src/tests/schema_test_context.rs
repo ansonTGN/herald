@@ -298,6 +298,7 @@ impl AsyncTestContext for SchemaTestContext {
             service: application_service,
             pool: pool_with_schema.clone(),
             db: Arc::new(sea_conn.clone()),
+            http_client: reqwest::Client::new(),
             redis_manager: (*redis_manager).clone(), // NEW: 使用 RedisConnectionManager
             billing_repository: billing_repository.clone(),
             invoice_repository: Arc::new(

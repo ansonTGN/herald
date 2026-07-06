@@ -65,6 +65,10 @@ vi.mock('@/data/query-options', () => ({
         registration: { enabled: true },
       }),
   }),
+  turnstileStatusQueryOptions: () => ({
+    queryKey: ['turnstile-status', 'test-realm'],
+    queryFn: () => Promise.resolve({ enabled: false, site_key: null }),
+  }),
   toAuthConsentAgreements: (agreements: LegalAgreementSummary[]) =>
     agreements.map((agreement) => ({
       agreementType: agreement.agreement_type,

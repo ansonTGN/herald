@@ -68,6 +68,7 @@ sqlx = { workspace = true }
 redis = { workspace = true }
 bcrypt = { workspace = true }
 clap = { workspace = true }
+reqwest = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 # Phase 2 cpu profiling sampler. Unix-only — pprof relies on

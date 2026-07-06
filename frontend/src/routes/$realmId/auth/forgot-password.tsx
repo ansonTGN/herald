@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
+import { useQuery } from '@tanstack/react-query'
 import { resetPasswordRequest } from '@/lib/api-generated'
 import { getErrorMessage } from '@/lib/error-utils'
 import { Button } from '@/components/ui/button'
@@ -7,6 +8,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { AuthPageWrapper } from '@/components/auth/auth-page-wrapper'
+import { TurnstileWidget } from '@/components/auth/turnstile-widget'
+import { turnstileStatusQueryOptions } from '@/data/query-options'
 import { toast } from 'sonner'
 import { m } from '@/paraglide/messages'
 
@@ -19,9 +22,14 @@ function ForgotPasswordPage() {
   const navigate = useNavigate()
 
   const [email, setEmail] = useState('')
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [sent, setSent] = useState(false)
+
+  const { data: turnstileStatus, isLoading: loadingTurnstile } = useQuery(
+    turnstileStatusQueryOptions(realmId)
+  )
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -33,7 +41,7 @@ function ForgotPasswordPage() {
     try {
       await resetPasswordRequest({
         path: { realmId },
-        body: { email, turnstileToken: undefined },
+        body: { email, turnstileToken },
         throwOnError: true,
       })
       setSent(true)
@@ -95,6 +103,14 @@ function ForgotPasswordPage() {
                   data-testid="forgot-password-email-input"
                 />
               </div>
+
+              {!loadingTurnstile && turnstileStatus?.enabled && (
+                <TurnstileWidget
+                  siteKey={turnstileStatus.site_key || ''}
+                  onTokenChange={setTurnstileToken}
+                  onError={(error) => console.error('Turnstile error:', error)}
+                />
+              )}
 
               <Button
                 type="submit"

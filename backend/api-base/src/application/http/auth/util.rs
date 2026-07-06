@@ -317,7 +317,7 @@ pub async fn verify_turnstile_for_realm(
 ) -> Result<(), ApiError> {
     let turnstile_config = sqlx::query_as::<_, (String,)>(
         "SELECT config_value FROM realm_config
-         WHERE realm_id = $1 AND config_type = 'turnstile' AND config_key = 'site_secret' AND enabled = true",
+         WHERE realm_id = $1 AND config_type = 'turnstile' AND config_key = 'secret_key' AND enabled = true",
     )
     .bind(realm_id)
     .fetch_optional(&state.pool)
@@ -351,7 +351,8 @@ pub async fn verify_turnstile_for_realm(
         form.push(("remoteip", ip));
     }
 
-    let resp = reqwest::Client::new()
+    let resp = state
+        .http_client
         .post("https://challenges.cloudflare.com/turnstile/v0/siteverify")
         .form(&form)
         .send()

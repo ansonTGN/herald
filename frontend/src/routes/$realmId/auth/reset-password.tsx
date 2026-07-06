@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
+import { useQuery } from '@tanstack/react-query'
 import { z } from 'zod'
 import { resetPasswordConfirm } from '@/lib/api-generated'
 import { getErrorMessage } from '@/lib/error-utils'
@@ -8,6 +9,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { AuthPageWrapper } from '@/components/auth/auth-page-wrapper'
+import { TurnstileWidget } from '@/components/auth/turnstile-widget'
+import { turnstileStatusQueryOptions } from '@/data/query-options'
 import { toast } from 'sonner'
 import { m } from '@/paraglide/messages'
 
@@ -27,8 +30,13 @@ function ResetPasswordPage() {
 
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const { data: turnstileStatus, isLoading: loadingTurnstile } = useQuery(
+    turnstileStatusQueryOptions(realmId)
+  )
 
   const passwordsMatch = newPassword.length >= 8 && newPassword === confirmPassword
 
@@ -42,7 +50,7 @@ function ResetPasswordPage() {
     try {
       await resetPasswordConfirm({
         path: { realmId, resetCode: code },
-        body: { newPass: newPassword, turnstileToken: undefined },
+        body: { newPass: newPassword, turnstileToken },
         throwOnError: true,
       })
       toast.success(m['auth.reset_password.success']())
@@ -114,6 +122,14 @@ function ResetPasswordPage() {
                 <p className="text-sm text-red-500 mt-1">{m['auth.passwords_dont_match']()}</p>
               )}
             </div>
+
+            {!loadingTurnstile && turnstileStatus?.enabled && (
+              <TurnstileWidget
+                siteKey={turnstileStatus.site_key || ''}
+                onTokenChange={setTurnstileToken}
+                onError={(error) => console.error('Turnstile error:', error)}
+              />
+            )}
 
             <Button
               type="submit"

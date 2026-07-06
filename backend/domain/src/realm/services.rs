@@ -447,11 +447,17 @@ where
             }
         }
 
-        // Log audit event for RBAC initialization
+        // Audit events are scoped to the actor's realm (where the admin is
+        // operating from), not the newly created realm. Otherwise the events
+        // would be invisible: the audit list filters by the viewer's realm, so
+        // a create performed from the `admin` realm must be recorded under
+        // `admin` to be visible. The created realm's id is kept in `target_id`
+        // and `details` for traceability.
+        let actor_realm_id = identity.realm_id().to_string();
         if let Err(e) = self
             .audit_event_repository
             .create(NewAuditEvent {
-                realm_id: realm.id.clone(),
+                realm_id: actor_realm_id.clone(),
                 category: AuditCategory::RealmManagement,
                 action: AuditAction::RealmCreate,
                 actor_id: identity.user_id().to_string(),
@@ -461,7 +467,11 @@ where
                 target_id: realm.id.clone(),
                 target_name: Some(realm.name.clone()),
                 result: AuditResult::Success,
-                details: Some(serde_json::json!({"status": "created"})),
+                details: Some(serde_json::json!({
+                    "status": "created",
+                    "realm_id": realm.id,
+                    "realm_name": realm.name,
+                })),
                 ip_address: None,
                 user_agent: None,
                 trace_id: None,
@@ -474,7 +484,7 @@ where
         if let Err(e) = self
             .audit_event_repository
             .create(NewAuditEvent {
-                realm_id: realm.id.clone(),
+                realm_id: actor_realm_id,
                 category: AuditCategory::RealmManagement,
                 action: AuditAction::RealmRbacInit,
                 actor_id: identity.user_id().to_string(),
@@ -484,7 +494,11 @@ where
                 target_id: realm.id.clone(),
                 target_name: Some(realm.name.clone()),
                 result: AuditResult::Success,
-                details: Some(serde_json::json!({"status": "initialized"})),
+                details: Some(serde_json::json!({
+                    "status": "initialized",
+                    "realm_id": realm.id,
+                    "realm_name": realm.name,
+                })),
                 ip_address: None,
                 user_agent: None,
                 trace_id: None,
