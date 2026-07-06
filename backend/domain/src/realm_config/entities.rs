@@ -59,6 +59,18 @@ pub enum ConfigType {
     /// ```
     Totp,
 
+    /// Passkey authentication configuration
+    ///
+    /// Realm passkey settings reuse the realm_config table; no separate
+    /// passkey configuration table is created. as_ref() returns `passkey`.
+    ///
+    /// Configuration is stored as a JSON object in config_value with the following structure:
+    /// - config_key: `settings` (fixed key for Passkey configuration)
+    /// - config_value: JSON string with `{"enabled": boolean, "force_enabled": boolean, "user_verification": "preferred", "cross_platform_authenticator": boolean}`
+    /// - enabled: boolean (whether the config entry itself is active)
+    /// - metadata: null (not used for Passkey)
+    Passkey,
+
     /// Turnstile 验证码配置
     ///
     /// Valid config_key values:
@@ -313,6 +325,7 @@ impl ConfigType {
             "turnstile" => ConfigType::Turnstile,
             "registration" => ConfigType::Registration,
             "totp" => ConfigType::Totp,
+            "passkey" => ConfigType::Passkey,
             "totp_key" => ConfigType::TotpKey,
             "creem" => ConfigType::Creem,
             "stripe" => ConfigType::Stripe,
@@ -330,6 +343,7 @@ impl From<ConfigType> for String {
             ConfigType::Turnstile => "turnstile".to_string(),
             ConfigType::Registration => "registration".to_string(),
             ConfigType::Totp => "totp".to_string(),
+            ConfigType::Passkey => "passkey".to_string(),
             ConfigType::TotpKey => "totp_key".to_string(),
             ConfigType::Creem => "creem".to_string(),
             ConfigType::Stripe => "stripe".to_string(),
@@ -345,6 +359,7 @@ impl AsRef<str> for ConfigType {
             ConfigType::Turnstile => "turnstile",
             ConfigType::Registration => "registration",
             ConfigType::Totp => "totp",
+            ConfigType::Passkey => "passkey",
             ConfigType::TotpKey => "totp_key",
             ConfigType::Creem => "creem",
             ConfigType::Stripe => "stripe",

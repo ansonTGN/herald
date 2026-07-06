@@ -80,7 +80,7 @@ log = "0.4"
 # Do NOT bump any single crate here without re-running cargo check for the whole set.
 opentelemetry = "0.30.0"
 opentelemetry_sdk = { version = "0.30.0", features = ["rt-tokio"] }
-opentelemetry-otlp = { version = "0.30.0", default-features = false, features = ["http-proto", "reqwest-rustls", "metrics", "trace"] }
+opentelemetry-otlp = { version = "0.30.0", default-features = false, features = ["http-proto", "reqwest-rustls-webpki-roots", "metrics", "trace"] }
 tracing-opentelemetry = "0.31.0"
 tower-otel-http-metrics = { version = "0.16.0", features = ["axum"] }
 
@@ -97,7 +97,7 @@ utoipa-swagger-ui = { version = "9", features = ["axum", "vendored"] }
 validator = { version = "0.20", features = ["derive"] }
 
 # External Services
-redis = { version = "1.0.1", features = ["connection-manager", "tokio-comp", "aio"] }
+redis = { version = "1.0.1", features = ["connection-manager", "tokio-rustls-comp", "aio"] }
 reqwest = { version = "0.12.26", default-features = false, features = ["json", "rustls-tls"] }
 
 # OAuth
@@ -135,6 +135,11 @@ totp-lite = "2.0"
 aes-gcm = "0.10"
 base32 = "0.5"
 hex = "0.4"
+
+# WebAuthn / Passkey — pure-Rust server-side verification (no openssl).
+# webauthn-rs 0.5 hard-depends on openssl via webauthn-rs-core; passkey-auth
+# uses RustCrypto (p256 / ed25519-dalek / sha2) end-to-end.
+passkey-auth = "0.1"
 
 # URL parsing
 url = "2.5"

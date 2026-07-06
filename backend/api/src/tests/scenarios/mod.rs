@@ -15,6 +15,7 @@ pub mod permission_security_scenarios;
 pub mod realm_access_scenarios;
 pub mod realm_admin_creation_scenarios;
 pub mod realm_isolation_scenarios;
+pub mod realm_passkey_config_scenarios;
 pub mod realm_totp_config_scenarios;
 pub mod role_policies_scenarios;
 pub mod user_list_scenarios;
@@ -32,6 +33,8 @@ pub mod dashboard_stats_scenarios;
 
 // TOTP scenarios
 pub mod realm_totp_key_initialization_scenarios;
+pub mod user_passkey_scenarios;
+pub mod user_totp_disable_scenarios;
 pub mod user_totp_scenarios;
 
 // Public config scenarios

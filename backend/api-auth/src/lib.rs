@@ -10,8 +10,10 @@ pub mod registration_status;
 pub mod reset_password;
 pub mod status;
 pub mod turnstile_status;
+pub mod user_passkey;
 pub mod user_totp;
 pub mod verify_email;
+pub mod verify_passkey;
 pub mod verify_totp;
 
 #[cfg(test)]
@@ -45,6 +47,11 @@ pub use reset_password::__path_confirm as __path_reset_password_confirm;
 pub use reset_password::__path_request as __path_reset_password_request;
 pub use status::__path_status;
 pub use turnstile_status::__path_get_turnstile_status;
+pub use user_passkey::__path_handle_begin_passkey_registration;
+pub use user_passkey::__path_handle_delete_passkey_credential;
+pub use user_passkey::__path_handle_finish_passkey_registration;
+pub use user_passkey::__path_handle_list_passkey_credentials;
+pub use user_passkey::__path_handle_rename_passkey_credential;
 pub use user_totp::__path_handle_disable_totp;
 pub use user_totp::__path_handle_enable_totp;
 pub use user_totp::__path_handle_get_totp_status;
@@ -52,6 +59,10 @@ pub use user_totp::__path_handle_regenerate_totp;
 pub use user_totp::__path_handle_verify_totp_setup;
 pub use verify_email::__path_confirm as __path_verify_email_confirm;
 pub use verify_email::__path_trigger as __path_verify_email_trigger;
+pub use verify_passkey::__path_handle_passkey_2fa_options;
+pub use verify_passkey::__path_handle_passkey_2fa_verify;
+pub use verify_passkey::__path_handle_passkey_options;
+pub use verify_passkey::__path_handle_passkey_verify;
 pub use verify_totp::__path_handle_verify_totp as __path_verify_totp;
 
 /// OpenAPI specification for auth module
@@ -70,11 +81,20 @@ pub use verify_totp::__path_handle_verify_totp as __path_verify_totp;
         crate::change_email::request,
         crate::change_email::confirm,
         crate::verify_totp::handle_verify_totp,
+        crate::verify_passkey::handle_passkey_options,
+        crate::verify_passkey::handle_passkey_verify,
+        crate::verify_passkey::handle_passkey_2fa_options,
+        crate::verify_passkey::handle_passkey_2fa_verify,
         crate::user_totp::handle_enable_totp,
         crate::user_totp::handle_verify_totp_setup,
         crate::user_totp::handle_disable_totp,
         crate::user_totp::handle_regenerate_totp,
         crate::user_totp::handle_get_totp_status,
+        crate::user_passkey::handle_begin_passkey_registration,
+        crate::user_passkey::handle_finish_passkey_registration,
+        crate::user_passkey::handle_list_passkey_credentials,
+        crate::user_passkey::handle_rename_passkey_credential,
+        crate::user_passkey::handle_delete_passkey_credential,
     ),
     components(schemas(
         crate::login::LoginRequestPayload,
@@ -93,6 +113,14 @@ pub use verify_totp::__path_handle_verify_totp as __path_verify_totp;
         crate::change_email::ChangeEmailResponse,
         crate::verify_totp::VerifyTotpRequest,
         crate::verify_totp::VerifyTotpResponse,
+        crate::verify_passkey::PasskeyOptionsRequest,
+        crate::verify_passkey::PasskeyOAuthRequest,
+        crate::verify_passkey::PasskeyOptionsResponse,
+        crate::verify_passkey::PasskeyVerifyRequest,
+        crate::verify_passkey::PasskeyVerifyResponse,
+        crate::verify_passkey::Passkey2faOptionsRequest,
+        crate::verify_passkey::Passkey2faOptionsResponse,
+        crate::verify_passkey::Passkey2faVerifyRequest,
         crate::user_totp::EnableTotpRequest,
         crate::user_totp::EnableTotpResponse,
         crate::user_totp::VerifyTotpSetupRequest,
@@ -103,6 +131,13 @@ pub use verify_totp::__path_handle_verify_totp as __path_verify_totp;
         crate::user_totp::RegenerateTotpResponse,
         crate::user_totp::TotpStatusResponse,
         crate::user_totp::BackupCodeStatsResponse,
+        crate::user_passkey::BeginRegistrationRequest,
+        crate::user_passkey::BeginRegistrationResponse,
+        crate::user_passkey::FinishRegistrationRequest,
+        crate::user_passkey::FinishRegistrationResponse,
+        crate::user_passkey::PasskeyCredentialViewResponse,
+        crate::user_passkey::ListPasskeysResponse,
+        crate::user_passkey::RenamePasskeyRequest,
     ))
 )]
 pub struct ApiDoc;
@@ -112,6 +147,22 @@ pub fn auth_router() -> Router<AppState> {
         .route("/register", post(register::register))
         .route("/login", post(login::login))
         .route("/login/verify-totp", post(verify_totp::handle_verify_totp))
+        .route(
+            "/login/passkey/options",
+            post(verify_passkey::handle_passkey_options),
+        )
+        .route(
+            "/login/passkey/verify",
+            post(verify_passkey::handle_passkey_verify),
+        )
+        .route(
+            "/login/passkey/2fa/options",
+            post(verify_passkey::handle_passkey_2fa_options),
+        )
+        .route(
+            "/login/passkey/2fa/verify",
+            post(verify_passkey::handle_passkey_2fa_verify),
+        )
         .route("/logout", get(logout::logout).post(logout::logout))
         .route("/status", get(status::status))
         .route(

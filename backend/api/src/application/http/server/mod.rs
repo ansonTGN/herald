@@ -82,6 +82,8 @@ pub struct HealthCheckResponse {
         user::delete_account::delete_account,
         realm::totp_config::handle_update_realm_totp_config,
         realm::totp_config::handle_get_realm_totp_config,
+        realm::passkey_config::handle_update_realm_passkey_config,
+        realm::passkey_config::handle_get_realm_passkey_config,
         public_config::get_public_config,
         legal::list_agreements,
         legal::get_agreement,
@@ -126,6 +128,9 @@ pub struct HealthCheckResponse {
             realm::totp_config::UpdateRealmTotpConfigResponse,
             realm::totp_config::GetRealmTotpConfigResponse,
             realm::totp_config::RealmTotpStatisticsResponse,
+            realm::passkey_config::UpdateRealmPasskeyConfigRequest,
+            realm::passkey_config::UpdateRealmPasskeyConfigResponse,
+            realm::passkey_config::GetRealmPasskeyConfigResponse,
             public_config::PublicConfigResponse,
             public_config::RegistrationConfig,
             public_config::OAuthProviderInfo,
@@ -439,6 +444,7 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
             "/api/user",
             user::router()
                 .merge(users::router())
+                .merge(herald_api_auth::user_passkey::router())
                 .layer(from_fn_with_state((*state).clone(), inject_identity)),
         )
         // Admin user management (tag = "users") - realm_id required

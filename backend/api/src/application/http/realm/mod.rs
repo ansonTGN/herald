@@ -3,9 +3,11 @@
 // This module handles all realm-related HTTP endpoints including:
 // - CRUD operations for realms (create, read, update, list)
 // - Realm TOTP configuration management
+// - Realm Passkey configuration management
 
 // Sub-modules
 pub mod crud;
+pub mod passkey_config;
 pub mod totp_config;
 pub mod validators;
 
@@ -32,6 +34,8 @@ use axum::Router;
 /// - PUT /api/realms/{realmId} - Update realm
 /// - GET /api/realms/{realmId}/config/totp - Get realm TOTP configuration
 /// - PUT /api/realms/{realmId}/config/totp - Update realm TOTP configuration
+/// - GET /api/realms/{realmId}/config/passkey - Get realm Passkey configuration
+/// - PUT /api/realms/{realmId}/config/passkey - Update realm Passkey configuration
 pub fn realm_router() -> Router<AppState> {
     Router::new()
         // CRUD routes
@@ -55,5 +59,14 @@ pub fn realm_router() -> Router<AppState> {
         .route(
             "/{realmId}/config/totp",
             axum::routing::get(totp_config::handle_get_realm_totp_config),
+        )
+        // Passkey configuration routes
+        .route(
+            "/{realmId}/config/passkey",
+            axum::routing::put(passkey_config::handle_update_realm_passkey_config),
+        )
+        .route(
+            "/{realmId}/config/passkey",
+            axum::routing::get(passkey_config::handle_get_realm_passkey_config),
         )
 }
