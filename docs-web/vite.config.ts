@@ -1,9 +1,38 @@
+import { readFileSync } from "node:fs";
 import tailwindcss from "@tailwindcss/vite";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import react from "@vitejs/plugin-react";
 import mdx from "fumadocs-mdx/vite";
 import { nitro } from "nitro/vite";
 import { defineConfig } from "vite";
+
+// OpenAPI pages are virtual (one per operationId in the spec, grouped by tag).
+// The prerender crawler can't discover them from virtual pages, so we list them
+// explicitly — one per operationId, in both locales. Generated from openapi.json
+// so it stays in sync when the backend adds/removes endpoints.
+function openapiSlugs(): string[] {
+  try {
+    const spec = JSON.parse(readFileSync("./openapi.json", "utf-8")) as {
+      paths?: Record<string, Record<string, { operationId?: string }>>;
+    };
+    const ids = new Set<string>();
+    for (const ops of Object.values(spec.paths ?? {})) {
+      for (const op of Object.values(ops)) {
+        if (op.operationId) ids.add(op.operationId);
+      }
+    }
+    return [...ids].sort();
+  } catch {
+    return [];
+  }
+}
+
+function openapiPages() {
+  return openapiSlugs().flatMap((slug) => [
+    { path: `/en/docs/openapi/${slug}` },
+    { path: `/zh/docs/openapi/${slug}` },
+  ]);
+}
 
 export default defineConfig({
   server: {
@@ -38,6 +67,8 @@ export default defineConfig({
         {
           path: "/zh",
         },
+        // OpenAPI tag pages — virtual, must be listed explicitly (crawler can't render them)
+        ...openapiPages(),
         // Nested folder pages (sidebar-only links aren't auto-discovered by the crawler)
         {
           path: "/en/docs/points-grant-redesign",
@@ -49,9 +80,6 @@ export default defineConfig({
           path: "/en/docs/points-grant-redesign/architecture",
         },
         {
-          path: "/en/docs/points-grant-redesign/api-reference",
-        },
-        {
           path: "/zh/docs/points-grant-redesign",
         },
         {
@@ -59,9 +87,6 @@ export default defineConfig({
         },
         {
           path: "/zh/docs/points-grant-redesign/architecture",
-        },
-        {
-          path: "/zh/docs/points-grant-redesign/api-reference",
         },
         {
           path: "/api/search",

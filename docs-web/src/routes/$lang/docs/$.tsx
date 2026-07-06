@@ -18,6 +18,7 @@ import {
   ViewOptionsPopover,
 } from "fumadocs-ui/layouts/docs/page";
 import { Suspense } from "react";
+import { ClientAPIPage } from "@/components/api-page";
 import { useMDXComponents } from "@/components/mdx";
 import { i18n } from "@/lib/i18n";
 import { baseOptions } from "@/lib/layout.shared";
@@ -37,7 +38,10 @@ export const Route = createFileRoute("/$lang/docs/$")({
       throw redirect({ href: `/${locale}/docs/getting-started` });
     }
     const data = await loader({ data: { locale, slugs } });
-    await clientLoader.preload(data.path);
+    // Fumadocs MDX: only preload content for normal pages
+    if (data.type === "docs") {
+      await clientLoader.preload(data.path);
+    }
     return data;
   },
 });
@@ -53,7 +57,19 @@ const loader = createServerFn({
 
     const pageTree = await source.serializePageTree(source.getPageTree(locale));
 
+    if (page.data.type === "openapi") {
+      return {
+        type: "openapi" as const,
+        title: page.data.title,
+        description: page.data.description,
+        locale,
+        pageTree,
+        props: await page.data.getClientAPIPageProps(),
+      };
+    }
+
     return {
+      type: "docs" as const,
       path: page.path,
       locale,
       markdownUrl: slugsToMarkdownPath(page.slugs, locale).url,
@@ -95,15 +111,28 @@ const clientLoader = browserCollections.docs.createClientLoader({
 function Page() {
   const data = useFumadocsLoader(Route.useLoaderData());
 
-  // biome-ignore lint/correctness/useHookAtTopLevel: fumadocs framework pattern
-  const content = clientLoader.useContent(data.path, {
-    markdownUrl: data.markdownUrl,
-    path: data.path,
-  });
+  let content: React.ReactNode;
+  if (data.type === "openapi") {
+    content = (
+      <DocsPage full footer={{ enabled: false }}>
+        <DocsTitle>{data.title}</DocsTitle>
+        <DocsDescription>{data.description}</DocsDescription>
+        <DocsBody>
+          <ClientAPIPage {...data.props} />
+        </DocsBody>
+      </DocsPage>
+    );
+  } else {
+    // biome-ignore lint/correctness/useHookAtTopLevel: fumadocs framework pattern
+    content = clientLoader.useContent(data.path, {
+      markdownUrl: data.markdownUrl,
+      path: data.path,
+    });
+  }
 
   return (
     <DocsLayout {...baseOptions()} tree={data.pageTree}>
-      <Link to={data.markdownUrl} hidden />
+      {data.type === "docs" && <Link to={data.markdownUrl} hidden />}
       <Suspense>{content}</Suspense>
     </DocsLayout>
   );

@@ -109,7 +109,7 @@ Subscription 是支付方订阅状态的本地只读副本，不是 Herald 拥�
 
 ### 支付尝试（Payment Attempt）
 
-支付尝试是记录每一次成功支付的统一账本，覆盖一次性购买、订阅首期和订阅续费。订阅续费以前只更新订阅周期和积分，不留下"这次支付"的记录；现在每次成功续费也写一条已成功的支付尝试，并作为外部发票的本地归属锚点。每张第三方同步的发票都能直接定位到它归属的支付尝试或订阅。零金额周期（100% 折扣 / 免费档）不产生续费支付尝试。归属和异常发现的细节见[发票管理](billing-invoice)。
+支付尝试是记录每一次成功支付的统一账本，覆盖一次性购买、订阅首期和订阅续费。订阅续费以前只更新订阅周期和积分，不留下"这次支付"的记录；现在每次成功续费也写一条已成功的支付尝试，并作为外部发票的本地归属锚点。每张第三方同步的发票都能直接定位到它归属的支付尝试或订阅。零金额周期（100% 折扣 / 免费档）不产生续费支付尝试。归属和异常发现的细节见[发票管理](/docs/billing-invoice)。
 
 ### Metadata 契约
 
@@ -212,6 +212,6 @@ Stripe、Creem 是发起式平台，通过 PaymentAttempt 统一管理支付过�
 ## 相关文档
 
 - [积分账户用户故事](https://github.com/timzaak/cas-2/blob/main/docs/user-stories/billing/credit-bucket.md) — 积分账户目录、覆盖集、购买入池、跨池消费、订阅生命周期的验收场景
-- [Stripe 对接指南](billing-stripe-payment) — Stripe 支付方配置和 Webhook 处理
-- [Creem 对接指南](billing-creem-payment) — Creem 支付方配置和 Webhook 处理
-- [发票管理](billing-invoice) — 发票创建、开票、PDF 生成
+- [Stripe 对接指南](/docs/billing-stripe-payment) — Stripe 支付方配置和 Webhook 处理
+- [Creem 对接指南](/docs/billing-creem-payment) — Creem 支付方配置和 Webhook 处理
+- [发票管理](/docs/billing-invoice) — 发票创建、开票、PDF 生成
