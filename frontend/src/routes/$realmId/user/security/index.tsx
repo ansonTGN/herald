@@ -2,6 +2,8 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 import { ChangePasswordForm } from '@/components/profile/change-password-form'
 import { TotpStatusCard } from '@/components/profile/totp/totp-status-card'
+import { PasskeyList } from '@/components/profile/passkey/passkey-list'
+import { PasskeyRegisterForm } from '@/components/profile/passkey/passkey-register-form'
 import { DeleteAccountDialog } from '@/components/security/DeleteAccountDialog'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -23,6 +25,8 @@ export function ProfileSecurity() {
   const { realmId } = Route.useParams()
   const [totpDialog, setTotpDialog] = useState<TotpDialogType>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  // Toggles the inline passkey registration form within the passkey tab.
+  const [passkeyRegistering, setPasskeyRegistering] = useState(false)
 
   const handleDialogClose = () => setTotpDialog(null)
 
@@ -38,6 +42,9 @@ export function ProfileSecurity() {
           <TabsTrigger value="totp" data-testid="totp-tab">
             {m['profile.totp_tab']()}
           </TabsTrigger>
+          <TabsTrigger value="passkey" data-testid="passkey-tab">
+            {m['profile.passkey_tab']()}
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="password" data-testid="password-section-title">
           <ChangePasswordForm />
@@ -50,6 +57,22 @@ export function ProfileSecurity() {
             onDisable={() => setTotpDialog('disable')}
             onRegenerate={() => setTotpDialog('regenerate')}
           />
+        </TabsContent>
+        <TabsContent value="passkey" data-testid="passkey-section-title">
+          {passkeyRegistering ? (
+            <PasskeyRegisterForm
+              onSuccess={() => setPasskeyRegistering(false)}
+              onCancel={() => setPasskeyRegistering(false)}
+            />
+          ) : (
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-2xl font-bold">{m['profile.passkey_title']()}</h2>
+                <p className="text-muted-foreground">{m['profile.passkey_description']()}</p>
+              </div>
+              <PasskeyList onAdd={() => setPasskeyRegistering(true)} />
+            </div>
+          )}
         </TabsContent>
       </Tabs>
 

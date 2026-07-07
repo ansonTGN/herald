@@ -4,6 +4,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import type {
   LoginRequestPayload,
   VerifyTotpResponse,
+  PasskeyVerifyResponse,
   LegalAgreementSummary,
   AuthConsentAgreement,
 } from '@/lib/api-generated'
@@ -13,6 +14,8 @@ import { getErrorMessage, getFieldErrorMessage } from '@/lib/error-utils'
 import {
   loginFlow,
   completeLoginAfterTotp,
+  completeLoginAfterPasskey,
+  isConsentRequired,
   getSafeRedirect,
   checkAdminPermission,
   validateOAuthParams,
@@ -23,6 +26,8 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { AuthPageWrapper } from '@/components/auth/auth-page-wrapper'
 import { TotpVerificationForm } from '@/components/auth/totp-verification-form'
+import { PasskeyLoginForm } from '@/components/auth/passkey-login-form'
+import { Passkey2FaForm } from '@/components/auth/passkey-2fa-form'
 import { TurnstileWidget } from '@/components/auth/turnstile-widget'
 import {
   publicConfigQueryOptions,
@@ -46,17 +51,25 @@ interface ConsentStep {
   originalPayload: LoginRequestPayload
 }
 
+/**
+ * Passkey second-factor step. Reached when a password login returns
+ * `secondFactors` containing `"passkey"`. Carries the temp token plus the full
+ * `secondFactors` list so the form can show the TOTP fallback link only when
+ * `"totp"` is also present.
+ */
+interface PasskeySecondFactorStep {
+  tempToken: string
+  secondFactors: string[]
+}
+
 const DEFAULT_CLIENT_ID = 'admin-web-console'
 
-function isConsentRequired(response: {
-  consentRequired?: boolean | null
-  consent_required?: boolean | null
-}): boolean {
-  return (
-    !!response.consentRequired ||
-    !!(response as { consent_required?: boolean | null }).consent_required
-  )
-}
+/**
+ * Whether the realm exposes a passkey login entry point for the current
+ * browser. Lazily flipped to false when the begin-options call 404s (realm
+ * passkey disabled) or the browser lacks WebAuthn, so the entry is hidden
+ * without affecting the password form.
+ */
 
 export const Route = createFileRoute('/$realmId/auth/login')({
   component: LoginPage,
@@ -74,6 +87,17 @@ export function LoginPage() {
   const [totpStep, setTotpStep] = useState<TotpStep | null>(null)
   const [consentStep, setConsentStep] = useState<ConsentStep | null>(null)
   const [globalError, setGlobalError] = useState<string | null>(null)
+  // Passkey second-factor step (reached when a password login returns
+  // secondFactors containing "passkey"). The first-factor entry point does
+  // not need a dedicated step — PasskeyLoginForm manages its own conditional
+  // UI lifecycle and is mounted alongside the password form.
+  const [passkeySecondFactor, setPasskeySecondFactor] = useState<PasskeySecondFactorStep | null>(
+    null
+  )
+  // Tracks whether the realm exposes a passkey login entry for this browser.
+  // Defaults to true (WebAuthn-capable) and is flipped to false when the
+  // begin-options call 404s or the browser is unsupported, hiding the entry.
+  const [passkeyAvailable, setPasskeyAvailable] = useState(true)
 
   const { data: publicConfig, isLoading } = useQuery(publicConfigQueryOptions(realmId))
   const { data: turnstileStatus, isLoading: loadingTurnstile } = useQuery(
@@ -113,7 +137,32 @@ export function LoginPage() {
       setConsentStep(null)
       const { response } = data.result
 
-      if (response.requiresTotp && response.tempToken) {
+      // --- Second-factor routing (design §5.3, backward compatible) ----------
+      // Read order: prefer `secondFactors` when present and non-empty; only
+      // when it is ABSENT do we fall back to the legacy `requiresTotp` path.
+      // This keeps the existing password+TOTP login 100% unchanged for any
+      // backend that does not yet return `secondFactors`.
+      const secondFactors =
+        response.secondFactors && response.secondFactors.length > 0 ? response.secondFactors : null
+
+      if (secondFactors) {
+        if (!response.tempToken) {
+          // Defensive: secondFactors without a tempToken cannot proceed to any
+          // 2FA form. Fall through to consent / direct-login handling below.
+        } else if (secondFactors.includes('passkey')) {
+          // Passkey-capable users (optionally alongside TOTP) land on the
+          // Passkey second-factor form, which offers a TOTP fallback when the
+          // list also contains "totp".
+          setPasskeySecondFactor({ tempToken: response.tempToken, secondFactors })
+          return
+        } else {
+          // secondFactors present but has no passkey → TOTP path (covers
+          // ["totp"] and any unknown factors gracefully degrading to TOTP).
+          setTotpStep({ tempToken: response.tempToken })
+          return
+        }
+      } else if (response.requiresTotp && response.tempToken) {
+        // Legacy fallback (unchanged behaviour): backend without secondFactors.
         setTotpStep({ tempToken: response.tempToken })
         setConsentStep(null)
         return
@@ -232,6 +281,40 @@ export function LoginPage() {
     })
   }
 
+  /**
+   * Shared completion handler for a Passkey login that has already passed the
+   * consent interlock (handled inside the passkey forms). Behaviour mirrors
+   * `handleTotpSuccess`: fetch auth data, store it, redirect safely. Used by
+   * both the first-factor form and the second-factor form.
+   */
+  async function handlePasskeySuccess(verifyResponse: PasskeyVerifyResponse): Promise<void> {
+    toast.success(m['auth.login.login_successful']())
+
+    const { redirectPath, redirectTo } = await completeLoginAfterPasskey(realmId, verifyResponse)
+
+    if (redirectTo) {
+      window.location.href = redirectTo
+      return
+    }
+
+    // Prevent open redirect attacks
+    let safeRedirectPath = getSafeRedirect(search.redirect, redirectPath)
+
+    if (safeRedirectPath === '/') {
+      safeRedirectPath = checkAdminPermission() ? '/manage' : '/user/profile'
+    }
+
+    if (safeRedirectPath.startsWith('http://') || safeRedirectPath.startsWith('https://')) {
+      window.location.href = safeRedirectPath
+      return
+    }
+
+    await router.navigate({
+      to: `/${realmId}${safeRedirectPath}`,
+      params: { realmId },
+    })
+  }
+
   if (consentStep) {
     return (
       <AuthPageWrapper>
@@ -302,6 +385,29 @@ export function LoginPage() {
           tempToken={totpStep.tempToken}
           onSuccess={handleTotpSuccess}
           onBack={() => setTotpStep(null)}
+        />
+      </AuthPageWrapper>
+    )
+  }
+
+  if (passkeySecondFactor) {
+    return (
+      <AuthPageWrapper>
+        <Passkey2FaForm
+          realmId={realmId}
+          tempToken={passkeySecondFactor.tempToken}
+          secondFactors={passkeySecondFactor.secondFactors}
+          onSuccess={handlePasskeySuccess}
+          onBack={() => setPasskeySecondFactor(null)}
+          // Only offer the TOTP fallback when the user actually has TOTP.
+          onSwitchToTotp={
+            passkeySecondFactor.secondFactors.includes('totp')
+              ? () => {
+                  setTotpStep({ tempToken: passkeySecondFactor.tempToken })
+                  setPasskeySecondFactor(null)
+                }
+              : undefined
+          }
         />
       </AuthPageWrapper>
     )
@@ -432,6 +538,33 @@ export function LoginPage() {
               />
             </div>
           </form>
+
+          {/* Passkey first-factor entry. Mounted whenever the realm exposes
+              passkey for this browser (passkeyAvailable). The form fetches the
+              begin-challenge on mount and arms the conditional (autofill) UI;
+              if the realm has passkey disabled (options 404) or the browser is
+              unsupported it calls onUnavailable and we hide the entry without
+              touching the password form. */}
+          {passkeyAvailable && (
+            <div className="mt-4">
+              <PasskeyLoginForm
+                realmId={realmId}
+                clientId={search.clientId || DEFAULT_CLIENT_ID}
+                turnstileToken={form.getFieldValue('turnstileToken') || undefined}
+                oauth={
+                  oauthParams
+                    ? {
+                        clientId: oauthParams.oauthClientId,
+                        redirectUri: oauthParams.redirectUri,
+                        state: oauthParams.state,
+                      }
+                    : null
+                }
+                onSuccess={handlePasskeySuccess}
+                onUnavailable={() => setPasskeyAvailable(false)}
+              />
+            </div>
+          )}
 
           {!isLoading && oauthProviders.length > 0 && (
             <div className="space-y-3 mt-6">

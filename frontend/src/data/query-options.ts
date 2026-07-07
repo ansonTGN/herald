@@ -22,6 +22,8 @@ import {
   getTurnstileStatus,
   getProfile,
   handleGetTotpStatus,
+  handleListPasskeyCredentials,
+  handleGetRealmPasskeyConfig,
   getSubscriptionForClientApp,
   listWallets,
   getWallet,
@@ -203,6 +205,8 @@ export const queryKeys = {
     [QUERY_KEYS.OAUTH_CONFIGS, realmId, providerType] as const,
   profile: () => [QUERY_KEYS.PROFILE] as const,
   totpStatus: () => [QUERY_KEYS.TOTP_STATUS] as const,
+  passkeyList: () => [QUERY_KEYS.PASSKEY_LIST] as const,
+  passkeyRealmConfig: (realmId: string) => [QUERY_KEYS.PASSKEY_REALM_CONFIG, realmId] as const,
   turnstileStatus: (realmId: string) => [QUERY_KEYS.TURNSTILE_STATUS, realmId] as const,
   subscription: (realmId: string, clientAppId: string) =>
     [QUERY_KEYS.SUBSCRIPTION, realmId, clientAppId] as const,
@@ -612,6 +616,39 @@ export const totpStatusQueryOptions = queryOptions({
   staleTime: STALE_TIME_2_MIN,
   gcTime: GC_TIME_5_MIN,
 })
+
+// ==================== Passkey Credentials (current user) ====================
+//
+// Lists the current user's registered Passkeys (`GET /api/user/passkey/credentials`).
+// The generated `ListPasskeysResponse` carries `credentials: PasskeyCredentialViewResponse[]`.
+export const passkeyListQueryOptions = queryOptions({
+  queryKey: queryKeys.passkeyList(),
+  queryFn: async () => {
+    const response = await handleListPasskeyCredentials()
+    if (response.error) throw response.error
+    return response.data
+  },
+  retry: RETRY_COUNT,
+  staleTime: STALE_TIME_2_MIN,
+  gcTime: GC_TIME_5_MIN,
+})
+
+// ==================== Passkey Realm Config (admin) ====================
+//
+// Reads a realm's Passkey configuration (`GET /api/realms/{realmId}/config/passkey`).
+// Requires `settings.view`; used by the admin realm-security config page.
+export const passkeyRealmConfigQueryOptions = (realmId: string) =>
+  queryOptions({
+    queryKey: queryKeys.passkeyRealmConfig(realmId),
+    queryFn: async () => {
+      const response = await handleGetRealmPasskeyConfig({ path: { realmId } })
+      if (response.error) throw response.error
+      return response.data
+    },
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_2_MIN,
+    gcTime: GC_TIME_5_MIN,
+  })
 
 // ==================== Subscriptions ====================
 

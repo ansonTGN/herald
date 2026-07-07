@@ -356,24 +356,40 @@ async fn test_scenario_realm_create_produces_audit_events(ctx: &mut TestContext)
         "Realm creation should return 201 Created"
     );
 
-    // Assert: realm.create event recorded in the new realm
-    let create_count =
-        count_audit_events_by_action(&ctx.app_state.pool, &new_realm_id, "realm.create").await;
+    // Audit events for realm creation are scoped to the actor's realm (where the
+    // admin operates from), not the newly created realm — otherwise the events
+    // would be invisible in the audit list. The created realm's id is kept in
+    // `target_id`. Mirrors the behavior in realm::services::create_realm.
+    let actor_realm_id = ctx._realm_id.clone();
+
+    // Assert: realm.create event recorded under the actor's realm, targeting the new realm
+    let create_events =
+        fetch_audit_events_raw(&ctx.app_state.pool, &actor_realm_id, "realm.create").await;
     assert!(
-        create_count >= 1,
-        "Expected at least one realm.create audit event in realm {}, found {}",
-        new_realm_id,
-        create_count
+        !create_events.is_empty(),
+        "Expected at least one realm.create audit event in actor realm {}, found 0",
+        actor_realm_id
+    );
+    assert_eq!(
+        create_events[0].3, new_realm_id,
+        "realm.create target_id should match the created realm's id"
+    );
+    assert_eq!(
+        create_events[0].5, "success",
+        "realm.create result should be success"
     );
 
-    // Assert: realm.rbac_init event recorded
-    let rbac_init_count =
-        count_audit_events_by_action(&ctx.app_state.pool, &new_realm_id, "realm.rbac_init").await;
+    // Assert: realm.rbac_init event recorded under the actor's realm, targeting the new realm
+    let rbac_init_events =
+        fetch_audit_events_raw(&ctx.app_state.pool, &actor_realm_id, "realm.rbac_init").await;
     assert!(
-        rbac_init_count >= 1,
-        "Expected at least one realm.rbac_init audit event in realm {}, found {}",
-        new_realm_id,
-        rbac_init_count
+        !rbac_init_events.is_empty(),
+        "Expected at least one realm.rbac_init audit event in actor realm {}, found 0",
+        actor_realm_id
+    );
+    assert_eq!(
+        rbac_init_events[0].3, new_realm_id,
+        "realm.rbac_init target_id should match the created realm's id"
     );
 }
 

@@ -41,6 +41,7 @@ docs/
 | [oauth.md](auth/oauth.md) | OAuth 与第三方集成 | Realm Admin, Regular User, Third-Party App |
 | [wechat-oauth.md](auth/wechat-oauth.md) | 微信 OAuth 集成 | Realm Admin, Regular User |
 | [totp.md](auth/totp.md) | TOTP 二次认证 | TOTP User, Realm Admin |
+| [passkey.md](auth/passkey.md) | Passkey 认证（无密码第一因素 + 第二因素） | Regular User, Realm Admin |
 | [permissions.md](auth/permissions.md) | 权限管理 | Realm Admin |
 | [device-code.md](auth/device-code.md) | Device Code 登录 | Third-Party App, Regular User, Realm Admin |
 

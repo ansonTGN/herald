@@ -45,6 +45,11 @@ vi.mock('@tanstack/react-router', async () => {
 vi.mock('@/lib/auth-utils', () => ({
   loginFlow: vi.fn(),
   completeLoginAfterTotp: vi.fn(),
+  completeLoginAfterPasskey: vi.fn(),
+  isConsentRequired: (response: {
+    consentRequired?: boolean | null
+    consent_required?: boolean | null
+  }) => !!response.consentRequired || !!response.consent_required,
   getSafeRedirect: (path: string | undefined) => path ?? '/user/profile',
   checkAdminPermission: () => false,
   validateOAuthParams: () => ({ oauthParams: null, hasPartialOAuth: false }),

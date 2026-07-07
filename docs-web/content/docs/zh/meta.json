@@ -11,6 +11,7 @@
     "billing-invoice",
     "billing-credit-note",
     "third-party-integration",
+    "auth-passkey",
     "points-grant-redesign",
     "openapi"
   ]

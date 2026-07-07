@@ -6,7 +6,12 @@
  * to provide convenient APIs for authentication operations.
  */
 
-import type { LoginRequestPayload, LoginResponse, VerifyTotpResponse } from '@/lib/api-generated'
+import type {
+  LoginRequestPayload,
+  LoginResponse,
+  VerifyTotpResponse,
+  PasskeyVerifyResponse,
+} from '@/lib/api-generated'
 import { fetchAuthData, performLogin, performLogout } from '@/lib/auth-service'
 import { useAuthStore, clearAuthStorage } from '@/stores/auth-store'
 import {
@@ -22,6 +27,24 @@ import {
 export interface LoginFlowResult {
   response: LoginResponse
   redirectPath: string
+}
+
+/**
+ * Check if a login / verify response requires (re-)consent.
+ *
+ * The backend may set either the camelCase `consentRequired` or the legacy
+ * snake_case `consent_required` flag; this checks both. Shared so that every
+ * login path (password, TOTP, Passkey first/second factor) applies the same
+ * consent interlock consistently.
+ */
+export function isConsentRequired(response: {
+  consentRequired?: boolean | null
+  consent_required?: boolean | null
+}): boolean {
+  return (
+    !!response.consentRequired ||
+    !!(response as { consent_required?: boolean | null }).consent_required
+  )
 }
 
 /**
@@ -242,6 +265,48 @@ export async function completeLoginAfterTotp(
     verifyResponse.consentRequired ||
     (verifyResponse as { consent_required?: boolean | null }).consent_required
   ) {
+    return {}
+  }
+
+  const store = useAuthStore.getState()
+
+  try {
+    const { authStatus, userPermissions, userProfile } = await fetchAuthData(realmId)
+    store.setAuthStatus(authStatus.authenticated, authStatus.realmId || realmId)
+    store.setUserPermissions(userPermissions.permissions, userPermissions.roles)
+    store.setUserProfile(userProfile)
+
+    initializedRealm = realmId
+
+    return { redirectPath: getRedirectPath() }
+  } catch (error) {
+    store.logout()
+    throw error
+  }
+}
+
+/**
+ * Complete login after Passkey verification (first or second factor).
+ *
+ * Behaviour is identical to `completeLoginAfterTotp`: `PasskeyVerifyResponse`
+ * is structurally the same as `VerifyTotpResponse` (camelCase
+ * `consentRequired`/`agreements`/`redirectTo`/`token`). Kept as a separate,
+ * strongly-typed entry point so call sites don't need an unsafe cast and the
+ * consent interlock is applied uniformly across all login paths.
+ *
+ * @param realmId - The realm ID
+ * @param verifyResponse - The Passkey verification response from the API
+ */
+export async function completeLoginAfterPasskey(
+  realmId: string,
+  verifyResponse: PasskeyVerifyResponse
+): Promise<{ redirectPath?: string; redirectTo?: string | null }> {
+  // OAuth flow: when redirectTo is present, return it without updating store
+  if (verifyResponse.redirectTo) {
+    return { redirectTo: verifyResponse.redirectTo }
+  }
+
+  if (isConsentRequired(verifyResponse)) {
     return {}
   }
 

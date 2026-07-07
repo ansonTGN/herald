@@ -44,6 +44,8 @@ export const QUERY_KEYS = {
   OAUTH_CONFIGS: 'oauth-configs',
   PROFILE: 'profile',
   TOTP_STATUS: 'totp-status',
+  PASSKEY_LIST: 'passkey-list',
+  PASSKEY_REALM_CONFIG: 'passkey-realm-config',
   TURNSTILE_STATUS: 'turnstile-status',
   USER_SUBSCRIPTIONS: 'user-subscriptions',
   SUBSCRIPTION_DETAILS: 'subscription-details',

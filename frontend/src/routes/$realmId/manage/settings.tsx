@@ -1,8 +1,14 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { listRealmConfigs, batchUpsertRealmConfigs, updateRealm } from '@/lib/api-generated'
+import {
+  listRealmConfigs,
+  batchUpsertRealmConfigs,
+  updateRealm,
+  handleUpdateRealmPasskeyConfig,
+} from '@/lib/api-generated'
 import type { UpsertRealmConfigRequest } from '@/lib/api-generated/types.gen'
 import { TOTPConfigForm as TOTPConfigFormComponent } from '@/components/realm-config/totp-config-form'
+import { PasskeyConfigForm as PasskeyConfigFormComponent } from '@/components/realm-config/passkey-config-form'
 import { RegistrationConfigForm as RegistrationConfigFormComponent } from '@/components/realm-config/registration-config-form'
 import { EmailConfigForm as EmailConfigFormComponent } from '@/components/realm-config/email-config-form'
 import { TurnstileConfigForm as TurnstileConfigFormComponent } from '@/components/realm-config/turnstile-config-form'
@@ -17,6 +23,7 @@ import type {
   RegistrationConfigForm,
   EmailConfigForm,
   TurnstileConfigForm,
+  PasskeyConfigForm,
 } from '@/lib/schemas/realm-config'
 import {
   parseTOTPConfig,
@@ -30,7 +37,12 @@ import {
 } from '@/lib/realm-config-utils'
 import { useState, useEffect } from 'react'
 import { PageHeader, AccessDenied } from '@/components/shared'
-import { queryKeys, realmQueryOptions, emailStatusQueryOptions } from '@/data/query-options'
+import {
+  queryKeys,
+  realmQueryOptions,
+  emailStatusQueryOptions,
+  passkeyRealmConfigQueryOptions,
+} from '@/data/query-options'
 import { useAppForm, AppForm } from '@/components/ui/tanstack-form'
 import { updateRealmSchema, type UpdateRealmFormData } from '@/lib/schemas/realm'
 import { useFormMutation } from '@/hooks/use-form-mutation'
@@ -166,6 +178,12 @@ function SettingsPage() {
     enabled: !!realmId && canViewConfig,
   })
 
+  // Passkey Realm config via dedicated endpoint (GET /api/realms/{realmId}/config/passkey)
+  const { data: passkeyConfigData } = useQuery({
+    ...passkeyRealmConfigQueryOptions(realmId),
+    enabled: !!realmId && canViewConfig,
+  })
+
   // Batch update configuration
   const mutation = useMutation({
     mutationFn: (configs: UpsertRealmConfigRequest[]) =>
@@ -205,6 +223,59 @@ function SettingsPage() {
     },
   })
 
+  // Dedicated Passkey config mutation (PUT /api/realms/{realmId}/config/passkey).
+  // Passkey uses its own camelCase endpoint (see passkeyConfigSchema), distinct
+  // from the generic snake_case realm_configs store used by TOTP/Turnstile/etc.
+  const passkeyMutation = useMutation({
+    mutationFn: (config: PasskeyConfigForm) =>
+      handleUpdateRealmPasskeyConfig({
+        path: { realmId },
+        body: {
+          enabled: config.enabled,
+          forceEnabled: config.forceEnabled,
+          userVerification: config.userVerification,
+          crossPlatformAuthenticator: config.crossPlatformAuthenticator,
+        },
+      }).then((response) => {
+        if (response.error) throw response.error
+        return response.data
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.passkeyRealmConfig(realmId) })
+      toast.success(m['settings.config_saved_success']())
+    },
+    onError: (error: unknown) => {
+      console.error('Failed to save passkey config:', error)
+
+      let errorMessage: string = m['settings.config_save_failed']()
+
+      if (error instanceof Error) {
+        errorMessage = error.message
+      } else if (typeof error === 'object' && error !== null) {
+        const err = error as {
+          status?: number
+          message?: string
+          detail?: string
+        }
+        const statusCode = err.status
+
+        if (statusCode === 401) {
+          errorMessage = m['settings.config_save_unauthorized']()
+        } else if (statusCode === 403) {
+          errorMessage = m['settings.config_save_forbidden']()
+        } else if (statusCode === 500) {
+          errorMessage = m['settings.config_save_server_error']()
+        } else if (err.message) {
+          errorMessage = err.message
+        } else if (err.detail) {
+          errorMessage = err.detail
+        }
+      }
+
+      toast.error(errorMessage)
+    },
+  })
+
   if (!canViewConfig) {
     return <AccessDenied message={m['settings.config_access_denied']()} />
   }
@@ -225,6 +296,19 @@ function SettingsPage() {
   const turnstileConfig = parseTurnstileConfig(configs || [])
   const registrationConfig = parseRegistrationConfig(configs || [])
   const emailConfig = parseEmailConfig(configs || [])
+
+  // Derive Passkey form values from the dedicated endpoint response.
+  // The API returns `userVerification` as a generic string; narrow it to the
+  // schema enum, falling back to 'preferred' for unexpected values.
+  const passkeyInitialConfig: PasskeyConfigForm | undefined = passkeyConfigData
+    ? {
+        enabled: passkeyConfigData.enabled,
+        forceEnabled: passkeyConfigData.forceEnabled,
+        userVerification:
+          passkeyConfigData.userVerification === 'required' ? 'required' : 'preferred',
+        crossPlatformAuthenticator: passkeyConfigData.crossPlatformAuthenticator,
+      }
+    : undefined
 
   // Save TOTP configuration
   async function saveTOTPConfig(config: TOTPConfigForm) {
@@ -271,6 +355,16 @@ function SettingsPage() {
     queryClient.invalidateQueries({ queryKey: queryKeys.emailStatus(realmId) })
   }
 
+  // Save Passkey configuration (dedicated endpoint).
+  async function savePasskeyConfig(config: PasskeyConfigForm) {
+    if (!canUpdateConfig) {
+      toast.error(m['settings.config_modify_denied']())
+      return
+    }
+
+    await passkeyMutation.mutateAsync(config).catch(() => {})
+  }
+
   return (
     <div className="space-y-6" data-testid="settings-page">
       <PageHeader title={m['settings.page_title']()} />
@@ -282,6 +376,9 @@ function SettingsPage() {
           </TabsTrigger>
           <TabsTrigger value="totp" data-testid="totp-tab">
             {m['settings.tab_totp']()}
+          </TabsTrigger>
+          <TabsTrigger value="passkey" data-testid="passkey-tab">
+            {m['settings.tab_passkey']()}
           </TabsTrigger>
           <TabsTrigger value="turnstile" data-testid="turnstile-tab">
             {m['settings.tab_turnstile']()}
@@ -309,6 +406,16 @@ function SettingsPage() {
             realmId={realmId}
             initialConfig={totpConfig}
             onSave={saveTOTPConfig}
+            isLoading={isLoading}
+            disabled={!canUpdateConfig}
+          />
+        </TabsContent>
+
+        <TabsContent value="passkey">
+          <PasskeyConfigFormComponent
+            realmId={realmId}
+            initialConfig={passkeyInitialConfig}
+            onSave={savePasskeyConfig}
             isLoading={isLoading}
             disabled={!canUpdateConfig}
           />

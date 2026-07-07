@@ -21,6 +21,7 @@ docs/user-stories/
 │   ├── third-party-app.md # 第三方应用
 │   ├── client-app-settings.md # Client App 设置
 │   ├── totp.md           # TOTP 二次认证
+│   ├── passkey.md        # Passkey 认证
 │   ├── oauth-extension.md # OAuth Provider 扩展
 │   ├── wechat-oauth.md   # 微信 OAuth
 │   └── device-code.md    # Device Code
@@ -107,6 +108,16 @@ docs/user-stories/
 | US-TO-005 | 用户重新生成 TOTP 密钥 | TOTP User | P1 | [auth/totp](auth/totp.md#故事-5用户重新生成-totp-密钥-us-to-005) |
 | US-TO-006 | Realm 管理员强制启用 TOTP | TOTP User | P1 | [auth/totp](auth/totp.md#故事-6realm-管理员强制启用-totp-us-to-006) |
 | US-TO-007 | 用户查看 TOTP 使用情况 | TOTP User | P2 | [auth/totp](auth/totp.md#故事-7用户查看-totp-使用情况-us-to-007) |
+| US-PK-001 | Realm 管理员启用/禁用 Passkey 功能 | Realm Admin | P0 | [auth/passkey](auth/passkey.md#故事-1realm-管理员启用禁用-passkey-功能-us-pk-001) |
+| US-PK-002 | Realm 管理员强制启用 Passkey | Realm Admin | P0 | [auth/passkey](auth/passkey.md#故事-2realm-管理员强制启用-passkey-us-pk-002) |
+| US-PK-003 | Realm 管理员配置 Passkey 安全策略 | Realm Admin | P1 | [auth/passkey](auth/passkey.md#故事-3realm-管理员配置-passkey-安全策略-us-pk-003) |
+| US-PK-004 | 用户注册 Passkey | Regular User | P0 | [auth/passkey](auth/passkey.md#故事-4用户注册-passkey-us-pk-004) |
+| US-PK-005 | 用户使用 Passkey 直接登录 | Regular User | P0 | [auth/passkey](auth/passkey.md#故事-5用户使用-passkey-直接登录-us-pk-005) |
+| US-PK-006 | 用户在密码登录后使用 Passkey 作为第二因素 | Regular User | P0 | [auth/passkey](auth/passkey.md#故事-6用户在密码登录后使用-passkey-作为第二因素-us-pk-006) |
+| US-PK-007 | 用户查看和重命名已注册 Passkey | Regular User | P0 | [auth/passkey](auth/passkey.md#故事-7用户查看和重命名已注册-passkey-us-pk-007) |
+| US-PK-008 | 用户在无法使用 Passkey 时回退到密码/TOTP | Regular User | P0 | [auth/passkey](auth/passkey.md#故事-8用户在无法使用-passkey-时回退到密码totp-us-pk-008) |
+| US-PK-009 | 用户删除 Passkey | Regular User | P0 | [auth/passkey](auth/passkey.md#故事-9用户删除-passkey-us-pk-009) |
+| US-PK-010 | Realm 管理员查看 Passkey 使用情况统计 | Realm Admin | P2 | [auth/passkey](auth/passkey.md#故事-10realm-管理员查看-passkey-使用情况统计-us-pk-010) |
 | US-OE-001 | OAuth Provider 配置管理 | Realm Admin | P0 | [auth/oauth-extension](auth/oauth-extension.md#故事-1oauth-provider-配置管理-us-oe-001) |
 | US-BI-001 | 创建订阅套餐 | Billing User | P0 | [billing/subscription](billing/subscription.md#故事-1创建订阅套餐-us-bi-001) |
 | US-BI-002 | 编辑订阅套餐 | Billing User | P0 | [billing/subscription](billing/subscription.md#故事-2编辑订阅套餐-us-bi-002) |
@@ -227,6 +238,7 @@ docs/user-stories/
 |------|------|---------|
 | Third-Party App | [auth/third-party-app.md](auth/third-party-app.md), [auth/client-app-settings.md](auth/client-app-settings.md) | [OAuth PRD](/docs/prd/auth/oauth.md), [Client Apps PRD](/docs/prd/integration/client-app.md) |
 | TOTP User | [auth/totp.md](auth/totp.md) | [TOTP PRD](/docs/prd/auth/totp.md) |
+| Passkey User | [auth/passkey.md](auth/passkey.md) | [Passkey PRD](/docs/prd/auth/passkey.md) |
 | OAuth Extension | [auth/oauth-extension.md](auth/oauth-extension.md) | [OAuth PRD](/docs/prd/auth/oauth.md) |
 | WeChat OAuth | [auth/wechat-oauth.md](auth/wechat-oauth.md) | [WeChat OAuth PRD](/docs/prd/auth/wechat-oauth.md) |
 | Device Code | [auth/device-code.md](auth/device-code.md) | [Device Code PRD](/docs/prd/auth/device-code.md) |

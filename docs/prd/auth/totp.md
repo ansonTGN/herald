@@ -65,7 +65,7 @@
 
 ### 2.2 不包含功能 (Out of Scope)
 
-- WebAuthn/FIDO2（不同类型的二次认证，后续版本考虑）
+- WebAuthn/FIDO2 形式的无密码认证（已由 Passkey PRD 承载，见 [docs/prd/auth/passkey.md](passkey.md)；TOTP 仅作为 Passkey 不可用时的回退方式之一）
 - SMS 二次认证（需要短信服务支持，优先级较低）
 - 邮箱验证码二次认证（安全性较低，优先级较低）
 - TOTP 设备管理（当前版本不支持多个验证器设备）
