@@ -1,0 +1,26 @@
+# Default: treat everything as text with LF line endings on checkin AND checkout.
+# This makes the working tree LF, so Prettier's `endOfLine: lf` passes on every
+# platform (notably Windows, where core.autocrlf=true otherwise checks out CRLF).
+* text=auto eol=lf
+
+# Windows-only scripts keep CRLF — .bat files break on LF (cmd.exe parsing).
+*.bat text eol=crlf
+
+# Binaries and files that must never be touched by line-ending normalization.
+*.pem binary
+*.lock binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.eot binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.wasm binary

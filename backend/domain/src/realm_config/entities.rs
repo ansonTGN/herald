@@ -10,7 +10,7 @@ pub struct RealmConfig {
     /// Realm this configuration belongs to
     #[serde(rename = "realmId")]
     pub realm_id: String,
-    /// Configuration type (totp, turnstile, registration)
+    /// Configuration type (totp, turnstile, registration, white_label)
     #[serde(rename = "configType")]
     pub config_type: ConfigType,
     /// Configuration key (specific to each config_type)
@@ -134,6 +134,28 @@ pub enum ConfigType {
     /// }
     /// ```
     Registration,
+
+    /// White-label authentication UI configuration
+    ///
+    /// Configuration is stored as a JSON object in config_value using the public wire shape.
+    ///
+    /// Valid config_key values:
+    /// - `settings`: Published configuration visible to auth pages
+    /// - `draft`: Unpublished configuration edited by realm admins
+    /// - `previous_settings`: Previous published configuration for one-step restore
+    ///
+    /// Example configuration:
+    /// ```json
+    /// {
+    ///   "config_type": "white_label",
+    ///   "config_key": "settings",
+    ///   "config_value": "{\"logoUrl\":\"https://cdn.example.com/logo.svg\",\"accentColor\":\"#2563eb\"}",
+    ///   "is_secret": false,
+    ///   "enabled": true,
+    ///   "metadata": null
+    /// }
+    /// ```
+    WhiteLabel,
 
     /// Realm TOTP 加密密钥配置
     ///
@@ -326,6 +348,7 @@ impl ConfigType {
             "registration" => ConfigType::Registration,
             "totp" => ConfigType::Totp,
             "passkey" => ConfigType::Passkey,
+            "white_label" => ConfigType::WhiteLabel,
             "totp_key" => ConfigType::TotpKey,
             "creem" => ConfigType::Creem,
             "stripe" => ConfigType::Stripe,
@@ -344,6 +367,7 @@ impl From<ConfigType> for String {
             ConfigType::Registration => "registration".to_string(),
             ConfigType::Totp => "totp".to_string(),
             ConfigType::Passkey => "passkey".to_string(),
+            ConfigType::WhiteLabel => "white_label".to_string(),
             ConfigType::TotpKey => "totp_key".to_string(),
             ConfigType::Creem => "creem".to_string(),
             ConfigType::Stripe => "stripe".to_string(),
@@ -360,6 +384,7 @@ impl AsRef<str> for ConfigType {
             ConfigType::Registration => "registration",
             ConfigType::Totp => "totp",
             ConfigType::Passkey => "passkey",
+            ConfigType::WhiteLabel => "white_label",
             ConfigType::TotpKey => "totp_key",
             ConfigType::Creem => "creem",
             ConfigType::Stripe => "stripe",
@@ -372,7 +397,7 @@ impl AsRef<str> for ConfigType {
 /// 创建/更新配置请求
 #[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
 pub struct UpsertRealmConfigRequest {
-    /// Configuration type (totp, turnstile, registration)
+    /// Configuration type (totp, turnstile, registration, white_label)
     ///
     /// See ConfigType documentation for details on each type
     #[schema(example = "totp")]
@@ -382,6 +407,7 @@ pub struct UpsertRealmConfigRequest {
     /// Configuration key (specific to each config_type)
     ///
     /// **TOTP**: `settings` (fixed key, stores JSON object with enabled/force_enabled)
+    /// **WhiteLabel**: `settings`, `draft`, `previous_settings` (stores camelCase JSON object)
     /// **Turnstile**: `site_key`, `secret_key`
     /// **Registration**: `allowed_domains`, `require_email_verification`
     #[schema(example = "settings")]
@@ -431,7 +457,7 @@ pub struct RealmConfigResponse {
     /// Realm this configuration belongs to
     #[serde(rename = "realmId")]
     pub realm_id: String,
-    /// Configuration type (totp, turnstile, registration, totp_key)
+    /// Configuration type (totp, turnstile, registration, white_label, totp_key)
     #[serde(rename = "configType")]
     pub config_type: ConfigType,
     /// Configuration key (specific to each config_type)

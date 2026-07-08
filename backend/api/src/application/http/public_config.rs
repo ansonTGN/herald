@@ -7,6 +7,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use crate::application::http::realm::white_label_config::{WhiteLabelBackground, WhiteLabelConfig};
 use crate::application::http::realm_config::public_helper::{parse_bool, query_config_value};
 pub use crate::application::http::server::api_entities::ErrorResponse;
 use crate::application::http::server::api_entities::{ApiError, ApiResult};
@@ -28,6 +29,34 @@ pub struct OAuthProviderInfo {
     pub enabled: bool,
 }
 
+#[derive(Debug, Default, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PublicWhiteLabelConfig {
+    pub logo_url: Option<String>,
+    pub accent_color: Option<String>,
+    pub background: Option<WhiteLabelBackground>,
+    pub footer_text: Option<String>,
+    pub login_title: Option<String>,
+    pub login_subtitle: Option<String>,
+    pub register_title: Option<String>,
+    pub register_subtitle: Option<String>,
+}
+
+impl From<WhiteLabelConfig> for PublicWhiteLabelConfig {
+    fn from(config: WhiteLabelConfig) -> Self {
+        Self {
+            logo_url: config.logo_url,
+            accent_color: config.accent_color,
+            background: config.background,
+            footer_text: config.footer_text,
+            login_title: config.login_title,
+            login_subtitle: config.login_subtitle,
+            register_title: config.register_title,
+            register_subtitle: config.register_subtitle,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PublicConfigResponse {
@@ -35,6 +64,7 @@ pub struct PublicConfigResponse {
     pub realm_description: Option<String>,
     pub registration: RegistrationConfig,
     pub oauth_providers: Vec<OAuthProviderInfo>,
+    pub white_label: PublicWhiteLabelConfig,
 }
 
 /// Queries a single boolean config value from the realm_config table.
@@ -60,11 +90,33 @@ async fn query_bool_config(
     Ok(value.and_then(|v| parse_bool(&v)).unwrap_or(default_value))
 }
 
+async fn query_public_white_label_config(
+    pool: &sqlx::PgPool,
+    realm_id: &str,
+) -> Result<PublicWhiteLabelConfig, ApiError> {
+    let Some(value) = query_config_value(pool, realm_id, "white_label", "settings").await? else {
+        return Ok(PublicWhiteLabelConfig::default());
+    };
+
+    match serde_json::from_str::<WhiteLabelConfig>(&value) {
+        Ok(config) => Ok(config.into()),
+        Err(e) => {
+            tracing::warn!(
+                realm_id = %realm_id,
+                error = %e,
+                "Failed to parse public white-label config JSON"
+            );
+            Ok(PublicWhiteLabelConfig::default())
+        }
+    }
+}
+
 /// Get public configuration for a realm
 ///
 /// Returns publicly accessible configuration for the specified realm, including:
 /// - Registration settings (whether registration is allowed and if email verification is required)
 /// - List of enabled OAuth providers
+/// - Published white-label settings
 ///
 /// This endpoint does not require authentication.
 #[utoipa::path(
@@ -87,6 +139,7 @@ pub async fn get_public_config(
     let registration_enabled = query_bool_config(&state.pool, &realm_id, "enabled", false).await?;
     let require_email_verification =
         query_bool_config(&state.pool, &realm_id, "require_email_verification", false).await?;
+    let white_label = query_public_white_label_config(&state.pool, &realm_id).await?;
 
     let configs = state
         .service
@@ -129,5 +182,6 @@ pub async fn get_public_config(
             require_email_verification,
         },
         oauth_providers,
+        white_label,
     }))
 }

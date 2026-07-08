@@ -23,8 +23,65 @@ use axum::{
     body::Body,
     http::{Method, Request, StatusCode},
 };
+use serde_json::json;
 use test_context::test_context;
 use tower::ServiceExt;
+
+async fn upsert_public_realm_config(
+    ctx: &TestContext,
+    realm_id: &str,
+    config_type: &str,
+    config_key: &str,
+    config_value: &str,
+) {
+    sqlx::query(
+        "INSERT INTO realm_config (realm_id, config_type, config_key, config_value, enabled)
+         VALUES ($1, $2, $3, $4, true)
+         ON CONFLICT (realm_id, config_type, config_key) DO UPDATE
+         SET config_value = EXCLUDED.config_value, enabled = EXCLUDED.enabled",
+    )
+    .bind(realm_id)
+    .bind(config_type)
+    .bind(config_key)
+    .bind(config_value)
+    .execute(&ctx._app_state.pool)
+    .await
+    .unwrap();
+}
+
+async fn get_public_config(
+    ctx: &TestContext,
+    realm_id: &str,
+) -> (StatusCode, serde_json::Value, PublicConfigResponse) {
+    let app = ctx.create_unified_test_router();
+    let request = Request::builder()
+        .uri(format!("/api/public-config/{}", realm_id))
+        .method(Method::GET)
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    let status = response.status();
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let response_value: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let response_json: PublicConfigResponse =
+        serde_json::from_value(response_value.clone()).unwrap();
+
+    (status, response_value, response_json)
+}
+
+fn assert_empty_white_label(response: &PublicConfigResponse) {
+    assert!(response.white_label.logo_url.is_none());
+    assert!(response.white_label.accent_color.is_none());
+    assert!(response.white_label.background.is_none());
+    assert!(response.white_label.footer_text.is_none());
+    assert!(response.white_label.login_title.is_none());
+    assert!(response.white_label.login_subtitle.is_none());
+    assert!(response.white_label.register_title.is_none());
+    assert!(response.white_label.register_subtitle.is_none());
+}
 
 /// ============================================================================
 /// User Story: Public config with registration enabled, no OAuth providers
@@ -310,4 +367,158 @@ async fn test_scenario_public_config_response_format(ctx: &mut TestContext) {
     assert!(provider.enabled);
 
     println!("✅ Test passed: response format validation");
+}
+
+/// User Story: US-WL-002 — auth pages can render with default Herald branding when a Realm has not configured white-label settings.
+/// Covers: Design §5.3 — missing `white_label/settings` returns an empty `whiteLabel` object without regressing registration or OAuth public config.
+#[test_context(TestContext)]
+#[tokio::test]
+async fn public_config_white_label_empty_when_unconfigured(ctx: &mut TestContext) {
+    let realm_id = ctx._realm_id.clone();
+
+    upsert_public_realm_config(ctx, &realm_id, "registration", "enabled", "true").await;
+
+    let google_provider_id = uuid::Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO oauth_provider_config (id, realm_id, provider_type, client_id, client_secret, scopes, enabled)
+         VALUES ($1, $2, 'google', 'test-google-client-id', 'test-google-secret', ARRAY['openid', 'email'], true)",
+    )
+    .bind(google_provider_id)
+    .bind(&realm_id)
+    .execute(&ctx._app_state.pool)
+    .await
+    .unwrap();
+
+    let (status, response_value, response_json) = get_public_config(ctx, &realm_id).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(response_value.get("whiteLabel").is_some());
+    assert_empty_white_label(&response_json);
+    assert!(response_json.registration.enabled);
+    assert_eq!(response_json.oauth_providers.len(), 1);
+}
+
+/// User Story: US-WL-002 — unauthenticated auth pages see the published Realm brand.
+/// Covers: Design §4.2.2 / §5.3 — public config exposes published white-label fields using the camelCase wire contract.
+#[test_context(TestContext)]
+#[tokio::test]
+async fn public_config_white_label_returns_published_camel_case_fields(ctx: &mut TestContext) {
+    let realm_id = ctx._realm_id.clone();
+    let config_value = json!({
+        "logoUrl": "https://cdn.example.com/acme-logo.svg",
+        "accentColor": "#2563eb",
+        "background": {
+            "type": "image",
+            "value": "https://cdn.example.com/auth-bg.jpg"
+        },
+        "footerText": "Acme Inc.",
+        "loginTitle": "Sign in to Acme",
+        "loginSubtitle": "Use your Acme account",
+        "registerTitle": "Create your Acme account",
+        "registerSubtitle": "Start with Acme"
+    })
+    .to_string();
+
+    upsert_public_realm_config(ctx, &realm_id, "white_label", "settings", &config_value).await;
+
+    let (status, response_value, response_json) = get_public_config(ctx, &realm_id).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        response_value["whiteLabel"]["logoUrl"],
+        "https://cdn.example.com/acme-logo.svg"
+    );
+    assert_eq!(response_value["whiteLabel"]["accentColor"], "#2563eb");
+    assert_eq!(response_value["whiteLabel"]["background"]["type"], "image");
+    assert_eq!(
+        response_value["whiteLabel"]["background"]["value"],
+        "https://cdn.example.com/auth-bg.jpg"
+    );
+    assert_eq!(response_value["whiteLabel"]["footerText"], "Acme Inc.");
+    assert_eq!(
+        response_value["whiteLabel"]["loginTitle"],
+        "Sign in to Acme"
+    );
+    assert_eq!(
+        response_value["whiteLabel"]["loginSubtitle"],
+        "Use your Acme account"
+    );
+    assert_eq!(
+        response_value["whiteLabel"]["registerTitle"],
+        "Create your Acme account"
+    );
+    assert_eq!(
+        response_value["whiteLabel"]["registerSubtitle"],
+        "Start with Acme"
+    );
+    assert_eq!(
+        response_json.white_label.logo_url.as_deref(),
+        Some("https://cdn.example.com/acme-logo.svg")
+    );
+    assert_eq!(
+        response_json.white_label.accent_color.as_deref(),
+        Some("#2563eb")
+    );
+}
+
+/// User Story: US-WL-002 — terminal auth pages only use published branding.
+/// Covers: Design §4.1 / §5.5 — `white_label/draft` is not exposed by public config before publish.
+#[test_context(TestContext)]
+#[tokio::test]
+async fn public_config_white_label_draft_does_not_leak(ctx: &mut TestContext) {
+    let realm_id = ctx._realm_id.clone();
+    let draft_value = json!({
+        "logoUrl": "https://cdn.example.com/draft-logo.svg",
+        "accentColor": "#dc2626",
+        "footerText": "Draft brand"
+    })
+    .to_string();
+
+    upsert_public_realm_config(ctx, &realm_id, "white_label", "draft", &draft_value).await;
+
+    let (status, response_value, response_json) = get_public_config(ctx, &realm_id).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_empty_white_label(&response_json);
+    assert!(response_value["whiteLabel"]["logoUrl"].is_null());
+    assert!(response_value["whiteLabel"]["footerText"].is_null());
+}
+
+/// User Story: US-WL-002 — auth pages remain usable when stored branding JSON is corrupt.
+/// Covers: Design §5.3 — invalid `white_label/settings` JSON falls back to empty `whiteLabel` and still returns 200.
+#[test_context(TestContext)]
+#[tokio::test]
+async fn public_config_white_label_invalid_json_falls_back_to_empty(ctx: &mut TestContext) {
+    let realm_id = ctx._realm_id.clone();
+
+    upsert_public_realm_config(ctx, &realm_id, "white_label", "settings", "{invalid json").await;
+
+    let (status, response_value, response_json) = get_public_config(ctx, &realm_id).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(response_value.get("whiteLabel").is_some());
+    assert_empty_white_label(&response_json);
+}
+
+/// User Story: US-WL-002 — login and registration pages can fetch branding before a user signs in.
+/// Covers: Design §4.2.1 / §5.3 — public config with white-label data does not require authentication.
+#[test_context(TestContext)]
+#[tokio::test]
+async fn public_config_white_label_remains_unauthenticated(ctx: &mut TestContext) {
+    let realm_id = ctx._realm_id.clone();
+    let config_value = json!({
+        "logoUrl": "https://cdn.example.com/public-logo.svg",
+        "accentColor": "#0f766e"
+    })
+    .to_string();
+
+    upsert_public_realm_config(ctx, &realm_id, "white_label", "settings", &config_value).await;
+
+    let (status, _, response_json) = get_public_config(ctx, &realm_id).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        response_json.white_label.logo_url.as_deref(),
+        Some("https://cdn.example.com/public-logo.svg")
+    );
 }

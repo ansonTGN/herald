@@ -4,12 +4,14 @@
 // - CRUD operations for realms (create, read, update, list)
 // - Realm TOTP configuration management
 // - Realm Passkey configuration management
+// - Realm white-label configuration management
 
 // Sub-modules
 pub mod crud;
 pub mod passkey_config;
 pub mod totp_config;
 pub mod validators;
+pub mod white_label_config;
 
 // Re-export commonly used types and handlers for external use
 pub use crud::{AdminUserResponse, ListRealmsResponse, RealmResponse};
@@ -36,6 +38,11 @@ use axum::Router;
 /// - PUT /api/realms/{realmId}/config/totp - Update realm TOTP configuration
 /// - GET /api/realms/{realmId}/config/passkey - Get realm Passkey configuration
 /// - PUT /api/realms/{realmId}/config/passkey - Update realm Passkey configuration
+/// - GET /api/realms/{realmId}/config/white-label - Get white-label configuration state
+/// - PUT /api/realms/{realmId}/config/white-label/draft - Save white-label draft
+/// - DELETE /api/realms/{realmId}/config/white-label/draft - Discard white-label draft
+/// - POST /api/realms/{realmId}/config/white-label/publish - Publish white-label settings
+/// - POST /api/realms/{realmId}/config/white-label/restore - Restore previous white-label settings
 pub fn realm_router() -> Router<AppState> {
     Router::new()
         // CRUD routes
@@ -68,5 +75,23 @@ pub fn realm_router() -> Router<AppState> {
         .route(
             "/{realmId}/config/passkey",
             axum::routing::get(passkey_config::handle_get_realm_passkey_config),
+        )
+        // White-label configuration routes
+        .route(
+            "/{realmId}/config/white-label",
+            axum::routing::get(white_label_config::handle_get_white_label_config),
+        )
+        .route(
+            "/{realmId}/config/white-label/draft",
+            axum::routing::put(white_label_config::handle_save_white_label_draft)
+                .delete(white_label_config::handle_discard_white_label_draft),
+        )
+        .route(
+            "/{realmId}/config/white-label/publish",
+            axum::routing::post(white_label_config::handle_publish_white_label_config),
+        )
+        .route(
+            "/{realmId}/config/white-label/restore",
+            axum::routing::post(white_label_config::handle_restore_white_label_config),
         )
 }
