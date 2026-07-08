@@ -104,6 +104,11 @@ export function LoginPage() {
     turnstileStatusQueryOptions(realmId)
   )
 
+  // Per-realm white-label config (FE-D02/FE-D03). Derived once so every auth
+  // sub-state (consent, TOTP, passkey 2FA, main form) reuses the same brand
+  // presentation — missing one would silently drop the brand (design §6.3 risk).
+  const whiteLabel = publicConfig?.whiteLabel ?? null
+
   const oauthProviders = publicConfig?.oauthProviders ?? []
   const isRegistrationAllowed = publicConfig?.registration?.enabled === true
 
@@ -317,7 +322,7 @@ export function LoginPage() {
 
   if (consentStep) {
     return (
-      <AuthPageWrapper>
+      <AuthPageWrapper whiteLabel={whiteLabel}>
         <Card className="w-full max-w-md" data-testid="login-reconsent-view">
           <CardHeader className="text-center">
             <CardTitle data-testid="login-reconsent-title">
@@ -379,7 +384,7 @@ export function LoginPage() {
 
   if (totpStep) {
     return (
-      <AuthPageWrapper>
+      <AuthPageWrapper whiteLabel={whiteLabel}>
         <TotpVerificationForm
           realmId={realmId}
           tempToken={totpStep.tempToken}
@@ -392,7 +397,7 @@ export function LoginPage() {
 
   if (passkeySecondFactor) {
     return (
-      <AuthPageWrapper>
+      <AuthPageWrapper whiteLabel={whiteLabel}>
         <Passkey2FaForm
           realmId={realmId}
           tempToken={passkeySecondFactor.tempToken}
@@ -414,14 +419,16 @@ export function LoginPage() {
   }
 
   return (
-    <AuthPageWrapper>
+    <AuthPageWrapper whiteLabel={whiteLabel}>
       <Card className="w-full max-w-md" data-testid="login-card">
         <CardHeader className="text-center">
           <CardTitle data-testid="login-title" className="text-2xl">
-            {publicConfig?.realmName ?? 'Herald'}
+            {whiteLabel?.loginTitle ?? publicConfig?.realmName ?? 'Herald'}
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            {publicConfig?.realmDescription || m['auth.login.login_to_account']()}
+            {whiteLabel?.loginSubtitle ??
+              publicConfig?.realmDescription ??
+              m['auth.login.login_to_account']()}
           </p>
         </CardHeader>
         <CardContent>

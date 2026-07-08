@@ -55,6 +55,38 @@ export interface EmailConfigFormData {
 }
 
 /**
+ * White-label background form fragment.
+ * Matches frontend WhiteLabelBackgroundForm (`type` is image|gradient).
+ */
+export interface WhiteLabelBackgroundForm {
+  type: 'image' | 'gradient'
+  value: string
+}
+
+/**
+ * White-label Configuration Form Data
+ *
+ * Mirrors the frontend `WhiteLabelConfigForm` schema (see
+ * frontend/src/lib/schemas/realm-config.ts and the form component
+ * white-label-config-form.tsx). All fields are nullable; an empty/null
+ * value makes the public auth-page wrapper fall back to Herald defaults.
+ *
+ * `background` is `null` when no background is configured (the form's
+ * background-type select sits at `none`); when set, `type` is `image`
+ * (URL) or `gradient` (CSS gradient string).
+ */
+export interface WhiteLabelFormValues {
+  logoUrl: string | null
+  accentColor: string | null
+  background: WhiteLabelBackgroundForm | null
+  footerText: string | null
+  loginTitle: string | null
+  loginSubtitle: string | null
+  registerTitle: string | null
+  registerSubtitle: string | null
+}
+
+/**
  * Settings Page Object
  *
  * Represents Settings page at /admin/settings
@@ -119,6 +151,29 @@ export class SettingsPage extends BasePage {
   readonly emailSaveButton: Locator
   readonly emailSaveError: Locator
 
+  // White-label Configuration elements
+  readonly whiteLabelTab: Locator
+  readonly whiteLabelLogoUrlInput: Locator
+  readonly whiteLabelAccentColorPicker: Locator
+  readonly whiteLabelAccentColorInput: Locator
+  readonly whiteLabelAccentWarning: Locator
+  readonly whiteLabelBackgroundTypeSelect: Locator
+  readonly whiteLabelBackgroundValueTextarea: Locator
+  readonly whiteLabelFooterTextInput: Locator
+  readonly whiteLabelLoginTitleInput: Locator
+  readonly whiteLabelLoginSubtitleInput: Locator
+  readonly whiteLabelRegisterTitleInput: Locator
+  readonly whiteLabelRegisterSubtitleInput: Locator
+  readonly whiteLabelDraftNotice: Locator
+  readonly whiteLabelSaveDraftButton: Locator
+  readonly whiteLabelPublishButton: Locator
+  readonly whiteLabelDiscardDraftButton: Locator
+  readonly whiteLabelRestoreButton: Locator
+  readonly whiteLabelRestoreDialog: Locator
+  readonly whiteLabelRestoreConfirmButton: Locator
+  readonly whiteLabelPreviewLoginPanel: Locator
+  readonly whiteLabelPreviewRegisterPanel: Locator
+
   constructor(page: Page, logger?: UnifiedLogger, realmId: string = 'admin') {
     super(page, logger)
     this.realmId = realmId
@@ -178,6 +233,29 @@ export class SettingsPage extends BasePage {
     this.emailTestSuccess = page.getByTestId('email-test-success')
     this.emailSaveButton = page.getByTestId('email-save-button')
     this.emailSaveError = page.getByTestId('email-save-error')
+
+    // White-label Configuration - using data-testid selectors
+    this.whiteLabelTab = page.getByTestId('white-label-tab')
+    this.whiteLabelLogoUrlInput = page.getByTestId('white-label-logo-url')
+    this.whiteLabelAccentColorPicker = page.getByTestId('white-label-accent-color-picker')
+    this.whiteLabelAccentColorInput = page.getByTestId('white-label-accent-color')
+    this.whiteLabelAccentWarning = page.getByTestId('white-label-accent-warning')
+    this.whiteLabelBackgroundTypeSelect = page.getByTestId('white-label-background-type')
+    this.whiteLabelBackgroundValueTextarea = page.getByTestId('white-label-background-value')
+    this.whiteLabelFooterTextInput = page.getByTestId('white-label-footer-text')
+    this.whiteLabelLoginTitleInput = page.getByTestId('white-label-login-title')
+    this.whiteLabelLoginSubtitleInput = page.getByTestId('white-label-login-subtitle')
+    this.whiteLabelRegisterTitleInput = page.getByTestId('white-label-register-title')
+    this.whiteLabelRegisterSubtitleInput = page.getByTestId('white-label-register-subtitle')
+    this.whiteLabelDraftNotice = page.getByTestId('white-label-draft-notice')
+    this.whiteLabelSaveDraftButton = page.getByTestId('white-label-save-draft')
+    this.whiteLabelPublishButton = page.getByTestId('white-label-publish')
+    this.whiteLabelDiscardDraftButton = page.getByTestId('white-label-discard-draft')
+    this.whiteLabelRestoreButton = page.getByTestId('white-label-restore')
+    this.whiteLabelRestoreDialog = page.getByTestId('white-label-restore-dialog')
+    this.whiteLabelRestoreConfirmButton = page.getByTestId('white-label-restore-confirm')
+    this.whiteLabelPreviewLoginPanel = page.getByTestId('white-label-preview-login-panel')
+    this.whiteLabelPreviewRegisterPanel = page.getByTestId('white-label-preview-register-panel')
   }
 
   /**
@@ -796,6 +874,281 @@ export class SettingsPage extends BasePage {
       return match ? match[1] : null
     }))
     return ids.filter((id): id is string => id !== null && id !== undefined)
+  }
+
+  // ============================================================================
+  // White-label Configuration Methods (US-WL-001/002/003/004)
+  //
+  // Mirrors switchToTOTPTab/saveTOTPConfig/getTOTPConfig patterns. Drives the
+  // white-label-config-form (frontend/src/components/realm-config/white-label-
+  // config-form.tsx). Background is a {type,value} object edited through a type
+  // select + conditional value textarea (only renders when type !== 'none').
+  // @see .ai/design/ui-custom.md §6.2
+  // ============================================================================
+
+  /**
+   * Switch to White-label Tab.
+   *
+   * Follows switchToTOTPTab/switchToEmailTab: clicks the tab, waits for the
+   * save-draft button to confirm tab content is loaded, then networkidle.
+   */
+  async switchToWhiteLabelTab(): Promise<void> {
+    await this.smartClick(this.whiteLabelTab)
+
+    // Wait for tab content to be visible with longer timeout (re-login timing)
+    await expect(this.whiteLabelSaveDraftButton).toBeVisible({ timeout: 10000 })
+
+    // Additional wait to ensure React state is fully settled
+    await this.page.waitForLoadState('networkidle')
+  }
+
+  /**
+   * Fill white-label form fields.
+   *
+   * Only the provided fields are touched. Background requires driving the
+   * type Select first, then the conditional value Textarea (which only
+   * renders when type !== 'none'). Pass `background: null` to clear the
+   * background (selects `none`).
+   */
+  async fillWhiteLabelForm(values: Partial<WhiteLabelFormValues>): Promise<void> {
+    // `null` clears a field (matches the form schema, where null === "use
+    // default / unset"). Coerce null to '' so Playwright .fill() receives a
+    // string; `undefined` (field omitted) leaves the field untouched.
+    if (values.logoUrl !== undefined) {
+      await this.fillField(this.whiteLabelLogoUrlInput, values.logoUrl ?? '')
+    }
+
+    if (values.accentColor !== undefined) {
+      // Drive the hex text input (the native color picker mirrors it); using
+      // the text input keeps the test resilient to native picker popovers.
+      await this.fillField(this.whiteLabelAccentColorInput, values.accentColor ?? '')
+    }
+
+    if (values.background !== undefined) {
+      await this.selectBackgroundValue(values.background)
+    }
+
+    if (values.footerText !== undefined) {
+      await this.fillField(this.whiteLabelFooterTextInput, values.footerText ?? '')
+    }
+
+    if (values.loginTitle !== undefined) {
+      await this.fillField(this.whiteLabelLoginTitleInput, values.loginTitle ?? '')
+    }
+
+    if (values.loginSubtitle !== undefined) {
+      await this.fillField(this.whiteLabelLoginSubtitleInput, values.loginSubtitle ?? '')
+    }
+
+    if (values.registerTitle !== undefined) {
+      await this.fillField(this.whiteLabelRegisterTitleInput, values.registerTitle ?? '')
+    }
+
+    if (values.registerSubtitle !== undefined) {
+      await this.fillField(this.whiteLabelRegisterSubtitleInput, values.registerSubtitle ?? '')
+    }
+  }
+
+  /**
+   * Save Draft (writes the unpublished draft).
+   *
+   * Clicks the submit button and waits for the button text to return to the
+   * idle label, mirroring saveTOTPConfig's toPass pattern. The idle label is
+   * localized; we assert the button is NOT showing the in-flight "Saving..."
+   * label by waiting for it to become re-enabled with the idle text.
+   */
+  async saveDraft(): Promise<void> {
+    await this.smartClick(this.whiteLabelSaveDraftButton)
+
+    // Wait for the save-draft button to settle back to idle (enabled, not
+    // showing the in-flight label). Mirrors saveTOTPConfig's toPass pattern.
+    await expect(async () => {
+      const disabled = await this.whiteLabelSaveDraftButton.isDisabled()
+      expect(disabled).toBeFalsy()
+    }).toPass({ timeout: 15000 })
+    await this.page.waitForLoadState('networkidle')
+  }
+
+  /**
+   * Publish (writes the published settings).
+   *
+   * Clicks the publish button and waits for it to return to idle.
+   */
+  async publish(): Promise<void> {
+    await this.smartClick(this.whiteLabelPublishButton)
+
+    await expect(async () => {
+      const disabled = await this.whiteLabelPublishButton.isDisabled()
+      expect(disabled).toBeFalsy()
+    }).toPass({ timeout: 15000 })
+    await this.page.waitForLoadState('networkidle')
+  }
+
+  /**
+   * Discard the saved draft (resets editor to published config).
+   *
+   * Clicks the discard button and waits for it to return to idle. The button
+   * is disabled when no draft exists, so callers must ensure a draft is present.
+   */
+  async discardDraft(): Promise<void> {
+    await this.smartClick(this.whiteLabelDiscardDraftButton)
+
+    await expect(async () => {
+      const disabled = await this.whiteLabelDiscardDraftButton.isDisabled()
+      expect(disabled).toBeFalsy()
+    }).toPass({ timeout: 15000 })
+    await this.page.waitForLoadState('networkidle')
+  }
+
+  /**
+   * Restore the previous published config.
+   *
+   * Drives the restore AlertDialog: open via the restore button, then confirm
+   * via white-label-restore-confirm. Waits for the dialog to close and the
+   * restore button to return to idle. Requires a previous version to exist
+   * (the restore button is disabled otherwise).
+   */
+  async restore(): Promise<void> {
+    // Open the restore confirmation dialog
+    await this.smartClick(this.whiteLabelRestoreButton)
+    await expect(this.whiteLabelRestoreDialog).toBeVisible({ timeout: 5000 })
+
+    // Confirm the restore action
+    await this.smartClick(this.whiteLabelRestoreConfirmButton)
+
+    // Wait for the dialog to close (restore action settled)
+    await expect(this.whiteLabelRestoreDialog).toBeHidden({ timeout: 15000 })
+    await expect(async () => {
+      const disabled = await this.whiteLabelRestoreButton.isDisabled()
+      expect(disabled).toBeFalsy()
+    }).toPass({ timeout: 15000 })
+    await this.page.waitForLoadState('networkidle')
+  }
+
+  /**
+   * Whether the draft notice is currently visible (draft exists or form is dirty).
+   */
+  async hasDraftNotice(): Promise<boolean> {
+    return await this.whiteLabelDraftNotice.isVisible().catch(() => false)
+  }
+
+  /**
+   * Whether the WCAG AA accent contrast warning is currently visible.
+   */
+  async hasAccentWarning(): Promise<boolean> {
+    return await this.whiteLabelAccentWarning.isVisible().catch(() => false)
+  }
+
+  /**
+   * Read the current white-label form values.
+   *
+   * Returns the values as currently rendered in the form inputs. Background is
+   * reconstructed from the type Select + value Textarea: a `none` type yields
+   * `null`; otherwise `{type, value}`.
+   */
+  async getFormValues(): Promise<WhiteLabelFormValues> {
+    const logoUrl = (await this.whiteLabelLogoUrlInput.inputValue().catch(() => '')) || null
+    const accentColor = (await this.whiteLabelAccentColorInput.inputValue().catch(() => '')) || null
+    const footerText = (await this.whiteLabelFooterTextInput.inputValue().catch(() => '')) || null
+    const loginTitle = (await this.whiteLabelLoginTitleInput.inputValue().catch(() => '')) || null
+    const loginSubtitle = (await this.whiteLabelLoginSubtitleInput.inputValue().catch(() => '')) || null
+    const registerTitle = (await this.whiteLabelRegisterTitleInput.inputValue().catch(() => '')) || null
+    const registerSubtitle = (await this.whiteLabelRegisterSubtitleInput.inputValue().catch(() => '')) || null
+
+    const background = await this.readBackgroundValue()
+
+    return {
+      logoUrl,
+      accentColor,
+      background,
+      footerText,
+      loginTitle,
+      loginSubtitle,
+      registerTitle,
+      registerSubtitle,
+    }
+  }
+
+  /**
+   * Publish an empty baseline config for the current realm.
+   *
+   * Restore-balanced teardown helper. White-label has no DB-side demo helper,
+   * so the teardown is driven in-page: switch to the white-label tab, set the
+   * background type to `none`, clear every text field, then publish. This
+   * ensures no published brand leaks across test runs and no dangling draft
+   * remains. Mirrors resetRealmTOTP() intent. Callers must already be logged
+   * in as the realm's admin and navigated to the Settings page.
+   */
+  async resetWhiteLabelConfig(): Promise<void> {
+    try {
+      await this.switchToWhiteLabelTab()
+
+      // Clear every field + collapse background to none.
+      await this.fillWhiteLabelForm({
+        logoUrl: '',
+        accentColor: '',
+        background: null,
+        footerText: '',
+        loginTitle: '',
+        loginSubtitle: '',
+        registerTitle: '',
+        registerSubtitle: '',
+      })
+
+      // Publish the cleared baseline. Publish is the committed state; saving a
+      // draft would leave a dangling draft notice for the next run.
+      await this.publish()
+    } catch (error) {
+      // Teardown must never hard-fail the test run; log and continue.
+      console.warn(`[SettingsPage] resetWhiteLabelConfig failed for realm "${this.realmId}":`, error)
+    }
+  }
+
+  // --- White-label private helpers -------------------------------------------
+
+  /**
+   * Drive the background type Select + conditional value Textarea.
+   *
+   * `none` (null) collapses the value input; `image`/`gradient` reveal it.
+   * Selects the type via the Radix Select trigger, then fills the Textarea.
+   */
+  private async selectBackgroundValue(background: WhiteLabelBackgroundForm | null): Promise<void> {
+    const targetOption = background ? background.type : 'none'
+
+    // Drive the Radix Select via the shared helper (handles listbox open/close).
+    await this.selectRadixOption(this.whiteLabelBackgroundTypeSelect, targetOption)
+
+    if (!background) {
+      // type=none: the value textarea is not rendered; nothing more to do.
+      return
+    }
+
+    // The value textarea only renders when type !== none; wait for it.
+    await expect(this.whiteLabelBackgroundValueTextarea).toBeVisible({ timeout: 5000 })
+    await this.fillField(this.whiteLabelBackgroundValueTextarea, background.value)
+  }
+
+  /**
+   * Read the background value from the current form state.
+   *
+   * Returns null when the type select is at `none` (or the value textarea is
+   * absent); otherwise reconstructs {type, value} from the rendered inputs.
+   */
+  private async readBackgroundValue(): Promise<WhiteLabelBackgroundForm | null> {
+    // The value textarea presence encodes whether a type !== none is selected.
+    const valueVisible = await this.whiteLabelBackgroundValueTextarea.isVisible().catch(() => false)
+    if (!valueVisible) {
+      return null
+    }
+
+    // Read the value; the type is whatever non-none option is active. We infer
+    // the type from the select's trigger text since Radix does not expose a
+    // value attribute on the trigger that we can reliably read cross-locale.
+    const triggerText = (await this.whiteLabelBackgroundTypeSelect.textContent())?.trim().toLowerCase() || ''
+    const type: WhiteLabelBackgroundForm['type'] = triggerText.includes('image') ? 'image' : 'gradient'
+    const value = (await this.whiteLabelBackgroundValueTextarea.inputValue().catch(() => '')) || ''
+
+    return { type, value }
   }
 
   // ============================================================================

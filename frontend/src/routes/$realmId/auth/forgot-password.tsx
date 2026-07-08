@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { AuthPageWrapper } from '@/components/auth/auth-page-wrapper'
 import { TurnstileWidget } from '@/components/auth/turnstile-widget'
-import { turnstileStatusQueryOptions } from '@/data/query-options'
+import { publicConfigQueryOptions, turnstileStatusQueryOptions } from '@/data/query-options'
 import { toast } from 'sonner'
 import { m } from '@/paraglide/messages'
 
@@ -30,6 +30,10 @@ function ForgotPasswordPage() {
   const { data: turnstileStatus, isLoading: loadingTurnstile } = useQuery(
     turnstileStatusQueryOptions(realmId)
   )
+  const { data: publicConfig } = useQuery(publicConfigQueryOptions(realmId))
+  // Per-realm white-label config (FE-D03). Generic variant: logo/accent/
+  // background/footer only, never login/register copy.
+  const whiteLabel = publicConfig?.whiteLabel ?? null
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -54,7 +58,7 @@ function ForgotPasswordPage() {
   }
 
   return (
-    <AuthPageWrapper>
+    <AuthPageWrapper whiteLabel={whiteLabel}>
       <Card className="w-full max-w-md" data-testid="forgot-password-card">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl" data-testid="forgot-password-title">

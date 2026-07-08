@@ -24,6 +24,7 @@ import {
   handleGetTotpStatus,
   handleListPasskeyCredentials,
   handleGetRealmPasskeyConfig,
+  handleGetWhiteLabelConfig,
   getSubscriptionForClientApp,
   listWallets,
   getWallet,
@@ -85,6 +86,7 @@ import type {
   PublishVersionResponse,
   LegalAgreementDraftResponse,
   SaveDraftRequest,
+  WhiteLabelConfigStateResponse,
 } from '@/lib/api-generated'
 import type {
   HistoryFilters,
@@ -207,6 +209,8 @@ export const queryKeys = {
   totpStatus: () => [QUERY_KEYS.TOTP_STATUS] as const,
   passkeyList: () => [QUERY_KEYS.PASSKEY_LIST] as const,
   passkeyRealmConfig: (realmId: string) => [QUERY_KEYS.PASSKEY_REALM_CONFIG, realmId] as const,
+  whiteLabelRealmConfig: (realmId: string) =>
+    [QUERY_KEYS.WHITE_LABEL_REALM_CONFIG, realmId] as const,
   turnstileStatus: (realmId: string) => [QUERY_KEYS.TURNSTILE_STATUS, realmId] as const,
   subscription: (realmId: string, clientAppId: string) =>
     [QUERY_KEYS.SUBSCRIPTION, realmId, clientAppId] as const,
@@ -644,6 +648,25 @@ export const passkeyRealmConfigQueryOptions = (realmId: string) =>
       const response = await handleGetRealmPasskeyConfig({ path: { realmId } })
       if (response.error) throw response.error
       return response.data
+    },
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_2_MIN,
+    gcTime: GC_TIME_5_MIN,
+  })
+
+// ==================== White-label Realm Config (admin) ====================
+//
+// Reads a realm's white-label management state
+// (`GET /api/realms/{realmId}/config/white-label`): the published config, an
+// optional draft, whether a previous version can be restored, and update
+// timestamps. Requires `settings.view`; consumed by the Settings white-label tab.
+export const whiteLabelRealmConfigQueryOptions = (realmId: string) =>
+  queryOptions({
+    queryKey: queryKeys.whiteLabelRealmConfig(realmId),
+    queryFn: async () => {
+      const response = await handleGetWhiteLabelConfig({ path: { realmId } })
+      if (response.error) throw response.error
+      return response.data as WhiteLabelConfigStateResponse
     },
     retry: RETRY_COUNT,
     staleTime: STALE_TIME_2_MIN,

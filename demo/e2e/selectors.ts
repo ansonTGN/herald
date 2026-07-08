@@ -637,6 +637,68 @@ export const SELECTORS = {
   },
 
   /**
+   * White-label Configuration Selectors (Settings > White-label tab)
+   *
+   * Anchors calibrated against:
+   * - frontend/src/routes/$realmId/manage/settings.tsx (`white-label-tab`)
+   * - frontend/src/components/realm-config/white-label-config-form.tsx (all others)
+   *
+   * The `white-label-background-value` Textarea ONLY renders when the background
+   * type select is set to `image` or `gradient` (NOT `none`).
+   *
+   * User stories: US-WL-001/002/003/004
+   * @see .ai/design/ui-custom.md §6.2
+   * @see .ai/user-stories/core/ui-custom.md (DRAFT)
+   */
+  whiteLabel: {
+    // Tab + page entry
+    tab: '[data-testid="white-label-tab"]',
+    // Form fields
+    logoUrlInput: '[data-testid="white-label-logo-url"]',
+    accentColorPicker: '[data-testid="white-label-accent-color-picker"]',
+    accentColorInput: '[data-testid="white-label-accent-color"]',
+    accentWarning: '[data-testid="white-label-accent-warning"]',
+    backgroundTypeSelect: '[data-testid="white-label-background-type"]',
+    backgroundValueTextarea: '[data-testid="white-label-background-value"]',
+    footerTextInput: '[data-testid="white-label-footer-text"]',
+    loginTitleInput: '[data-testid="white-label-login-title"]',
+    loginSubtitleInput: '[data-testid="white-label-login-subtitle"]',
+    registerTitleInput: '[data-testid="white-label-register-title"]',
+    registerSubtitleInput: '[data-testid="white-label-register-subtitle"]',
+    // Status notice
+    draftNotice: '[data-testid="white-label-draft-notice"]',
+    // Action buttons (idle vs in-flight text differs)
+    saveDraftButton: '[data-testid="white-label-save-draft"]',
+    publishButton: '[data-testid="white-label-publish"]',
+    discardDraftButton: '[data-testid="white-label-discard-draft"]',
+    restoreButton: '[data-testid="white-label-restore"]',
+    // Restore confirmation dialog
+    restoreDialog: '[data-testid="white-label-restore-dialog"]',
+    restoreConfirmButton: '[data-testid="white-label-restore-confirm"]',
+    // In-form preview panels (AuthPageWrapper in login/register variant)
+    previewLoginTab: '[data-testid="white-label-preview-login"]',
+    previewRegisterTab: '[data-testid="white-label-preview-register"]',
+    previewLoginPanel: '[data-testid="white-label-preview-login-panel"]',
+    previewRegisterPanel: '[data-testid="white-label-preview-register-panel"]',
+  },
+
+  /**
+   * Auth page wrapper brand elements (end-user login/register pages)
+   *
+   * Anchors calibrated against frontend/src/components/auth/auth-page-wrapper.tsx.
+   * `auth-brand-logo` renders only when logoUrl is present AND the image loaded;
+   * on load failure it switches to `auth-brand-text` ("Herald" fallback).
+   * The wrapper root carries inline `--primary`/`--ring` CSS vars when a valid
+   * accent color is configured — assert accent via that style, NOT via class.
+   */
+  authBrand: {
+    wrapper: '[data-testid="auth-brand-logo"], [data-testid="auth-brand-text"]',
+    logo: '[data-testid="auth-brand-logo"]',
+    text: '[data-testid="auth-brand-text"]',
+    footer: '[data-testid="auth-brand-footer"]',
+  },
+
+  /**
    * Points Usage Dashboard Selectors (rate-dashboard quota view)
    *
    * `points-window-resets-in-{bucketId}-{winKey}` is intentionally omitted;

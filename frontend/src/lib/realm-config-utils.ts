@@ -1,9 +1,12 @@
-import type { RealmConfigResponse } from '@/lib/api-generated'
-import type {
-  TOTPConfigForm,
-  RegistrationConfigForm,
-  TurnstileConfigForm,
-  EmailConfigForm,
+import type { RealmConfigResponse, UpdateWhiteLabelConfigRequest } from '@/lib/api-generated'
+import {
+  whiteLabelConfigSchema,
+  type TOTPConfigForm,
+  type RegistrationConfigForm,
+  type TurnstileConfigForm,
+  type EmailConfigForm,
+  type WhiteLabelConfigForm,
+  type WhiteLabelBackgroundForm,
 } from '@/lib/schemas/realm-config'
 
 /**
@@ -202,4 +205,80 @@ export function buildEmailConfigRequest(config: EmailConfigForm) {
     configValue: entry.configValue,
     isSecret: entry.isSecret,
   }))
+}
+
+// ==================== White-label 配置 ====================
+
+/**
+ * Empty white-label form values. All fields default to `null` so the form
+ * starts with no branding applied (terminal pages fall back to Herald defaults).
+ */
+export function emptyWhiteLabelConfig(): WhiteLabelConfigForm {
+  return {
+    logoUrl: null,
+    accentColor: null,
+    background: null,
+    footerText: null,
+    loginTitle: null,
+    loginSubtitle: null,
+    registerTitle: null,
+    registerSubtitle: null,
+  }
+}
+
+/**
+ * Safely parses an unknown value (e.g. a backend `WhiteLabelConfig` object or
+ * raw JSON) into a `WhiteLabelConfigForm`. Invalid or missing fields fall back
+ * to `null`, so a malformed stored config never crashes the admin form.
+ */
+export function normalizeWhiteLabelConfig(value: unknown): WhiteLabelConfigForm {
+  const parsed = whiteLabelConfigSchema.safeParse(value)
+  if (!parsed.success) {
+    return emptyWhiteLabelConfig()
+  }
+  return parsed.data
+}
+
+/**
+ * Normalizes a single string field: trims whitespace and converts empty strings
+ * to `null` (the backend treats `null` and empty string equivalently via its
+ * own `normalize_optional_string`, but we send `null` to keep the wire shape clean).
+ */
+function normalizeOptionalString(value: string | null): string | null {
+  if (value === null) return null
+  const trimmed = value.trim()
+  return trimmed === '' ? null : trimmed
+}
+
+/**
+ * Normalizes the background field: a background with an empty `value` collapses
+ * to `null` so the backend does not store a background with no value.
+ */
+function normalizeBackground(
+  background: WhiteLabelBackgroundForm | null
+): WhiteLabelBackgroundForm | null {
+  if (!background) return null
+  const trimmedValue = background.value.trim()
+  if (trimmedValue === '') return null
+  return { type: background.type, value: trimmedValue }
+}
+
+/**
+ * Converts form values into the backend PUT /draft (or POST /publish) request
+ * body. Empty strings are normalized to `null`; whitespace is trimmed. The
+ * returned shape matches the generated `UpdateWhiteLabelConfigRequest`.
+ */
+export function toUpdateWhiteLabelConfigRequest(
+  config: WhiteLabelConfigForm
+): UpdateWhiteLabelConfigRequest {
+  return {
+    logoUrl: normalizeOptionalString(config.logoUrl),
+    accentColor: normalizeOptionalString(config.accentColor),
+    background: normalizeBackground(config.background),
+    footerText: normalizeOptionalString(config.footerText),
+    loginTitle: normalizeOptionalString(config.loginTitle),
+    loginSubtitle: normalizeOptionalString(config.loginSubtitle),
+    registerTitle: normalizeOptionalString(config.registerTitle),
+    registerSubtitle: normalizeOptionalString(config.registerSubtitle),
+  }
 }

@@ -45,9 +45,34 @@ export const emailConfigSchema = z.object({
   smtpEncryption: z.enum(['starttls', 'ssl']).default('starttls'),
 })
 
+// White-label 背景配置 Schema
+// ✅ camelCase：对齐后端 `WhiteLabelBackground` / `WhiteLabelBackgroundType`
+//    （均为 camelCase 线传输）。`type` 对应 wire 上的 "image" | "gradient"。
+export const whiteLabelBackgroundSchema = z.object({
+  type: z.enum(['image', 'gradient']),
+  value: z.string(),
+})
+
+// White-label 配置 Schema
+// ✅ camelCase：对齐后端 `WhiteLabelConfig` / `UpdateWhiteLabelConfigRequest`
+//    （均为 camelCase 线传输）。表单允许 `null` 或空字符串，保存时空字符串
+//    normalize 为 `null`（见 realm-config-utils 的 toUpdateWhiteLabelConfigRequest）。
+export const whiteLabelConfigSchema = z.object({
+  logoUrl: z.string().nullable(),
+  accentColor: z.string().nullable(),
+  background: whiteLabelBackgroundSchema.nullable(),
+  footerText: z.string().nullable(),
+  loginTitle: z.string().nullable(),
+  loginSubtitle: z.string().nullable(),
+  registerTitle: z.string().nullable(),
+  registerSubtitle: z.string().nullable(),
+})
+
 // 类型导出
 export type TOTPConfigForm = z.infer<typeof totpConfigSchema>
 export type PasskeyConfigForm = z.infer<typeof passkeyConfigSchema>
 export type RegistrationConfigForm = z.infer<typeof registrationConfigSchema>
 export type TurnstileConfigForm = z.infer<typeof turnstileConfigSchema>
 export type EmailConfigForm = z.infer<typeof emailConfigSchema>
+export type WhiteLabelBackgroundForm = z.infer<typeof whiteLabelBackgroundSchema>
+export type WhiteLabelConfigForm = z.infer<typeof whiteLabelConfigSchema>

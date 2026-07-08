@@ -5,6 +5,10 @@ import {
   batchUpsertRealmConfigs,
   updateRealm,
   handleUpdateRealmPasskeyConfig,
+  handleSaveWhiteLabelDraft,
+  handlePublishWhiteLabelConfig,
+  handleDiscardWhiteLabelDraft,
+  handleRestoreWhiteLabelConfig,
 } from '@/lib/api-generated'
 import type { UpsertRealmConfigRequest } from '@/lib/api-generated/types.gen'
 import { TOTPConfigForm as TOTPConfigFormComponent } from '@/components/realm-config/totp-config-form'
@@ -12,6 +16,7 @@ import { PasskeyConfigForm as PasskeyConfigFormComponent } from '@/components/re
 import { RegistrationConfigForm as RegistrationConfigFormComponent } from '@/components/realm-config/registration-config-form'
 import { EmailConfigForm as EmailConfigFormComponent } from '@/components/realm-config/email-config-form'
 import { TurnstileConfigForm as TurnstileConfigFormComponent } from '@/components/realm-config/turnstile-config-form'
+import { WhiteLabelConfigForm as WhiteLabelConfigFormComponent } from '@/components/realm-config/white-label-config-form'
 import { ProviderConfigPage } from '@/components/oauth-config/provider-config-page'
 import { LegalAgreementTab } from '@/components/settings/LegalAgreementTab'
 import { useAuth } from '@/hooks/use-auth'
@@ -24,6 +29,7 @@ import type {
   EmailConfigForm,
   TurnstileConfigForm,
   PasskeyConfigForm,
+  WhiteLabelConfigForm as WhiteLabelConfigFormValues,
 } from '@/lib/schemas/realm-config'
 import {
   parseTOTPConfig,
@@ -34,6 +40,8 @@ import {
   buildRegistrationConfigRequest,
   buildEmailConfigRequest,
   buildTurnstileConfigRequest,
+  normalizeWhiteLabelConfig,
+  toUpdateWhiteLabelConfigRequest,
 } from '@/lib/realm-config-utils'
 import { useState, useEffect } from 'react'
 import { PageHeader, AccessDenied } from '@/components/shared'
@@ -42,6 +50,7 @@ import {
   realmQueryOptions,
   emailStatusQueryOptions,
   passkeyRealmConfigQueryOptions,
+  whiteLabelRealmConfigQueryOptions,
 } from '@/data/query-options'
 import { useAppForm, AppForm } from '@/components/ui/tanstack-form'
 import { updateRealmSchema, type UpdateRealmFormData } from '@/lib/schemas/realm'
@@ -145,7 +154,22 @@ function GeneralTab({ realmId }: { realmId: string }) {
   )
 }
 
-function SettingsPage() {
+/**
+ * Maps a thrown white-label mutation error to a user-facing message. The
+ * generated SDK rejects with an `ErrorResponse` ({ code, message }) on HTTP
+ * failures; standard `Error` instances surface their message. Falls back to the
+ * supplied default so a toast always shows something actionable.
+ */
+function resolveErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error) return error.message
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = (error as { message?: unknown }).message
+    if (typeof message === 'string' && message.trim() !== '') return message
+  }
+  return fallback
+}
+
+export function SettingsPage() {
   const { realmId } = Route.useParams()
   const queryClient = useQueryClient()
   const auth = useAuth()
@@ -181,6 +205,13 @@ function SettingsPage() {
   // Passkey Realm config via dedicated endpoint (GET /api/realms/{realmId}/config/passkey)
   const { data: passkeyConfigData } = useQuery({
     ...passkeyRealmConfigQueryOptions(realmId),
+    enabled: !!realmId && canViewConfig,
+  })
+
+  // White-label management state (published / draft / hasPrevious) via
+  // GET /api/realms/{realmId}/config/white-label. Requires `settings.view`.
+  const { data: whiteLabelConfigData, isLoading: isWhiteLabelLoading } = useQuery({
+    ...whiteLabelRealmConfigQueryOptions(realmId),
     enabled: !!realmId && canViewConfig,
   })
 
@@ -276,6 +307,84 @@ function SettingsPage() {
     },
   })
 
+  // --- White-label mutations ---------------------------------------------------
+  // Invalidate boundary (design §4.4.2): save-draft / discard-draft touch only
+  // the admin draft state, so they invalidate `whiteLabelRealmConfig` only.
+  // publish / restore change the published config, so they additionally
+  // invalidate `publicConfig(realmId)` — otherwise the terminal-user auth
+  // pages keep serving the stale published branding.
+  const saveWhiteLabelDraftMutation = useMutation({
+    mutationFn: (config: WhiteLabelConfigFormValues) =>
+      handleSaveWhiteLabelDraft({
+        path: { realmId },
+        body: toUpdateWhiteLabelConfigRequest(config),
+      }).then((response) => {
+        if (response.error) throw response.error
+        return response.data
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.whiteLabelRealmConfig(realmId) })
+      toast.success(m['settings.white_label.save_draft_success']())
+    },
+    onError: (error: unknown) => {
+      console.error('Failed to save white-label draft:', error)
+      toast.error(resolveErrorMessage(error, m['settings.white_label.save_failed']()))
+    },
+  })
+
+  const publishWhiteLabelMutation = useMutation({
+    mutationFn: (config: WhiteLabelConfigFormValues) =>
+      handlePublishWhiteLabelConfig({
+        path: { realmId },
+        body: toUpdateWhiteLabelConfigRequest(config),
+      }).then((response) => {
+        if (response.error) throw response.error
+        return response.data
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.whiteLabelRealmConfig(realmId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.publicConfig(realmId) })
+      toast.success(m['settings.white_label.publish_success']())
+    },
+    onError: (error: unknown) => {
+      console.error('Failed to publish white-label config:', error)
+      toast.error(resolveErrorMessage(error, m['settings.white_label.publish_failed']()))
+    },
+  })
+
+  const discardWhiteLabelDraftMutation = useMutation({
+    mutationFn: () =>
+      handleDiscardWhiteLabelDraft({ path: { realmId } }).then((response) => {
+        if (response.error) throw response.error
+        return response.data
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.whiteLabelRealmConfig(realmId) })
+      toast.success(m['settings.white_label.discard_draft_success']())
+    },
+    onError: (error: unknown) => {
+      console.error('Failed to discard white-label draft:', error)
+      toast.error(resolveErrorMessage(error, m['settings.white_label.discard_failed']()))
+    },
+  })
+
+  const restoreWhiteLabelMutation = useMutation({
+    mutationFn: () =>
+      handleRestoreWhiteLabelConfig({ path: { realmId } }).then((response) => {
+        if (response.error) throw response.error
+        return response.data
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.whiteLabelRealmConfig(realmId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.publicConfig(realmId) })
+      toast.success(m['settings.white_label.restore_success']())
+    },
+    onError: (error: unknown) => {
+      console.error('Failed to restore white-label config:', error)
+      toast.error(resolveErrorMessage(error, m['settings.white_label.restore_failed']()))
+    },
+  })
+
   if (!canViewConfig) {
     return <AccessDenied message={m['settings.config_access_denied']()} />
   }
@@ -365,6 +474,45 @@ function SettingsPage() {
     await passkeyMutation.mutateAsync(config).catch(() => {})
   }
 
+  // --- White-label action wrappers --------------------------------------------
+  // Each wrapper guards `settings.manage` (matching sibling forms) and swallows
+  // the rejected promise — the mutation's `onError` already surfaces the toast.
+  async function saveWhiteLabelDraft(config: WhiteLabelConfigFormValues) {
+    if (!canUpdateConfig) {
+      toast.error(m['settings.config_modify_denied']())
+      return
+    }
+
+    await saveWhiteLabelDraftMutation.mutateAsync(config).catch(() => {})
+  }
+
+  async function publishWhiteLabel(config: WhiteLabelConfigFormValues) {
+    if (!canUpdateConfig) {
+      toast.error(m['settings.config_modify_denied']())
+      return
+    }
+
+    await publishWhiteLabelMutation.mutateAsync(config).catch(() => {})
+  }
+
+  async function discardWhiteLabelDraft() {
+    if (!canUpdateConfig) {
+      toast.error(m['settings.config_modify_denied']())
+      return
+    }
+
+    await discardWhiteLabelDraftMutation.mutateAsync().catch(() => {})
+  }
+
+  async function restoreWhiteLabel() {
+    if (!canUpdateConfig) {
+      toast.error(m['settings.config_modify_denied']())
+      return
+    }
+
+    await restoreWhiteLabelMutation.mutateAsync().catch(() => {})
+  }
+
   return (
     <div className="space-y-6" data-testid="settings-page">
       <PageHeader title={m['settings.page_title']()} />
@@ -394,6 +542,9 @@ function SettingsPage() {
           </TabsTrigger>
           <TabsTrigger value="legal" data-testid="legal-tab">
             {m['settings.legal.tab_legal']()}
+          </TabsTrigger>
+          <TabsTrigger value="white-label" data-testid="white-label-tab">
+            {m['settings.white_label.tab_white_label']()}
           </TabsTrigger>
         </TabsList>
 
@@ -462,6 +613,42 @@ function SettingsPage() {
 
         <TabsContent value="legal">
           <LegalAgreementTab realmId={realmId} canManage={canUpdateConfig} />
+        </TabsContent>
+
+        <TabsContent value="white-label">
+          {(() => {
+            // The form edits `draft ?? published`. When the query is still
+            // loading (or returned nothing), fall back to an empty config so the
+            // tab renders immediately; once data arrives the query re-renders.
+            const wlState = whiteLabelConfigData
+            const initialConfig = wlState
+              ? normalizeWhiteLabelConfig(wlState.draft ?? wlState.published)
+              : normalizeWhiteLabelConfig(null)
+            const hasDraft = !!wlState?.draft
+            const hasPrevious = !!wlState?.hasPrevious
+
+            if (isWhiteLabelLoading && !wlState) {
+              return <div>{m['settings.config_loading']()}</div>
+            }
+
+            return (
+              <WhiteLabelConfigFormComponent
+                realmId={realmId}
+                initialConfig={initialConfig}
+                hasDraft={hasDraft}
+                hasPrevious={hasPrevious}
+                disabled={!canUpdateConfig}
+                onSaveDraft={saveWhiteLabelDraft}
+                onPublish={publishWhiteLabel}
+                onDiscardDraft={discardWhiteLabelDraft}
+                onRestore={restoreWhiteLabel}
+                isSavingDraft={saveWhiteLabelDraftMutation.isPending}
+                isPublishing={publishWhiteLabelMutation.isPending}
+                isDiscarding={discardWhiteLabelDraftMutation.isPending}
+                isRestoring={restoreWhiteLabelMutation.isPending}
+              />
+            )
+          })()}
         </TabsContent>
       </Tabs>
     </div>

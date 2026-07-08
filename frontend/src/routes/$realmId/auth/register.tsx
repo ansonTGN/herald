@@ -36,22 +36,21 @@ function getRegisterPageState(
   return { isLoading: false, error: false, registrationAllowed: registrationEnabled }
 }
 
-function RegisterPage() {
+export function RegisterPage() {
   const { realmId } = Route.useParams()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
   const { data: publicConfig, isLoading, error } = useQuery(publicConfigQueryOptions(realmId))
+  // Per-realm white-label config (FE-D02/FE-D03). Derived once so every register
+  // sub-state (loading, error, disabled, form) reuses the same brand presentation.
+  const whiteLabel = publicConfig?.whiteLabel ?? null
   const state = getRegisterPageState(publicConfig, isLoading, error)
 
   // Force refetch on mount to ensure fresh data
   useEffect(() => {
     queryClient.invalidateQueries({ queryKey: queryKeys.publicConfig(realmId) })
   }, [realmId, queryClient])
-
-  // Debug: Log config state
-  console.log('[RegisterPage] publicConfig:', publicConfig)
-  console.log('[RegisterPage] state:', state)
 
   function handleRegisterSuccess(verificationRequired: boolean): void {
     const destination = verificationRequired ? 'auth/verify-email' : 'auth/login'
@@ -60,7 +59,7 @@ function RegisterPage() {
 
   if (state.isLoading) {
     return (
-      <AuthPageWrapper>
+      <AuthPageWrapper whiteLabel={whiteLabel}>
         <div className="text-gray-600">{m['common.loading']()}</div>
       </AuthPageWrapper>
     )
@@ -68,7 +67,7 @@ function RegisterPage() {
 
   if (state.error) {
     return (
-      <AuthPageWrapper>
+      <AuthPageWrapper whiteLabel={whiteLabel}>
         <div className="text-red-600">{m['auth.register.error_loading']()}</div>
       </AuthPageWrapper>
     )
@@ -76,7 +75,7 @@ function RegisterPage() {
 
   if (!state.registrationAllowed) {
     return (
-      <AuthPageWrapper>
+      <AuthPageWrapper whiteLabel={whiteLabel}>
         <Card className="max-w-md w-full">
           <CardHeader>
             <CardTitle data-testid="registration-disabled-title">
@@ -99,10 +98,17 @@ function RegisterPage() {
   }
 
   return (
-    <AuthPageWrapper>
+    <AuthPageWrapper whiteLabel={whiteLabel}>
       <Card className="max-w-md w-full" data-testid="register-card">
         <CardHeader>
-          <CardTitle data-testid="register-title">{m['auth.register.title']()}</CardTitle>
+          <CardTitle data-testid="register-title">
+            {whiteLabel?.registerTitle ?? m['auth.register.title']()}
+          </CardTitle>
+          {whiteLabel?.registerSubtitle ? (
+            <p className="text-sm text-muted-foreground" data-testid="register-subtitle">
+              {whiteLabel.registerSubtitle}
+            </p>
+          ) : null}
         </CardHeader>
         <CardContent>
           <RegisterForm realmId={realmId} onSuccess={handleRegisterSuccess} />
