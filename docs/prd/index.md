@@ -52,6 +52,7 @@ docs/
 |---------|------|---------|
 | [subscription.md](billing/subscription.md) | 订阅计费、Entitlement 映射、Webhook 处理（含 One-time 购买） | Realm Admin, Regular User, Third-Party App, System |
 | [support-multiple-price.md](billing/support-multiple-price.md) | 多价格 Entitlement 映射（Product→Price 对齐、按价格配置/解析/购买） | Realm Admin, Regular User, System |
+| [support-paywall.md](billing/support-paywall.md) | 支付驱动权益门控（role 授予横切维度、支付成功自动授权、订阅过期自动撤销、一人一次防重复） | Realm Admin, Regular User, Third-Party App, System |
 | [points.md](billing/points.md) | 积分系统（含发放、免费用户积分、发放时序与可用性） | Realm Admin, Regular User, Third-Party App |
 | [stripe-payment.md](billing/stripe-payment.md) | Stripe 支付集成 | Realm Admin |
 | [invoice.md](billing/invoice.md) | Invoice 发票管理（含 Provider 发票同步和自研 Fallback） | Realm Admin, Regular User |
