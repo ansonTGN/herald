@@ -13,6 +13,7 @@ use crate::{
     authentication::Identity,
     authorization::permission_service::PermissionService,
     common::{entities::app_errors::CoreError, policies::ensure_policy},
+    security_constants::DEFAULT_BCRYPT_COST,
 };
 
 use super::super::{
@@ -91,7 +92,7 @@ where
     }
 
     async fn hash_password(&self, password: &str) -> UserAdminResult<String> {
-        bcrypt::hash(password, bcrypt::DEFAULT_COST)
+        bcrypt::hash(password, DEFAULT_BCRYPT_COST)
             .map_err(|e| UserAdminError::InternalError(format!("Password hashing failed: {}", e)))
     }
 

@@ -9,6 +9,7 @@ use crate::{
         entities::app_errors::CoreError,
         policies::{UserPolicy, ensure_policy},
     },
+    security_constants::DEFAULT_BCRYPT_COST,
     user::{
         entities::User,
         ports::{UserRepository, UserService, UserVerificationRepository},
@@ -54,7 +55,7 @@ where
     }
 
     async fn hash_password(&self, password: &str) -> Result<String, CoreError> {
-        bcrypt::hash(password, bcrypt::DEFAULT_COST)
+        bcrypt::hash(password, DEFAULT_BCRYPT_COST)
             .map_err(|_| CoreError::InternalServerError("Password hashing failed".to_string()))
     }
 }
@@ -90,15 +91,12 @@ where
             let password_hash = self.hash_password(password).await?;
             let user = self
                 .user_repository
-                .create_user(request, password_hash)
+                .create_user(request, Some(password_hash))
                 .await?;
             Ok(user)
         } else {
             // OAuth user without password
-            let password_hash = String::new();
-            self.user_repository
-                .create_user(request, password_hash)
-                .await
+            self.user_repository.create_user(request, None).await
         }
     }
 
@@ -335,7 +333,7 @@ where
 
         let user = self
             .user_repository
-            .create_user(create_request, password_hash)
+            .create_user(create_request, Some(password_hash))
             .await?;
 
         // TODO: Send verification email
@@ -357,12 +355,8 @@ where
             Err(e) => return Err(e),
         }
 
-        // Create user with empty password hash (OAuth user)
-        let password_hash = String::new();
-        let user = self
-            .user_repository
-            .create_user(request, password_hash)
-            .await?;
+        // Create user with no password (OAuth user)
+        let user = self.user_repository.create_user(request, None).await?;
 
         // OAuth users are automatically verified
         // Note: You may want to update the user status to Normal
@@ -383,15 +377,12 @@ where
             let password_hash = self.hash_password(password).await?;
             let user = self
                 .user_repository
-                .create_user(request, password_hash)
+                .create_user(request, Some(password_hash))
                 .await?;
             Ok(user)
         } else {
             // OAuth user without password
-            let password_hash = String::new();
-            self.user_repository
-                .create_user(request, password_hash)
-                .await
+            self.user_repository.create_user(request, None).await
         }
     }
 

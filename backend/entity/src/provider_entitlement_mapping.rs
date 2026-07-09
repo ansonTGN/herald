@@ -37,6 +37,11 @@ pub struct Model {
     /// (design §4.3.2). Nullable; NULL ⟺ no window-model grant.
     #[sea_orm(nullable)]
     pub quota_windows: Option<Json>,
+    /// Role IDs auto-granted on payment success (paywall, design §4.3.2).
+    /// Empty array = no role grant. Follows the `account.provider_ids` UUID[]
+    /// precedent (account.rs:13-14).
+    #[sea_orm(default_value = "ARRAY[]::UUID[]")]
+    pub granted_role_ids: Vec<Uuid>,
     #[sea_orm(nullable)]
     pub synced_at: Option<DateTimeWithTimeZone>,
     pub created_at: DateTimeWithTimeZone,

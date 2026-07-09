@@ -7,7 +7,7 @@ pub mod repositories;
 pub mod services;
 
 // Re-export commonly used types
-pub use errors::{PurchaseErrorExt, PurchaseResult};
+pub use errors::{ALREADY_OWNED_MARKER, PurchaseErrorExt, PurchaseResult};
 pub use ports::{FulfillmentResult, FulfillmentService, FulfillmentType, PointsGrant};
 pub use services::{
     CompletePaymentAttemptInput, CreatedPaymentAttempt, PaymentCompletionSource,

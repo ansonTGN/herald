@@ -19,7 +19,9 @@ use herald_api_base::application::http::server::api_entities::ApiError;
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
 use herald_core::domain::billing::entities::EntitlementMapping;
-use herald_core::domain::billing::{BatchMappingError, BillingRepository, SyncStatus};
+use herald_core::domain::billing::{
+    BatchMappingError, BillingRepository, SyncStatus, validate_granted_role_ids,
+};
 use herald_core::domain::points::derive_window_key;
 use herald_core::domain::points::entities::QuotaWindow;
 
@@ -30,6 +32,17 @@ use herald_core::domain::points::entities::QuotaWindow;
 pub struct MappingActiveSubscriptionLockErrorBody {
     pub code: &'static str,
     pub active_subscriptions: i64,
+}
+
+/// 400 `role_not_in_realm` body for a batch save where a `grantedRoleIds`
+/// entry does not belong to the mapping's realm (design §4.2.2 / §5.2). The
+/// whole batch transaction is rolled back.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MappingRoleNotInRealmErrorBody {
+    pub code: &'static str,
+    pub role_id: Uuid,
+    pub realm_id: String,
 }
 
 /// Convert domain EntitlementMapping to API response
@@ -58,6 +71,7 @@ fn mapping_to_response(m: EntitlementMapping) -> EntitlementMappingResponse {
                 })
                 .collect()
         }),
+        granted_role_ids: m.granted_role_ids,
         synced_at: m.synced_at.map(|dt| dt.to_rfc3339()),
         created_at: m.created_at.to_rfc3339(),
         updated_at: m.updated_at.to_rfc3339(),
@@ -326,6 +340,10 @@ pub async fn update_entitlement_mapping(
         enabled: request.enabled.unwrap_or(existing.enabled),
         provider_product_info: existing.provider_product_info,
         quota_windows,
+        // The single-PATCH path does not modify `granted_role_ids` (config is
+        // written via the batch endpoint — design §5.2); preserve the existing
+        // value so the round-trip is stable.
+        granted_role_ids: existing.granted_role_ids,
         synced_at: existing.synced_at,
         created_at: existing.created_at,
         updated_at: chrono::Utc::now(),
@@ -583,9 +601,34 @@ pub async fn batch_update_entitlement_mappings(
                         })
                         .collect()
                 }),
+                granted_role_ids: u.granted_role_ids,
             })
             .collect(),
     };
+
+    // Realm-membership validation for `grantedRoleIds` (design §4.2.2 / §5.2):
+    // any row carrying a non-empty `granted_role_ids` must reference roles that
+    // all belong to this realm. Collect the union of provided role IDs across
+    // rows (non-empty only) and validate once. Done in the handler (which has
+    // `AppState`) so the infra layer stays free of a new role-read dependency.
+    // `None`/empty rows are excluded — `None` ⟺ leave unchanged, `Some([])` ⟺
+    // clear (no role to validate).
+    let all_role_ids: Vec<Uuid> = input
+        .updates
+        .iter()
+        .filter_map(|u| u.granted_role_ids.as_ref())
+        .flatten()
+        .copied()
+        .collect();
+    if !all_role_ids.is_empty() {
+        validate_granted_role_ids(
+            &realm_id,
+            &all_role_ids,
+            state.role_policy_repository.as_ref(),
+        )
+        .await
+        .map_err(map_batch_error)?;
+    }
 
     let result = state
         .billing_repository
@@ -624,6 +667,13 @@ fn map_batch_error(err: BatchMappingError) -> ApiError {
             code: "mapping_in_use",
             active_subscriptions,
         }),
+        BatchMappingError::RoleNotInRealm { role_id, realm_id } => {
+            ApiError::bad_request_json(MappingRoleNotInRealmErrorBody {
+                code: "role_not_in_realm",
+                role_id,
+                realm_id,
+            })
+        }
         BatchMappingError::Other(core) => ApiError::from(core),
     }
 }

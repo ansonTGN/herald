@@ -4,6 +4,8 @@
 // following the Dependency Inversion Principle.
 
 use std::future::Future;
+
+use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use super::{
@@ -16,6 +18,37 @@ use super::{
 
 type ApiKeyRoleSummaries = Vec<(String, Vec<(Uuid, String)>)>;
 use crate::authentication::Identity;
+
+// ============================================================================
+// Payment-driven role grant outcomes (design §5.3)
+// ============================================================================
+
+/// Outcome of an idempotent payment-driven role grant.
+///
+/// Used by `UserRoleRepository::grant_role_by_payment`. The existence check is
+/// keyed on `(source='payment', source_id, user_id, role_id)`, so an
+/// out-of-order renewal after a cancel re-inserts (returns `Granted`), while a
+/// duplicate grant for the same payment origin returns `AlreadyExists`
+/// (idempotent skip).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GrantRoleOutcome {
+    /// A new `user_roles` row was inserted with `source='payment'`.
+    Granted,
+    /// An equivalent payment grant already exists for this origin; no row written.
+    AlreadyExists,
+}
+
+/// Outcome of revoking payment-driven roles by payment origin (`source_id`).
+///
+/// Used by `UserRoleRepository::revoke_roles_by_payment_source`. Only deletes
+/// rows with `source='payment'`; manual grants are never touched.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RevokeRoleOutcome {
+    /// `n` payment-granted role rows were deleted.
+    Revoked(u64),
+    /// No matching payment-granted rows existed for this `source_id`.
+    NotFound,
+}
 
 // ============================================================================
 // Repository Ports
@@ -111,6 +144,54 @@ pub trait UserRoleRepository: Send + Sync {
         user_id: Uuid,
         role_id: Uuid,
         client_id: &str,
+    ) -> impl Future<Output = UserAdminResult<bool>> + Send;
+
+    /// Grant a role to a user as a consequence of a successful payment.
+    ///
+    /// Writes a `user_roles` row with `source='payment'`, `source_id=<payment
+    /// origin>` and (for subscriptions) `expires_at`. Idempotent: if a row with
+    /// the same `(source='payment', source_id, user_id, role_id)` already
+    /// exists, returns `GrantRoleOutcome::AlreadyExists` without writing.
+    /// Out-of-order-renewal safe: a prior cancel that deleted the row allows a
+    /// fresh insert (returns `Granted`).
+    ///
+    /// `source_id` is the payment-attempt id (one-time) or subscription id
+    /// (subscription). `expires_at` is `None` for one-time (permanent) grants
+    /// and `Some(current_period_end)` for subscription grants — note this is a
+    /// provenance/observability snapshot only, NOT an authz TTL (no sweep
+    /// removes the row once it passes; revoke is event-driven). `client_id` is
+    /// `None` when the triggering payment attempt does not carry one (the
+    /// `client_id` column is nullable).
+    fn grant_role_by_payment(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        role_id: Uuid,
+        client_id: Option<&str>,
+        source_id: &str,
+        expires_at: Option<DateTime<Utc>>,
+    ) -> impl Future<Output = UserAdminResult<GrantRoleOutcome>> + Send;
+
+    /// Revoke all payment-driven roles for a user that originated from the
+    /// given `source_id` (payment-attempt id or subscription id).
+    ///
+    /// Deletes only rows with `source='payment' AND source_id=$1 AND user_id`;
+    /// manual grants (`source='manual'`) are never affected (design §5.5).
+    /// Returns `RevokeRoleOutcome::NotFound` when zero rows matched.
+    fn revoke_roles_by_payment_source(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        source_id: &str,
+    ) -> impl Future<Output = UserAdminResult<RevokeRoleOutcome>> + Send;
+
+    /// Check whether a user holds ANY of the given roles via a payment grant
+    /// (`source='payment'`). Used by the M3 ownership check (design §5.4).
+    fn user_has_any_payment_role(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        role_ids: &[Uuid],
     ) -> impl Future<Output = UserAdminResult<bool>> + Send;
 
     /// List all user roles in a realm/client

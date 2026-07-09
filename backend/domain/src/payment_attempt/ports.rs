@@ -131,4 +131,15 @@ pub trait PaymentAttemptRepository: Send + Sync {
         page: u64,
         page_size: u64,
     ) -> Result<(Vec<PurchaseHistoryRow>, i64), CoreError>;
+
+    /// Check whether a user has at least one succeeded payment attempt for the
+    /// given `target_id` (entitlement mapping id). Used by the M3 one-time+role
+    /// ownership gate (design §5.4): a user who already succeeded a purchase for
+    /// a one_time+role target is blocked from re-buying. `target_id` matches the
+    /// `payment_attempts.target_id` column (FK to provider_entitlement_mappings).
+    async fn has_succeeded_attempt(
+        &self,
+        user_id: Uuid,
+        target_id: Uuid,
+    ) -> Result<bool, CoreError>;
 }

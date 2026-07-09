@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use std::sync::Arc;
 use uuid::Uuid;
 
+use crate::authorization::PermissionService;
 use crate::billing::entities::EntitlementMapping;
 use crate::common::entities::app_errors::CoreError;
 use crate::common::entities::{generate_uuid_v7, now_utc};
@@ -15,6 +16,7 @@ use crate::points::{
     ports::PointsRepository,
     service::PointsService,
 };
+use crate::user::admin_ports::{GrantRoleOutcome, RevokeRoleOutcome, UserRoleRepository};
 
 const ERROR_ENTITLEMENT_NO_GRANT: &str = "Entitlement does not grant points on subscribe";
 
@@ -35,32 +37,125 @@ pub enum CancelMode {
 /// This service manages subscription upgrades, downgrades, and cancellations
 /// via grant/revoke of window-quota entitlements. It works with
 /// the PointsService and Repository.
-pub struct SubscriptionService<R, P>
+///
+/// `U` is the `UserRoleRepository` used to grant/revoke payment-granted roles
+/// on the subscription lifecycle: GRANT on `handle_subscription_paid`
+/// (design §5.3 / US-PW-002), REVOKE on ImmediateCancel (design §5.5 /
+/// US-PW-005). `C` is the `PermissionService` used solely to
+/// `invalidate_user_role_cache` after a grant so subsequent authorization
+/// checks see the new role.
+pub struct SubscriptionService<R, P, U, C>
 where
     R: PointsRepository + Send + Sync,
     P: crate::points::policies::PointsPolicy,
+    U: UserRoleRepository,
+    C: PermissionService,
 {
     points_service: Arc<PointsService<R, P>>,
     repo: Arc<R>,
+    user_role_repository: Arc<U>,
+    permission_service: Arc<C>,
     _grant_scheduler: Option<Arc<crate::points::services::GrantScheduler<R, P>>>,
 }
 
-impl<R, P> SubscriptionService<R, P>
+impl<R, P, U, C> SubscriptionService<R, P, U, C>
 where
     R: PointsRepository + Send + Sync,
     P: crate::points::policies::PointsPolicy,
+    U: UserRoleRepository,
+    C: PermissionService,
 {
     /// Create a new SubscriptionService
     pub fn new(
         points_service: Arc<PointsService<R, P>>,
         repo: Arc<R>,
+        user_role_repository: Arc<U>,
+        permission_service: Arc<C>,
         _grant_scheduler: Option<Arc<crate::points::services::GrantScheduler<R, P>>>,
     ) -> Self {
         Self {
             points_service,
             repo,
+            user_role_repository,
+            permission_service,
             _grant_scheduler,
         }
+    }
+
+    /// Grant every role in `mapping.granted_role_ids` to `user_id` as a
+    /// payment-driven grant, then invalidate the user's role cache. Mirrors
+    /// `PostgresFulfillmentService::grant_payment_roles` (design §5.3) for the
+    /// webhook-driven subscription-success path. A grant failure propagates so
+    /// the compensation framework / PaymentEventRetryJob can re-process the
+    /// event (it is NOT silently swallowed); `AlreadyExists` is an idempotent
+    /// skip.
+    async fn grant_payment_roles(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        role_ids: &[Uuid],
+        source_id: &str,
+        expires_at: Option<DateTime<Utc>>,
+    ) -> Result<(), CoreError> {
+        for role_id in role_ids {
+            match self
+                .user_role_repository
+                .grant_role_by_payment(
+                    realm_id, user_id, *role_id,
+                    // Provider webhooks do not carry a client_id; the user_roles
+                    // client_id column is nullable, so pass None.
+                    None, source_id, expires_at,
+                )
+                .await
+            {
+                Ok(GrantRoleOutcome::Granted) => {
+                    tracing::info!(
+                        user_id = %user_id,
+                        role_id = %role_id,
+                        source_id = %source_id,
+                        "Payment role granted on subscription paid"
+                    );
+                }
+                Ok(GrantRoleOutcome::AlreadyExists) => {
+                    tracing::info!(
+                        user_id = %user_id,
+                        role_id = %role_id,
+                        source_id = %source_id,
+                        "Payment role already granted (idempotent skip)"
+                    );
+                }
+                Err(e) => {
+                    tracing::error!(
+                        user_id = %user_id,
+                        role_id = %role_id,
+                        source_id = %source_id,
+                        error = %e,
+                        "Failed to grant payment role on subscription paid"
+                    );
+                    return Err(e.into());
+                }
+            }
+        }
+
+        // Invalidate the user's cached roles/permissions so the newly granted
+        // role is visible to subsequent authorization checks.
+        if let Err(e) = self
+            .permission_service
+            .invalidate_user_role_cache(realm_id, &user_id.to_string())
+            .await
+        {
+            // Cache invalidation is best-effort relative to the durable grant:
+            // the row is already committed, and the cache entry has a TTL, so a
+            // transient Redis failure must not roll back a successful payment.
+            tracing::warn!(
+                user_id = %user_id,
+                realm_id = %realm_id,
+                error = %e,
+                "Failed to invalidate user role cache after payment grant (will expire on TTL)"
+            );
+        }
+
+        Ok(())
     }
 
     /// Grant a window-quota entitlement for a subscription / free-periodic
@@ -437,7 +532,7 @@ where
         // Window-quota mappings grant quota entitlements. Mappings without
         // quota_windows keep the legacy points_per_period ledger semantics.
         let quota_windows = resolve_quota_windows(mapping);
-        if quota_windows.is_empty() {
+        let receipt = if quota_windows.is_empty() {
             let Some(points_per_period) = mapping.points_per_period else {
                 return self
                     .create_placeholder_transaction_with_ref(user_id, realm_id, &event_id)
@@ -468,7 +563,7 @@ where
                     Some(event_id.clone()),
                 )
                 .await?;
-            return Ok(grant_receipt(
+            grant_receipt(
                 ledger_id,
                 user_id,
                 realm_id,
@@ -478,67 +573,89 @@ where
                 &source_id,
                 period_start,
                 Some(period_end),
-            ));
-        }
-
-        let source_type = if is_renewal {
-            QuotaSourceType::SubscriptionRenewal
+            )
         } else {
-            QuotaSourceType::SubscriptionInitial
-        };
+            let source_type = if is_renewal {
+                QuotaSourceType::SubscriptionRenewal
+            } else {
+                QuotaSourceType::SubscriptionInitial
+            };
 
-        // Idempotency key anchored to the subscription period so a redelivered
-        // webhook event for the same period converges on the same entitlement.
-        let idempotency_key = format!(
-            "sub:{}:period:{}",
-            subscription_id,
-            period_start.timestamp()
-        );
+            // Idempotency key anchored to the subscription period so a redelivered
+            // webhook event for the same period converges on the same entitlement.
+            let idempotency_key = format!(
+                "sub:{}:period:{}",
+                subscription_id,
+                period_start.timestamp()
+            );
 
-        let granted = self
-            .grant_quota_entitlement(
-                realm_id,
+            let granted = self
+                .grant_quota_entitlement(
+                    realm_id,
+                    user_id,
+                    bucket_id,
+                    CreditType::SubscriptionCredit,
+                    source_type,
+                    source_id.clone(),
+                    quota_windows,
+                    period_start,
+                    Some(period_end),
+                    idempotency_key,
+                )
+                .await?;
+
+            tracing::info!(
+                realm_id = %realm_id,
+                user_id = %user_id,
+                subscription_id = %subscription_id,
+                bucket_id = %bucket_id,
+                entitlement_key = %entitlement_key,
+                is_renewal,
+                entitlement_id = %granted.id,
+                period_start = %period_start,
+                period_end = %period_end,
+                event_id = %event_id,
+                "Subscription paid: quota entitlement granted (window model; no ledger row, no chained pre-grant)"
+            );
+
+            grant_receipt(
+                granted.id,
                 user_id,
+                realm_id,
                 bucket_id,
                 CreditType::SubscriptionCredit,
-                source_type,
-                source_id.clone(),
-                quota_windows,
-                period_start,
+                if is_renewal {
+                    CreditSourceType::SubscriptionRenewal
+                } else {
+                    CreditSourceType::SubscriptionInitial
+                },
+                &granted.source_id,
+                granted.effective_from,
+                granted.effective_until,
+            )
+        };
+
+        // Payment-driven role grant (design §5.3 / US-PW-002). Runs after the
+        // points/entitlement block regardless of whether points were granted,
+        // so a subscription mapping that grants only roles (no points) still
+        // grants them — mirroring `PostgresFulfillmentService::fulfill_subscription_purchase`.
+        // Source id is the INTERNAL subscription id (matches the ImmediateCancel
+        // revoke path's `source_id = subscription_id`); expiry aligns to the
+        // billing period end. `AlreadyExists` is an idempotent skip and a grant
+        // failure propagates (compensation framework / PaymentEventRetryJob
+        // backstops it).
+        if !mapping.granted_role_ids.is_empty() {
+            self.grant_payment_roles(
+                realm_id,
+                user_id,
+                &mapping.granted_role_ids,
+                &source_id,
                 Some(period_end),
-                idempotency_key,
             )
             .await?;
+        }
 
-        tracing::info!(
-            realm_id = %realm_id,
-            user_id = %user_id,
-            subscription_id = %subscription_id,
-            bucket_id = %bucket_id,
-            entitlement_key = %entitlement_key,
-            is_renewal,
-            entitlement_id = %granted.id,
-            period_start = %period_start,
-            period_end = %period_end,
-            event_id = %event_id,
-            "Subscription paid: quota entitlement granted (window model; no ledger row, no chained pre-grant)"
-        );
-
-        Ok(grant_receipt(
-            granted.id,
-            user_id,
-            realm_id,
-            bucket_id,
-            CreditType::SubscriptionCredit,
-            if is_renewal {
-                CreditSourceType::SubscriptionRenewal
-            } else {
-                CreditSourceType::SubscriptionInitial
-            },
-            &granted.source_id,
-            granted.effective_from,
-            granted.effective_until,
-        ))
+        Ok(receipt)
     }
 
     /// Create placeholder transaction with external ref (for idempotency when
@@ -635,6 +752,68 @@ where
                         "Subscription cancelled".to_string(),
                     )
                     .await?;
+
+                // Revoke payment-granted roles for this subscription (design
+                // §5.5 / US-PW-005). `source_id = subscription_id` matches the
+                // `source_id` written at grant time (BE-D03 subscription path).
+                // Both `Revoked(n)` and `NotFound` are idempotent successes — a
+                // NotFound (no payment role, or already revoked by a replayed
+                // cancel webhook) is NOT an error. Only `source='payment'` rows
+                // are deleted; manual grants are untouched.
+                //
+                // Out-of-order renewal safety (design §5.5 P1): a late
+                // `invoice.payment_succeeded` that arrives after this revoke
+                // re-grants the role — `grant_role_by_payment` (BE-D03) is the
+                // "insert if absent for this source_id+role" upsert, so a row
+                // deleted here is simply re-inserted on the renewal path.
+                let revoke_outcome = self
+                    .user_role_repository
+                    .revoke_roles_by_payment_source(realm_id, user_id, &source_id)
+                    .await?;
+                match revoke_outcome {
+                    RevokeRoleOutcome::Revoked(n) => {
+                        tracing::info!(
+                            realm_id = %realm_id,
+                            user_id = %user_id,
+                            subscription_id = %subscription_id,
+                            source_id = %source_id,
+                            revoked_roles = n,
+                            "Payment-granted roles revoked on subscription immediate cancel"
+                        );
+
+                        // Invalidate the user's cached roles/permissions so the
+                        // revoke is visible immediately. Symmetric with the grant
+                        // path's post-grant invalidation (`grant_payment_roles`):
+                        // without this, a cancelled subscriber keeps the revoked
+                        // role's permissions for up to the 300s user-roles cache
+                        // TTL. Best-effort relative to the durable delete — the
+                        // row is already gone, and the cache entry has a TTL, so a
+                        // transient cache failure must not fail the cancel. Only
+                        // invalidated when a row was actually deleted (`NotFound`
+                        // changed nothing).
+                        if let Err(e) = self
+                            .permission_service
+                            .invalidate_user_role_cache(realm_id, &user_id.to_string())
+                            .await
+                        {
+                            tracing::warn!(
+                                user_id = %user_id,
+                                realm_id = %realm_id,
+                                error = %e,
+                                "Failed to invalidate user role cache after payment revoke (will expire on TTL)"
+                            );
+                        }
+                    }
+                    RevokeRoleOutcome::NotFound => {
+                        tracing::info!(
+                            realm_id = %realm_id,
+                            user_id = %user_id,
+                            subscription_id = %subscription_id,
+                            source_id = %source_id,
+                            "No payment-granted roles to revoke on subscription immediate cancel (idempotent)"
+                        );
+                    }
+                }
 
                 tracing::info!(
                     realm_id = %realm_id,

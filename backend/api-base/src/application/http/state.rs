@@ -43,7 +43,13 @@ use sea_orm::DatabaseConnection;
 type PurchaseServiceImpl = PurchaseService<
     PostgresBillingRepository,
     PostgresPaymentAttemptRepository,
-    PostgresFulfillmentService<PostgresPointsRepository, PostgresBillingRepository>,
+    PostgresFulfillmentService<
+        PostgresPointsRepository,
+        PostgresBillingRepository,
+        PostgresUserRoleRepository,
+        RedisPermissionChecker,
+    >,
+    PostgresUserRoleRepository,
 >;
 
 type ProviderProductSyncServiceImpl = herald_core::domain::billing::ProviderProductSyncService<
@@ -114,6 +120,8 @@ pub struct AppState {
         herald_core::domain::points::SubscriptionService<
             PostgresPointsRepository,
             PermissionBasedPointsPolicy,
+            PostgresUserRoleRepository,
+            RedisPermissionChecker,
         >,
     >,
 
@@ -217,8 +225,14 @@ pub struct AppState {
     pub payment_attempt_repository: Arc<PostgresPaymentAttemptRepository>,
 
     /// Fulfillment service (for unified purchase handling)
-    pub fulfillment_service:
-        Arc<PostgresFulfillmentService<PostgresPointsRepository, PostgresBillingRepository>>,
+    pub fulfillment_service: Arc<
+        PostgresFulfillmentService<
+            PostgresPointsRepository,
+            PostgresBillingRepository,
+            PostgresUserRoleRepository,
+            RedisPermissionChecker,
+        >,
+    >,
 
     /// Purchase repository (retained for API compatibility)
     pub purchase_repository: Arc<PostgresPurchaseRepository>,
@@ -231,6 +245,12 @@ pub struct AppState {
 
     /// User role repository for batch role queries (e.g. API key role summaries)
     pub user_role_repository: Arc<PostgresUserRoleRepository>,
+
+    /// Role policy repository for direct role reads (e.g. validating that
+    /// `granted_role_ids` on an entitlement mapping belong to the realm —
+    /// design §5.2 / BE-D02). Direct AppState field, same pattern as
+    /// `billing_repository`; NOT the `state.service.<svc>()` registry.
+    pub role_policy_repository: Arc<PostgresRolePolicyRepository>,
 
     /// Realm config repository (for direct SQL access to realm_config table)
     pub realm_config_repository: Arc<PostgresRealmConfigRepository>,

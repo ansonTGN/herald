@@ -272,6 +272,8 @@ impl AsyncTestContext for SchemaTestContext {
                     ),
                 ),
                 billing_repository.clone(),
+                user_role_repository.clone(),
+                permission_checker.clone(),
             ),
         );
         let payment_attempt_repository = Arc::new(
@@ -291,6 +293,8 @@ impl AsyncTestContext for SchemaTestContext {
                 "http://localhost:8080".to_string(),
                 billing_repository.clone(),
                 payment_attempt_service.clone(),
+                payment_attempt_repository.clone(),
+                user_role_repository.clone(),
                 fulfillment_service.clone(),
             ));
 
@@ -301,6 +305,7 @@ impl AsyncTestContext for SchemaTestContext {
             http_client: reqwest::Client::new(),
             redis_manager: (*redis_manager).clone(), // NEW: 使用 RedisConnectionManager
             billing_repository: billing_repository.clone(),
+            role_policy_repository: role_policy_repository.clone(),
             invoice_repository: Arc::new(
                 herald_core::infrastructure::billing::PostgresInvoiceRepository::new(sea_conn.clone()),
             ),
@@ -361,6 +366,14 @@ impl AsyncTestContext for SchemaTestContext {
                             pool_with_schema.clone(),
                         ),
                     ),
+                    // SubscriptionService::new() third parameter: the
+                    // user-role repo backing the ImmediateCancel role revoke
+                    // (BE-D05 / design §5.5).
+                    user_role_repository.clone(),
+                    // SubscriptionService::new() fourth parameter: the
+                    // permission service backing the role-cache invalidation
+                    // after a payment-driven grant (BE-T05 / design §5.3).
+                    permission_checker.clone(),
                     None,
                 ),
             ),

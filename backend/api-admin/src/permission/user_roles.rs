@@ -217,6 +217,11 @@ pub async fn assign_roles_to_user(
             client_id: ActiveValue::Set(Some(identity.client_id())),
             principal_type: ActiveValue::Set(principal_types::USER.to_string()),
             principal_id: ActiveValue::Set(user_id.to_string()),
+            // BE-D01 columns: admin-assign path is a manual grant (no payment
+            // origin, no subscription expiry).
+            source: ActiveValue::Set("manual".to_string()),
+            source_id: ActiveValue::Set(None),
+            expires_at: ActiveValue::Set(None),
             created_at: ActiveValue::Set(chrono::Utc::now().into()),
         };
 

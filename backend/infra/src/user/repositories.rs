@@ -70,7 +70,7 @@ impl UserRepository for PostgresUserRepository {
     async fn create_user(
         &self,
         request: CreateUserRequest,
-        password_hash: String,
+        password_hash: Option<String>,
     ) -> Result<User, CoreError> {
         let now = chrono::Utc::now();
         // 使用 UUID v7 生成用户 ID
@@ -81,7 +81,7 @@ impl UserRepository for PostgresUserRepository {
             realm_id: sea_orm::Set(Some(request.realm_id)),
             email: sea_orm::Set(request.email),
             username: sea_orm::Set(None), // Explicitly set username to None
-            password: sea_orm::Set(Some(password_hash)),
+            password: sea_orm::Set(password_hash),
             provider_ids: sea_orm::Set(request.provider_ids.unwrap_or_default()),
             status: sea_orm::Set(UserStatus::WaitVerified.into()),
             deleted_original_email_hash: sea_orm::Set(None),

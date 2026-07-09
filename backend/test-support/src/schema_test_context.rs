@@ -217,11 +217,19 @@ impl AsyncTestContext for SchemaTestContext {
             points_policy.clone(),
         ));
 
+        // Build the user-role repository ahead of the subscription service so
+        // the subscription ImmediateCancel role revoke (BE-D05 / design §5.5)
+        // can be wired in at construction time.
+        let user_role_repository =
+            Arc::new(PostgresUserRoleRepository::new(pool_with_schema.clone()));
+
         // Create subscription service
         let subscription_service = Arc::new(
             herald_core::domain::points::subscription_service::SubscriptionService::new(
                 points_service.clone(),
                 points_repository.clone(),
+                user_role_repository.clone(),
+                permission_checker.clone(),
                 None,
             ),
         );
@@ -244,8 +252,6 @@ impl AsyncTestContext for SchemaTestContext {
 
         let admin_user_repository =
             Arc::new(PostgresAdminUserRepository::new(pool_with_schema.clone()));
-        let user_role_repository =
-            Arc::new(PostgresUserRoleRepository::new(pool_with_schema.clone()));
         let role_policy_repository =
             Arc::new(PostgresRolePolicyRepository::new(pool_with_schema.clone()));
 
@@ -275,7 +281,7 @@ impl AsyncTestContext for SchemaTestContext {
         ));
         let permission_management_service = Arc::new(PermissionManagementServiceImpl::new(
             user_role_repository.clone(),
-            role_policy_repository,
+            role_policy_repository.clone(),
             permission_checker.clone(),
             Arc::new(
                 herald_core::infrastructure::audit::PostgresAuditEventRepository::new(
@@ -309,6 +315,8 @@ impl AsyncTestContext for SchemaTestContext {
             herald_core::infrastructure::purchase::PostgresFulfillmentService::new(
                 points_repository.clone(),
                 billing_repository.clone(),
+                user_role_repository.clone(),
+                permission_checker.clone(),
             ),
         );
 
@@ -319,6 +327,8 @@ impl AsyncTestContext for SchemaTestContext {
                 "http://localhost:8080".to_string(),
                 billing_repository.clone(),
                 payment_attempt_service.clone(),
+                payment_attempt_repository.clone(),
+                user_role_repository.clone(),
                 fulfillment_service.clone(),
             ));
 
@@ -375,6 +385,7 @@ impl AsyncTestContext for SchemaTestContext {
             purchase_service,
             jwt_secret: crate::TEST_JWT_SECRET.to_string(),
             user_role_repository,
+            role_policy_repository,
             realm_config_repository: Arc::new(PostgresRealmConfigRepository::new(Arc::new(
                 sea_conn.clone(),
             ))),

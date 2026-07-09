@@ -119,6 +119,7 @@ impl PostgresBillingRepository {
             enabled: model.enabled,
             provider_product_info: model.provider_product_info,
             quota_windows,
+            granted_role_ids: model.granted_role_ids,
             synced_at: model.synced_at.map(chrono::DateTime::from),
             created_at: chrono::DateTime::from(model.created_at),
             updated_at: chrono::DateTime::from(model.updated_at),
@@ -153,6 +154,7 @@ impl PostgresBillingRepository {
             enabled: Set(mapping.enabled),
             provider_product_info: Set(mapping.provider_product_info),
             quota_windows: Set(quota_windows),
+            granted_role_ids: Set(mapping.granted_role_ids),
             synced_at: Set(mapping
                 .synced_at
                 .map(sea_orm::prelude::DateTimeWithTimeZone::from)),
@@ -1132,6 +1134,8 @@ impl BillingRepository for PostgresBillingRepository {
             processing_started_at: Set(event
                 .processing_started_at
                 .map(sea_orm::prelude::DateTimeWithTimeZone::from)),
+            // BE-D01 column: NULL = eligible for immediate retry by the sweep job.
+            next_retry_at: Set(None),
             created_at: Set(sea_orm::prelude::DateTimeWithTimeZone::from(
                 event.created_at,
             )),
@@ -2053,7 +2057,9 @@ impl BillingRepository for PostgresBillingRepository {
         let mut saved: u32 = 0;
         for u in &input.updates {
             let billing_type_str = u.billing_type.as_deref();
-            // and serialize to the JSONB column shape. `None` ⟺ leave unchanged.
+            // Serialize `quota_windows` to the JSONB column shape. `None` ⟺ leave
+            // unchanged (column omitted from SET). `Some` ⟺ SET explicitly so the
+            // caller can clear to NULL via `Some([])`.
             let quota_windows_value: Option<Option<serde_json::Value>> = match &u.quota_windows {
                 None => None,
                 Some(windows) => {
@@ -2075,59 +2081,55 @@ impl BillingRepository for PostgresBillingRepository {
                     }
                 }
             };
+            // `granted_role_ids` is a `UUID[]` column (NOT COALESCE'd, same reason
+            // as `quota_windows`: the caller must be able to CLEAR to `{}` by
+            // passing `Some([])`). `None` ⟺ leave unchanged (column omitted from
+            // SET). sqlx encodes `Vec<Uuid>` → `uuid[]` (matches the account
+            // `provider_ids` path). Clone to owned for the bind.
+            let granted_role_ids_value: Option<Vec<Uuid>> =
+                u.granted_role_ids.as_ref().map(|ids| ids.to_vec());
 
-            let result = if let Some(qw) = quota_windows_value {
-                sqlx::query(
-                    "UPDATE provider_entitlement_mappings SET \
-                       billing_type = COALESCE($4, billing_type), \
-                       points_per_period = COALESCE($5, points_per_period), \
-                       validity_days = COALESCE($6, validity_days), \
-                       grant_on_subscribe = COALESCE($7, grant_on_subscribe), \
-                       enabled = COALESCE($8, enabled), \
-                       quota_windows = $9, \
-                       updated_at = $10 \
-                     WHERE realm_id = $1 AND payment_provider = $2 \
-                       AND external_product_id = $3 AND id = $11",
-                )
-                .bind(&input.realm_id)
-                .bind(&input.payment_provider)
-                .bind(&input.external_product_id)
-                .bind(billing_type_str)
-                .bind(u.points_per_period.map(|v| v as i32))
-                .bind(u.validity_days.map(|v| v as i32))
-                .bind(u.grant_on_subscribe)
-                .bind(u.enabled)
-                .bind(qw)
-                .bind(now)
-                .bind(u.mapping_id)
-                .execute(&mut *tx)
-                .await
-            } else {
-                sqlx::query(
-                    "UPDATE provider_entitlement_mappings SET \
-                       billing_type = COALESCE($4, billing_type), \
-                       points_per_period = COALESCE($5, points_per_period), \
-                       validity_days = COALESCE($6, validity_days), \
-                       grant_on_subscribe = COALESCE($7, grant_on_subscribe), \
-                       enabled = COALESCE($8, enabled), \
-                       updated_at = $9 \
-                     WHERE realm_id = $1 AND payment_provider = $2 \
-                       AND external_product_id = $3 AND id = $10",
-                )
-                .bind(&input.realm_id)
-                .bind(&input.payment_provider)
-                .bind(&input.external_product_id)
-                .bind(billing_type_str)
-                .bind(u.points_per_period.map(|v| v as i32))
-                .bind(u.validity_days.map(|v| v as i32))
-                .bind(u.grant_on_subscribe)
-                .bind(u.enabled)
-                .bind(now)
-                .bind(u.mapping_id)
-                .execute(&mut *tx)
-                .await
-            };
-            let result = result.map_err(|e| {
+            // Build the UPDATE per-row with sqlx::QueryBuilder so placeholder
+            // numbering is automatic and consistent with the clauses actually
+            // emitted. COALESCE is used for fields the caller can leave unchanged
+            // (`None` ⟺ preserve the DB value); the two optional-array columns
+            // (`quota_windows`, `granted_role_ids`) are SET explicitly only when
+            // the input provides them, so the caller can CLEAR them. `push_bind`
+            // interleaves values in the exact order their `$n` placeholders appear
+            // in the SQL text — SET clause first, then the WHERE anchors.
+            let mut qb = sqlx::QueryBuilder::<sqlx::Postgres>::new(
+                "UPDATE provider_entitlement_mappings SET billing_type = COALESCE(",
+            );
+            qb.push_bind(billing_type_str.map(|s| s.to_string()));
+            qb.push(", billing_type), points_per_period = COALESCE(");
+            qb.push_bind(u.points_per_period.map(|v| v as i32));
+            qb.push(", points_per_period), validity_days = COALESCE(");
+            qb.push_bind(u.validity_days.map(|v| v as i32));
+            qb.push(", validity_days), grant_on_subscribe = COALESCE(");
+            qb.push_bind(u.grant_on_subscribe);
+            qb.push(", grant_on_subscribe), enabled = COALESCE(");
+            qb.push_bind(u.enabled);
+            qb.push(", enabled)");
+            if let Some(qw) = quota_windows_value {
+                qb.push(", quota_windows = ");
+                qb.push_bind(qw);
+            }
+            if let Some(role_ids) = granted_role_ids_value {
+                qb.push(", granted_role_ids = ");
+                qb.push_bind(role_ids);
+            }
+            qb.push(", updated_at = ");
+            qb.push_bind(now);
+            qb.push(" WHERE realm_id = ");
+            qb.push_bind(input.realm_id.clone());
+            qb.push(" AND payment_provider = ");
+            qb.push_bind(input.payment_provider.clone());
+            qb.push(" AND external_product_id = ");
+            qb.push_bind(input.external_product_id.clone());
+            qb.push(" AND id = ");
+            qb.push_bind(u.mapping_id);
+
+            let result = qb.build().execute(&mut *tx).await.map_err(|e| {
                 CoreError::DatabaseError(format!("Failed to update mapping in batch: {}", e))
             })?;
             saved += result.rows_affected() as u32;

@@ -374,6 +374,11 @@ impl UserRoleRepository for PostgresUserRoleRepository {
                 client_id: sea_orm::Set(Some(request.client_id)),
                 principal_type: sea_orm::Set(principal_types::USER.to_string()),
                 principal_id: sea_orm::Set(request.user_id.to_string()),
+                // BE-D01 columns: this is the manual admin-assign path — origin
+                // is `manual` (no payment source, no subscription expiry).
+                source: sea_orm::Set("manual".to_string()),
+                source_id: sea_orm::Set(None),
+                expires_at: sea_orm::Set(None),
                 created_at: sea_orm::Set(chrono::Utc::now().into()),
             };
 

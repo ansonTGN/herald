@@ -392,4 +392,26 @@ impl PaymentAttemptRepository for PostgresPaymentAttemptRepository {
 
         Ok((items, count))
     }
+
+    async fn has_succeeded_attempt(
+        &self,
+        user_id: uuid::Uuid,
+        target_id: uuid::Uuid,
+    ) -> Result<bool, CoreError> {
+        // `status` is stored as the PascalCase string ("Succeeded"), matching
+        // `PaymentAttemptStatus::Succeeded`'s `to_string()` and the renewal
+        // insert path. `target_id` is the entitlement mapping id.
+        let row: Option<(i32,)> = sqlx::query_as(
+            "SELECT 1 FROM payment_attempts \
+             WHERE user_id = $1 AND target_id = $2 AND status = 'Succeeded' \
+             LIMIT 1",
+        )
+        .bind(user_id)
+        .bind(target_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| CoreError::DatabaseError(format!("Failed to check succeeded attempt: {e}")))?;
+
+        Ok(row.is_some())
+    }
 }

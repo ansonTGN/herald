@@ -43,6 +43,19 @@ import { SELECTORS } from '../selectors'
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
 
 /**
+ * A reliably-loadable SVG logo URL used as `logoUrl` for the "brand renders"
+ * scenarios (US-WL-002 场景1, cross-realm positive). The file is served by the
+ * Vite dev server from `frontend/public/wl-demo-logo.svg` (a real `image/svg+xml`
+ * asset, not an SPA-fallback HTML page), so:
+ *  - the backend accepts it (`logoUrl must be an http:// or https:// URL`);
+ *  - the `<img>` loads → the `auth-page-wrapper` keeps `auth-brand-logo` mounted
+ *    AND visible (no `onError` → Herald-text fallback).
+ * Contrast with the asset-fallback test (US-WL-002 场景3 / US-WL-004 场景2),
+ * which deliberately uses an un-loadable `https://invalid.invalid/...` URL.
+ */
+const LOADABLE_LOGO_URL = `${BASE_URL}/wl-demo-logo.svg`
+
+/**
  * Realms touched by this demo suite (all restore-balanced in afterEach).
  *
  * Cross-realm isolation uses `admin` + `realm-001` — the two realms the demo
@@ -139,7 +152,7 @@ test.describe('[Realm Admin] White-label 配置综合演示测试', () => {
     })
 
     const draftValues: WhiteLabelFormValues = {
-      logoUrl: 'https://demo.cas.test/brand-logo-test.svg',
+      logoUrl: LOADABLE_LOGO_URL,
       accentColor: '#2563eb',
       background: { type: 'gradient', value: 'linear-gradient(135deg, #1e3a8a, #2563eb)' },
       footerText: '© Cas Demo Brand',
@@ -181,7 +194,7 @@ test.describe('[Realm Admin] White-label 配置综合演示测试', () => {
       if (logoVisible) {
         const src = await logo.getAttribute('src')
         // 刚保存的草稿 logo 绝不能出现在公共页（草稿未发布）。
-        expect(src).not.toContain('brand-logo-test.svg')
+        expect(src).not.toContain('wl-demo-logo.svg')
       } else {
         // 无 logo（Herald 文字回退）或旧品牌 → 草稿确实未泄漏。
         await expect(page.getByTestId('auth-brand-text')).toBeVisible()
@@ -218,7 +231,8 @@ test.describe('[Realm Admin] White-label 配置综合演示测试', () => {
         const logo = page.getByTestId('auth-brand-logo')
         await expect(logo).toBeVisible({ timeout: 15000 })
         const src = await logo.getAttribute('src')
-        expect(src).toContain('brand-logo-test.svg')
+        // 发布后的 logo 必须是配置的 URL（不是 Herald 文字回退）。
+        expect(src).toContain('wl-demo-logo.svg')
       })
 
       await test.step('页脚文案匹配配置', async () => {
@@ -255,6 +269,9 @@ test.describe('[Realm Admin] White-label 配置综合演示测试', () => {
 
   test('跨 Realm 隔离', async ({ page, demoLogger }) => {
     // [US-WL-001] 场景1 / [US-WL-002] 场景1 — DRAFT: .ai/user-stories/core/ui-custom.md
+    // 使用 demo seed 提供的 admin + realm-001 两个 realm（均含 admin-web-console
+    // client app，可登录）；通过 UI 运行时创建的 realm 不带 admin-web-console，
+    // 其 admin 无法登录（400 Client app not found）。
     testStartTime = Date.now()
 
     await verifyTestEnvironment(page, {
@@ -265,71 +282,74 @@ test.describe('[Realm Admin] White-label 配置综合演示测试', () => {
       skipRedisCheck: false,
     })
 
-    const realm1Brand: WhiteLabelFormValues = {
-      logoUrl: 'https://demo.cas.test/realm1-brand.svg',
+    const sourceRealm = 'realm-001'
+    const otherRealm = 'admin'
+
+    const sourceBrand: WhiteLabelFormValues = {
+      logoUrl: LOADABLE_LOGO_URL,
       accentColor: '#16a34a',
       background: null,
-      footerText: '© Realm1 Isolated Brand',
-      loginTitle: 'Sign in to Realm1',
+      footerText: '© Realm-001 Isolated Brand',
+      loginTitle: 'Sign in to Realm-001',
       loginSubtitle: '',
       registerTitle: '',
       registerSubtitle: '',
     }
 
-    await test.step('在 realm1 发布独特品牌', async () => {
-      const realm1Settings = new SettingsPage(page, demoLogger, 'realm1')
-      await loginAsAdmin(page, { realmId: 'realm1', forceRelogin: true })
-      await realm1Settings.goto()
-      await realm1Settings.waitForReady()
-      await realm1Settings.switchToWhiteLabelTab()
-      await realm1Settings.fillWhiteLabelForm(realm1Brand)
-      await realm1Settings.publish()
-      demoLogger.testCode.log('realm1 品牌已发布')
+    await test.step(`在 ${sourceRealm} 发布独特品牌`, async () => {
+      const sourceSettings = new SettingsPage(page, demoLogger, sourceRealm)
+      await loginAsAdmin(page, { realmId: sourceRealm, forceRelogin: true })
+      await sourceSettings.goto()
+      await sourceSettings.waitForReady()
+      await sourceSettings.switchToWhiteLabelTab()
+      await sourceSettings.fillWhiteLabelForm(sourceBrand)
+      await sourceSettings.publish()
+      demoLogger.testCode.log(`${sourceRealm} 品牌已发布`)
     })
 
-    await test.step('realm2 登录页显示自有品牌（或默认 Herald），不受 realm1 影响', async () => {
-      await openPublicLoginPage(page, 'realm2')
+    await test.step(`${otherRealm} 登录页显示自有品牌（或默认 Herald），不受 ${sourceRealm} 影响`, async () => {
+      await openPublicLoginPage(page, otherRealm)
 
-      // realm2 必须显示自己的品牌或默认 Herald，绝不能出现 realm1 的品牌值。
+      // otherRealm 必须显示自己的品牌或默认 Herald，绝不能出现 sourceRealm 的品牌值。
       const footer = page.getByTestId('auth-brand-footer')
       const footerVisible = await footer.isVisible().catch(() => false)
       if (footerVisible) {
         const text = (await footer.textContent()) || ''
-        expect(text).not.toContain('Realm1 Isolated Brand')
+        expect(text).not.toContain('Realm-001 Isolated Brand')
       }
 
       const logo = page.getByTestId('auth-brand-logo')
       const logoVisible = await logo.isVisible().catch(() => false)
       if (logoVisible) {
         const src = await logo.getAttribute('src')
-        expect(src).not.toContain('realm1-brand.svg')
+        expect(src).not.toContain('wl-demo-logo.svg')
       } else {
-        // 默认 Herald 文字回退也是合法的（realm2 未配置品牌）。
+        // 默认 Herald 文字回退也是合法的（otherRealm 未配置/已清空品牌）。
         await expect(page.getByTestId('auth-brand-text')).toBeVisible()
       }
 
-      // realm2 的 accent 不得是 realm1 的 #16a34a
+      // otherRealm 的 accent 不得是 sourceRealm 的 #16a34a
       const primary = await getAuthAccentPrimary(page)
       const normalized = primary.toLowerCase().replace(/\s+/g, '')
-      const isRealm1Accent = normalized.includes('#16a34a') || normalized.includes('rgb(22,163,74)')
-      expect(isRealm1Accent).toBeFalsy()
+      const isSourceAccent = normalized.includes('#16a34a') || normalized.includes('rgb(22,163,74)')
+      expect(isSourceAccent).toBeFalsy()
 
-      demoLogger.testCode.log('realm2 登录页品牌与 realm1 隔离验证通过')
+      demoLogger.testCode.log(`${otherRealm} 登录页品牌与 ${sourceRealm} 隔离验证通过`)
     })
 
-    await test.step('（正面验证）realm1 登录页确实呈现 realm1 品牌', async () => {
-      await openPublicLoginPage(page, 'realm1')
+    await test.step(`（正面验证）${sourceRealm} 登录页确实呈现 ${sourceRealm} 品牌`, async () => {
+      await openPublicLoginPage(page, sourceRealm)
 
       const footer = page.getByTestId('auth-brand-footer')
       await expect(footer).toBeVisible({ timeout: 10000 })
-      await expect(footer).toContainText('© Realm1 Isolated Brand')
+      await expect(footer).toContainText('© Realm-001 Isolated Brand')
 
       const logo = page.getByTestId('auth-brand-logo')
       await expect(logo).toBeVisible({ timeout: 10000 })
       const src = await logo.getAttribute('src')
-      expect(src).toContain('realm1-brand.svg')
+      expect(src).toContain('wl-demo-logo.svg')
 
-      demoLogger.testCode.log('realm1 登录页品牌呈现验证通过（跨 Realm 隔离正面案例）')
+      demoLogger.testCode.log(`${sourceRealm} 登录页品牌呈现验证通过（跨 Realm 隔离正面案例）`)
     })
   })
 

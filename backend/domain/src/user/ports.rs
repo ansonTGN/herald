@@ -16,7 +16,7 @@ pub trait UserRepository: Send + Sync {
     fn create_user(
         &self,
         request: CreateUserRequest,
-        password_hash: String,
+        password_hash: Option<String>,
     ) -> impl Future<Output = Result<User, CoreError>> + Send;
 
     fn get_user_by_id(&self, id: Uuid) -> impl Future<Output = Result<User, CoreError>> + Send;

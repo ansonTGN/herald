@@ -9,6 +9,7 @@ use crate::application::http::auth::util::require_session;
 pub use crate::application::http::server::api_entities::ErrorResponse;
 use crate::application::http::server::api_entities::{ApiError, ApiResult};
 use crate::application::http::state::AppState;
+use herald_core::domain::security_constants::DEFAULT_BCRYPT_COST;
 use herald_core::domain::user::entities::Profile;
 use herald_core::domain::user::ports::UserRepository;
 use herald_core::infrastructure::user::repositories::PostgresUserRepository;
@@ -197,7 +198,7 @@ pub async fn change_password(
     }
 
     // Hash new password
-    let new_password_hash = bcrypt::hash(&payload.new_pass, bcrypt::DEFAULT_COST).map_err(|e| {
+    let new_password_hash = bcrypt::hash(&payload.new_pass, DEFAULT_BCRYPT_COST).map_err(|e| {
         tracing::error!("Failed to hash password: {}", e);
         ApiError::internal("Failed to hash password")
     })?;

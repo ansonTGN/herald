@@ -41,6 +41,13 @@ pub struct PriceMappingUpdateInput {
     /// `Some(vec![])` ⟺ clear (no window grant); `Some(non-empty)` ⟺ set.
     /// Non-empty triggers the `points.manage` credit-field permission gate.
     pub quota_windows: Option<Vec<QuotaWindowInput>>,
+    /// Role-grant config dimension (design §5.2). Same 3-state semantics as
+    /// `quota_windows`: `None` ⟺ leave unchanged; `Some(vec![])` ⟺ clear (no
+    /// role grant — pure points / payment record); `Some(non-empty)` ⟺ set.
+    /// Non-empty triggers realm-membership validation (all role IDs must belong
+    /// to the mapping's realm); does NOT require `roles.manage` (configuring a
+    /// mapping ≠ assigning permissions).
+    pub granted_role_ids: Option<Vec<Uuid>>,
 }
 
 /// Request payload for a batch price-mapping save scoped to one product.
@@ -88,8 +95,60 @@ pub enum BatchMappingError {
         active_subscriptions: i64,
     },
 
+    /// A `granted_role_ids` entry does not belong to the mapping's realm —
+    /// cross-realm role_id in the config. → 400 with
+    /// `{ code: "role_not_in_realm", roleId, realmId }` (design §4.2.2 / §5.2).
+    #[error("role {role_id} does not belong to realm {realm_id}")]
+    RoleNotInRealm { role_id: Uuid, realm_id: String },
+
     /// Infrastructure / unexpected failure. Preserves the wrapped `CoreError`
     /// status mapping (404 / 500 / …).
     #[error(transparent)]
     Other(#[from] crate::common::entities::app_errors::CoreError),
+}
+
+/// Validate that every role ID in `role_ids` belongs to `realm_id`.
+///
+/// Reuses the existing role-read capability (`RolePolicyRepository::get_roles_by_ids`)
+/// rather than introducing a new trait. Returns the first role that either does
+/// not exist or belongs to a different realm as `BatchMappingError::RoleNotInRealm`
+/// (design §5.2). A role that simply does not exist is also treated as
+/// "not in realm" — the caller cannot configure a grant for an unknown role.
+///
+/// `role_ids` is expected to be non-empty; an empty slice is a no-op `Ok(())`.
+pub async fn validate_granted_role_ids<R>(
+    realm_id: &str,
+    role_ids: &[Uuid],
+    role_repo: &R,
+) -> Result<(), BatchMappingError>
+where
+    R: crate::user::admin_ports::RolePolicyRepository + ?Sized,
+{
+    use std::collections::HashSet;
+
+    if role_ids.is_empty() {
+        return Ok(());
+    }
+    let roles = role_repo
+        .get_roles_by_ids(role_ids)
+        .await
+        .map_err(|e| BatchMappingError::Other(e.into()))?;
+
+    let realm_ok: HashSet<Uuid> = roles
+        .iter()
+        .filter(|r| r.realm_id == realm_id)
+        .map(|r| r.id)
+        .collect();
+
+    // First offender: a requested id that is either entirely missing or belongs
+    // to another realm. Iterate in request order for a deterministic message.
+    for id in role_ids {
+        if !realm_ok.contains(id) {
+            return Err(BatchMappingError::RoleNotInRealm {
+                role_id: *id,
+                realm_id: realm_id.to_string(),
+            });
+        }
+    }
+    Ok(())
 }

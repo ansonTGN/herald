@@ -9,8 +9,8 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use herald_domain::user::{
-    AdminUserEntity, AdminUserRepository, PolicyEntity, RoleEntity, RolePolicyRepository,
-    UserAdminError, UserAdminResult, UserRoleRepository,
+    AdminUserEntity, AdminUserRepository, GrantRoleOutcome, PolicyEntity, RevokeRoleOutcome,
+    RoleEntity, RolePolicyRepository, UserAdminError, UserAdminResult, UserRoleRepository,
 };
 
 use herald_domain::authorization::principal_types;
@@ -594,6 +594,195 @@ impl UserRoleRepository for PostgresUserRoleRepository {
             removed
         );
         Ok(removed)
+    }
+
+    async fn grant_role_by_payment(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        role_id: Uuid,
+        client_id: Option<&str>,
+        source_id: &str,
+        expires_at: Option<DateTime<Utc>>,
+    ) -> UserAdminResult<GrantRoleOutcome> {
+        // Idempotency check keyed on the payment origin: (source='payment',
+        // source_id, user_id, role_id). A row deleted by a prior cancel will
+        // simply not match here, allowing a fresh insert (renewal-after-cancel).
+        let already_exists: bool = sqlx::query_scalar(
+            r#"
+            SELECT EXISTS(
+                SELECT 1 FROM user_roles
+                WHERE source = 'payment'
+                  AND source_id = $1
+                  AND user_id = $2
+                  AND role_id = $3
+            )
+            "#,
+        )
+        .bind(source_id)
+        .bind(user_id)
+        .bind(role_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to check existing payment role: {}", e);
+            UserAdminError::DatabaseError(format!("Failed to check existing payment role: {}", e))
+        })?;
+
+        if already_exists {
+            tracing::info!(
+                user_id = %user_id,
+                role_id = %role_id,
+                source_id = %source_id,
+                "Payment role already granted (idempotent skip)"
+            );
+            return Ok(GrantRoleOutcome::AlreadyExists);
+        }
+
+        let user_role_id = generate_uuid_v7();
+
+        let insert_result = sqlx::query(
+            r#"
+            INSERT INTO user_roles
+                (id, user_id, role_id, realm_id, client_id, principal_type, principal_id,
+                 source, source_id, expires_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, 'payment', $8, $9)
+            "#,
+        )
+        .bind(user_role_id)
+        .bind(user_id)
+        .bind(role_id)
+        .bind(realm_id)
+        .bind(client_id)
+        .bind(principal_types::USER)
+        .bind(user_id.to_string())
+        .bind(source_id)
+        .bind(expires_at)
+        .execute(&self.pool)
+        .await;
+
+        match insert_result {
+            Ok(_) => {
+                tracing::info!(
+                    user_id = %user_id,
+                    role_id = %role_id,
+                    source_id = %source_id,
+                    expires_at = ?expires_at,
+                    "Payment role granted"
+                );
+                Ok(GrantRoleOutcome::Granted)
+            }
+            Err(e) => {
+                // A concurrent insert raced ahead and hit the payment-source
+                // partial unique index
+                // (idx_user_roles_principal_role_payment), keyed on
+                // (realm_id, principal_type, principal_id, role_id, source_id)
+                // for source='payment'. Our existence predicate above is exactly
+                // that index's key for source='payment', so a duplicate-key
+                // violation means the row is now present — treat as an
+                // idempotent skip rather than an error. Any other DB error is
+                // propagated so the compensation / retry framework can back it off.
+                let msg = e.to_string();
+                if msg.contains("idx_user_roles_principal_role_payment")
+                    || msg.contains(
+                        "user_roles_realm_id_principal_type_principal_id_role_id_source_id_key",
+                    )
+                    || msg.contains("duplicate key value")
+                {
+                    tracing::info!(
+                        user_id = %user_id,
+                        role_id = %role_id,
+                        source_id = %source_id,
+                        "Payment role concurrently granted (idempotent skip)"
+                    );
+                    Ok(GrantRoleOutcome::AlreadyExists)
+                } else {
+                    tracing::error!("Failed to grant payment role: {}", e);
+                    Err(UserAdminError::DatabaseError(format!(
+                        "Failed to grant payment role: {}",
+                        e
+                    )))
+                }
+            }
+        }
+    }
+
+    async fn revoke_roles_by_payment_source(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        source_id: &str,
+    ) -> UserAdminResult<RevokeRoleOutcome> {
+        let result = sqlx::query(
+            r#"
+            DELETE FROM user_roles
+            WHERE source = 'payment'
+              AND source_id = $1
+              AND user_id = $2
+              AND realm_id = $3
+            "#,
+        )
+        .bind(source_id)
+        .bind(user_id)
+        .bind(realm_id)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to revoke payment roles: {}", e);
+            UserAdminError::DatabaseError(format!("Failed to revoke payment roles: {}", e))
+        })?;
+
+        let n = result.rows_affected();
+        if n == 0 {
+            tracing::info!(
+                user_id = %user_id,
+                source_id = %source_id,
+                "No payment roles found to revoke"
+            );
+            Ok(RevokeRoleOutcome::NotFound)
+        } else {
+            tracing::info!(
+                user_id = %user_id,
+                source_id = %source_id,
+                revoked = n,
+                "Payment roles revoked"
+            );
+            Ok(RevokeRoleOutcome::Revoked(n))
+        }
+    }
+
+    async fn user_has_any_payment_role(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        role_ids: &[Uuid],
+    ) -> UserAdminResult<bool> {
+        if role_ids.is_empty() {
+            return Ok(false);
+        }
+
+        let exists: bool = sqlx::query_scalar(
+            r#"
+            SELECT EXISTS(
+                SELECT 1 FROM user_roles
+                WHERE source = 'payment'
+                  AND realm_id = $1
+                  AND user_id = $2
+                  AND role_id = ANY($3)
+            )
+            "#,
+        )
+        .bind(realm_id)
+        .bind(user_id)
+        .bind(role_ids)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to check payment role ownership: {}", e);
+            UserAdminError::DatabaseError(format!("Failed to check payment role ownership: {}", e))
+        })?;
+
+        Ok(exists)
     }
 
     async fn list_user_roles_by_realm_client(

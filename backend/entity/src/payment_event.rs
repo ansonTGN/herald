@@ -20,6 +20,10 @@ pub struct Model {
     pub processed: bool,
     #[sea_orm(nullable)]
     pub processing_started_at: Option<DateTimeWithTimeZone>,
+    /// Backoff-scheduled retry time for the processed=false sweep job
+    /// (PaymentEventRetryJob, design §5.5.1). NULL = eligible for immediate retry.
+    #[sea_orm(nullable)]
+    pub next_retry_at: Option<DateTimeWithTimeZone>,
     pub created_at: DateTimeWithTimeZone,
 }
 

@@ -32,7 +32,10 @@ pub const TOTP_VERIFY_USER_RATE_LIMIT: (i64, usize) = (5, 60);
 pub const TOTP_VERIFY_IP_RATE_LIMIT: (i64, usize) = (10, 60);
 
 // --- Password ---
-pub const DEFAULT_BCRYPT_COST: u32 = 10;
+/// bcrypt cost factor. Kept in sync with `bcrypt::DEFAULT_COST` so the
+/// single centralized constant is the source of truth for all hashing
+/// call sites (do not call `bcrypt::DEFAULT_COST` directly).
+pub const DEFAULT_BCRYPT_COST: u32 = 12;
 
 // --- HTTP ---
 pub const DEFAULT_HTTP_CLIENT_TIMEOUT_SECS: u64 = 30;

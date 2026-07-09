@@ -16,6 +16,7 @@ use herald_api::config::ApiConfig;
 use herald_api::observability;
 use herald_core::domain::billing::compensation::WebhookEventProcessor;
 use herald_core::domain::points::{ExpirationService, GrantScheduler};
+use herald_worker::PaymentEventRetryJob;
 use herald_worker::PointsQuotaExpirationJob;
 use herald_worker::WorkerConfig;
 
@@ -137,6 +138,19 @@ async fn main() -> Result<()> {
     let event_processor: Arc<dyn WebhookEventProcessor> =
         Arc::new(WebhookEventProcessorImpl::new(state.as_ref().clone()));
 
+    // Construct the payment-event retry sweep job (BE-D05 / design §5.5.1).
+    // Shares the same WebhookEventProcessor as WebhookCompensationJob — both
+    // call reprocess_event, which is idempotent at webhook + business layers
+    // (design §5.5 three-layer guarantee). batch_size mirrors the compensation
+    // job's page size; backoff aligns with the sweep interval so a failed
+    // event retries on roughly the next run.
+    let payment_event_retry_job = Arc::new(PaymentEventRetryJob::new(
+        state.pool.clone(),
+        event_processor.clone(),
+        100,
+        300,
+    ));
+
     // Start API server
     info!("Starting API server on {}", config.server.bind_address);
     let api_config = config.clone();
@@ -148,7 +162,8 @@ async fn main() -> Result<()> {
     info!("Starting Worker service");
     let worker_config = WorkerConfig::new(expiration_service, invoice_repo, state.pool.clone())
         .with_event_processor(event_processor)
-        .with_quota_expiration(quota_expiration_job);
+        .with_quota_expiration(quota_expiration_job)
+        .with_payment_event_retry(payment_event_retry_job);
     let worker_handle = herald_worker::start(worker_config)?;
 
     // Wait for either service to complete or shutdown signal

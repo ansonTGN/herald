@@ -16,6 +16,40 @@
 // New entitlement mapping CRUD + sync scenario tests
 pub mod entitlement_mapping_crud_scenarios;
 
+// Paywall M1 role-grant config dimension scenario tests (support-paywall)
+// User Story: US-PW-001 (entitlement→role mapping configuration)
+// Covers: design §1.3/§1.4, §4.2.2 (grantedRoleIds PUT/GET + 400 guard),
+//         §4.3.2 (UUID[] column), §5.2 (three-state + RoleNotInRealm), §6.1 M1, §6.3
+pub mod paywall_m1_config_dimension_scenarios;
+
+// Paywall W1 + M2 payment-driven role grant + idempotency scenario tests
+// (support-paywall)
+// User Story: US-PW-002 (W1 one-time no-points no 500), US-PW-003 (payment grant
+//             + source traceability + idempotency; manual grants untouched)
+// Covers: design §5.1 (W1 graceful-skip), §5.3 (grant loops + source/source_id/
+//         expires_at + GrantRoleOutcome::AlreadyExists), §6.1 W1+M2, §6.3
+pub mod paywall_w1_m2_grant_scenarios;
+
+// Paywall M3 one-time+role anti-repeat scenario tests (support-paywall)
+// User Story: US-PW-004 (one-time+role one-per-user; points repeatable;
+//             frontend grantsRole/alreadyOwned signals; concurrent invariant)
+// Covers: design §1.3 (one_time+role ONLY gated), §4.2.2 (409 already_owned +
+//         PurchaseOptionView.grantsRole/alreadyOwned), §4.3.2 (unique-constraint
+//         backstop), §5.4 (ownership predicate OR), §6.1 M3, §6.3
+pub mod paywall_m3_anti_repeat_scenarios;
+
+// Paywall M4 subscription-class role revoke + out-of-order renewal +
+// processed=false sweep scenario tests (support-paywall)
+// User Story: US-PW-005 (subscriptions canceled/expired/refunded auto-revoke the
+//             payment-granted role, eventually-consistent and idempotent)
+// Covers: design §4.1 (source isolation; one-time permanent),
+//         §5.5 (convergence-point mount; RevokeRoleOutcome idempotency;
+//         out-of-order renewal upsert; one-time refunds don't route through
+//         handle_subscription_cancel), §5.5.1 (PaymentEventRetryJob sweep + backoff),
+//         §6.1 M4, §6.3 (source='manual' + one-time refund decoupled regression),
+//         §7 P0 (kill-criteria: never permanently miss a revoke)
+pub mod paywall_m4_revoke_sweep_scenarios;
+
 // Provider product sync metadata scenario tests (sync-payment feature)
 // User Story: US-BL-SYNC-001
 // Covers: Stripe product/price metadata propagation into provider_product_info

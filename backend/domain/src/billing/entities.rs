@@ -206,6 +206,12 @@ pub struct EntitlementMapping {
     /// lifecycle time (snapshotted — A2). Reuses the points-domain `QuotaWindow`
     /// (BE-D01) to avoid a duplicate definition.
     pub quota_windows: Option<Vec<crate::points::entities::QuotaWindow>>,
+    /// Role IDs auto-granted on payment success (paywall, design §4.3.2 / §5.2).
+    /// Cross-cutting config dimension orthogonal to `billing_type` / points.
+    /// Empty ⟺ no role grant (pure points / pure payment record). Non-empty ⟺
+    /// each role is granted to the buyer at fulfillment time (BE-D03). The
+    /// config is validated against realm membership at save time (BE-D02).
+    pub granted_role_ids: Vec<Uuid>,
     pub synced_at: Option<chrono::DateTime<chrono::Utc>>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,

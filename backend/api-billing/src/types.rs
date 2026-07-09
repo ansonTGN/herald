@@ -55,6 +55,10 @@ pub struct EntitlementMappingResponse {
     /// (derived from `windowSeconds`), the limit, and the window length.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quota_windows: Option<Vec<EntitlementQuotaWindowResponse>>,
+    /// Role IDs auto-granted on payment success (design §5.2). Always present
+    /// (not skip-serializing) so the frontend always sees the field; empty
+    /// array when no role grant is configured.
+    pub granted_role_ids: Vec<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub synced_at: Option<String>,
     pub created_at: String,
@@ -302,6 +306,12 @@ pub struct PriceMappingUpdate {
     /// Non-empty triggers the `points.manage` credit-field permission gate.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quota_windows: Option<Vec<QuotaWindowInput>>,
+    /// Role-grant config dimension (design §5.2). `None` ⟺ leave unchanged;
+    /// `Some([])` ⟺ clear (no role grant); `Some(non-empty)` ⟺ set.
+    /// Non-empty triggers realm-membership validation server-side (does NOT
+    /// require `roles.manage`).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub granted_role_ids: Option<Vec<Uuid>>,
 }
 
 /// PUT `/api/bill/{realmId}/entitlement-mappings/batch` request body.
@@ -355,6 +365,18 @@ pub struct PurchaseOptionView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub points_per_period: Option<i64>,
     pub enabled: bool,
+    /// Whether purchasing this option grants a role that is one-per-user
+    /// (design §4.2.2). True only for the gated combo
+    /// `billing_type=one_time` + non-empty `granted_role_ids`; points packages
+    /// and subscriptions are never gated, so `grants_role` is `false` for them
+    /// even if they happen to carry role grants.
+    pub grants_role: bool,
+    /// Whether the authenticated user already owns this one-time+role
+    /// entitlement (design §4.2.2). Computed only for the gated combo
+    /// (`grants_role == true`); `false` otherwise. Lets the frontend disable the
+    /// card pre-purchase. Ownership predicate:
+    /// `user_has_any_payment_role(granted_role_ids) || has_succeeded_attempt(target_id)`.
+    pub already_owned: bool,
 }
 
 /// GET `/api/bill/{realmId}/client/{clientAppId}/purchase-options` response.

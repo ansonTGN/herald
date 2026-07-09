@@ -159,6 +159,7 @@ where
                 Some(v) => v,
                 None => existing.quota_windows,
             },
+            granted_role_ids: existing.granted_role_ids,
             synced_at: existing.synced_at,
             created_at: existing.created_at,
             updated_at: chrono::Utc::now(),

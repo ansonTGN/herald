@@ -14,12 +14,13 @@ use herald_domain::payment_attempt::entities::{PaymentAttempt, PaymentContext};
 use herald_domain::payment_attempt::{
     CreatePaymentAttemptInput, PaymentAttemptRepository, PaymentAttemptService, PurchasableTarget,
 };
-use herald_domain::purchase::errors::PurchaseResult;
+use herald_domain::purchase::errors::{PurchaseErrorExt, PurchaseResult};
 use herald_domain::purchase::ports::{FulfillmentResult, FulfillmentService};
 use herald_domain::purchase::services::{
     CompletePaymentAttemptInput, CreatedPaymentAttempt, PaymentCompletionSource,
     PreparePaymentAttemptInput, PreparedPaymentAttempt, PurchaseTargetSnapshot, metadata_keys,
 };
+use herald_domain::user::UserRoleRepository;
 /// Build common herald metadata map for payment providers.
 fn build_herald_metadata(
     realm_id: &str,
@@ -60,30 +61,42 @@ use herald_infra_creem::{CreateCheckoutRequest as CreemCreateCheckoutRequest, Cr
 use herald_infra_stripe::{CreateCheckoutRequest as StripeCreateCheckoutRequest, StripeClient};
 
 /// Purchase service for unified purchase orchestration and fulfillment
-pub struct PurchaseService<B, PA, F>
+pub struct PurchaseService<B, PA, F, UR>
 where
     B: BillingRepository,
     PA: PaymentAttemptRepository,
     F: FulfillmentService,
+    UR: UserRoleRepository,
 {
     pool: PgPool,
     public_base_url: String,
     billing_repository: Arc<B>,
     payment_attempt_service: Arc<PaymentAttemptService<PA>>,
+    /// Direct handle to the payment-attempt repo for the M3 ownership gate
+    /// (`has_succeeded_attempt`). `PaymentAttemptService` keeps its repo
+    /// private, so this shares the same `Arc<PA>` instance constructed at
+    /// startup — no second connection or duplicate state.
+    payment_attempt_repository: Arc<PA>,
+    /// User-role repo for the M3 ownership gate
+    /// (`user_has_any_payment_role`).
+    user_role_repository: Arc<UR>,
     fulfillment_service: Arc<F>,
 }
 
-impl<B, PA, F> PurchaseService<B, PA, F>
+impl<B, PA, F, UR> PurchaseService<B, PA, F, UR>
 where
     B: BillingRepository,
     PA: PaymentAttemptRepository,
     F: FulfillmentService,
+    UR: UserRoleRepository,
 {
     pub fn new(
         pool: PgPool,
         public_base_url: String,
         billing_repository: Arc<B>,
         payment_attempt_service: Arc<PaymentAttemptService<PA>>,
+        payment_attempt_repository: Arc<PA>,
+        user_role_repository: Arc<UR>,
         fulfillment_service: Arc<F>,
     ) -> Self {
         Self {
@@ -91,6 +104,8 @@ where
             public_base_url,
             billing_repository,
             payment_attempt_service,
+            payment_attempt_repository,
+            user_role_repository,
             fulfillment_service,
         }
     }
@@ -108,6 +123,7 @@ where
         let target = self
             .resolve_target(
                 &input.realm_id,
+                input.user_id,
                 &input.target_type,
                 input.target_id,
                 &input.payment_provider,
@@ -254,6 +270,7 @@ where
     async fn resolve_target(
         &self,
         realm_id: &str,
+        user_id: Uuid,
         target_type: &str,
         target_id: Uuid,
         payment_provider: &str,
@@ -278,6 +295,31 @@ where
                 "Entitlement mapping for provider '{payment_provider}' product '{}' is disabled",
                 target_id
             )));
+        }
+
+        // M3 one-time+role anti-repeat (design §4.3.2 / §5.4): only the
+        // `billing_type=one_time` + non-empty `granted_role_ids` combo is
+        // one-per-user. Points packages and subscriptions remain
+        // repeatable/renewable. A user who already owns it — holds any of the
+        // granted roles from a `payment` source, OR has a succeeded attempt for
+        // this target — is blocked at purchase creation with a distinguishable
+        // `already_owned:<entitlement_key>` conflict (parsed by the API handler
+        // into a structured 409 body).
+        if mapping.billing_type == Some(BillingType::OneTime)
+            && !mapping.granted_role_ids.is_empty()
+        {
+            let has_role = self
+                .user_role_repository
+                .user_has_any_payment_role(realm_id, user_id, &mapping.granted_role_ids)
+                .await
+                .map_err(CoreError::from)?;
+            let has_attempt = self
+                .payment_attempt_repository
+                .has_succeeded_attempt(user_id, mapping.id)
+                .await?;
+            if has_role || has_attempt {
+                return Err(CoreError::already_owned(&mapping.entitlement_key));
+            }
         }
 
         // Purchase creation is the source-of-truth snapshot site for

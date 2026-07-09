@@ -271,6 +271,14 @@ where
                     // (new mapping). The upsert update-branch also preserves
                     // the DB value, so this is belt-and-suspenders.
                     quota_windows: existing.as_ref().and_then(|m| m.quota_windows.clone()),
+                    // Same preserve-on-resync policy for `granted_role_ids`
+                    // (paywall, design §5.2). New mapping defaults to empty
+                    // (no role grant); the DB column default already enforces
+                    // `'{}'`, but the domain struct requires a concrete value.
+                    granted_role_ids: existing
+                        .as_ref()
+                        .map(|m| m.granted_role_ids.clone())
+                        .unwrap_or_default(),
                     synced_at: Some(chrono::Utc::now()),
                     created_at: existing
                         .as_ref()

@@ -301,10 +301,17 @@ pub async fn build_app_state_with_migrations(
     ));
     info!("Points service initialized with PermissionBasedPointsPolicy");
 
+    // Build the user-role repository ahead of the subscription service so the
+    // subscription ImmediateCancel revoke (BE-D05 / design §5.5) can be wired
+    // in at construction time.
+    let user_role_repository = Arc::new(PostgresUserRoleRepository::new(pg_pool.clone()));
+
     // Create subscription service
     let subscription_service = Arc::new(points::SubscriptionService::new(
         points_service.clone(),
         points_repository.clone(),
+        user_role_repository.clone(),
+        permission_checker.clone(),
         None,
     ));
     info!("Subscription service initialized");
@@ -327,7 +334,6 @@ pub async fn build_app_state_with_migrations(
 
     // Create admin user repositories
     let admin_user_repository = Arc::new(PostgresAdminUserRepository::new(pg_pool.clone()));
-    let user_role_repository = Arc::new(PostgresUserRoleRepository::new(pg_pool.clone()));
     let role_policy_repository = Arc::new(PostgresRolePolicyRepository::new(pg_pool.clone()));
     info!("Admin user repositories initialized");
 
@@ -374,6 +380,8 @@ pub async fn build_app_state_with_migrations(
     let fulfillment_service = Arc::new(PostgresFulfillmentService::new(
         points_repository.clone(),
         billing_repository.clone(),
+        user_role_repository.clone(),
+        permission_checker.clone(),
     ));
     info!("Fulfillment service initialized");
 
@@ -382,6 +390,8 @@ pub async fn build_app_state_with_migrations(
         config.frontend.url.clone(),
         billing_repository.clone(),
         payment_attempt_service.clone(),
+        payment_attempt_repository.clone(),
+        user_role_repository.clone(),
         fulfillment_service.clone(),
     ));
     info!("Purchase service initialized");
@@ -479,6 +489,7 @@ pub async fn build_app_state_with_migrations(
         purchase_service,
         jwt_secret,
         user_role_repository,
+        role_policy_repository,
         realm_config_repository,
         legal_repository,
         user_consent_repository,

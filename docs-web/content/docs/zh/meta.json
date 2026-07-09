@@ -12,6 +12,7 @@
     "billing-credit-note",
     "third-party-integration",
     "auth-passkey",
+    "ui-custom",
     "points-grant-redesign",
     "openapi"
   ]

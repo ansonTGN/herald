@@ -559,6 +559,14 @@ mod tests {
         )> {
             Ok((Vec::new(), 0))
         }
+
+        async fn has_succeeded_attempt(
+            &self,
+            _user_id: uuid::Uuid,
+            _target_id: uuid::Uuid,
+        ) -> PaymentAttemptResult<bool> {
+            Ok(false)
+        }
     }
 
     fn create_test_attempt(status: PaymentAttemptStatus) -> PaymentAttempt {

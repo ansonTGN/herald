@@ -20,12 +20,16 @@ use crate::types::{
 use herald_api_base::application::http::common::auth_utils::{
     AdminIdentity, require_authenticated_user_in_realm,
 };
+use herald_api_base::application::http::common::error_helpers::core_error_to_api_error;
 use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
 use herald_api_base::application::http::state::AppState;
 // Import the trait and types from herald_core
 use herald_core::domain::authentication::Identity;
+use herald_core::domain::billing::entities::BillingType;
 use herald_core::domain::billing::{BillingRepository, EntitlementMapping, Subscription};
 use herald_core::domain::common::entities::app_errors::CoreError;
+use herald_core::domain::payment_attempt::PaymentAttemptRepository;
+use herald_core::domain::user::UserRoleRepository;
 
 fn subscription_to_response(sub: &Subscription) -> SubscriptionDetailResponse {
     SubscriptionDetailResponse {
@@ -329,6 +333,13 @@ pub async fn cancel_subscription_for_client_app(
 /// one-time-mappings read model and checkout price_amount use).
 fn mapping_to_purchase_option(m: EntitlementMapping) -> PurchaseOptionView {
     let info = m.provider_product_info.as_ref();
+    // Only the one_time+role combo is the gated one-per-user entitlement
+    // (design §4.3.2 / §5.4). Points packages and subscriptions are never
+    // gated, so `grants_role` is `false` for them even if they carry role
+    // grants. `already_owned` is computed per-user in the handler; seeded
+    // `false` here and overwritten for gated options.
+    let grants_role =
+        m.billing_type == Some(BillingType::OneTime) && !m.granted_role_ids.is_empty();
     PurchaseOptionView {
         mapping_id: m.id,
         external_product_id: m.external_product_id,
@@ -348,6 +359,8 @@ fn mapping_to_purchase_option(m: EntitlementMapping) -> PurchaseOptionView {
             .map(|s| s.to_string()),
         points_per_period: m.points_per_period,
         enabled: m.enabled,
+        grants_role,
+        already_owned: false,
     }
 }
 
@@ -384,8 +397,9 @@ pub async fn list_purchase_options(
         realm_id
     );
 
-    // Purchase-page read is an authenticated-user action.
-    require_authenticated_user_in_realm(&identity, &realm_id, "purchase-options")?;
+    // Purchase-page read is an authenticated-user action. The user id drives
+    // the per-option `alreadyOwned` computation (design §4.2.2).
+    let user_id = require_authenticated_user_in_realm(&identity, &realm_id, "purchase-options")?;
     require_client_app_in_realm(&state, &realm_id, client_app_id).await?;
 
     // List ALL enabled price-granularity mappings for the realm (recurring +
@@ -400,10 +414,39 @@ pub async fn list_purchase_options(
             ApiError::internal("Failed to list purchase options".to_string())
         })?;
 
-    let items: Vec<PurchaseOptionView> = mappings
-        .into_iter()
-        .map(mapping_to_purchase_option)
-        .collect();
+    // Build the base views (sets `grants_role` from mapping fields), then for
+    // the gated combo (one_time + non-empty granted_role_ids) compute
+    // `already_owned` for the authenticated user. The options list is per-realm
+    // and typically small, so a per-option ownership query is acceptable (the
+    // role check is a single indexed lookup; the attempt check is indexed too).
+    let mut items: Vec<PurchaseOptionView> = Vec::with_capacity(mappings.len());
+    for m in mappings {
+        // Capture the gated-combo inputs before `m` is moved into the mapper.
+        let grants_role =
+            m.billing_type == Some(BillingType::OneTime) && !m.granted_role_ids.is_empty();
+        let granted_role_ids: Vec<Uuid> = if grants_role {
+            m.granted_role_ids.clone()
+        } else {
+            Vec::new()
+        };
+        let mapping_id = m.id;
+        let mut view = mapping_to_purchase_option(m);
+        if grants_role {
+            let has_role = state
+                .user_role_repository
+                .user_has_any_payment_role(&realm_id, user_id, &granted_role_ids)
+                .await
+                .map_err(CoreError::from)
+                .map_err(|e| core_error_to_api_error(e, "Purchase options ownership check"))?;
+            let has_attempt = state
+                .payment_attempt_repository
+                .has_succeeded_attempt(user_id, mapping_id)
+                .await
+                .map_err(|e| core_error_to_api_error(e, "Purchase options ownership check"))?;
+            view.already_owned = has_role || has_attempt;
+        }
+        items.push(view);
+    }
 
     Ok(Json(PurchaseOptionListResponse { items }))
 }

@@ -18,6 +18,7 @@ use herald_core::infrastructure::points::PostgresPointsRepository;
 use sqlx::PgPool;
 
 pub use jobs::InvoiceOverdueJob;
+pub use jobs::PaymentEventRetryJob;
 pub use jobs::PointsExpirationJob;
 pub use jobs::PointsQuotaExpirationJob;
 pub use jobs::WebhookCompensationJob;
@@ -54,6 +55,17 @@ where
 
     /// Interval for the quota-entitlement expiry cleanup job (in seconds).
     pub quota_expiration_interval_secs: u64,
+
+    /// Optional payment-event retry sweep job. When Some, the job sweeps
+    /// `payment_event WHERE processed = false` and re-runs each missed event
+    /// through the `WebhookEventProcessor` (design §5.5.1 / BE-D05). This IS a
+    /// correctness boundary: it is the backstop that guarantees a webhook the
+    /// API layer failed to process is eventually re-run, so a cancel/expire/
+    /// refund can never permanently miss its role revoke.
+    pub payment_event_retry: Option<Arc<PaymentEventRetryJob>>,
+
+    /// Interval for the payment-event retry sweep job (in seconds).
+    pub payment_event_retry_interval_secs: u64,
 }
 
 impl<R> WorkerConfig<R>
@@ -80,6 +92,14 @@ where
             .ok()
             .and_then(|v| v.parse::<u64>().ok())
             .unwrap_or(300);
+        // Default 300s (5 min) — shorter than the 30-min WebhookCompensationJob
+        // (design §5.5.1): this sweep is the reliability backstop for missed
+        // payment events, so a tighter cadence limits the revoke-grant gap.
+        let payment_event_retry_interval_secs =
+            std::env::var("WORKER_PAYMENT_EVENT_RETRY_INTERVAL_SECS")
+                .ok()
+                .and_then(|v| v.parse::<u64>().ok())
+                .unwrap_or(300);
         Self {
             expiration_service,
             invoice_repo,
@@ -89,6 +109,8 @@ where
             compensation_interval_secs,
             quota_expiration: None,
             quota_expiration_interval_secs,
+            payment_event_retry: None,
+            payment_event_retry_interval_secs,
         }
     }
 
@@ -103,6 +125,14 @@ where
     /// on time (it only reaps already-lapsed rows).
     pub fn with_quota_expiration(mut self, job: Arc<PointsQuotaExpirationJob>) -> Self {
         self.quota_expiration = Some(job);
+        self
+    }
+
+    /// Attach the payment-event retry sweep job (BE-D05). The job runs on
+    /// `payment_event_retry_interval_secs` (default 300s) and is a correctness
+    /// boundary: it guarantees missed payment events are eventually re-run.
+    pub fn with_payment_event_retry(mut self, job: Arc<PaymentEventRetryJob>) -> Self {
+        self.payment_event_retry = Some(job);
         self
     }
 }
@@ -138,6 +168,9 @@ where
         let quota_expiration = self.config.quota_expiration.clone();
         let quota_expiration_interval =
             Duration::from_secs(self.config.quota_expiration_interval_secs);
+        let payment_event_retry = self.config.payment_event_retry.clone();
+        let payment_event_retry_interval =
+            Duration::from_secs(self.config.payment_event_retry_interval_secs);
 
         // Spawn the worker loop
         let handle = tokio::spawn(async move {
@@ -151,6 +184,8 @@ where
                 compensation_lookback_secs,
                 quota_expiration,
                 quota_expiration_interval,
+                payment_event_retry,
+                payment_event_retry_interval,
             )
             .await
         });
@@ -170,6 +205,8 @@ where
         compensation_lookback_secs: u64,
         quota_expiration: Option<Arc<PointsQuotaExpirationJob>>,
         quota_expiration_interval: Duration,
+        payment_event_retry: Option<Arc<PaymentEventRetryJob>>,
+        payment_event_retry_interval: Duration,
     ) {
         info!("Starting worker service");
 
@@ -196,6 +233,14 @@ where
         } else {
             Duration::MAX
         });
+        // Payment-event retry sweep runs on its own interval; when no job is
+        // attached the timer is parked at Duration::MAX so the arm never fires.
+        let mut payment_event_retry_timer =
+            tokio::time::interval(if payment_event_retry.is_some() {
+                payment_event_retry_interval
+            } else {
+                Duration::MAX
+            });
 
         loop {
             tokio::select! {
@@ -265,6 +310,27 @@ where
                             }
                             Err(e) => {
                                 tracing::error!(error = %e, "Points quota-entitlement expiry cleanup failed");
+                            }
+                        }
+                    }
+                }
+
+                // Run the payment-event retry sweep on its own schedule.
+                // Correctness boundary — guarantees missed payment events are
+                // eventually re-run (design §5.5.1 / BE-D05).
+                _ = payment_event_retry_timer.tick(), if payment_event_retry.is_some() => {
+                    if let Some(ref job) = payment_event_retry {
+                        match job.run().await {
+                            Ok(stats) => {
+                                info!(
+                                    scanned = stats.scanned,
+                                    reprocessed = stats.reprocessed,
+                                    failed = stats.failed,
+                                    "Payment event retry sweep completed"
+                                );
+                            }
+                            Err(e) => {
+                                tracing::error!(error = %e, "Payment event retry sweep failed");
                             }
                         }
                     }

@@ -15,9 +15,10 @@ use herald_api_base::application::http::common::error_helpers::core_error_to_api
 use herald_api_base::application::http::server::api_entities::ApiError;
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
+use herald_core::domain::common::entities::app_errors::CoreError;
 use herald_core::domain::payment_attempt::PaymentAttemptRepository;
 use herald_core::domain::purchase::{
-    CompletePaymentAttemptInput, FulfillmentResult, PaymentCompletionSource,
+    ALREADY_OWNED_MARKER, CompletePaymentAttemptInput, FulfillmentResult, PaymentCompletionSource,
     PreparePaymentAttemptInput,
 };
 
@@ -65,6 +66,17 @@ pub struct PaymentContextResponse {
     pub creem_checkout_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client_secret: Option<String>,
+}
+
+/// Structured 409 body emitted when a one-time+role entitlement is already
+/// owned by the buyer (M3 anti-repeat, design §4.2.2 / §5.4). Surfaced instead
+/// of the generic conflict message so the frontend can distinguish "already
+/// owned" from other 409s.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AlreadyOwnedErrorResponse {
+    pub code: String,
+    pub entitlement_key: String,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -184,6 +196,26 @@ fn validate_payment_provider(payment_provider: &str) -> Result<(), validator::Va
 // Conversion Helpers
 // ============================================================================
 
+/// Map a purchase-path `CoreError` to an `ApiError`.
+///
+/// Intercepts the M3 already-owned conflict (carried as
+/// `CoreError::Conflict("<ALREADY_OWNED_MARKER><entitlement_key>")` — see
+/// `PurchaseErrorExt::already_owned`) and emits a structured 409 body
+/// `{ "code": "already_owned", "entitlementKey": <key> }` (design §4.2.2 / §5.4).
+/// All other errors fall through to the generic `core_error_to_api_error`
+/// mapping.
+fn map_purchase_error_to_api_error(e: CoreError, operation: &str) -> ApiError {
+    if let CoreError::Conflict(msg) = &e
+        && let Some(entitlement_key) = msg.strip_prefix(ALREADY_OWNED_MARKER)
+    {
+        return ApiError::conflict_json(AlreadyOwnedErrorResponse {
+            code: "already_owned".to_string(),
+            entitlement_key: entitlement_key.to_string(),
+        });
+    }
+    core_error_to_api_error(e, operation)
+}
+
 fn payment_context_to_response(
     context: herald_core::domain::payment_attempt::PaymentContext,
 ) -> PaymentContextResponse {
@@ -262,7 +294,7 @@ pub async fn create_payment_attempt(
             metadata: input.metadata,
         })
         .await
-        .map_err(|e| core_error_to_api_error(e, "Create payment attempt"))?;
+        .map_err(|e| map_purchase_error_to_api_error(e, "Create payment attempt"))?;
 
     let response = CreatePaymentAttemptResponse {
         id: created.attempt.id,

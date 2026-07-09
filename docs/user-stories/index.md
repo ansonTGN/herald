@@ -217,6 +217,10 @@ docs/user-stories/
 | US-I18N-001 | 切换界面语言 | All Users | P0 | [core/i18n](core/i18n.md#故事-1切换界面语言-us-i18n-001) |
 | US-I18N-002 | 查看翻译后的错误消息 | All Users | P0 | [core/i18n](core/i18n.md#故事-2查看翻译后的错误消息-us-i18n-002) |
 | US-I18N-003 | 所有 UI 文本完成翻译 | All Users | P1 | [core/i18n](core/i18n.md#故事-3所有-ui-文本完成翻译-us-i18n-003) |
+| US-WL-001 | 配置 Realm 品牌资产 | Realm Admin | P0 | [core/white-label](core/white-label.md#故事-1配置-realm-品牌资产-us-wl-001) |
+| US-WL-002 | 终端用户看到品牌化 auth 流页面 | Regular User | P0 | [core/white-label](core/white-label.md#故事-2终端用户看到品牌化-auth-流页面-us-wl-002) |
+| US-WL-003 | 主色对比度安全提示 | Realm Admin | P1 | [core/white-label](core/white-label.md#故事-3主色对比度安全提示-us-wl-003) |
+| US-WL-004 | 资产 URL 引用与租户自备图床 | Realm Admin | P1 | [core/white-label](core/white-label.md#故事-4资产-url-引用与租户自备图床-us-wl-004) |
 
 ---
 
@@ -231,6 +235,7 @@ docs/user-stories/
 | Regular User | [core/regular-user.md](core/regular-user.md), [core/legal-consent-account-deletion.md](core/legal-consent-account-deletion.md) | [Users PRD](/docs/prd/core/users.md), [OAuth PRD](/docs/prd/auth/oauth.md), [Legal Consent PRD](/docs/prd/core/legal-consent-account-deletion.md) |
 | i18n | [core/i18n.md](core/i18n.md) | [i18n PRD](/docs/prd/core/i18n.md) |
 | Audit | [core/audit.md](core/audit.md) | [Audit PRD](/docs/prd/core/audit.md) |
+| White-label | [core/white-label.md](core/white-label.md) | [White-label PRD](/docs/prd/core/ui-custom.md) |
 
 ### Auth 认证与授权
 
