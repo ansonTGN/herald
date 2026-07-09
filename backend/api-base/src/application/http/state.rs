@@ -10,6 +10,7 @@ use herald_core::domain::user::services::admin::{
     AdminUserServiceImpl, PermissionManagementServiceImpl, RoleAssignmentServiceImpl,
     UserPermissionServiceImpl,
 };
+use herald_core::infrastructure::PostgresCustomDomainMappingRepository;
 use herald_core::infrastructure::audit::PostgresAuditEventRepository;
 use herald_core::infrastructure::authentication::RedisSessionRepository;
 use herald_core::infrastructure::authorization::RedisPermissionChecker;
@@ -285,4 +286,29 @@ pub struct AppState {
             PostgresAuditEventRepository,
         >,
     >,
+
+    /// Custom-domain host→realm mapping repository (design §4.3.2 / §5.1).
+    ///
+    /// Request-time query surface for the `custom_domain_mapping` table, shared
+    /// by the custom-domain lifecycle handlers (BE-D03 publish/restore
+    /// side-effects) and the host→realm middleware / CORS / ask / resolve
+    /// endpoints (BE-D04/D06/D07). Held as the concrete infra type — same
+    /// pattern as `realm_config_repository` — because `api-base` depends on
+    /// `herald-core`, which re-exports `herald-infra`.
+    pub custom_domain_mapping_repo: Arc<PostgresCustomDomainMappingRepository>,
+
+    /// Herald-owned CNAME target hostname tenants point their custom login
+    /// domain at (design §4.2.2 `cnameTarget`). Surfaced to realm admins in the
+    /// custom-domain GET response. Empty when unset.
+    pub custom_domain_cname_target: String,
+
+    /// Shared secret for the Caddy On-Demand TLS ask authorization endpoint
+    /// (design §4.2.2 ask). The `GET /api/internal/custom-domain/authorize`
+    /// handler compares the request's `X-Herald-Ask-Key` header against this
+    /// value; mismatch/missing → 401. Validated non-empty at startup
+    /// (`build_app_state_with_migrations`, design §4.2.2 "Herald 启动期校验
+    /// 非空"). Held as a direct AppState field alongside
+    /// `custom_domain_cname_target` since the ask handler reads it per request
+    /// without a service-layer indirection.
+    pub custom_domain_ask_key: String,
 }

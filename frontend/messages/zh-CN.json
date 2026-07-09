@@ -1565,7 +1565,10 @@
     "product_name_empty": "未命名产品",
     "field_price": "价格",
     "billing_period_month": "月",
-    "billing_period_year": "年"
+    "billing_period_year": "年",
+    "label_granted_roles": "授予的角色",
+    "help_granted_roles": "选择支付成功后授予的角色",
+    "role_not_in_realm_error": "所选角色中存在不属于当前 Realm 的角色，请仅选择本 Realm 的角色后重试。"
   },
   "purchase": {
     "choose_plan": "选择套餐",
@@ -1573,6 +1576,7 @@
     "period_annual": "年付",
     "save_percent": "节省 {percent}%",
     "not_enabled_reason": "未开放购买 — 请联系管理员",
+    "already_owned_reason": "已拥有",
     "continue_to_checkout": "前往结算",
     "unavailable": "不可用",
     "section_subscriptions": "订阅",

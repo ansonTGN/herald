@@ -11,6 +11,7 @@ import type {
   BatchUpdateEntitlementMappingsResponse,
 } from '@/lib/api-generated'
 import { getErrorMessage } from '@/lib/error-utils'
+import { m } from '@/paraglide/messages'
 import { queryKeys } from '@/data/query-options'
 
 /**
@@ -67,6 +68,35 @@ export function isProtectedPriceError(error: unknown): boolean {
 export function extractActiveSubscriptions(error: unknown): number | null {
   if (!isProtectedPriceError(error)) return null
   return (error as { activeSubscriptions: number }).activeSubscriptions
+}
+
+// ==================== Cross-realm role 400 detection ====================
+//
+// When `grantedRoleIds` contains a role that does not belong to the target
+// realm, the batch endpoint answers 400 with
+// `{ code: 'role_not_in_realm', roleId, realmId }` (design §4.2.2). NOTE:
+// `getErrorMessage` only reads `message`/`detail`/`error_description`/`error`
+// — NOT `code` — so a plain toast would fall through to the generic fallback.
+// This helper lets the mutation surface a friendlier, dedicated message
+// instead, without widening `getErrorMessage`'s contract.
+
+/**
+ * Error code the batch endpoint answers with when a granted role is not in the
+ * target realm (400). Extracted as a named constant so a backend rename
+ * surfaces here rather than only as a silent magic-string match.
+ */
+export const ROLE_NOT_IN_REALM_ERROR_CODE = 'role_not_in_realm' as const
+
+/**
+ * Returns true when the thrown error is the batch-save 400 cross-realm role
+ * body (`{ code: 'role_not_in_realm', roleId, realmId }`). The caller should
+ * then surface a dedicated toast (the field is realm-scoped, so the only fix
+ * is re-selecting roles that belong to this realm).
+ */
+export function isRoleNotInRealmError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const e = error as { code?: unknown }
+  return e.code === ROLE_NOT_IN_REALM_ERROR_CODE
 }
 
 export function useUpdateEntitlementMapping(realmId: string, mappingId: string) {
@@ -165,8 +195,16 @@ export function useBatchUpdateEntitlementMappings(realmId: string) {
     },
     onError: (error) => {
       // A protected-price 409 is handled by the caller (confirmation dialog);
-      // only toast for non-lock errors here.
+      // do not toast for it here.
       if (isProtectedPriceError(error)) return
+      // A cross-realm role 400 (design §4.2.2) carries a `code` field that
+      // `getErrorMessage` does not read; surface a dedicated, actionable toast
+      // instead of the generic fallback. The only fix is re-selecting roles
+      // that belong to this realm, so the message names the constraint.
+      if (isRoleNotInRealmError(error)) {
+        toast.error(m['billing.role_not_in_realm_error']())
+        return
+      }
       const errorMessage = getErrorMessage(error)
       toast.error(`Failed to save mappings: ${errorMessage}`)
     },

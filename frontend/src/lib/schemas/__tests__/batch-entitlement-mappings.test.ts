@@ -70,6 +70,33 @@ describe('priceMappingUpdateSchema numeric / enum guards', () => {
   })
 })
 
+// Role-grant dimension (design §4.4 / §5.2). `grantedRoleIds` is a three-state
+// field mirroring the generated `PriceMappingUpdate.grantedRoleIds`:
+// non-empty ⟺ set, [] ⟺ clear, omitted/null ⟺ leave unchanged. Orthogonal to
+// billing_type and points (empty points + roles = pure entitlement).
+describe('priceMappingUpdateSchema grantedRoleIds three-state', () => {
+  it.each([
+    ['non-empty array sets roles', { grantedRoleIds: ['role-a'] }],
+    ['empty array clears roles', { grantedRoleIds: [] }],
+    ['null leaves roles unchanged', { grantedRoleIds: null }],
+  ])('accepts %s', (_label, overrides) => {
+    expect(priceMappingUpdateSchema.safeParse(validUpdate(overrides)).success).toBe(true)
+  })
+
+  it('accepts omission (undefined ⟺ leave unchanged)', () => {
+    // validUpdate() produces only mappingId; grantedRoleIds is absent.
+    expect(priceMappingUpdateSchema.safeParse(validUpdate()).success).toBe(true)
+  })
+
+  it.each([
+    ['a string', { grantedRoleIds: 'role-a' }],
+    ['a plain object', { grantedRoleIds: {} }],
+    ['a number', { grantedRoleIds: 5 }],
+  ])('rejects %s', (_label, overrides) => {
+    expect(priceMappingUpdateSchema.safeParse(validUpdate(overrides)).success).toBe(false)
+  })
+})
+
 describe('batchEntitlementMappingsSchema', () => {
   it('wraps the updates array and requires paymentProvider / externalProductId', () => {
     const result = batchEntitlementMappingsSchema.safeParse(validBatch())

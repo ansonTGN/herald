@@ -9,7 +9,14 @@ pub mod admin_init_scenarios;
 pub mod builtin_protection_scenarios;
 pub mod change_email_scenarios;
 pub mod client_app_scenarios;
+// Custom-Domain config lifecycle scenarios
+pub mod custom_domain_config_scenarios;
+// Custom-Domain internal Caddy ask endpoint scenarios (BE-T02-A).
+// The public host→realmId resolve endpoint was removed when realm routing
+// reverted to always relying on the {realmId} path segment; only the ask
+// (Caddy On-Demand TLS authorization) scenarios remain.
 pub mod consent_gate_scenarios;
+pub mod custom_domain_internal_endpoints_scenarios;
 pub mod login_flow_scenarios;
 pub mod permission_security_scenarios;
 pub mod realm_access_scenarios;

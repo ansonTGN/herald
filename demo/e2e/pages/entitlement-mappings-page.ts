@@ -250,6 +250,154 @@ export class EntitlementMappingsPage extends BasePage {
     )
   }
 
+  // ==================== Granted-roles dimension (paywall design §4.4/§5.2) ====================
+  //
+  // The granted-roles field is a `<div className="sm:col-span-2"
+  // data-testid="price-granted-roles-${priceKey}">` wrapper (priceKey =
+  // `price.externalPriceId ?? price.id`) containing a `<Field label>` +
+  // `<RoleSelector>`.
+  //
+  // RoleSelector (frontend/src/components/shared/role-selector.tsx) is a Radix
+  // Popover + cmdk Command. IMPORTANT rendering facts (verified against source):
+  //  - Trigger testid `role-selector-trigger` (a `<Button role="combobox">`).
+  //  - Collapsed trigger shows selected roles as `<Badge>` chips carrying the
+  //    role NAME only — there is NO `data-role-id` anywhere, so the closed
+  //    trigger CANNOT be used to read back role ids.
+  //  - Item testid `role-selector-item-${role.id}`. The `<Check>` lucide icon is
+  //    ALWAYS rendered; selected = `svg.opacity-100`, unselected =
+  //    `svg.opacity-0`.
+  //  - Clicking an item toggles it (same click selects/deselects); the popover
+  //    STAYS OPEN after selecting. You MUST press Escape (or click outside)
+  //    before interacting with the save button — Radix retains focus and would
+  //    otherwise intercept the save click.
+  //  - The popover CONTENT is portaled to `document.body`, so item locators are
+  //    scoped to `this.page` (NOT to the field div). Only the trigger lives
+  //    inside the field.
+
+  /**
+   * Get the granted-roles Field wrapper locator for a single price.
+   *
+   * `priceKey` is `externalPriceId` for Stripe rows and `mappingId` for Creem
+   * (NULL price) rows — same suffix rule as the price-edit-row.
+   */
+  getGrantedRolesField(priceKey: string): Locator {
+    return this.mappingDetailPanel.locator(`[data-testid="price-granted-roles-${priceKey}"]`)
+  }
+
+  /**
+   * Read back the currently granted role ids for a price.
+   *
+   * Because there is no `data-role-id` on the closed trigger, this OPENS the
+   * popover, scans all `role-selector-item-*` for those whose `<Check>` icon has
+   * `opacity-100`, parses the role id from the testid suffix, then closes the
+   * popover with Escape. The save button is NOT clicked — callers persist
+   * changes explicitly via `saveChanges()`.
+   */
+  async getGrantedRoles(priceKey: string): Promise<string[]> {
+    const field = this.getGrantedRolesField(priceKey)
+    await expect(field).toBeVisible()
+
+    // Open the popover (trigger lives inside the field).
+    const trigger = field.locator(SELECTORS.apiKeyRoles.roleSelectorTrigger)
+    await this.smartClick(trigger)
+
+    // Wait for the portaled popover content to mount. Items are page-scoped
+    // (portaled to document.body), so query `this.page`, NOT `field`.
+    await expect(this.page.getByTestId('role-selector-search')).toBeVisible({
+      timeout: 5000,
+    })
+
+    const items = this.page.locator(`[data-testid^="role-selector-item-"]`)
+    const count = await items.count()
+    const selectedIds: string[] = []
+    for (let i = 0; i < count; i++) {
+      const item = items.nth(i)
+      const testid = (await item.getAttribute('data-testid')) ?? ''
+      const roleId = testid.replace(/^role-selector-item-/, '')
+      // Selected ⇔ the Check svg is opaque (opacity-100).
+      const check = item.locator('svg').first()
+      const cls = (await check.getAttribute('class')) ?? ''
+      if (cls.includes('opacity-100')) {
+        selectedIds.push(roleId)
+      }
+    }
+
+    // Close the popover so the page is in a stable, non-portal-focused state.
+    await this.page.keyboard.press('Escape')
+    return selectedIds
+  }
+
+  /**
+   * Select (grant) roles for a price via the RoleSelector. Each requested role
+   * is toggled ON; already-selected roles are left as-is. The popover stays open
+   * between selections (Radix cmdk behavior), and Escape is pressed once at the
+   * end to close it before any save click.
+   *
+   * Does NOT call `saveChanges()` — callers persist the whole row explicitly.
+   */
+  async selectGrantedRoles(priceKey: string, roleIds: string[]): Promise<void> {
+    const field = this.getGrantedRolesField(priceKey)
+    await expect(field).toBeVisible()
+
+    // Open the popover.
+    const trigger = field.locator(SELECTORS.apiKeyRoles.roleSelectorTrigger)
+    await this.smartClick(trigger)
+    await expect(this.page.getByTestId('role-selector-search')).toBeVisible({
+      timeout: 5000,
+    })
+
+    for (const roleId of roleIds) {
+      // Items are page-scoped (portaled content). Re-query each time — the list
+      // does not remount between toggles, but resolving freshly avoids stale
+      // element-handle issues.
+      const item = this.page.getByTestId(`role-selector-item-${roleId}`)
+      await expect(item).toBeVisible({ timeout: 5000 })
+      // Only click when not already selected (toggle semantics: a second click
+      // would deselect). Read the Check icon opacity to decide.
+      const check = item.locator('svg').first()
+      const cls = (await check.getAttribute('class')) ?? ''
+      if (!cls.includes('opacity-100')) {
+        await this.smartClick(item)
+      }
+    }
+
+    // Close the popover before returning (see class note: Radix retains focus).
+    await this.page.keyboard.press('Escape')
+  }
+
+  /**
+   * Clear all granted roles for a price. Opens the popover, finds every
+   * selected item (Check svg opacity-100), clicks each to deselect, then closes
+   * the popover with Escape.
+   *
+   * Does NOT call `saveChanges()`.
+   */
+  async clearGrantedRoles(priceKey: string): Promise<void> {
+    const field = this.getGrantedRolesField(priceKey)
+    await expect(field).toBeVisible()
+
+    const trigger = field.locator(SELECTORS.apiKeyRoles.roleSelectorTrigger)
+    await this.smartClick(trigger)
+    await expect(this.page.getByTestId('role-selector-search')).toBeVisible({
+      timeout: 5000,
+    })
+
+    // Repeatedly deselect until no item is opaque, since deselection does not
+    // reorder the list (ids are stable; only the opacity toggles).
+    const items = this.page.locator(`[data-testid^="role-selector-item-"]`)
+    const count = await items.count()
+    for (let i = 0; i < count; i++) {
+      const item = items.nth(i)
+      const check = item.locator('svg').first()
+      const cls = (await check.getAttribute('class')) ?? ''
+      if (cls.includes('opacity-100')) {
+        await this.smartClick(item)
+      }
+    }
+
+    await this.page.keyboard.press('Escape')
+  }
+
   /**
    * Fill configurable fields on a single price row. Only the supplied fields
    * are touched. The entitlement-key input is matched by the "Entitlement Key"

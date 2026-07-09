@@ -7,6 +7,7 @@ pub mod billing;
 pub mod client;
 pub mod client_api_keys;
 pub mod creem;
+pub mod custom_domain;
 pub mod dashboard;
 pub mod legal;
 pub mod oauth;
@@ -26,6 +27,7 @@ pub mod webhook;
 
 // Re-export commonly used types
 pub use audit::PostgresAuditEventRepository;
+pub use custom_domain::PostgresCustomDomainMappingRepository;
 pub use dashboard::PostgresDashboardRepository;
 pub use realm_config::PostgresRealmConfigRepository;
 pub use user::{

@@ -1565,7 +1565,10 @@
     "product_name_empty": "Unnamed product",
     "field_price": "Price",
     "billing_period_month": "Month",
-    "billing_period_year": "Year"
+    "billing_period_year": "Year",
+    "label_granted_roles": "Granted Roles",
+    "help_granted_roles": "Select roles to grant on successful payment",
+    "role_not_in_realm_error": "One or more selected roles do not belong to this realm. Choose roles from this realm and try again."
   },
   "purchase": {
     "choose_plan": "Choose a plan",
@@ -1573,6 +1576,7 @@
     "period_annual": "Annual",
     "save_percent": "Save {percent}%",
     "not_enabled_reason": "Not enabled for purchase — contact admin",
+    "already_owned_reason": "Already owned",
     "continue_to_checkout": "Continue to checkout",
     "unavailable": "Unavailable",
     "section_subscriptions": "Subscriptions",

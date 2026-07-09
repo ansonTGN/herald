@@ -21,6 +21,13 @@ export const priceMappingUpdateSchema = z.object({
 
   grantOnSubscribe: z.boolean().nullable().optional(),
 
+  // Role-grant dimension (design §4.4 / §5.2). Mirrors the generated
+  // `PriceMappingUpdate.grantedRoleIds` three-state contract: `null`/undefined
+  // ⟺ leave unchanged, `[]` ⟺ clear (no role grant), non-empty ⟺ set. Orthogonal
+  // to billing_type and points strategy (empty points + roles = pure entitlement;
+  // empty roles + points = pure credit pack; both empty = payment record only).
+  grantedRoleIds: z.array(z.string()).nullable().optional(),
+
   // Per-price quota windows (design §3.2 / §4.3.2). Mirrors
   // `PriceMappingUpdate.quotaWindows`: `null`/undefined ⟺ leave unchanged,
   // `[]` ⟺ clear. Capped at 8 windows (PRD §4). Validation rules per window

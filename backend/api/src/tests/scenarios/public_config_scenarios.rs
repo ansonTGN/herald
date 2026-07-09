@@ -500,6 +500,36 @@ async fn public_config_white_label_invalid_json_falls_back_to_empty(ctx: &mut Te
     assert_empty_white_label(&response_json);
 }
 
+/// User Story: US-CD-002 / US-CD-005 — terminal auth pages must never see an unpublished custom-domain hostname.
+/// Covers: Design §4.2.2 (public-config does not surface draft), §4.5 (no leak of draft state) — a
+/// `custom_domain/draft` row (unpublished hostname) must not be reflected in the public-config response,
+/// mirroring the white-label draft non-leak guarantee (design §5.3 public config reads only `settings`).
+#[test_context(TestContext)]
+#[tokio::test]
+async fn public_config_custom_domain_draft_does_not_leak(ctx: &mut TestContext) {
+    let realm_id = ctx._realm_id.clone();
+    let draft_value = json!({ "hostname": "draft.example.com" }).to_string();
+
+    // Seed an unpublished custom-domain draft config row. No published
+    // `custom_domain/settings` row exists, and no `custom_domain_mapping` row.
+    upsert_public_realm_config(ctx, &realm_id, "custom_domain", "draft", &draft_value).await;
+
+    let (status, response_value, _response_json) = get_public_config(ctx, &realm_id).await;
+
+    assert_eq!(status, StatusCode::OK);
+    // The public-config response (PublicConfigResponse) intentionally carries no
+    // custom-domain field — draft hostname must never surface in the body.
+    let body_str = response_value.to_string();
+    assert!(
+        !body_str.contains("draft.example.com"),
+        "public-config must not leak the unpublished custom-domain draft hostname; got: {body_str}"
+    );
+    assert!(
+        response_value.get("customDomain").is_none(),
+        "public-config must not expose a customDomain field (draft or otherwise)"
+    );
+}
+
 /// User Story: US-WL-002 — login and registration pages can fetch branding before a user signs in.
 /// Covers: Design §4.2.1 / §5.3 — public config with white-label data does not require authentication.
 #[test_context(TestContext)]

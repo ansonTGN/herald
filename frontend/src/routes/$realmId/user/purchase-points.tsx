@@ -43,16 +43,23 @@ type PurchaseStep = 'packages' | 'payment' | 'processing' | 'complete'
  *
  * A card is disabled when the mapping is not enabled for purchase, or when no
  * payment provider is wired to it (the price exists but cannot be checked out).
- * Returns the `purchase.not_enabled_reason` message args so the caller renders
- * the canonical copy via Paraglide; returns null for purchasable cards so the
- * caller can skip rendering a reason row.
+ * A gated one-time+role card (design §4.2.2) is also disabled when the current
+ * user already owns it — `grantsRole` is true only for `one_time` + non-empty
+ * `granted_role_ids` (points/subscriptions are never gated), so the already-owned
+ * branch is naturally scoped without the frontend re-checking billing_type.
+ * Returns the matching message key so the caller renders the canonical copy via
+ * Paraglide; returns null for purchasable cards so the caller can skip rendering
+ * a reason row.
  */
 // eslint-disable-next-line react-refresh/only-export-components -- exported for unit testing
 export function disabledReason(
   option: PurchaseOptionView
-): { key: 'purchase.not_enabled_reason' } | null {
+): { key: 'purchase.not_enabled_reason' | 'purchase.already_owned_reason' } | null {
   if (!option.enabled || !option.paymentProvider) {
     return { key: 'purchase.not_enabled_reason' }
+  }
+  if (option.grantsRole && option.alreadyOwned) {
+    return { key: 'purchase.already_owned_reason' }
   }
   return null
 }

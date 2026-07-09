@@ -24,6 +24,7 @@ import { formatInvoiceAmount } from '@/lib/invoice-utils'
 import { ProtectedPriceConfirmDialog } from '@/components/billing/entitlement-mapping-detail-dialog'
 import { SyncNextStepDialog } from '@/components/billing/sync-next-step-dialog'
 import { MultiWindowQuotaEditor } from '@/components/billing/MultiWindowQuotaEditor'
+import { RoleSelector } from '@/components/shared/role-selector'
 import {
   groupByProduct,
   groupByEntitlementKey,
@@ -32,7 +33,11 @@ import {
   hasWebhookUnresolvedPrice,
 } from '@/components/billing/entitlement-mapping-grouping'
 import { deriveSharedKeyColor } from '@/components/billing/shared-key-color'
-import { entitlementMappingsQueryOptions, queryKeys } from '@/data/query-options'
+import {
+  adminRolesQueryOptions,
+  entitlementMappingsQueryOptions,
+  queryKeys,
+} from '@/data/query-options'
 import { useBatchUpdateEntitlementMappings } from '@/data/entitlement-mapping-mutations'
 import {
   batchEntitlementMappingsSchema,
@@ -358,6 +363,7 @@ function DetailPanel({
                   return (
                     <PriceEditRow
                       key={price.id}
+                      realmId={realmId}
                       price={price}
                       row={row}
                       canManage={canManage}
@@ -391,6 +397,7 @@ function DetailPanel({
 // ==================== Single price edit row ====================
 
 interface PriceEditRowProps {
+  realmId: string
   price: EntitlementMappingResponse
   row: PriceMappingUpdateFormData
   canManage: boolean
@@ -400,6 +407,7 @@ interface PriceEditRowProps {
 }
 
 function PriceEditRow({
+  realmId,
   price,
   row,
   canManage,
@@ -419,6 +427,13 @@ function PriceEditRow({
   // ONLY here via `readProviderProductInfo` (the single narrowing point).
   const info = readProviderProductInfo(price.providerProductInfo)
   const metadataEntries = buildMetadataEntries(info.productMetadata, info.priceMetadata)
+
+  // Realm roles for the Role-grant dimension (design §4.4). `listRoles` returns
+  // `RoleResponse[]` directly (not a paged envelope); builtin roles are filtered
+  // out so only admin-defined roles are assignable — mirrors the API-key roles
+  // dialog usage. The query is realm-scoped and cached (staleTime 5min).
+  const { data: rolesData } = useQuery(adminRolesQueryOptions(realmId))
+  const assignableRoles = (rolesData ?? []).filter((r) => !r.isBuiltin)
 
   return (
     <div
@@ -514,6 +529,25 @@ function PriceEditRow({
             className={isUnresolved && row.pointsPerPeriod == null ? 'border-destructive' : ''}
           />
         </Field>
+
+        {/* Role-grant dimension (design §4.4 / §5.2). Orthogonal to billing_type
+            and points: empty = no role grant (pure credit / payment record);
+            selected = roles auto-granted on successful payment. A realm-scoped
+            query supplies the assignable (non-builtin) roles. */}
+        <div
+          className="sm:col-span-2"
+          data-testid={`price-granted-roles-${price.externalPriceId ?? price.id}`}
+        >
+          <Field label={m['billing.label_granted_roles']()}>
+            <RoleSelector
+              roles={assignableRoles}
+              selectedRoleIds={row.grantedRoleIds ?? []}
+              onChange={(ids) => onChange({ grantedRoleIds: ids })}
+              disabled={editDisabled}
+              placeholder={m['billing.help_granted_roles']()}
+            />
+          </Field>
+        </div>
 
         <Field label="Enabled">
           <div className="flex items-center gap-2">
@@ -739,6 +773,10 @@ function seedRows(prices: EntitlementMappingResponse[]): PriceMappingUpdateFormD
     validityDays: p.validityDays ?? null,
     grantOnSubscribe: p.grantOnSubscribe,
     quotaWindows: p.quotaWindows ?? null,
+    // GET response carries the granted role list as a required array (empty when
+    // none configured). Seed as an editable array so the multi-select can mutate
+    // it directly; the save path forwards the array verbatim ([] ⟺ clear).
+    grantedRoleIds: p.grantedRoleIds ?? [],
   }))
 }
 
@@ -759,6 +797,11 @@ function toPriceMappingUpdate(row: PriceMappingUpdateFormData): PriceMappingUpda
       ? undefined
       : (row.quotaWindows?.map((w) => ({ windowSeconds: w.windowSeconds, limit: w.limit })) ??
         undefined),
+    // Role-grant dimension (design §4.4 / §5.2). Orthogonal to billing_type —
+    // both one_time and recurring forward the array. Forwarded verbatim from
+    // the edit state: [] ⟺ clear, non-empty ⟺ set. Matches the generated
+    // `PriceMappingUpdate.grantedRoleIds` (Array<string> | null | undefined).
+    grantedRoleIds: row.grantedRoleIds ?? undefined,
   }
   return update as PriceMappingUpdate
 }

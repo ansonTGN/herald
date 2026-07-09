@@ -10,6 +10,14 @@ pub struct ApiConfig {
     pub jwt: Option<JwtConfig>,
     #[serde(default)]
     _email: Option<EmailConfig>,
+    /// Custom-domain global configuration (design §4.2.2 `cnameTarget`).
+    ///
+    /// `cname_target` is the Herald-owned hostname tenants must CNAME their
+    /// custom login domain to; surfaced to realm admins in the GET response.
+    /// `ask_key` is the shared secret for the Caddy On-Demand TLS ask
+    /// authorization endpoint (validated/used by BE-D07).
+    #[serde(default)]
+    pub custom_domain: CustomDomainSettingsConfig,
     #[serde(default)]
     pub observability: ObservabilityConfig,
 }
@@ -82,6 +90,22 @@ pub struct JwtConfig {
 #[derive(serde::Deserialize, Clone)]
 pub struct EmailConfig {
     _api_key: String,
+}
+
+/// Global custom-domain settings parsed from the `[custom_domain]` config
+/// section (design §4.2.2 / §8 file-impact table).
+#[derive(serde::Deserialize, Clone, Default)]
+pub struct CustomDomainSettingsConfig {
+    /// Herald-owned hostname tenants CNAME their custom login domain to
+    /// (e.g. `custom.herald.com`). Surfaced to realm admins as `cnameTarget`
+    /// in the GET response. Empty default keeps the field optional.
+    #[serde(default)]
+    pub cname_target: String,
+    /// Shared secret for the Caddy On-Demand TLS ask authorization endpoint
+    /// (design §4.2.2 ask). Validated and consumed by BE-D07; declared here
+    /// so a single coordinated config section holds both keys.
+    #[serde(default)]
+    pub ask_key: String,
 }
 
 #[derive(serde::Deserialize, Clone)]

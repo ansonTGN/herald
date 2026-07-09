@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use crate::common::entities::app_errors::CoreError;
+
 /// Realm 泛化配置实体
 #[derive(Debug, Clone, Deserialize, Serialize, ToSchema, PartialEq)]
 pub struct RealmConfig {
@@ -156,6 +158,30 @@ pub enum ConfigType {
     /// }
     /// ```
     WhiteLabel,
+
+    /// Custom-domain configuration
+    ///
+    /// Stores the per-realm custom login hostname (precise match, e.g.
+    /// `login.acme.com`), reusing the realm_config table and the same
+    /// draft/publish/restore lifecycle as white-label.
+    ///
+    /// Valid config_key values:
+    /// - `settings`: Published configuration visible to host→realm resolution
+    /// - `draft`: Unpublished configuration edited by realm admins
+    /// - `previous_settings`: Previous published configuration for one-step restore
+    ///
+    /// Example configuration:
+    /// ```json
+    /// {
+    ///   "config_type": "custom_domain",
+    ///   "config_key": "settings",
+    ///   "config_value": "{\"hostname\":\"login.acme.com\"}",
+    ///   "is_secret": false,
+    ///   "enabled": true,
+    ///   "metadata": null
+    /// }
+    /// ```
+    CustomDomain,
 
     /// Realm TOTP 加密密钥配置
     ///
@@ -349,6 +375,7 @@ impl ConfigType {
             "totp" => ConfigType::Totp,
             "passkey" => ConfigType::Passkey,
             "white_label" => ConfigType::WhiteLabel,
+            "custom_domain" => ConfigType::CustomDomain,
             "totp_key" => ConfigType::TotpKey,
             "creem" => ConfigType::Creem,
             "stripe" => ConfigType::Stripe,
@@ -368,6 +395,7 @@ impl From<ConfigType> for String {
             ConfigType::Totp => "totp".to_string(),
             ConfigType::Passkey => "passkey".to_string(),
             ConfigType::WhiteLabel => "white_label".to_string(),
+            ConfigType::CustomDomain => "custom_domain".to_string(),
             ConfigType::TotpKey => "totp_key".to_string(),
             ConfigType::Creem => "creem".to_string(),
             ConfigType::Stripe => "stripe".to_string(),
@@ -385,6 +413,7 @@ impl AsRef<str> for ConfigType {
             ConfigType::Totp => "totp",
             ConfigType::Passkey => "passkey",
             ConfigType::WhiteLabel => "white_label",
+            ConfigType::CustomDomain => "custom_domain",
             ConfigType::TotpKey => "totp_key",
             ConfigType::Creem => "creem",
             ConfigType::Stripe => "stripe",
@@ -536,4 +565,282 @@ pub struct BatchUpsertRealmConfigRequest {
         }
     ]))]
     pub configs: Vec<UpsertRealmConfigRequest>,
+}
+
+/// Custom-domain configuration
+///
+/// Stores the precise custom login hostname assigned to a realm.
+/// `hostname` is normalized server-side (IDNA-lowercase, trailing dot stripped)
+/// before persistence, so consumers can rely on a canonical form.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomDomainConfig {
+    /// Precise custom login hostname (e.g. `login.acme.com`), normalized to
+    /// lowercase with any trailing dot stripped. `None` clears the draft.
+    pub hostname: Option<String>,
+}
+
+/// Live status of a published custom-domain hostname
+///
+/// Surface-only fields (CNAME/TLS readiness) shown on the realm admin config
+/// page. These are **not** part of request-time host→realm resolution, which
+/// keys solely on `custom_domain_mapping.enabled`.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomDomainStatus {
+    /// Whether the hostname's CNAME currently resolves to Herald's cname target
+    pub cname_verified: bool,
+    /// Whether Caddy has successfully issued (On-Demand) TLS for the hostname
+    pub tls_ready: bool,
+    /// Last time the CNAME/TLS status was probed
+    pub checked_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+// ---------------------------------------------------------------------------
+// Hostname normalization + validation
+// ---------------------------------------------------------------------------
+
+const MAX_HOSTNAME_LEN: usize = 253;
+const MAX_LABEL_LEN: usize = 63;
+
+/// Normalize and validate a raw custom-domain hostname.
+///
+/// The normalization is pure (no I/O) so it can be reused by both the infra
+/// and api layers. It applies the following rules (design §4.5):
+/// - IDNA-lowercase (ASCII lowercasing; IDNA-punycode encoding is the caller's
+///   deployment concern, not validated here).
+/// - Strip a single trailing dot (`login.acme.com.` → `login.acme.com`).
+/// - Reject empty input, wildcard hostnames (`*.` or any multilevel wildcard),
+///   embedded port (`:`), embedded path or fragment (`/`, `#`, `?`),
+///   and scheme prefixes (`http://`, `https://`, `//`).
+/// - Reject hostnames longer than 253 characters or with a label longer than 63.
+///
+/// Returns the normalized hostname.
+pub fn normalize_and_validate_hostname(raw: &str) -> Result<String, CoreError> {
+    // Strip surrounding whitespace first so accidental leading/trailing spaces
+    // don't trip the empty check or leave stray characters.
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err(CoreError::bad_request(
+            "custom domain hostname",
+            "hostname must not be empty",
+        ));
+    }
+
+    // Reject scheme prefixes and protocol-relative URLs up front — these indicate
+    // the caller pasted a full URL rather than a hostname.
+    let lowered = trimmed.to_lowercase();
+    if lowered.starts_with("http://")
+        || lowered.starts_with("https://")
+        || lowered.starts_with("//")
+    {
+        return Err(CoreError::bad_request(
+            "custom domain hostname",
+            "hostname must not contain a scheme (http://, https://, //)",
+        ));
+    }
+
+    // After lowercasing, reject any disallowed character. Per RFC 1035 a hostname
+    // label is `[a-z0-9-]` separated by dots; we reject `:` (port), `/` (path),
+    // `#` (fragment), `?` (query), `@` (userinfo) and whitespace by exclusion.
+    // Non-ASCII letters are allowed for IDNA domains (canonical punycode
+    // encoding is a deployment-time concern, not validated here).
+    for ch in lowered.chars() {
+        let ok = ch.is_ascii_lowercase()
+            || ch.is_ascii_digit()
+            || ch == '.'
+            || ch == '-'
+            || ch.is_alphabetic();
+        if !ok {
+            return Err(CoreError::bad_request(
+                "custom domain hostname",
+                &format!("hostname contains disallowed character {:?}", ch),
+            ));
+        }
+    }
+
+    // Strip a single trailing dot (FQDN form) but keep the inner structure.
+    let without_trailing_dot = lowered.strip_suffix('.').unwrap_or(&lowered);
+    if without_trailing_dot.is_empty() {
+        return Err(CoreError::bad_request(
+            "custom domain hostname",
+            "hostname must not be empty after normalization",
+        ));
+    }
+
+    // Reject wildcards: leading `*.` or any label equal to `*` (multilevel).
+    if without_trailing_dot.starts_with("*.")
+        || without_trailing_dot == "*"
+        || without_trailing_dot.split('.').any(|label| label == "*")
+    {
+        return Err(CoreError::bad_request(
+            "custom domain hostname",
+            "wildcard hostnames are not allowed",
+        ));
+    }
+
+    // Length bounds: total ≤ 253, each label ≤ 63 and non-empty.
+    if without_trailing_dot.len() > MAX_HOSTNAME_LEN {
+        return Err(CoreError::bad_request(
+            "custom domain hostname",
+            &format!(
+                "hostname exceeds maximum length of {} characters",
+                MAX_HOSTNAME_LEN
+            ),
+        ));
+    }
+    for label in without_trailing_dot.split('.') {
+        if label.is_empty() {
+            return Err(CoreError::bad_request(
+                "custom domain hostname",
+                "hostname contains an empty label (consecutive dots)",
+            ));
+        }
+        if label.len() > MAX_LABEL_LEN {
+            return Err(CoreError::bad_request(
+                "custom domain hostname",
+                &format!(
+                    "hostname label {:?} exceeds maximum length of {} characters",
+                    label, MAX_LABEL_LEN
+                ),
+            ));
+        }
+        // Labels must not start or end with a hyphen.
+        if label.starts_with('-') || label.ends_with('-') {
+            return Err(CoreError::bad_request(
+                "custom domain hostname",
+                &format!(
+                    "hostname label {:?} must not start or end with a hyphen",
+                    label
+                ),
+            ));
+        }
+    }
+
+    Ok(without_trailing_dot.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_and_validate_hostname;
+
+    #[test]
+    fn valid_hostname_is_lowercased() {
+        assert_eq!(
+            normalize_and_validate_hostname("login.acme.com").unwrap(),
+            "login.acme.com"
+        );
+    }
+
+    #[test]
+    fn uppercase_is_lowered() {
+        assert_eq!(
+            normalize_and_validate_hostname("Login.AcMe.COM").unwrap(),
+            "login.acme.com"
+        );
+    }
+
+    #[test]
+    fn trailing_dot_is_stripped() {
+        assert_eq!(
+            normalize_and_validate_hostname("login.acme.com.").unwrap(),
+            "login.acme.com"
+        );
+    }
+
+    #[test]
+    fn surrounding_whitespace_is_trimmed() {
+        assert_eq!(
+            normalize_and_validate_hostname("  login.acme.com  ").unwrap(),
+            "login.acme.com"
+        );
+    }
+
+    #[test]
+    fn rejects_empty() {
+        assert!(normalize_and_validate_hostname("").is_err());
+        assert!(normalize_and_validate_hostname("   ").is_err());
+    }
+
+    #[test]
+    fn rejects_wildcard_prefix() {
+        assert!(normalize_and_validate_hostname("*.acme.com").is_err());
+    }
+
+    #[test]
+    fn rejects_multilevel_wildcard() {
+        assert!(normalize_and_validate_hostname("login.*.com").is_err());
+    }
+
+    #[test]
+    fn rejects_bare_wildcard() {
+        assert!(normalize_and_validate_hostname("*").is_err());
+    }
+
+    #[test]
+    fn rejects_embedded_port() {
+        assert!(normalize_and_validate_hostname("login.acme.com:443").is_err());
+    }
+
+    #[test]
+    fn rejects_embedded_path() {
+        assert!(normalize_and_validate_hostname("login.acme.com/path").is_err());
+    }
+
+    #[test]
+    fn rejects_scheme() {
+        assert!(normalize_and_validate_hostname("https://login.acme.com").is_err());
+        assert!(normalize_and_validate_hostname("http://login.acme.com").is_err());
+        assert!(normalize_and_validate_hostname("//login.acme.com").is_err());
+    }
+
+    #[test]
+    fn rejects_fragment_and_query() {
+        assert!(normalize_and_validate_hostname("login.acme.com#top").is_err());
+        assert!(normalize_and_validate_hostname("login.acme.com?q=1").is_err());
+    }
+
+    #[test]
+    fn rejects_overlong_hostname() {
+        // 4 labels of 63 chars + dots + tld = 63*4 + 3 + 3 = 258 > 253 limit.
+        let label = "a".repeat(63);
+        let host = format!("{label}.{label}.{label}.{label}.com");
+        assert!(host.len() > 253, "test fixture must exceed limit");
+        assert!(normalize_and_validate_hostname(&host).is_err());
+    }
+
+    #[test]
+    fn rejects_overlong_label() {
+        let label = "a".repeat(64); // 64 > 63 limit
+        let host = format!("{label}.com");
+        assert!(normalize_and_validate_hostname(&host).is_err());
+    }
+
+    #[test]
+    fn rejects_consecutive_dots() {
+        assert!(normalize_and_validate_hostname("login..acme.com").is_err());
+    }
+
+    #[test]
+    fn rejects_leading_hyphen_label() {
+        assert!(normalize_and_validate_hostname("-login.acme.com").is_err());
+        assert!(normalize_and_validate_hostname("login.-acme.com").is_err());
+    }
+
+    #[test]
+    fn rejects_trailing_hyphen_label() {
+        assert!(normalize_and_validate_hostname("login-.acme.com").is_err());
+        assert!(normalize_and_validate_hostname("login.acme-.com").is_err());
+    }
+
+    #[test]
+    fn accepts_hostname_at_length_boundary() {
+        // Exactly 253 chars should pass (length is the boundary).
+        let label = "a".repeat(63);
+        // 63 + 1 + 63 + 1 + 63 + 1 + 57 = 249; pad tld to reach 253.
+        let mut exact = format!("{label}.{label}.{label}.", label = label);
+        exact.push_str(&"a".repeat(253 - exact.len()));
+        assert_eq!(exact.len(), 253, "fixture must be exactly 253 chars");
+        assert_eq!(normalize_and_validate_hostname(&exact).unwrap(), exact);
+    }
 }

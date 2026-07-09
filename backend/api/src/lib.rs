@@ -49,6 +49,7 @@ use herald_core::domain::user::services::admin::{
     AdminUserServiceImpl, PermissionManagementServiceImpl, RoleAssignmentServiceImpl,
     UserPermissionServiceImpl,
 };
+use herald_core::infrastructure::PostgresCustomDomainMappingRepository;
 use herald_core::infrastructure::audit::PostgresAuditEventRepository;
 use herald_core::infrastructure::authentication::RedisSessionRepository;
 use herald_core::infrastructure::authorization::{
@@ -151,6 +152,24 @@ pub async fn build_app_state_with_migrations(
     config: &ApiConfig,
     migrations: sqlx::migrate::Migrator,
 ) -> Result<Arc<AppState>> {
+    // Fail-fast config validation that must hold before any service is wired.
+    //
+    // Custom-domain ask shared key: design §4.2.2 mandates "Herald 启动期校验
+    // 非空". An empty `ask_key` would make the Caddy On-Demand TLS ask gate
+    // authorize nothing (every call returns 401) or, worse, if the runtime
+    // check were skipped, accept any caller — either is a misconfiguration that
+    // is cheapest to catch here. This is the production-only server-build path;
+    // unit/integration tests construct `AppState` directly and bypass this
+    // check, so dev/test fixtures without a configured key are unaffected.
+    if config.custom_domain.ask_key.trim().is_empty() {
+        return Err(anyhow::anyhow!(
+            "Configuration error: [custom_domain].ask_key must be set to a non-empty shared \
+             secret. It gates the Caddy On-Demand TLS ask endpoint \
+             (GET /api/internal/custom-domain/authorize via the X-Herald-Ask-Key header). \
+             See design §4.2.2."
+        ));
+    }
+
     // Connect to database with pool tuning from config
     let mut connect_options = sea_orm::ConnectOptions::new(&config.database.url);
     connect_options
@@ -243,6 +262,14 @@ pub async fn build_app_state_with_migrations(
     let audit_event_repository = Arc::new(PostgresAuditEventRepository::new(db.clone()));
     let realm_config_repository =
         Arc::new(PostgresRealmConfigRepository::new(Arc::new(db.clone())));
+
+    // Custom-domain host→realm mapping repository (BE-D03). Shared by the
+    // lifecycle handlers (publish/restore side-effects) and BE-D04/D06/D07
+    // (middleware / CORS / ask / resolve). Constructed from the same Sea-ORM
+    // connection as the other repositories.
+    let custom_domain_mapping_repo = Arc::new(PostgresCustomDomainMappingRepository::new(
+        Arc::new(db.clone()),
+    ));
 
     // Legal agreement + consent repositories + service
     let legal_repository = Arc::new(PostgresLegalAgreementRepository::new(db.clone()));
@@ -495,6 +522,9 @@ pub async fn build_app_state_with_migrations(
         user_consent_repository,
         legal_service,
         self_delete_service,
+        custom_domain_mapping_repo,
+        custom_domain_cname_target: config.custom_domain.cname_target.clone(),
+        custom_domain_ask_key: config.custom_domain.ask_key.clone(),
     });
 
     // Initialize Redis Functions using the final state's redis_manager

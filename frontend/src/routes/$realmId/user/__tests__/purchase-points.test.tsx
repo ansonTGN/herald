@@ -4,6 +4,7 @@ import { userEvent } from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import type { PurchaseOptionView } from '@/lib/api-generated'
+import { m } from '@/paraglide/messages'
 
 // --- Mocks ----------------------------------------------------------------
 
@@ -121,6 +122,48 @@ describe('disabledReason', () => {
     const reason = disabledReason(makeOption({ paymentProvider: '' }))
     expect(reason).toEqual({ key: 'purchase.not_enabled_reason' })
   })
+
+  // Already-owned gating (design §4.2.2). `grantsRole` is true only for the
+  // one_time + non-empty granted_role_ids combo, so these cases pin that
+  // scoping without the frontend re-checking billing_type.
+  describe('already-owned gate', () => {
+    it('disables a one-time+role card the user already owns', () => {
+      const reason = disabledReason(
+        makeOption({ grantsRole: true, alreadyOwned: true, billingType: 'one_time' })
+      )
+      expect(reason).toEqual({ key: 'purchase.already_owned_reason' })
+    })
+
+    it('does not disable when the role gate is active but not yet owned', () => {
+      const reason = disabledReason(
+        makeOption({ grantsRole: true, alreadyOwned: false, billingType: 'one_time' })
+      )
+      expect(reason).toBeNull()
+    })
+
+    it('does not disable a non-gated option even if alreadyOwned is set', () => {
+      // points/subscription options always have grantsRole=false (backend
+      // semantics), so alreadyOwned must never trigger the gate for them.
+      const reason = disabledReason(
+        makeOption({ grantsRole: false, alreadyOwned: true, billingType: 'recurring' })
+      )
+      expect(reason).toBeNull()
+    })
+
+    it('prioritizes not_enabled over the already-owned gate (branch order lock)', () => {
+      // When both conditions hold, the not_enabled branch (declared first in
+      // disabledReason) must win — pins the helper's branch ordering.
+      const reason = disabledReason(
+        makeOption({
+          enabled: false,
+          grantsRole: true,
+          alreadyOwned: true,
+          billingType: 'one_time',
+        })
+      )
+      expect(reason).toEqual({ key: 'purchase.not_enabled_reason' })
+    })
+  })
 })
 
 // --- Component tests -------------------------------------------------------
@@ -162,6 +205,27 @@ describe('PurchasePointsPage', () => {
     const card = screen.getByTestId('purchase-price-card-price_disabled')
     expect(card).toBeTruthy()
     expect(screen.getByTestId('purchase-price-card-price_disabled-reason')).toBeTruthy()
+    expect(screen.getByTestId('purchase-next-button')).toBeDisabled()
+  })
+
+  it('shows the already-owned reason and disabled CTA for an owned one-time+role card', () => {
+    renderPage([
+      makeOption({
+        mappingId: 'm-owned',
+        externalPriceId: 'price_owned',
+        billingType: 'one_time',
+        grantsRole: true,
+        alreadyOwned: true,
+        enabled: true,
+      }),
+    ])
+
+    expect(screen.getByTestId('purchase-price-card-price_owned')).toBeTruthy()
+    // The reason row renders the canonical already-owned copy (not the
+    // not_enabled copy), proving the helper routed to the new branch.
+    expect(screen.getByTestId('purchase-price-card-price_owned-reason').textContent).toBe(
+      m['purchase.already_owned_reason']()
+    )
     expect(screen.getByTestId('purchase-next-button')).toBeDisabled()
   })
 

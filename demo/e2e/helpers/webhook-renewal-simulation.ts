@@ -4,7 +4,9 @@
  * Sends signed synthetic webhook events to the billing webhook endpoints to
  * drive the subscription *renewal* write paths (Creem `subscription.paid`
  * renewal branch + Stripe `invoice.payment_succeeded` subscription renewal
- * branch) without a real payment provider.
+ * branch) and the subscription *cancel/refund* role-revocation write paths
+ * (Stripe `customer.subscription.deleted` + Stripe `charge.refunded` + Creem
+ * `subscription.canceled`) without a real payment provider.
  *
  * -------------------------------------------------------------------------
  * SOURCE OF TRUTH — backend signature verification:
@@ -340,6 +342,367 @@ export function buildStripePaymentSucceededPayload(
 }
 
 // ---------------------------------------------------------------------------
+// Payload builders (cancel / refund — M4 role-revocation paths, DE-D02)
+// ---------------------------------------------------------------------------
+
+/**
+ * Stripe `customer.subscription.deleted` payload.
+ *
+ * Drives the M4 subscription cancel/expire role-revocation chain
+ * (US-PW-005 场景1). The backend dispatches on the literal event type at
+ * `stripe_webhook_handlers.rs:3910` and parses via
+ * `parse_subscription_deleted_payload` (`stripe_webhook_handlers.rs:596`,
+ * struct at `:83`).
+ *
+ * BACKEND CONTRACT (load-bearing — do not regress):
+ *  - `event.id` (top-level, string) required — else 400 `Missing event id`.
+ *  - `event.type` (top-level, string) required — MUST equal the literal
+ *    `"customer.subscription.deleted"`.
+ *  - `data.object.id` (snake/native Stripe) required — else 400
+ *    `Missing subscription id`. This is the EXTERNAL subscription id used by
+ *    `find_by_external_subscription_id(..., "stripe")` to resolve the internal
+ *    subscription UUID. For a demo-fulfilled subscription it equals the
+ *    `provider_transaction_id` written at fulfillment time
+ *    (`demo-fulfill-${attemptId}`).
+ *  - `data.object.metadata.herald_user_id` (fallback `metadata.userId`) —
+ *    UUID string REQUIRED, else 400 `Missing or invalid userId`.
+ *  - `data.object.cancel_at_period_end` (bool, default false) — DRIVES THE
+ *    CANCEL MODE. `false` → `ImmediateCancel` → `revoke_roles_by_payment_source`
+ *    deletes the `source='payment'` rows for this subscription. `true` →
+ *    `DefaultCancel` → NO revoke (period-end natural expiry). For the revoke
+ *    demo, set `false`.
+ *  - `data.object.metadata.herald_entitlement_key` (fallback
+ *    `metadata.entitlementKey`) — optional.
+ *  - `data.object.current_period_start` / `current_period_end` — optional unix
+ *    i64 (only `current_period_end` is required downstream when
+ *    `cancel_at_period_end=true`; with `false` it is optional).
+ *
+ * The parser does NOT read `customer` or `status`. Per design §5.5 /
+ * US-PW-005, role revocation lands on the convergence point
+ * `handle_subscription_cancel` (`subscription_service.rs:701`), `ImmediateCancel`
+ * branch (`:733`) which calls `revoke_roles_by_payment_source(realm_id,
+ * user_id, &subscription_id)` — deleting ONLY `user_roles` rows where
+ * `source='payment' AND source_id == <subscription uuid>`. Manual grants
+ * (source='manual') are untouched. `NotFound` is idempotent-success.
+ */
+export interface StripeSubscriptionDeletedPayload {
+  /** Top-level Stripe event id (evt_*). Required by parse_event_id. */
+  id: string
+  type: 'customer.subscription.deleted'
+  data: {
+    object: {
+      /** External subscription id (Stripe sub_*); resolves the internal sub. */
+      id: string
+      metadata: {
+        /** UUID of the Herald user who holds the payment-granted role. */
+        herald_user_id: string
+        /** Optional entitlement key for targeted revocation. */
+        herald_entitlement_key?: string
+        [key: string]: unknown
+      }
+      /**
+       * false → ImmediateCancel (revokes role). true → DefaultCancel (no revoke).
+       * Default false per backend parser.
+       */
+      cancel_at_period_end: boolean
+      [key: string]: unknown
+    }
+  }
+}
+
+export interface BuildStripeSubscriptionDeletedInput {
+  /** Stripe event id (evt_*). Unique per delivery for clean idempotency. */
+  eventId: string
+  /**
+   * External subscription id (Stripe sub_*) — MUST match the
+   * `external_subscription_id` stored at fulfillment (the demo-fulfilled
+   * subscription's `provider_transaction_id`). The backend resolves the
+   * internal subscription UUID via `find_by_external_subscription_id`.
+   */
+  subscriptionId: string
+  /** Herald user UUID holding the payment-granted role. Required. */
+  userId: string
+  /** Optional entitlement key for targeted revocation. */
+  entitlementKey?: string
+  /**
+   * Drives cancel mode. false (default) → ImmediateCancel → revoke role.
+   * true → DefaultCancel → no revoke. Tests asserting a revoke MUST pass false.
+   */
+  cancelAtPeriodEnd?: boolean
+}
+
+export function buildStripeSubscriptionDeletedPayload(
+  input: BuildStripeSubscriptionDeletedInput,
+): StripeSubscriptionDeletedPayload {
+  return {
+    id: input.eventId,
+    type: 'customer.subscription.deleted',
+    data: {
+      object: {
+        id: input.subscriptionId,
+        metadata: {
+          herald_user_id: input.userId,
+          ...(input.entitlementKey !== undefined
+            ? { herald_entitlement_key: input.entitlementKey }
+            : {}),
+        },
+        cancel_at_period_end: input.cancelAtPeriodEnd ?? false,
+      },
+    },
+  }
+}
+
+/**
+ * Stripe `charge.refunded` payload.
+ *
+ * Drives the M4 refund role-revocation chain (US-PW-005 场景2). Backend
+ * dispatches at `stripe_webhook_handlers.rs:3914`; parser
+ * `parse_charge_refunded_payload` at `:626` (struct at `:93`).
+ *
+ * BACKEND CONTRACT (load-bearing — do not regress):
+ *  - `event.id` + `event.type` top-level required; `event.type` MUST equal
+ *    `"charge.refunded"`.
+ *  - `data.object.id` (charge id) required — else 400 `Missing charge id`.
+ *  - `data.object.amount` (i64) required — else 400 `Missing or invalid amount`.
+ *  - `data.object.amount_refunded` (i64) required — else 400
+ *    `Missing or invalid amount_refunded`.
+ *  - `data.object.metadata.herald_user_id` (fallback `metadata.userId`) —
+ *    UUID string required.
+ *  - `data.object.metadata.herald_subscription_id` (fallback
+ *    `metadata.subscriptionId`) — optional AT PARSE, but DOWNSTREAM REQUIRED
+ *    to resolve the subscription for `refundType='subscription'`. The handler
+ *    (`stripe_webhook_handlers.rs:2564`) resolves the subscription via
+ *    `find_subscription_by_id(subscription_id)` — i.e. this is the INTERNAL
+ *    subscription UUID (NOT the external id), resolved after fulfillment.
+ *  - `data.object.metadata.refundType` — optional, default `"subscription"`.
+ *    If `"topup"` it diverges to `revoke_topup_proportional` and does NOT
+ *    revoke role. For the role-revoke demo, OMIT (defaults to subscription) or
+ *    explicitly pass `"subscription"`.
+ *
+ * CONVERGENCE IS CONDITIONAL (design §5.5): default `refundType='subscription'`
+ * + resolvable subscription → `handle_subscription_cancel(..., ImmediateCancel,
+ * ...)` at `stripe_webhook_handlers.rs:2639` → `revoke_roles_by_payment_source`.
+ * If the subscription cannot be resolved (no `herald_subscription_id`, or the
+ * id does not match a row), the handler 400s `Cannot resolve bucket for
+ * subscription refund`. Callers MUST pass the correct internal subscription UUID.
+ *
+ * The parser does NOT read `currency`, `payment_intent`, `customer`, or the
+ * `refunds` array.
+ */
+export interface StripeChargeRefundedPayload {
+  /** Top-level Stripe event id (evt_*). Required by parse_event_id. */
+  id: string
+  type: 'charge.refunded'
+  data: {
+    object: {
+      /** Stripe charge id (ch_*). Required. */
+      id: string
+      /** Charge amount in minor currency units. Required. */
+      amount: number
+      /** Refunded amount in minor currency units. Required. */
+      amount_refunded: number
+      metadata: {
+        /** Herald user UUID. Required. */
+        herald_user_id: string
+        /**
+         * INTERNAL Herald subscription UUID (NOT the external Stripe sub id).
+         * Required downstream for `refundType='subscription'` convergence.
+         */
+        herald_subscription_id: string
+        /** "subscription" (default, revokes role) or "topup" (no role revoke). */
+        refundType?: string
+        [key: string]: unknown
+      }
+      [key: string]: unknown
+    }
+  }
+}
+
+export interface BuildStripeChargeRefundedInput {
+  /** Stripe event id (evt_*). Unique per delivery for clean idempotency. */
+  eventId: string
+  /** Stripe charge id (ch_*). Required. */
+  chargeId: string
+  /** Charge amount in minor currency units. Required (must be > 0). */
+  amount: number
+  /** Refunded amount in minor currency units. Required (must be > 0). */
+  amountRefunded: number
+  /** Herald user UUID. Required. */
+  userId: string
+  /**
+   * INTERNAL Herald subscription UUID (NOT the external Stripe sub id) —
+   * resolved after fulfillment via the subscriptions API. Required for
+   * `refundType='subscription'` convergence (else 400).
+   */
+  subscriptionId: string
+  /**
+   * "subscription" (default — revokes role via handle_subscription_cancel) or
+   * "topup" (proportional topup revoke, no role revoke). For US-PW-005 场景2,
+   * omit (defaults to subscription) or pass "subscription".
+   */
+  refundType?: string
+}
+
+export function buildStripeChargeRefundedPayload(
+  input: BuildStripeChargeRefundedInput,
+): StripeChargeRefundedPayload {
+  if (input.amount <= 0) {
+    throw new Error(
+      `Stripe charge amount must be > 0 (got ${input.amount}). ` +
+        'A zero/negative charge amount is not a valid refund source.',
+    )
+  }
+  if (input.amountRefunded <= 0) {
+    throw new Error(
+      `Stripe amount_refunded must be > 0 (got ${input.amountRefunded}). ` +
+        'A zero refund amount does not trigger the refund revoke path.',
+    )
+  }
+  return {
+    id: input.eventId,
+    type: 'charge.refunded',
+    data: {
+      object: {
+        id: input.chargeId,
+        amount: input.amount,
+        amount_refunded: input.amountRefunded,
+        metadata: {
+          herald_user_id: input.userId,
+          herald_subscription_id: input.subscriptionId,
+          ...(input.refundType !== undefined ? { refundType: input.refundType } : {}),
+        },
+      },
+    },
+  }
+}
+
+/**
+ * Creem `subscription.canceled` payload.
+ *
+ * Drives the M4 cancel/expire role-revocation chain via Creem
+ * (US-PW-005 场景1). Backend dispatches the literal `"subscription.canceled"`
+ * → `handle_subscription_canceled` at `webhook_handlers.rs:1586` (routing at
+ * `:2129`). Event-type extraction at `webhook_handlers.rs:2273` reads
+ * `event.eventType` (CAMELCASE, not `event.type`) — missing → 400
+ * `Missing eventType`. Parser `parse_subscription_canceled_payload` at `:563`
+ * (struct `CreemSubscriptionCanceledPayload` at `:120`).
+ *
+ * BACKEND CONTRACT (load-bearing — do not regress):
+ *  - Top-level `event.id` + `event.eventType` (camelCase) required. We ALSO
+ *    emit `event.type` for parity with real Creem payloads (the dispatcher
+ *    reads only `eventType`, so `type` is inert but harmless).
+ *  - Object resolution quirk (`creem_event_object`, `:164`): reads
+ *    `event.data.object` if non-null, else `event.object`. `data.object`
+ *    preferred — this builder emits the object under `data.object`.
+ *  - `object.cancelAtPeriodEnd` (bool, default false) — DRIVES CANCEL MODE.
+ *    false → ImmediateCancel → revoke role; true → DefaultCancel → no revoke.
+ *    For the revoke demo, set false.
+ *  - `object.subscriptionId` (fallback `object.id`) required — else 400
+ *    `Missing subscriptionId`. This is the EXTERNAL subscription id used by
+ *    `find_by_external_subscription_id(..., "creem")` to resolve the internal
+ *    UUID. For a demo-fulfilled subscription it equals the
+ *    `provider_transaction_id`.
+ *  - `object.productId` (fallback `object.product.id`) required — else 400
+ *    `Missing productId`. We DUAL-WRITE `productId` (camelCase, primary) +
+ *    `product` (string, parity) so both parse branches satisfy, mirroring the
+ *    existing `buildCreemSubscriptionPaidRenewalPayload`.
+ *  - `object.herald_user_id` (fallback chain: `object.metadata.herald_user_id`
+ *    → `object.userId` → `object.metadata.userId`) — UUID string. Optional at
+ *    parse; if absent the handler `:1598-1614` resolves via DB lookup by
+ *    external_subscription_id. For demo determinism we INCLUDE
+ *    `herald_user_id` in `object.metadata`.
+ *  - `object.herald_entitlement_key` (fallback chain into metadata) — optional.
+ *  - `object.currentPeriodStart` / `current_period_start`,
+ *    `object.currentPeriodEnd` / `current_period_end` — optional; only
+ *    `current_period_end` is required downstream when `cancelAtPeriodEnd=true`
+ *    (with `false` it is optional).
+ *  - STATUS FIELD QUIRK: the parser does NOT read `object.status`; it
+ *    synthesizes status from `cancelAtPeriodEnd`. Do NOT rely on a `status`
+ *    field. (The cancel parser also does NOT accept
+ *    `current_period_start_date` / `current_period_end_date` — those are
+ *    renewal-only.)
+ *
+ * Role revocation lands on `handle_subscription_cancel` (`:1648` ImmediateCancel
+ * branch for Creem), same convergence point + `revoke_roles_by_payment_source`
+ * semantics as the Stripe path. Manual grants untouched; `NotFound` idempotent.
+ */
+export interface CreemSubscriptionCanceledPayload {
+  /** Top-level Creem event id (evt_*). Required by parse_event_id. */
+  id: string
+  /** Top-level event type; REQUIRED by handle_creem_webhook dispatcher (camelCase). */
+  eventType: 'subscription.canceled'
+  /** snake_case type — inert for the dispatcher (it reads `eventType`), kept for parity. */
+  type: 'subscription.canceled'
+  data: {
+    object: {
+      /** External subscription id (Creem sub_*); resolves the internal sub. Fallback for `object.subscriptionId`. */
+      id: string
+      /** camelCase subscription id — PRIMARY read path. */
+      subscriptionId: string
+      /** camelCase productId — PRIMARY read path of the backend parser. */
+      productId: string
+      /** snake_case product id — kept for parity (parser falls back to `object.product.id`). */
+      product: string
+      /** false → ImmediateCancel (revokes role). true → DefaultCancel (no revoke). Default false. */
+      cancelAtPeriodEnd: boolean
+      metadata: {
+        /** Herald user UUID. Included for deterministic resolution (avoids DB-lookup fallback). */
+        herald_user_id: string
+        [key: string]: unknown
+      }
+      [key: string]: unknown
+    }
+  }
+}
+
+export interface BuildCreemSubscriptionCanceledInput {
+  /** Top-level Creem event id (evt_*). Unique per delivery for clean idempotency. */
+  eventId: string
+  /**
+   * External subscription id (Creem sub_*) — MUST match the
+   * `external_subscription_id` stored at fulfillment. The backend resolves the
+   * internal subscription UUID via `find_by_external_subscription_id`.
+   */
+  subscriptionId: string
+  /** External Creem product id (prod_*). Required by parser. */
+  productId: string
+  /** Herald user UUID holding the payment-granted role. */
+  userId: string
+  /** Optional entitlement key for targeted revocation. */
+  entitlementKey?: string
+  /**
+   * Drives cancel mode. false (default) → ImmediateCancel → revoke role.
+   * true → DefaultCancel → no revoke. Tests asserting a revoke MUST pass false.
+   */
+  cancelAtPeriodEnd?: boolean
+}
+
+export function buildCreemSubscriptionCanceledPayload(
+  input: BuildCreemSubscriptionCanceledInput,
+): CreemSubscriptionCanceledPayload {
+  return {
+    id: input.eventId,
+    eventType: 'subscription.canceled',
+    type: 'subscription.canceled',
+    data: {
+      object: {
+        id: input.subscriptionId,
+        subscriptionId: input.subscriptionId,
+        productId: input.productId,
+        product: input.productId,
+        cancelAtPeriodEnd: input.cancelAtPeriodEnd ?? false,
+        metadata: {
+          herald_user_id: input.userId,
+          ...(input.entitlementKey !== undefined
+            ? { herald_entitlement_key: input.entitlementKey }
+            : {}),
+        },
+      },
+    },
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Delivery
 // ---------------------------------------------------------------------------
 
@@ -417,6 +780,92 @@ export async function deliverStripeRenewalWebhook(
     request,
     WEBHOOK_ROUTES.stripe(realmId),
     WEBHOOK_HEADERS.stripe,
+    signature,
+    rawBody,
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Delivery (cancel / refund — DE-D02)
+// ---------------------------------------------------------------------------
+
+/**
+ * Deliver a signed Stripe `customer.subscription.deleted` webhook.
+ *
+ * Drives the M4 cancel/expire role-revocation chain. See
+ * `buildStripeSubscriptionDeletedPayload` for the backend contract.
+ *
+ * @returns the backend response (200 on success, 400 on signature / missing
+ *   field / unresolvable-subscription issues). Callers SHOULD assert
+ *   `result.ok` / `result.status` AND the downstream persistent state
+ *   (permission/check `allowed=false`, user_roles source distinction) — NOT
+ *   only the HTTP 200.
+ */
+export async function deliverStripeSubscriptionDeletedWebhook(
+  request: APIRequestContext,
+  realmId: string,
+  payload: StripeSubscriptionDeletedPayload,
+): Promise<WebhookDeliveryResult> {
+  const rawBody = Buffer.from(JSON.stringify(payload), 'utf8')
+  const signature = signStripeWebhook(rawBody)
+  return postRaw(
+    request,
+    WEBHOOK_ROUTES.stripe(realmId),
+    WEBHOOK_HEADERS.stripe,
+    signature,
+    rawBody,
+  )
+}
+
+/**
+ * Deliver a signed Stripe `charge.refunded` webhook.
+ *
+ * Drives the M4 refund role-revocation chain. See
+ * `buildStripeChargeRefundedPayload` for the backend contract and the
+ * CONDITIONAL convergence (refundType='subscription' + resolvable internal
+ * subscription UUID).
+ *
+ * @returns the backend response (200 on success, 400 on signature / missing
+ *   field / unresolvable-subscription issues). Callers SHOULD assert on
+ *   persistent RBAC state, not only the HTTP status.
+ */
+export async function deliverStripeChargeRefundedWebhook(
+  request: APIRequestContext,
+  realmId: string,
+  payload: StripeChargeRefundedPayload,
+): Promise<WebhookDeliveryResult> {
+  const rawBody = Buffer.from(JSON.stringify(payload), 'utf8')
+  const signature = signStripeWebhook(rawBody)
+  return postRaw(
+    request,
+    WEBHOOK_ROUTES.stripe(realmId),
+    WEBHOOK_HEADERS.stripe,
+    signature,
+    rawBody,
+  )
+}
+
+/**
+ * Deliver a signed Creem `subscription.canceled` webhook.
+ *
+ * Drives the M4 cancel/expire role-revocation chain via Creem. See
+ * `buildCreemSubscriptionCanceledPayload` for the backend contract.
+ *
+ * @returns the backend response (200 on success, 400 on signature / missing
+ *   eventType / missing subscriptionId|productId issues). Callers SHOULD assert
+ *   on persistent RBAC state, not only the HTTP status.
+ */
+export async function deliverCreemSubscriptionCanceledWebhook(
+  request: APIRequestContext,
+  realmId: string,
+  payload: CreemSubscriptionCanceledPayload,
+): Promise<WebhookDeliveryResult> {
+  const rawBody = Buffer.from(JSON.stringify(payload), 'utf8')
+  const signature = signCreemWebhook(rawBody)
+  return postRaw(
+    request,
+    WEBHOOK_ROUTES.creem(realmId),
+    WEBHOOK_HEADERS.creem,
     signature,
     rawBody,
   )

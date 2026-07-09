@@ -13,6 +13,7 @@ use herald_core::admin::user::init_admin_user;
 use herald_core::application::{ApplicationServiceBuilder, WebhookService};
 use herald_core::domain::points::PointsService;
 use herald_core::domain::points::services::RealmConfigService;
+use herald_core::infrastructure::PostgresCustomDomainMappingRepository;
 use herald_core::infrastructure::authorization::policies::PermissionBasedPointsPolicy;
 use herald_core::infrastructure::authorization::{RedisCache, RedisPermissionChecker};
 use herald_core::infrastructure::points::init_idempotency_function;
@@ -437,6 +438,15 @@ impl AsyncTestContext for SchemaTestContext {
                     ),
                 ),
             ),
+            custom_domain_mapping_repo: Arc::new(PostgresCustomDomainMappingRepository::new(
+                Arc::new(sea_conn.clone()),
+            )),
+            custom_domain_cname_target: String::new(),
+            // Tests bypass build_app_state_with_migrations (which validates
+            // non-empty); empty keeps the authorize runtime mismatch path
+            // (any caller → 401) exercised without forcing every fixture to
+            // configure a key.
+            custom_domain_ask_key: String::new(),
         });
 
         // 13. 初始化 Redis Functions（只运行一次）

@@ -89,6 +89,12 @@ pub struct HealthCheckResponse {
         realm::white_label_config::handle_discard_white_label_draft,
         realm::white_label_config::handle_publish_white_label_config,
         realm::white_label_config::handle_restore_white_label_config,
+        realm::custom_domain_config::handle_get_custom_domain_config,
+        realm::custom_domain_config::handle_save_custom_domain_draft,
+        realm::custom_domain_config::handle_discard_custom_domain_draft,
+        realm::custom_domain_config::handle_publish_custom_domain_config,
+        realm::custom_domain_config::handle_restore_custom_domain_config,
+        realm::custom_domain_config::handle_custom_domain_authorize,
         public_config::get_public_config,
         legal::list_agreements,
         legal::get_agreement,
@@ -143,6 +149,13 @@ pub struct HealthCheckResponse {
             realm::white_label_config::WhiteLabelConfigStateResponse,
             realm::white_label_config::SaveWhiteLabelDraftResponse,
             realm::white_label_config::WhiteLabelLifecycleResponse,
+            realm::custom_domain_config::CustomDomainConfigStateResponse,
+            realm::custom_domain_config::UpdateCustomDomainConfigRequest,
+            realm::custom_domain_config::CustomDomainLifecycleResponse,
+            realm::custom_domain_config::CustomDomainAuthorizeResponse,
+            realm::custom_domain_config::CustomDomainHostQuery,
+            herald_core::domain::realm_config::CustomDomainConfig,
+            herald_core::domain::realm_config::CustomDomainStatus,
             public_config::PublicConfigResponse,
             public_config::PublicWhiteLabelConfig,
             public_config::RegistrationConfig,
@@ -344,6 +357,15 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
         .route(
             "/api/public-config/{realmId}",
             get(super::public_config::get_public_config),
+        )
+        // Internal Caddy On-Demand TLS ask authorization endpoint
+        // (design §4.2.2, BE-D07). Top-level (NOT under /api/realms → no
+        // inject_identity). Uses the X-Herald-Ask-Key shared secret checked
+        // in-handler. (The public host→realmId resolve endpoint was removed:
+        // realm routing now always relies on the {realmId} path segment.)
+        .route(
+            "/api/internal/custom-domain/authorize",
+            get(realm::custom_domain_config::handle_custom_domain_authorize),
         )
         // Public legal agreement endpoints (NO inject_identity).
         // Grouped separately from the consent nest below so the inject_identity

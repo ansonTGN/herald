@@ -8,6 +8,7 @@
 
 // Sub-modules
 pub mod crud;
+pub mod custom_domain_config;
 pub mod passkey_config;
 pub mod totp_config;
 pub mod validators;
@@ -43,6 +44,11 @@ use axum::Router;
 /// - DELETE /api/realms/{realmId}/config/white-label/draft - Discard white-label draft
 /// - POST /api/realms/{realmId}/config/white-label/publish - Publish white-label settings
 /// - POST /api/realms/{realmId}/config/white-label/restore - Restore previous white-label settings
+/// - GET /api/realms/{realmId}/config/custom-domain - Get custom-domain configuration state
+/// - PUT /api/realms/{realmId}/config/custom-domain/draft - Save custom-domain draft
+/// - DELETE /api/realms/{realmId}/config/custom-domain/draft - Discard custom-domain draft
+/// - POST /api/realms/{realmId}/config/custom-domain/publish - Publish custom-domain settings
+/// - POST /api/realms/{realmId}/config/custom-domain/restore - Restore previous custom-domain settings
 pub fn realm_router() -> Router<AppState> {
     Router::new()
         // CRUD routes
@@ -93,5 +99,23 @@ pub fn realm_router() -> Router<AppState> {
         .route(
             "/{realmId}/config/white-label/restore",
             axum::routing::post(white_label_config::handle_restore_white_label_config),
+        )
+        // Custom-domain configuration routes
+        .route(
+            "/{realmId}/config/custom-domain",
+            axum::routing::get(custom_domain_config::handle_get_custom_domain_config),
+        )
+        .route(
+            "/{realmId}/config/custom-domain/draft",
+            axum::routing::put(custom_domain_config::handle_save_custom_domain_draft)
+                .delete(custom_domain_config::handle_discard_custom_domain_draft),
+        )
+        .route(
+            "/{realmId}/config/custom-domain/publish",
+            axum::routing::post(custom_domain_config::handle_publish_custom_domain_config),
+        )
+        .route(
+            "/{realmId}/config/custom-domain/restore",
+            axum::routing::post(custom_domain_config::handle_restore_custom_domain_config),
         )
 }

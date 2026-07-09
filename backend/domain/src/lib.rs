@@ -18,6 +18,7 @@ pub mod client;
 pub mod client_api_keys;
 pub mod client_app;
 pub mod common;
+pub mod custom_domain;
 pub mod dashboard;
 pub mod legal;
 pub mod oauth;
@@ -40,4 +41,5 @@ pub use audit::{
     AuditResult, AuditTargetType, NewAuditEvent, PaginatedAuditEvents,
 };
 pub use authentication::Identity;
+pub use custom_domain::{CustomDomainMappingRepository, MappingRow};
 pub use totp_key_management::{RealmTotpKeyRepository, RealmTotpKeyService};

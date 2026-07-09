@@ -1,0 +1,271 @@
+// =============================================================================
+// Custom-Domain Internal Caddy Ask Endpoint Scenarios
+// =============================================================================
+//
+// BE-T02-A — covers the Caddy On-Demand TLS ask endpoint
+// `GET /api/internal/custom-domain/authorize` (design §4.2.2 ask, §4.5 security):
+// shared-key `X-Herald-Ask-Key` gate; 200 / 404 / 401; no realm leak.
+//
+// NOTE: the public host→realmId resolve endpoint (`GET /api/internal/custom-
+// domain/resolve`) was removed when realm routing reverted to always relying on
+// the `{realmId}` path segment; only the ask (Caddy TLS authorization)
+// scenarios remain here.
+//
+// ask_key handling (see task BE-T02-A execution note):
+//   The shared test context (`SchemaTestContext`) hard-codes
+//   `custom_domain_ask_key = String::new()` (empty). The ask handler rejects any
+//   caller when the provided header fails to match the configured key, so the
+//   default empty-key router exercises the 401 path (missing/mismatched key)
+//   without any fixture. To exercise the 200 + no-leak paths we build a router
+//   over a CLONED `AppState` whose `custom_domain_ask_key` is set to a known
+//   non-empty value, then send that value in the `X-Herald-Ask-Key` header.
+//   This keeps the production contract intact (header == configured key) and
+//   avoids mutating the shared context for other tests.
+//
+// **运行方式**:
+// ```bash
+// cargo nextest run --workspace custom_domain_internal_endpoints_scenarios
+// ```
+//
+// =============================================================================
+
+use crate::application::http::server::create_api_routes;
+use crate::tests::schema_test_context::SchemaTestContext as TestContext;
+use axum::{
+    body::Body,
+    http::{Request, StatusCode},
+};
+use serde_json::Value;
+use std::sync::Arc;
+use test_context::test_context;
+use tower::ServiceExt;
+
+const AUTHORIZE_PATH: &str = "/api/internal/custom-domain/authorize";
+/// Shared ask key the 200-path tests configure on a cloned AppState and then
+/// present via the `X-Herald-Ask-Key` header.
+const TEST_ASK_KEY: &str = "test-ask-shared-secret";
+
+/// Insert a published `custom_domain_mapping` row for an arbitrary realm.
+///
+/// `enabled` defaults true — the unified request-time effectiveness predicate
+/// (design §5.1「生效判定」) is `enabled = true`; `cname_verified`/`tls_ready`
+/// are display-only and default false. The ask endpoint filters on
+/// `enabled = true` via `find_by_hostname`.
+async fn insert_custom_domain_mapping(
+    ctx: &TestContext,
+    realm_id: &str,
+    hostname: &str,
+    enabled: bool,
+) {
+    sqlx::query(
+        "INSERT INTO custom_domain_mapping (realm_id, hostname, enabled, cname_verified, tls_ready, created_at, updated_at)
+         VALUES ($1, $2, $3, false, false, NOW(), NOW())
+         ON CONFLICT (hostname)
+         DO UPDATE SET realm_id = EXCLUDED.realm_id, enabled = EXCLUDED.enabled, updated_at = NOW()",
+    )
+    .bind(realm_id)
+    .bind(hostname)
+    .bind(enabled)
+    .execute(&ctx._app_state.pool)
+    .await
+    .expect("Failed to upsert custom-domain mapping");
+}
+
+/// Build a router over a CLONED `AppState` whose `custom_domain_ask_key` is set
+/// to [`TEST_ASK_KEY`], so the ask endpoint's shared-key gate can be satisfied.
+///
+/// Only the 200-path and no-leak tests need a non-empty configured key; the 401
+/// tests use the default router (empty configured key → every header mismatches).
+fn router_with_ask_key(ctx: &TestContext) -> axum::Router {
+    let mut state = (*ctx._app_state).clone();
+    state.custom_domain_ask_key = TEST_ASK_KEY.to_string();
+    let api_routes = create_api_routes(Arc::new(state.clone()));
+    api_routes.with_state(state)
+}
+
+/// Build a plain `GET {path}?host={host}` request, optionally attaching the
+/// `X-Herald-Ask-Key` header (the ask endpoint's shared secret).
+fn host_get_request(path: &str, host: &str, ask_key: Option<&str>) -> Request<Body> {
+    let mut builder = Request::builder()
+        .method("GET")
+        .uri(format!("{path}?host={host}"));
+    if let Some(key) = ask_key {
+        builder = builder.header("x-herald-ask-key", key);
+    }
+    builder.body(Body::empty()).unwrap()
+}
+
+/// ============================================================================
+/// Caddy ask endpoint — 200 authorized for a published + enabled host
+/// ============================================================================
+//
+/// User Story: US-CD-005 — Caddy may only issue TLS for a host a Realm has
+/// registered and published (design §4.2.2 ask, §4.5 certificate-abuse gate).
+/// Covers: design §5.1 effectiveness predicate (`enabled = true`).
+#[test_context(TestContext)]
+#[tokio::test]
+async fn custom_domain_authorize_returns_200_when_published_and_enabled(ctx: &mut TestContext) {
+    let hostname = "login.authorize-200-example.com";
+    insert_custom_domain_mapping(ctx, &ctx._realm_id, hostname, true).await;
+
+    // Use a router with a non-empty configured ask key so the shared-secret
+    // gate passes when the matching header is presented.
+    let app = router_with_ask_key(ctx);
+    let request = host_get_request(AUTHORIZE_PATH, hostname, Some(TEST_ASK_KEY));
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body: Value = crate::tests::response_json(response).await;
+    assert_eq!(body["authorized"], true);
+}
+
+/// ============================================================================
+/// Caddy ask endpoint — host is normalized (case-insensitive, trailing-dot tolerant)
+/// ============================================================================
+//
+/// User Story: US-CD-005 — Caddy's `host`/SNI for a published domain may arrive
+/// with differing case or a trailing dot (FQDN form). The mapping column is
+/// written normalized (lowercase, trailing dot stripped) by the publish path
+/// (`normalize_and_validate_hostname`), so the authorize READ path must apply
+/// the same normalization — otherwise a legitimately published domain misses
+/// and returns 404, declining TLS issuance.
+///
+/// This test distinguishes the fixed read path from the original `host.trim()`-
+/// only path: under the fix both requests authorize; before it they mismatched
+/// the lowercased, dot-stripped column and returned 404.
+/// Covers: authorize read-path normalization (symmetry with publish write path).
+#[test_context(TestContext)]
+#[tokio::test]
+async fn custom_domain_authorize_normalizes_host_case_and_trailing_dot(ctx: &mut TestContext) {
+    // Mapping row stores the canonical (lowercase, no trailing dot) hostname —
+    // exactly what the publish path writes after `normalize_and_validate_hostname`.
+    let canonical = "login.authorize-normalize-example.com";
+    insert_custom_domain_mapping(ctx, &ctx._realm_id, canonical, true).await;
+
+    let app = router_with_ask_key(ctx);
+
+    // Mixed-case host → must still authorize (normalized to the stored form).
+    let upper_req = host_get_request(
+        AUTHORIZE_PATH,
+        "Login.Normalize-Example.COM",
+        Some(TEST_ASK_KEY),
+    );
+    let upper_resp = app.clone().oneshot(upper_req).await.unwrap();
+    assert_eq!(upper_resp.status(), StatusCode::OK);
+    let upper_body: Value = crate::tests::response_json(upper_resp).await;
+    assert_eq!(
+        upper_body["authorized"], true,
+        "mixed-case host must authorize after read-path normalization"
+    );
+
+    // FQDN form (trailing dot) → must still authorize.
+    let fqdn_req = host_get_request(
+        AUTHORIZE_PATH,
+        "login.authorize-normalize-example.com.",
+        Some(TEST_ASK_KEY),
+    );
+    let fqdn_resp = app.oneshot(fqdn_req).await.unwrap();
+    assert_eq!(fqdn_resp.status(), StatusCode::OK);
+    let fqdn_body: Value = crate::tests::response_json(fqdn_resp).await;
+    assert_eq!(
+        fqdn_body["authorized"], true,
+        "trailing-dot host must authorize after read-path normalization"
+    );
+}
+
+/// ============================================================================
+/// Caddy ask endpoint — 404 for an unregistered host
+/// ============================================================================
+//
+/// User Story: US-CD-005 — a host not registered in any Realm's published
+/// mapping must not be authorized for TLS issuance (design §4.2.2 ask 404,
+/// §4.5 certificate-abuse gate). Caddy declines issuance on a miss.
+#[test_context(TestContext)]
+#[tokio::test]
+async fn custom_domain_authorize_returns_404_for_unregistered_host(ctx: &mut TestContext) {
+    // A host that has no mapping row at all.
+    let hostname = "unregistered.authorize-404-example.com";
+
+    let app = router_with_ask_key(ctx);
+    let request = host_get_request(AUTHORIZE_PATH, hostname, Some(TEST_ASK_KEY));
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+/// ============================================================================
+/// Caddy ask endpoint — 401 without or with a wrong shared key
+/// ============================================================================
+//
+/// User Story: US-CD-005 / §4.5 — the ask endpoint is an internal Caddy gate
+/// guarded by a shared secret. A missing OR mismatched `X-Herald-Ask-Key`
+/// header must yield 401 regardless of whether the host is registered
+/// (design §4.2.2 ask 401, §4.5 shared-key gate). Uses the default test
+/// context router whose configured ask key is empty (every header mismatches).
+#[test_context(TestContext)]
+#[tokio::test]
+async fn custom_domain_authorize_returns_401_without_or_with_wrong_shared_key(
+    ctx: &mut TestContext,
+) {
+    // The host IS registered + enabled — the key gate must still reject before
+    // the mapping lookup is reached (proves 401 is key-driven, not miss-driven).
+    let hostname = "login.authorize-401-example.com";
+    insert_custom_domain_mapping(ctx, &ctx._realm_id, hostname, true).await;
+
+    // Default test router: configured ask key is empty → no header matches.
+    let app = ctx.create_unified_test_router();
+
+    // Missing key entirely → 401.
+    let missing_req = host_get_request(AUTHORIZE_PATH, hostname, None);
+    let missing_resp = app.clone().oneshot(missing_req).await.unwrap();
+    assert_eq!(missing_resp.status(), StatusCode::UNAUTHORIZED);
+
+    // Wrong key value → 401.
+    let wrong_req = host_get_request(AUTHORIZE_PATH, hostname, Some("definitely-wrong-key"));
+    let wrong_resp = app.oneshot(wrong_req).await.unwrap();
+    assert_eq!(wrong_resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+/// ============================================================================
+/// Caddy ask endpoint — 200 body never leaks realm identity
+/// ============================================================================
+//
+/// User Story: US-CD-005 / §4.5 — the ask endpoint is a certificate-abuse gate;
+/// leaking the realmId would let an attacker map a host to a Realm without
+/// owning it. The 200 body must contain ONLY `{"authorized": true}` — no realm
+/// id, no realm metadata (design §4.2.2 ask, certificate-abuse gate).
+#[test_context(TestContext)]
+#[tokio::test]
+async fn custom_domain_authorize_does_not_leak_realm(ctx: &mut TestContext) {
+    let hostname = "login.authorize-noleak-example.com";
+    insert_custom_domain_mapping(ctx, &ctx._realm_id, hostname, true).await;
+
+    let app = router_with_ask_key(ctx);
+    let request = host_get_request(AUTHORIZE_PATH, hostname, Some(TEST_ASK_KEY));
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body: Value = crate::tests::response_json(response).await;
+    // The body must contain exactly the `authorized` boolean.
+    assert_eq!(body["authorized"], true);
+    assert!(
+        body.get("realmId").is_none(),
+        "ask 200 body must not leak realmId; got: {body}"
+    );
+    assert!(
+        body.get("realm_id").is_none(),
+        "ask 200 body must not leak realm_id; got: {body}"
+    );
+    // No other realm-shaped fields.
+    let leaked_keys: Vec<&str> = body
+        .as_object()
+        .map(|o| o.keys().map(String::as_str).collect())
+        .unwrap_or_default();
+    assert_eq!(
+        leaked_keys,
+        ["authorized"],
+        "ask 200 body must contain only the authorized field; got: {leaked_keys:?}"
+    );
+}

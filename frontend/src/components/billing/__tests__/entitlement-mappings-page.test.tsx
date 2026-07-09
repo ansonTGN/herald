@@ -4,6 +4,7 @@ import { userEvent } from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import type { EntitlementMappingResponse } from '@/lib/api-generated'
+import { toast } from 'sonner'
 
 // --- Mocks ----------------------------------------------------------------
 
@@ -14,7 +15,18 @@ vi.mock('@/hooks/use-permission', () => ({
   })),
 }))
 
-// Query options: return canned flat price-granularity data.
+// Controllable realm-roles list for the Role-grant dimension (FE-D02). Held in
+// a mutable ref so individual tests can seed real assignable roles before
+// render; defaults to empty so existing tests see the RoleSelector placeholder.
+const { roleItemsHolder } = vi.hoisted(() => ({
+  roleItemsHolder: {
+    current: [] as Array<{ id: string; name: string; isBuiltin: boolean }>,
+  },
+}))
+
+// Query options: return canned flat price-granularity data. The roles queryFn
+// reads the mutable holder so each test can supply its own role set; same
+// queryFn-returns-data pattern the mappings query uses in this file.
 vi.mock('@/data/query-options', () => ({
   queryKeys: {
     entitlementMappings: (realmId: string) => ['entitlement-mappings', realmId],
@@ -23,34 +35,81 @@ vi.mock('@/data/query-options', () => ({
     queryKey: ['entitlement-mappings', 'realm-1'],
     queryFn: async () => undefined,
   }),
+  // Role-grant dimension (FE-D02): PriceEditRow does
+  // `useQuery(adminRolesQueryOptions(realmId))` and filters out builtin roles.
+  // Tests mutate `roleItemsHolder.current` before render to drive RoleSelector.
+  adminRolesQueryOptions: () => ({
+    queryKey: ['roles', 'realm-1'],
+    queryFn: async () => roleItemsHolder.current,
+  }),
 }))
 
 // Mutations: controllable from each test. Use vi.hoisted so the factory
 // (which Vitest hoists above imports) can reference these bindings.
-const { mockBatchMutate, mockIsProtectedPriceError, mockExtractActiveSubscriptions } = vi.hoisted(
-  () => {
-    const mockBatchMutate = vi.fn()
-    const mockIsProtectedPriceError = (e: unknown) =>
-      !!e &&
-      typeof e === 'object' &&
-      (e as { code?: unknown }).code === 'mapping_in_use' &&
-      typeof (e as { activeSubscriptions?: unknown }).activeSubscriptions === 'number'
-    const mockExtractActiveSubscriptions = (e: unknown) =>
-      mockIsProtectedPriceError(e)
-        ? (e as { activeSubscriptions: number }).activeSubscriptions
-        : null
-    return { mockBatchMutate, mockIsProtectedPriceError, mockExtractActiveSubscriptions }
+const {
+  mockBatchMutate,
+  mockIsProtectedPriceError,
+  mockIsRoleNotInRealmError,
+  mockExtractActiveSubscriptions,
+} = vi.hoisted(() => {
+  const mockBatchMutate = vi.fn()
+  const mockIsProtectedPriceError = (e: unknown) =>
+    !!e &&
+    typeof e === 'object' &&
+    (e as { code?: unknown }).code === 'mapping_in_use' &&
+    typeof (e as { activeSubscriptions?: unknown }).activeSubscriptions === 'number'
+  const mockIsRoleNotInRealmError = (e: unknown) =>
+    !!e && typeof e === 'object' && (e as { code?: unknown }).code === 'role_not_in_realm'
+  const mockExtractActiveSubscriptions = (e: unknown) =>
+    mockIsProtectedPriceError(e) ? (e as { activeSubscriptions: number }).activeSubscriptions : null
+  return {
+    mockBatchMutate,
+    mockIsProtectedPriceError,
+    mockIsRoleNotInRealmError,
+    mockExtractActiveSubscriptions,
   }
-)
+})
 
-vi.mock('@/data/entitlement-mapping-mutations', () => ({
-  useBatchUpdateEntitlementMappings: () => ({
-    mutate: mockBatchMutate,
-    isPending: false,
-  }),
-  isProtectedPriceError: mockIsProtectedPriceError,
-  extractActiveSubscriptions: mockExtractActiveSubscriptions,
-}))
+vi.mock('@/data/entitlement-mapping-mutations', async () => {
+  // The real batch-save hook owns onError routing: 409 `mapping_in_use` → no
+  // toast (page shows the confirm dialog), 400 `role_not_in_realm` → dedicated
+  // toast, anything else → generic toast. The page test mocks this whole
+  // module, so to let the role_not_in_realm toast assertion (Case C) observe a
+  // realistic side-effect, the mock `mutate` mirrors that routing contract:
+  // the internal `mockBatchMutate` controller decides success/failure (tests
+  // drive it via `mockImplementation((_req, { onError }) => onError(err))`),
+  // and a wrapper here applies the real hook's toast rules before delegating
+  // to the page's caller-supplied onError.
+  const { m } = await import('@/paraglide/messages')
+  const { toast } = await import('sonner')
+  return {
+    useBatchUpdateEntitlementMappings: () => ({
+      mutate: (
+        req: unknown,
+        opts: { onError?: (error: unknown) => void; onSuccess?: () => void }
+      ) => {
+        const controllerOpts = {
+          onSuccess: () => opts.onSuccess?.(),
+          onError: (error: unknown) => {
+            if (mockIsProtectedPriceError(error)) {
+              // 409: real hook returns early without toasting; page owns the
+              // confirm-dialog UX.
+            } else if (mockIsRoleNotInRealmError(error)) {
+              toast.error(m['billing.role_not_in_realm_error']())
+            }
+            // Delegate to the page's onError (409 confirm-dialog gating, etc.).
+            opts.onError?.(error)
+          },
+        }
+        mockBatchMutate(req, controllerOpts)
+      },
+      isPending: false,
+    }),
+    isProtectedPriceError: mockIsProtectedPriceError,
+    isRoleNotInRealmError: mockIsRoleNotInRealmError,
+    extractActiveSubscriptions: mockExtractActiveSubscriptions,
+  }
+})
 
 // Sync button: stub to avoid pulling in its mutation tree.
 vi.mock('@/components/billing/provider-sync-button', () => ({
@@ -103,6 +162,9 @@ function renderPage(items: EntitlementMappingResponse[] = [], client?: QueryClie
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // Default: no assignable roles (existing tests don't touch role selection).
+  // Role-related tests override this before render.
+  roleItemsHolder.current = []
   // Reset permission to full admin by default.
   vi.mocked(usePermission).mockReturnValue({
     hasPermission: () => true,
@@ -502,5 +564,131 @@ describe('EntitlementMappingsPage — one_time field hiding', () => {
     expect(within(row).queryByText(m['billing.field_max_periods']())).toBeNull()
     expect(within(row).getByText(m['billing.field_grant_on_subscribe']())).toBeInTheDocument()
     expect(within(row).getByTestId('quota-window-editor')).toBeInTheDocument()
+  })
+})
+
+// --- FE-T01: Role-grant dimension (design §4.4 / §5.2) ---------------------
+
+/** Two assignable (non-builtin) realm roles for the Role-grant field. */
+const ASSIGNABLE_ROLES = [
+  { id: 'role-admin', name: 'Admin', isBuiltin: false },
+  { id: 'role-member', name: 'Member', isBuiltin: false },
+]
+
+describe('EntitlementMappingsPage — role-grant dimension', () => {
+  // Scenario A — RoleSelector wiring & render (priceId via externalPriceId and
+  // via the id fallback). Asserts the field container testid and that a seeded
+  // granted role renders selected in the open list.
+  it('renders the granted-roles field container per price (externalPriceId + id fallback)', async () => {
+    roleItemsHolder.current = ASSIGNABLE_ROLES
+    renderPage([
+      makeMapping({
+        id: 'm-1',
+        externalProductId: 'prod_pro',
+        externalPriceId: 'price_monthly',
+        entitlementKey: 'pro-plan',
+        billingType: 'recurring',
+        pointsPerPeriod: 1000,
+        grantedRoleIds: ['role-admin'],
+      }),
+      makeMapping({
+        id: 'm-2',
+        externalProductId: 'prod_pro',
+        // No externalPriceId → field testid falls back to the mapping id.
+        externalPriceId: null,
+        entitlementKey: 'pro-plan',
+        billingType: 'recurring',
+        pointsPerPeriod: 12000,
+        grantedRoleIds: ['role-admin'],
+      }),
+    ])
+
+    // Both price rows mount the granted-roles field: one keyed by externalPriceId,
+    // one keyed by id (the externalPriceId ?? id fallback in PriceEditRow).
+    const externalPriceField = await screen.findByTestId('price-granted-roles-price_monthly')
+    expect(externalPriceField).toBeInTheDocument()
+    expect(screen.getByTestId('price-granted-roles-m-2')).toBeInTheDocument()
+
+    // Open the RoleSelector for the externalPriceId row and confirm the seeded
+    // role renders as an item AND is in the selected (checked) state.
+    await userEvent.click(within(externalPriceField).getByTestId('role-selector-trigger'))
+    const adminItem = await screen.findByTestId('role-selector-item-role-admin')
+    expect(adminItem).toBeInTheDocument()
+    // The Check icon is opacity-100 when selected (see role-selector.tsx).
+    const check = adminItem.querySelector('svg.opacity-100')
+    expect(check).not.toBeNull()
+  })
+
+  // Scenario B — save payload carries grantedRoleIds (set + clear).
+  it('sends grantedRoleIds in the batch save payload when roles are set, and [] when cleared', async () => {
+    roleItemsHolder.current = ASSIGNABLE_ROLES
+    renderPage([
+      makeMapping({
+        id: 'm-1',
+        externalProductId: 'prod_pro',
+        externalPriceId: 'price_monthly',
+        entitlementKey: 'pro-plan',
+        billingType: 'recurring',
+        pointsPerPeriod: 1000,
+        grantedRoleIds: [],
+      }),
+    ])
+
+    const row = await screen.findByTestId('price-granted-roles-price_monthly')
+
+    // Add a role: open the selector and toggle it on.
+    await userEvent.click(within(row).getByTestId('role-selector-trigger'))
+    await userEvent.click(await screen.findByTestId('role-selector-item-role-admin'))
+    // Close the popover so the save button is clickable (Radix Popover focus).
+    await userEvent.keyboard('{Escape}')
+
+    await userEvent.click(screen.getByTestId('save-mapping-button'))
+    const setPayload = mockBatchMutate.mock.calls.at(-1)?.[0] as {
+      updates: Array<{ mappingId: string; grantedRoleIds?: unknown }>
+    }
+    expect(setPayload.updates[0]?.mappingId).toBe('m-1')
+    expect(setPayload.updates[0]?.grantedRoleIds).toEqual(['role-admin'])
+
+    // Clear path: toggle the only role off and save again → grantedRoleIds=[].
+    await userEvent.click(within(row).getByTestId('role-selector-trigger'))
+    await userEvent.click(await screen.findByTestId('role-selector-item-role-admin'))
+    await userEvent.keyboard('{Escape}')
+
+    await userEvent.click(screen.getByTestId('save-mapping-button'))
+    const clearedPayload = mockBatchMutate.mock.calls.at(-1)?.[0] as {
+      updates: Array<{ mappingId: string; grantedRoleIds?: unknown }>
+    }
+    expect(clearedPayload.updates[0]?.mappingId).toBe('m-1')
+    // [] ⟺ clear, distinct from null/undefined ⟺ leave unchanged.
+    expect(clearedPayload.updates[0]?.grantedRoleIds).toEqual([])
+  })
+
+  // Scenario C — a 400 role_not_in_realm surfaces the dedicated toast and does
+  // NOT open the protected-price confirmation dialog (it is not a 409).
+  it('toasts the role_not_in_realm error and does not open the protected-price dialog', async () => {
+    mockBatchMutate.mockImplementation((_req: unknown, opts: { onError: (e: unknown) => void }) => {
+      opts.onError({ code: 'role_not_in_realm', roleId: 'role-x', realmId: 'realm-1' })
+    })
+
+    renderPage([
+      makeMapping({
+        id: 'm-1',
+        externalProductId: 'prod_pro',
+        externalPriceId: 'price_monthly',
+        entitlementKey: 'pro-plan',
+        billingType: 'recurring',
+        pointsPerPeriod: 1000,
+      }),
+    ])
+
+    await userEvent.click(await screen.findByTestId('save-mapping-button'))
+
+    // The dedicated role_not_in_realm toast fired with its i18n body.
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(m['billing.role_not_in_realm_error']())
+    })
+
+    // The 409 protected-price confirmation dialog did NOT open (different path).
+    expect(screen.queryByTestId('protected-price-confirm-dialog')).toBeNull()
   })
 })
