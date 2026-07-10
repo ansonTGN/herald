@@ -316,16 +316,15 @@ mod tests {
         attempt_id
     }
 
-    /// Seed a `user_roles` row with `source='payment'`, `source_id=source_id`,
-    /// `expires_at=NULL` (permanent). Triggers the
-    /// `user_has_any_payment_role` branch of the ownership predicate WITHOUT a
-    /// succeeded attempt. Mirrors `paywall_w1_m2_grant_scenarios.rs::
-    /// seed_manual_role_grant` but with `source='payment'`.
-    async fn seed_payment_role_grant(
+    /// Seed a permanent user role from the requested source. Ownership must
+    /// block a duplicate purchase regardless of whether the role came from a
+    /// payment or an administrator.
+    async fn seed_role_grant(
         ctx: &TestContext,
         realm_id: &str,
         user_id: Uuid,
         role_id: Uuid,
+        source: &str,
         source_id: &str,
     ) {
         let user_role_id = Uuid::now_v7();
@@ -333,7 +332,7 @@ mod tests {
             "INSERT INTO user_roles
                 (id, user_id, role_id, realm_id, client_id, principal_type, principal_id,
                  source, source_id, expires_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $2::text, 'payment', $7, NULL)",
+             VALUES ($1, $2, $3, $4, $5, $6, $2::text, $7, $8, NULL)",
         )
         .bind(user_role_id)
         .bind(user_id)
@@ -341,6 +340,7 @@ mod tests {
         .bind(realm_id)
         .bind(&ctx._client_id)
         .bind(principal_types::USER)
+        .bind(source)
         .bind(source_id)
         .execute(&ctx.app_state.pool)
         .await
@@ -420,14 +420,14 @@ mod tests {
             create_one_time_role_mapping(ctx, &realm_id, &token, entitlement_key, &[role_id], true)
                 .await;
 
-        // And: the user already holds the role via a payment grant (source_id
-        // is some attempt id — the value is irrelevant for the gate; only the
-        // presence of a payment-source grant matters).
-        seed_payment_role_grant(
+        // And: the user already holds the role via a manual admin grant. The
+        // ownership rule is source-agnostic; revoke logic remains payment-only.
+        seed_role_grant(
             ctx,
             &realm_id,
             user_id,
             role_id,
+            "manual",
             &Uuid::now_v7().to_string(),
         )
         .await;
@@ -785,11 +785,12 @@ mod tests {
         .await;
 
         // And: the user holds the role via a payment grant.
-        seed_payment_role_grant(
+        seed_role_grant(
             ctx,
             &realm_id,
             user_id,
             role_id,
+            "payment",
             &Uuid::now_v7().to_string(),
         )
         .await;

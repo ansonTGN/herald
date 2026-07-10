@@ -743,11 +743,12 @@ async fn test_delete_last_passkey_removes_from_second_factors(ctx: &mut TestCont
     assert!(body.get("tempToken").is_none() || body["tempToken"].is_null());
 }
 
-/// User Story: US-PK-001
-/// Covers: passkey design §4.2.3 Realm disabled returns 404 and §6.1 error matrix.
+/// User Story: US-PK-001 / US-PK-005
+/// Disabling registration must not strand credentials that were registered
+/// while Passkey was enabled.
 #[test_context(TestContext)]
 #[tokio::test]
-async fn test_first_factor_realm_not_enabled_returns_404(ctx: &mut TestContext) {
+async fn test_first_factor_options_remain_available_when_realm_is_disabled(ctx: &mut TestContext) {
     setup_passkey_env();
     setup_realm_passkey_config(ctx, &ctx._realm_id, false, false).await;
 
@@ -762,7 +763,7 @@ async fn test_first_factor_realm_not_enabled_returns_404(ctx: &mut TestContext) 
         .body(Body::from(payload.to_string()))
         .unwrap();
     let response = ctx.create_unified_test_router().oneshot(req).await.unwrap();
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(response.status(), StatusCode::OK);
 }
 
 /// User Story: US-PK-005 / US-PK-008

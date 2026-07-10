@@ -33,6 +33,7 @@ pub use crate::application::http::server::api_entities::ErrorResponse;
 const SETTINGS_KEY: &str = "settings";
 const DRAFT_KEY: &str = "draft";
 const PREVIOUS_SETTINGS_KEY: &str = "previous_settings";
+const CUSTOM_DOMAIN_CLAIM_LOCK_ID: i64 = 0x4845_5241_4C44;
 
 // ---------------------------------------------------------------------------
 // Response / request DTOs
@@ -160,6 +161,11 @@ pub async fn handle_save_custom_domain_draft(
     // so two realms can't draft-collide then fail at publish. We check both
     // other realms' realm_config custom_domain rows (settings + draft) and the
     // published mapping table. The current realm's own rows are excluded.
+    let claim_lock = if normalized_hostname.is_some() {
+        Some(acquire_custom_domain_claim_lock(&state).await?)
+    } else {
+        None
+    };
     if let Some(ref hostname) = normalized_hostname {
         assert_hostname_globally_unique(&state, &realm_id, hostname).await?;
     }
@@ -174,6 +180,12 @@ pub async fn handle_save_custom_domain_draft(
         .upsert_config(identity, realm_id, request)
         .await
         .map_err(map_realm_config_error)?;
+    if let Some(lock) = claim_lock {
+        lock.commit().await.map_err(|error| {
+            tracing::error!(%error, "Failed to release custom-domain claim lock");
+            ApiError::internal("Failed to save custom-domain draft")
+        })?;
+    }
 
     Ok(Json(serde_json::json!({
         "message": "Custom-domain draft saved",
@@ -263,6 +275,8 @@ pub async fn handle_publish_custom_domain_config(
         ApiError::bad_request("Cannot publish a custom-domain draft without a hostname")
     })?;
 
+    let claim_lock = acquire_custom_domain_claim_lock(&state).await?;
+
     // Re-validate global uniqueness at publish time. The draft was checked when
     // saved, but another realm may have published the same name since; and the
     // mapping table is the authoritative request-time source, so we confirm
@@ -324,6 +338,10 @@ pub async fn handle_publish_custom_domain_config(
     );
     delete_custom_domain_config(&state, identity.clone(), realm_id.clone(), DRAFT_KEY, true)
         .await?;
+    claim_lock.commit().await.map_err(|error| {
+        tracing::error!(%error, "Failed to release custom-domain claim lock");
+        ApiError::internal("Failed to publish custom-domain configuration")
+    })?;
 
     // The mapping was just written; derive status from it instead of re-querying.
     let status = Some(CustomDomainStatus {
@@ -401,6 +419,10 @@ pub async fn handle_restore_custom_domain_config(
     //      hostname row and re-enables the restored one).
     //  (2) restored previous config has NO hostname (restore to "no custom
     //      domain") → delete all mapping rows for this realm.
+    let claim_lock = acquire_custom_domain_claim_lock(&state).await?;
+    if let Some(hostname) = previous.hostname.as_deref() {
+        assert_hostname_globally_unique(&state, &realm_id, hostname).await?;
+    }
     let status = match previous.hostname.as_deref() {
         Some(restored_hostname) => {
             let mapping = state
@@ -441,6 +463,10 @@ pub async fn handle_restore_custom_domain_config(
         .batch_upsert_configs(identity, realm_id.clone(), batch)
         .await
         .map_err(map_realm_config_error)?;
+    claim_lock.commit().await.map_err(|error| {
+        tracing::error!(%error, "Failed to release custom-domain claim lock");
+        ApiError::internal("Failed to restore custom-domain configuration")
+    })?;
 
     Ok(Json(CustomDomainLifecycleResponse {
         message: "Previous custom-domain configuration restored".to_string(),
@@ -544,7 +570,16 @@ pub async fn handle_custom_domain_authorize(
     match mapping {
         // Hit → authorize. NEVER include realm_id or any realm info in the
         // body (design §4.2.2 ask / certificate-abuse gate).
-        Some(_) => Ok(Json(CustomDomainAuthorizeResponse { authorized: true })),
+        Some(mapping) => {
+            if let Err(error) = state
+                .custom_domain_mapping_repo
+                .update_status(&host, true, mapping.tls_ready)
+                .await
+            {
+                tracing::error!(%host, %error, "Failed to record custom-domain CNAME status");
+            }
+            Ok(Json(CustomDomainAuthorizeResponse { authorized: true }))
+        }
         // Miss → 404 so Caddy declines issuance for unregistered hosts.
         None => Err(ApiError::not_found("Custom domain not found")),
     }
@@ -761,6 +796,24 @@ async fn assert_hostname_globally_unique(
     }
 
     Ok(())
+}
+
+async fn acquire_custom_domain_claim_lock(
+    state: &AppState,
+) -> Result<sqlx::Transaction<'_, sqlx::Postgres>, ApiError> {
+    let mut transaction = state.pool.begin().await.map_err(|error| {
+        tracing::error!(%error, "Failed to begin custom-domain claim transaction");
+        ApiError::internal("Failed to lock custom-domain claim")
+    })?;
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(CUSTOM_DOMAIN_CLAIM_LOCK_ID)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| {
+            tracing::error!(%error, "Failed to acquire custom-domain claim lock");
+            ApiError::internal("Failed to lock custom-domain claim")
+        })?;
+    Ok(transaction)
 }
 
 fn map_realm_config_error(error: CoreError) -> ApiError {

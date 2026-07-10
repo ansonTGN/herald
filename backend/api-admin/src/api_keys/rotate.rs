@@ -76,6 +76,7 @@ pub async fn rotate_api_key(
         enabled: saved.enabled,
         expires_at: saved.expires_at.map(|dt| dt.to_rfc3339()),
         created_at: saved.created_at.to_rfc3339(),
+        role_binding_error: None,
     };
 
     Ok(ApiResult::ok(response))

@@ -1,12 +1,13 @@
 // Account self-deletion (soft-delete) service — BE-D07.
 //
 // Implements the design §5.2 self-service deletion pipeline:
-//   in-tx  : bcrypt verify password, status guard, account anonymization
+//   pre-tx : bcrypt verify password, status guard, cancel active subscriptions
+//   in-tx  : account anonymization
 //            (email/password/username/provider_ids), status=Deleted, profile
 //            nickname clear, TOTP config delete — all delegated to the
 //            `UserRepository::anonymize_user_for_deletion` port so the
 //            anonymization is one atomic DB transaction.
-//   post-tx: cancel in-effect subscriptions (best-effort), delete all user
+//   post-tx: delete all user
 //            sessions (incl. caller's, required), write `user.delete` audit with
 //            `details.method = self_service` (best-effort).
 //
@@ -108,46 +109,29 @@ where
             return Err(CoreError::Unauthorized);
         }
 
-        // ---- Phase 2: in-tx anonymization (account + profile + totp_config) ----
+        // ---- Phase 2: cancel active subscriptions before deletion ----
+        // A cancellation failure leaves the account reachable so the user can
+        // retry instead of losing access while billing may continue.
+        let active_subs = self
+            .billing_repo
+            .list_active_subscriptions_by_user(&realm_id, user_id)
+            .await?;
+        for sub in active_subs {
+            self.billing_repo.cancel_subscription(sub.id, false).await?;
+        }
+
+        // ---- Phase 3: in-tx anonymization (account + profile + totp_config) ----
         // A single repository transaction. The anonymized email is derived from
         // the account id so it is unique within `(realm_id, email)`.
         self.user_repo
             .anonymize_user_for_deletion(&realm_id, user_id)
             .await?;
 
-        // ---- Phase 3: post-tx side effects ----
-        // Compliance fact: the account is deleted. Subscription/audit failures
-        // remain best-effort, but session revocation is required so a deleted
-        // account cannot keep using protected endpoints.
+        // ---- Phase 4: post-tx side effects ----
+        // Session revocation is required so a deleted account cannot keep
+        // using protected endpoints. Audit remains best-effort.
 
-        // 3a. Cancel each in-effect subscription (cancel_at_period_end=false).
-        let active_subs = match self
-            .billing_repo
-            .list_active_subscriptions_by_user(&realm_id, user_id)
-            .await
-        {
-            Ok(subs) => subs,
-            Err(e) => {
-                tracing::warn!(
-                    error = %e,
-                    user_id = %user_id,
-                    "self_delete: failed to list active subscriptions; skipping cancel"
-                );
-                Vec::new()
-            }
-        };
-        for sub in active_subs {
-            if let Err(e) = self.billing_repo.cancel_subscription(sub.id, false).await {
-                tracing::warn!(
-                    error = %e,
-                    subscription_id = %sub.id,
-                    user_id = %user_id,
-                    "self_delete: failed to cancel subscription; continuing"
-                );
-            }
-        }
-
-        // 3b. Revoke all of the user's sessions / tokens (incl. the caller's
+        // 4a. Revoke all of the user's sessions / tokens (incl. the caller's
         //     current session — delete == logout).
         let user_id_str = user_id.to_string();
         self.session_repo
@@ -162,7 +146,7 @@ where
                 e
             })?;
 
-        // 3c. Audit `user.delete` (Compliance, method=self_service). Reuses the
+        // 4b. Audit `user.delete` (Compliance, method=self_service). Reuses the
         //     existing UserDelete action (slug `user.delete`) — no near-synonym.
         let audit_event = NewAuditEvent {
             realm_id: realm_id.clone(),

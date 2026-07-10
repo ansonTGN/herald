@@ -121,7 +121,7 @@ impl IdempotencyStore for RedisIdempotencyStore {
             let mut conn = redis.get().await.ok()?;
 
             let result: Option<String> = redis::cmd("GET")
-                .arg(format!("{}:status", &cache_key))
+                .arg(format!("{}:status", cache_key))
                 .query_async(&mut conn)
                 .await
                 .ok()?;
@@ -147,7 +147,7 @@ impl IdempotencyStore for RedisIdempotencyStore {
             // Atomically SET main key (NX+EX) and status key via Redis Function.
             // If the process crashes between the two keys, no inconsistent state
             // is left -- either both keys are written or neither.
-            let status_key = format!("{}:status", &cache_key);
+            let status_key = format!("{}:status", cache_key);
             let status = IdempotencyStatus::Processing.as_str();
             let result: i32 = redis::cmd("FCALL")
                 .arg("idempotency_acquire_lock")
@@ -198,7 +198,7 @@ impl IdempotencyStore for RedisIdempotencyStore {
             // Update status to completed
             let status = IdempotencyStatus::Completed.as_str();
             redis::cmd("SETEX")
-                .arg(format!("{}:status", &cache_key))
+                .arg(format!("{}:status", cache_key))
                 .arg(IDEMPOTENCY_TTL.as_secs())
                 .arg(status)
                 .query_async::<()>(&mut conn)
@@ -219,7 +219,7 @@ impl IdempotencyStore for RedisIdempotencyStore {
             })?;
 
             let status = IdempotencyStatus::Failed.as_str();
-            let key = format!("{}:status", &cache_key);
+            let key = format!("{}:status", cache_key);
 
             // Use same TTL as main key so failure state persists and retries
             // within the 24h window are properly rejected

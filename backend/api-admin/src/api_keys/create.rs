@@ -85,20 +85,29 @@ pub async fn create_api_key(
         ApiError::internal("Failed to create API key")
     })?;
 
-    if let Some(role_ids) = payload.role_ids {
+    let role_binding_error = if let Some(role_ids) = payload.role_ids {
         state
             .role_assignment_service
             .assign_api_key_roles(admin.identity().clone(), &realm_id, &saved.id, role_ids)
             .await
-            .map_err(|e| match e {
-                UserAdminError::PermissionDenied(msg) => ApiError::forbidden(msg),
-                UserAdminError::RoleNotFound(id) => {
-                    ApiError::bad_request(format!("Role not found: {id}"))
+            .err()
+            .map(|error| {
+                tracing::warn!(
+                    api_key_id = %saved.id,
+                    realm_id = %realm_id,
+                    %error,
+                    "API key created but role binding failed"
+                );
+                match error {
+                    UserAdminError::PermissionDenied(msg) => msg,
+                    UserAdminError::RoleNotFound(id) => format!("Role not found: {id}"),
+                    UserAdminError::InvalidRoleAssignment(msg) => msg,
+                    _ => "API key created, but role binding failed".to_string(),
                 }
-                UserAdminError::InvalidRoleAssignment(msg) => ApiError::bad_request(msg),
-                other => ApiError::internal(format!("Failed to assign API key roles: {other}")),
-            })?;
-    }
+            })
+    } else {
+        None
+    };
 
     let response = CreateApiKeyResponse {
         id: saved.id,
@@ -110,6 +119,7 @@ pub async fn create_api_key(
         enabled: saved.enabled,
         expires_at: saved.expires_at.map(|dt| dt.to_rfc3339()),
         created_at: saved.created_at.to_rfc3339(),
+        role_binding_error,
     };
 
     Ok(ApiResult::created(response))

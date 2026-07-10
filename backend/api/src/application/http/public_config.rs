@@ -206,6 +206,25 @@ pub async fn resolve_custom_domain(
         })?
         .ok_or_else(|| ApiError::not_found("Custom domain not found"))?;
 
+    let request_host = headers
+        .get(axum::http::header::HOST)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(':').next())
+        .and_then(normalize_custom_domain_host);
+    let is_https = headers
+        .get("x-forwarded-proto")
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.eq_ignore_ascii_case("https"));
+    if request_host.as_deref() == Some(host.as_str())
+        && is_https
+        && let Err(error) = state
+            .custom_domain_mapping_repo
+            .update_status(&host, true, true)
+            .await
+    {
+        tracing::error!(%host, %error, "Failed to record custom-domain TLS status");
+    }
+
     let public_config = load_public_config(&state, &mapping.realm_id).await?;
 
     Ok(ApiResult::ok(ResolveCustomDomainResponse {

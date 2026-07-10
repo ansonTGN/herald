@@ -185,9 +185,9 @@ pub trait UserRoleRepository: Send + Sync {
         source_id: &str,
     ) -> impl Future<Output = UserAdminResult<RevokeRoleOutcome>> + Send;
 
-    /// Check whether a user holds ANY of the given roles via a payment grant
-    /// (`source='payment'`). Used by the M3 ownership check (design §5.4).
-    fn user_has_any_payment_role(
+    /// Check whether a user holds ANY of the given roles, regardless of grant
+    /// source. Used to prevent selling an entitlement the user already owns.
+    fn user_has_any_role(
         &self,
         realm_id: &str,
         user_id: Uuid,

@@ -9,6 +9,13 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use validator::Validate;
 
+fn validate_user_verification(value: &str) -> Result<(), validator::ValidationError> {
+    match value {
+        "preferred" | "required" => Ok(()),
+        _ => Err(validator::ValidationError::new("invalid_user_verification")),
+    }
+}
+
 use crate::application::http::server::api_entities::{ApiError, ApiResult};
 use crate::application::http::state::AppState;
 use herald_core::domain::audit::{
@@ -33,6 +40,7 @@ pub struct UpdateRealmPasskeyConfigRequest {
     pub enabled: bool,
     pub force_enabled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(custom(function = "validate_user_verification"))]
     pub user_verification: Option<String>,
     pub cross_platform_authenticator: Option<bool>,
 }

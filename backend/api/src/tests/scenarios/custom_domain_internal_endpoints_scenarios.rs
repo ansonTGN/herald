@@ -101,6 +101,7 @@ fn resolve_request(host: &str) -> Request<Body> {
         .method("GET")
         .uri(RESOLVE_PATH)
         .header("host", host)
+        .header("x-forwarded-proto", "https")
         .body(Body::empty())
         .unwrap()
 }
@@ -128,6 +129,24 @@ async fn custom_domain_authorize_returns_200_when_published_and_enabled(ctx: &mu
 
     let body: Value = crate::tests::response_json(response).await;
     assert_eq!(body["authorized"], true);
+
+    let status: (bool, bool, Option<chrono::DateTime<chrono::Utc>>) = sqlx::query_as(
+        "SELECT cname_verified, tls_ready, status_checked_at
+         FROM custom_domain_mapping WHERE hostname = $1",
+    )
+    .bind(hostname)
+    .fetch_one(&ctx._app_state.pool)
+    .await
+    .expect("Failed to read custom-domain status");
+    assert!(
+        status.0,
+        "a successful Caddy ask proves DNS routing reached Herald"
+    );
+    assert!(
+        !status.1,
+        "TLS is not ready until an HTTPS request reaches the app"
+    );
+    assert!(status.2.is_some());
 }
 
 /// ============================================================================
@@ -308,6 +327,20 @@ async fn custom_domain_resolve_returns_realm_and_public_config_for_published_hos
         body.get("publicConfig").is_some(),
         "resolve endpoint should include publicConfig; got: {body}"
     );
+
+    let status: (bool, bool, Option<chrono::DateTime<chrono::Utc>>) = sqlx::query_as(
+        "SELECT cname_verified, tls_ready, status_checked_at
+         FROM custom_domain_mapping WHERE hostname = $1",
+    )
+    .bind(hostname)
+    .fetch_one(&ctx._app_state.pool)
+    .await
+    .expect("Failed to read custom-domain status");
+    assert!(
+        status.0 && status.1,
+        "a real HTTPS host request proves TLS readiness"
+    );
+    assert!(status.2.is_some());
 }
 
 /// ============================================================================

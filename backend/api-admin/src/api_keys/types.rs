@@ -54,6 +54,11 @@ pub struct CreateApiKeyResponse {
 
     /// Creation time (ISO 8601)
     pub created_at: String,
+
+    /// Role binding failure after the key was created. The plaintext key is
+    /// still returned so the caller never loses the one-time secret.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role_binding_error: Option<String>,
 }
 
 /// API Key list item (never exposes hash or plaintext)

@@ -116,10 +116,12 @@ impl TestRedisFixture {
             .get_or_init(|| async {
                 // Get Redis URL from environment or use default
                 let redis_url = std::env::var("TEST_REDIS_URL")
-                    .unwrap_or_else(|_| "redis://127.0.0.1:6380/1".to_string());
+                    .unwrap_or_else(|_| "redis://127.0.0.1:6382/1".to_string());
 
                 let client =
-                    redis::Client::open(redis_url.as_str()).expect("Failed to create Redis client");
+                    redis::Client::open(redis_url.as_str()).expect(
+                        "❌ Failed to open Redis client. 测试环境未启动，请运行:\n  uv run scripts/backend-test.py -- <测试文件>\n或先启动环境:\n  uv run scripts/test-start.py",
+                    );
 
                 TestRedisFixture {
                     client: Arc::new(client),

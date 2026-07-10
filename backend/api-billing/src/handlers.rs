@@ -434,7 +434,7 @@ pub async fn list_purchase_options(
         if grants_role {
             let has_role = state
                 .user_role_repository
-                .user_has_any_payment_role(&realm_id, user_id, &granted_role_ids)
+                .user_has_any_role(&realm_id, user_id, &granted_role_ids)
                 .await
                 .map_err(CoreError::from)
                 .map_err(|e| core_error_to_api_error(e, "Purchase options ownership check"))?;

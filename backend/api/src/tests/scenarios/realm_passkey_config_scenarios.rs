@@ -90,6 +90,35 @@ async fn test_put_realm_passkey_config_returns_wrapped_response(ctx: &mut TestCo
     assert!(config_value.contains(r#""cross_platform_authenticator":true"#));
 }
 
+/// Invalid policy values must fail at the API boundary instead of silently
+/// weakening an intended `required` policy to `preferred`.
+#[test_context(TestContext)]
+#[tokio::test]
+async fn test_put_realm_passkey_config_rejects_invalid_user_verification(ctx: &mut TestContext) {
+    let app = ctx.create_unified_test_router();
+    let (token, user_id) =
+        create_admin_session_with_user(ctx, "passkey-config-invalid-policy@test.com", 1800).await;
+    grant_realm_admin_role(ctx, &user_id).await;
+
+    let req = Request::builder()
+        .method("PUT")
+        .uri(format!("/api/realms/{}/config/passkey", ctx._realm_id))
+        .header("content-type", "application/json")
+        .header(header::COOKIE, format!("X-Auth={token}"))
+        .body(Body::from(
+            json!({
+                "enabled": true,
+                "forceEnabled": false,
+                "userVerification": "requried"
+            })
+            .to_string(),
+        ))
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+}
+
 /// User Story: US-PK-001 / US-PK-003 — Realm 管理员读取 Passkey 配置
 /// Covers: design §4.2.1 (GET config/passkey), §5.1 (ConfigType::Passkey)
 #[test_context(TestContext)]

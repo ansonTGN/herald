@@ -78,7 +78,7 @@ where
     /// startup — no second connection or duplicate state.
     payment_attempt_repository: Arc<PA>,
     /// User-role repo for the M3 ownership gate
-    /// (`user_has_any_payment_role`).
+    /// (`user_has_any_role`).
     user_role_repository: Arc<UR>,
     fulfillment_service: Arc<F>,
 }
@@ -311,7 +311,7 @@ where
         {
             let has_role = self
                 .user_role_repository
-                .user_has_any_payment_role(realm_id, user_id, &mapping.granted_role_ids)
+                .user_has_any_role(realm_id, user_id, &mapping.granted_role_ids)
                 .await
                 .map_err(CoreError::from)?;
             let has_attempt = self

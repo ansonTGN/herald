@@ -24,7 +24,7 @@ impl SharedContainers {
 
                 let shared = herald_test_db::get_shared_test_database().await;
                 let redis_url = std::env::var("TEST_REDIS_URL")
-                    .unwrap_or_else(|_| "redis://127.0.0.1:6380/0".to_string());
+                    .unwrap_or_else(|_| "redis://127.0.0.1:6382/0".to_string());
 
                 tracing::info!("✅ 外部测试容器连接完成");
 

@@ -34,7 +34,7 @@ pub async fn get_shared_test_database() -> &'static SharedTestDatabase {
                 .connect(&pg_url)
                 .await
                 .expect(
-                    "❌ Failed to connect to PgDog. 请运行 'python scripts/test-start.py' 启动测试环境",
+                    "❌ Failed to connect to PgDog. 测试环境未启动，请运行:\n  uv run scripts/backend-test.py -- <测试文件>\n或先启动环境:\n  uv run scripts/test-start.py",
                 );
 
             let template_schema_name = format!("template_test_schema_{}", std::process::id());
@@ -271,7 +271,9 @@ pub async fn create_schema_scoped_connections(
         .test_before_acquire(true)
         .connect(&db_url)
         .await
-        .expect("Failed to connect to PgDog (sqlx)");
+        .expect(
+            "❌ Failed to connect to PgDog (sqlx). 测试环境未启动，请运行:\n  uv run scripts/backend-test.py -- <测试文件>\n或先启动环境:\n  uv run scripts/test-start.py",
+        );
 
     let sea_conn = sea_orm::SqlxPostgresConnector::from_sqlx_postgres_pool(pool.clone());
     (pool, sea_conn)

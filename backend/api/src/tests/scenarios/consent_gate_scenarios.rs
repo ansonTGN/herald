@@ -358,6 +358,26 @@ async fn test_login_consented_latest_issues_session(ctx: &mut TestContext) {
         "registration must succeed"
     );
 
+    let user_id: Uuid =
+        sqlx::query_scalar("SELECT id FROM account WHERE realm_id = $1 AND email = $2")
+            .bind(&realm_id)
+            .bind(email)
+            .fetch_one(&ctx._app_state.pool)
+            .await
+            .expect("registered user must exist");
+    let login_audit_before: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_events
+         WHERE realm_id = $1
+           AND actor_id = $2
+           AND action = 'agreement.consent'
+           AND details->>'source' = 'login'",
+    )
+    .bind(&realm_id)
+    .bind(user_id.to_string())
+    .fetch_one(&ctx._app_state.pool)
+    .await
+    .unwrap();
+
     let (login_resp, token) = login_user(&*ctx, &realm_id, email, password).await;
     assert_eq!(login_resp.status(), StatusCode::OK, "login must return 200");
     assert!(
@@ -370,6 +390,24 @@ async fn test_login_consented_latest_issues_session(ctx: &mut TestContext) {
         body.get("consentRequired")
             .is_none_or(|v| v.as_bool() != Some(true)),
         "consentRequired must be absent or false when consent is current"
+    );
+
+    let login_audit_after: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_events
+         WHERE realm_id = $1
+           AND actor_id = $2
+           AND action = 'agreement.consent'
+           AND details->>'source' = 'login'",
+    )
+    .bind(&realm_id)
+    .bind(user_id.to_string())
+    .fetch_one(&ctx._app_state.pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        login_audit_after,
+        login_audit_before + 2,
+        "normal login must record current ToS and Privacy consent with source=login"
     );
 }
 

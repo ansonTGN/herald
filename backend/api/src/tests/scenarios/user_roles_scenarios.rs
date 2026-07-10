@@ -107,8 +107,7 @@ async fn test_scenario_remove_role_from_user(ctx: &mut SchemaTestContext) {
         .method("DELETE")
         .uri(format!(
             "/api/permission/users/{}/roles/{}",
-            &user_id.to_string(),
-            &role_id.to_string()
+            user_id, role_id
         ))
         .header(header::COOKIE, format!("X-Auth={}", token))
         .body(Body::empty())

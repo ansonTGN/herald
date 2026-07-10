@@ -139,9 +139,30 @@ pub async fn evaluate_login_consent_gate(
         return Some(summaries);
     }
 
-    // Reachable only when every agreement is already consented at its current
-    // version (otherwise the `needs_reconsent` branch above would have
-    // returned). Recording consent again here would emit a duplicate
-    // `agreement.consent` audit event on every login, so we do nothing.
+    // A successful normal login is itself a consent event under the published
+    // contract. Refresh the idempotent rows and preserve Login as the audit
+    // source even when the accepted versions have not changed.
+    let current_items = status_items
+        .into_iter()
+        .map(|item| (item.agreement_type, item.current_version_id))
+        .collect();
+    if let Err(error) = state
+        .legal_service
+        .record_consent(
+            user.id,
+            realm_id,
+            current_items,
+            ConsentSource::Login,
+            actor_meta,
+        )
+        .await
+    {
+        tracing::warn!(
+            user_id = %user.id,
+            realm_id = %realm_id,
+            error = %error,
+            "record_consent(Login) failed during login"
+        );
+    }
     None
 }

@@ -1034,6 +1034,54 @@ async fn test_create_api_key_uses_realm_api_key_client(ctx: &mut TestContext) {
     );
 }
 
+/// Role binding is a post-create operation. If it fails, the API must still
+/// return the one-time plaintext key and identify the partial failure.
+#[test_context(TestContext)]
+#[tokio::test]
+async fn test_create_api_key_returns_plaintext_when_role_binding_fails(ctx: &mut TestContext) {
+    let app = ctx.create_unified_test_router();
+    let (token, admin_id) =
+        create_admin_session_with_user(ctx, "apikey-create-role-failure@test.com", 1800).await;
+    grant_realm_admin_role(ctx, &admin_id).await;
+    seed_realm_api_key_client(ctx).await;
+    let missing_role_id = uuid::Uuid::now_v7();
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/api-keys/{}", ctx._realm_id))
+        .header(header::COOKIE, format!("X-Auth={token}"))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(
+            json!({
+                "name": "partial-role-binding-key",
+                "roleIds": [missing_role_id]
+            })
+            .to_string(),
+        ))
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+    let body: serde_json::Value = response_json(resp).await;
+    assert!(body["key"].as_str().is_some_and(|key| !key.is_empty()));
+    assert!(
+        body["roleBindingError"]
+            .as_str()
+            .is_some_and(|error| { error.contains(&missing_role_id.to_string()) })
+    );
+
+    let persisted: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM client_api_keys WHERE id = $1)")
+            .bind(body["id"].as_str().unwrap())
+            .fetch_one(&ctx._app_state.pool)
+            .await
+            .unwrap();
+    assert!(
+        persisted,
+        "the response describes a created key, not a rollback"
+    );
+}
+
 // =============================================================================
 // Scenario 12b: Creating an API Key can bind an ordinary Client App
 // =============================================================================

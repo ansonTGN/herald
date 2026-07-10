@@ -335,7 +335,7 @@ pub async fn verify_turnstile_for_realm(
 
     // Turnstile is enabled, token is required
     let token = token
-        .and_then(|t| if t.trim().is_empty() { None } else { Some(t) })
+        .filter(|t| !t.trim().is_empty())
         .ok_or_else(|| ApiError::bad_request("turnstile token is required"))?;
 
     // Cloudflare Turnstile 官方测试 secret：开发/测试环境常用，避免测试依赖外网。

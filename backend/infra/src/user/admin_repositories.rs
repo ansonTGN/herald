@@ -772,7 +772,7 @@ impl UserRoleRepository for PostgresUserRoleRepository {
         }
     }
 
-    async fn user_has_any_payment_role(
+    async fn user_has_any_role(
         &self,
         realm_id: &str,
         user_id: Uuid,
@@ -786,8 +786,7 @@ impl UserRoleRepository for PostgresUserRoleRepository {
             r#"
             SELECT EXISTS(
                 SELECT 1 FROM user_roles
-                WHERE source = 'payment'
-                  AND realm_id = $1
+                WHERE realm_id = $1
                   AND user_id = $2
                   AND role_id = ANY($3)
             )

@@ -23,7 +23,6 @@ use herald_core::domain::audit::{
     AuditAction, AuditCategory, AuditEventRepository, AuditResult, AuditTargetType, NewAuditEvent,
 };
 use herald_core::domain::client::ports::ClientService;
-use herald_core::domain::realm_config::ConfigType;
 use herald_core::domain::security_constants::{
     LOGIN_IDENTIFIER_RATE_LIMIT, LOGIN_IP_RATE_LIMIT, OAUTH_STATE_TTL_SECONDS,
     TOTP_LOCKOUT_SECONDS, TOTP_MAX_FAILURES, TOTP_VERIFY_IP_RATE_LIMIT,
@@ -171,7 +170,6 @@ pub async fn handle_passkey_options(
     )
     .await?;
     rate_limit_passkey_start(&state, &client_ip, &req.client_id).await?;
-    ensure_passkey_enabled(&state, &realm_id).await?;
     ensure_client_exists(&state, &realm_id, &req.client_id).await?;
 
     let login_state = PasskeyLoginState {
@@ -599,32 +597,6 @@ async fn ensure_client_exists(
         .await
         .map(|_| ())
         .map_err(|_| ApiError::bad_request("Client app not found"))
-}
-
-async fn ensure_passkey_enabled(state: &AppState, realm_id: &str) -> Result<(), ApiError> {
-    let row = sqlx::query_as::<_, (String,)>(
-        "SELECT config_value FROM realm_config
-         WHERE realm_id = $1 AND config_type = $2 AND config_key = 'settings' AND enabled = true",
-    )
-    .bind(realm_id)
-    .bind(ConfigType::Passkey.as_ref())
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to query passkey realm config: {e}");
-        ApiError::internal("Internal server error")
-    })?;
-
-    let enabled = row
-        .and_then(|(value,)| serde_json::from_str::<serde_json::Value>(&value).ok())
-        .and_then(|value| value.get("enabled").and_then(|enabled| enabled.as_bool()))
-        .unwrap_or(false);
-
-    if !enabled {
-        return Err(ApiError::not_found("Passkey is not enabled for this realm"));
-    }
-
-    Ok(())
 }
 
 async fn load_temp_session(

@@ -375,7 +375,7 @@ pub struct PurchaseOptionView {
     /// entitlement (design §4.2.2). Computed only for the gated combo
     /// (`grants_role == true`); `false` otherwise. Lets the frontend disable the
     /// card pre-purchase. Ownership predicate:
-    /// `user_has_any_payment_role(granted_role_ids) || has_succeeded_attempt(target_id)`.
+    /// `user_has_any_role(granted_role_ids) || has_succeeded_attempt(target_id)`.
     pub already_owned: bool,
 }
 
