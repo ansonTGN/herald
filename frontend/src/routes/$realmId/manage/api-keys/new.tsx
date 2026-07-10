@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { lazy, Suspense } from 'react'
 import { Loader2 } from 'lucide-react'
+import { useResolvedRealmId } from '@/lib/realm-routing'
 
 const ApiKeyFormPage = lazy(() =>
   import('@/components/api-keys/api-key-form-page').then((m) => ({
@@ -12,8 +13,8 @@ export const Route = createFileRoute('/$realmId/manage/api-keys/new')({
   component: NewApiKeyPage,
 })
 
-function NewApiKeyPage() {
-  const { realmId } = Route.useParams()
+export function NewApiKeyPage() {
+  const realmId = useResolvedRealmId()
 
   return (
     <div className="container max-w-4xl mx-auto py-6 px-6">

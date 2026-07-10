@@ -21,6 +21,7 @@ import { toast } from 'sonner'
 import { ArrowLeft } from 'lucide-react'
 import type { ClientAppItem } from '@/lib/api-generated'
 import { m } from '@/paraglide/messages'
+import { realmPath, useResolvedRealmContext } from '@/lib/realm-routing'
 
 function transformToUriItems(uris: string[]): UriItem[] {
   return uris.map((uri, index) => ({
@@ -53,9 +54,11 @@ interface ClientAppFormPageProps {
 export function ClientAppFormPage({ mode, realmId, clientApp }: ClientAppFormPageProps) {
   const isCreate = mode === 'create'
   const navigate = useNavigate()
+  const realmContext = useResolvedRealmContext()
+  const clientAppsPath = realmPath({ ...realmContext, realmId }, '/manage/client-apps')
 
   const handleCancel = () => {
-    navigate({ to: '/$realmId/manage/client-apps', params: { realmId } })
+    navigate({ to: clientAppsPath })
   }
 
   const { isSubmitting, mutate } = useFormMutation({
@@ -89,7 +92,7 @@ export function ClientAppFormPage({ mode, realmId, clientApp }: ClientAppFormPag
           isCreate ? m['client_apps.created_success']() : m['client_apps.updated_success']()
         )
       }
-      navigate({ to: '/$realmId/manage/client-apps', params: { realmId } })
+      navigate({ to: clientAppsPath })
     },
   })
 

@@ -16,6 +16,7 @@ import type { ClientAppsSearchParams } from '@/lib/schemas/search-params'
 import { Card, CardContent } from '@/components/ui/card'
 import { PageHeader } from '@/components/shared'
 import { m } from '@/paraglide/messages'
+import { realmPath, useCurrentSearch, useResolvedRealmContext } from '@/lib/realm-routing'
 
 export const Route = createFileRoute('/$realmId/manage/client-apps/')({
   component: ClientAppsPage,
@@ -28,10 +29,11 @@ export const Route = createFileRoute('/$realmId/manage/client-apps/')({
   },
 })
 
-function ClientAppsPage() {
-  const { realmId } = Route.useParams()
+export function ClientAppsPage() {
+  const realmContext = useResolvedRealmContext()
+  const realmId = realmContext.realmId
   const navigate = useNavigate()
-  const search = Route.useSearch()
+  const search = useCurrentSearch<ClientAppsSearchParams>()
   const { hasPermission } = usePermission()
 
   const canCreate = hasPermission(PERMISSION.CLIENTS_MANAGE)
@@ -80,8 +82,7 @@ function ClientAppsPage() {
 
   const handlePageChange = (newPage: number) => {
     navigate({
-      to: '/$realmId/manage/client-apps',
-      params: { realmId },
+      to: realmPath(realmContext, '/manage/client-apps'),
       search: { ...search, page: newPage },
     })
   }
@@ -95,8 +96,7 @@ function ClientAppsPage() {
           canCreate
             ? {
                 label: m['client_apps.add_button'](),
-                onClick: () =>
-                  navigate({ to: '/$realmId/manage/client-apps/new', params: { realmId } }),
+                onClick: () => navigate({ to: realmPath(realmContext, '/manage/client-apps/new') }),
                 testId: 'add-client-app-button',
                 icon: <Plus className="h-4 w-4 mr-2" />,
               }
@@ -112,8 +112,7 @@ function ClientAppsPage() {
             error={error}
             onEdit={(app) =>
               navigate({
-                to: '/$realmId/manage/client-apps/$clientAppId/edit',
-                params: { realmId, clientAppId: app.id },
+                to: realmPath(realmContext, `/manage/client-apps/${app.id}/edit`),
               })
             }
             onDelete={(app) => deleteDialog.open(app)}

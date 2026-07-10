@@ -1,17 +1,20 @@
 // Public configuration endpoint for realm settings
 
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::HeaderMap,
 };
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::application::http::realm::white_label_config::{WhiteLabelBackground, WhiteLabelConfig};
-use crate::application::http::realm_config::public_helper::{parse_bool, query_config_value};
+use crate::application::http::realm_config::public_helper::{
+    normalize_custom_domain_host, parse_bool, query_config_value,
+};
 pub use crate::application::http::server::api_entities::ErrorResponse;
 use crate::application::http::server::api_entities::{ApiError, ApiResult};
 use crate::application::http::state::AppState;
+use herald_core::domain::custom_domain::CustomDomainMappingRepository;
 use herald_core::domain::realm::{RealmService, RealmSummary};
 
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
@@ -65,6 +68,19 @@ pub struct PublicConfigResponse {
     pub registration: RegistrationConfig,
     pub oauth_providers: Vec<OAuthProviderInfo>,
     pub white_label: PublicWhiteLabelConfig,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct ResolveCustomDomainQuery {
+    /// Optional hostname override. When omitted, the request `Host` header is used.
+    pub host: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ResolveCustomDomainResponse {
+    pub realm_id: String,
+    pub public_config: PublicConfigResponse,
 }
 
 /// Queries a single boolean config value from the realm_config table.
@@ -136,15 +152,81 @@ pub async fn get_public_config(
     State(state): State<AppState>,
     _headers: HeaderMap,
 ) -> Result<ApiResult<PublicConfigResponse>, ApiError> {
-    let registration_enabled = query_bool_config(&state.pool, &realm_id, "enabled", false).await?;
+    Ok(ApiResult::ok(load_public_config(&state, &realm_id).await?))
+}
+
+/// Resolve the current request host to a published custom-domain realm.
+///
+/// Used by the SPA on custom domains before it knows the realm id. This endpoint
+/// is intentionally separate from the internal Caddy ask endpoint: the ask
+/// endpoint stays shared-secret protected and never leaks realm identity, while
+/// this public endpoint is only for hosts already serving the app.
+#[utoipa::path(
+    get,
+    path = "/api/public-config/custom-domain/resolve",
+    tag = "system",
+    params(
+        ("host" = Option<String>, Query, description = "Optional hostname override; defaults to request Host header")
+    ),
+    responses(
+        (status = 200, description = "Custom domain resolved", body = ResolveCustomDomainResponse),
+        (status = 404, description = "Custom domain not found", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    )
+)]
+pub async fn resolve_custom_domain(
+    Query(query): Query<ResolveCustomDomainQuery>,
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<ApiResult<ResolveCustomDomainResponse>, ApiError> {
+    let raw_host = query
+        .host
+        .or_else(|| {
+            headers
+                .get(axum::http::header::HOST)
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_string)
+        })
+        .ok_or_else(|| ApiError::not_found("Custom domain not found"))?;
+
+    let host_without_port = raw_host
+        .split_once(':')
+        .map(|(host, _)| host)
+        .unwrap_or(raw_host.as_str());
+    let host = normalize_custom_domain_host(host_without_port)
+        .ok_or_else(|| ApiError::not_found("Custom domain not found"))?;
+
+    let mapping = state
+        .custom_domain_mapping_repo
+        .find_by_hostname(&host)
+        .await
+        .map_err(|e| {
+            tracing::error!(host = %host, error = %e, "Failed to resolve custom-domain host");
+            ApiError::internal("Failed to resolve custom domain")
+        })?
+        .ok_or_else(|| ApiError::not_found("Custom domain not found"))?;
+
+    let public_config = load_public_config(&state, &mapping.realm_id).await?;
+
+    Ok(ApiResult::ok(ResolveCustomDomainResponse {
+        realm_id: mapping.realm_id,
+        public_config,
+    }))
+}
+
+async fn load_public_config(
+    state: &AppState,
+    realm_id: &str,
+) -> Result<PublicConfigResponse, ApiError> {
+    let registration_enabled = query_bool_config(&state.pool, realm_id, "enabled", false).await?;
     let require_email_verification =
-        query_bool_config(&state.pool, &realm_id, "require_email_verification", false).await?;
-    let white_label = query_public_white_label_config(&state.pool, &realm_id).await?;
+        query_bool_config(&state.pool, realm_id, "require_email_verification", false).await?;
+    let white_label = query_public_white_label_config(&state.pool, realm_id).await?;
 
     let configs = state
         .service
         .oauth_config_service()
-        .list_enabled_providers(&realm_id)
+        .list_enabled_providers(realm_id)
         .await
         .map_err(|e| {
             tracing::error!(realm_id = %realm_id, error = %e, error_details = format!("{:?}", e), "Failed to list oauth providers");
@@ -163,18 +245,18 @@ pub async fn get_public_config(
     let realm_info = match state
         .service
         .realm_service()
-        .get_public_realm_info(realm_id.clone())
+        .get_public_realm_info(realm_id.to_string())
         .await
     {
         Ok(info) => info,
         Err(_) => RealmSummary {
-            id: realm_id.clone(),
-            name: realm_id.clone(),
+            id: realm_id.to_string(),
+            name: realm_id.to_string(),
             description: None,
         },
     };
 
-    Ok(ApiResult::ok(PublicConfigResponse {
+    Ok(PublicConfigResponse {
         realm_name: realm_info.name,
         realm_description: realm_info.description,
         registration: RegistrationConfig {
@@ -183,5 +265,5 @@ pub async fn get_public_config(
         },
         oauth_providers,
         white_label,
-    }))
+    })
 }

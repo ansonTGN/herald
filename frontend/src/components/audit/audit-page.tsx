@@ -11,6 +11,7 @@ import { AuditFilterBar, hasActiveFilters } from './audit-filter-bar'
 import { AuditEventTable } from './audit-event-table'
 import { AuditEventDetailSheet } from './audit-event-detail-sheet'
 import { m } from '@/paraglide/messages'
+import { realmPath, useResolvedRealmContext } from '@/lib/realm-routing'
 
 interface AuditPageProps {
   realmId: string
@@ -19,6 +20,7 @@ interface AuditPageProps {
 
 export function AuditPage({ realmId, search }: AuditPageProps) {
   const navigate = useNavigate()
+  const realmContext = useResolvedRealmContext()
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null)
 
   const { data, isLoading, error } = useQuery(
@@ -41,8 +43,7 @@ export function AuditPage({ realmId, search }: AuditPageProps) {
 
   function handleFilterChange(filters: Partial<AuditSearchParams>) {
     navigate({
-      to: '/$realmId/manage/audit',
-      params: { realmId },
+      to: realmPath({ ...realmContext, realmId }, '/manage/audit'),
       search: {
         ...search,
         ...filters,
@@ -53,16 +54,14 @@ export function AuditPage({ realmId, search }: AuditPageProps) {
 
   function handleClearFilters() {
     navigate({
-      to: '/$realmId/manage/audit',
-      params: { realmId },
+      to: realmPath({ ...realmContext, realmId }, '/manage/audit'),
       search: {},
     })
   }
 
   function handlePageChange(page: number) {
     navigate({
-      to: '/$realmId/manage/audit',
-      params: { realmId },
+      to: realmPath({ ...realmContext, realmId }, '/manage/audit'),
       search: { ...search, page },
     })
   }

@@ -21,6 +21,7 @@ import { STRIPE_CONFIG_KEYS } from '@/lib/billing-constants'
 import { CREEM_CONFIG_KEYS } from '@/lib/creem-config-utils'
 import { queryKeys } from '@/data/query-options'
 import { m } from '@/paraglide/messages'
+import { realmPath, useResolvedRealmContext } from '@/lib/realm-routing'
 
 interface PaymentProvidersPageProps {
   realmId: string
@@ -29,6 +30,7 @@ interface PaymentProvidersPageProps {
 export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
+  const realmContext = useResolvedRealmContext()
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [deleteProviderType, setDeleteProviderType] = useState<'stripe' | 'creem'>('stripe')
 
@@ -81,7 +83,9 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
   })
 
   const handleNavigate = (type: 'stripe' | 'creem') => {
-    void navigate({ to: `./${type}` })
+    void navigate({
+      to: realmPath({ ...realmContext, realmId }, `/manage/billing/payment-providers/${type}`),
+    })
   }
 
   const handleDelete = () => {

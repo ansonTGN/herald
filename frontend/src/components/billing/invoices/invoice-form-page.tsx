@@ -34,6 +34,7 @@ import {
 } from '@/lib/invoice-utils'
 import { Plus, Trash2, ArrowLeft } from 'lucide-react'
 import { m } from '@/paraglide/messages'
+import { realmPath, useResolvedRealmContext } from '@/lib/realm-routing'
 
 interface InvoiceFormPageProps {
   mode: 'create' | 'edit'
@@ -59,6 +60,14 @@ function getShippingModeOptions() {
 export function InvoiceFormPage({ mode, realmId, invoice }: InvoiceFormPageProps) {
   const isEditing = mode === 'edit'
   const navigate = useNavigate()
+  const realmContext = useResolvedRealmContext()
+  const invoicesPath = realmContext.isCustomDomain
+    ? realmPath(realmContext, '/manage/billing/invoices')
+    : '/$realmId/manage/billing/invoices'
+  const invoicesParams = useMemo(
+    () => (realmContext.isCustomDomain ? undefined : { realmId }),
+    [realmContext.isCustomDomain, realmId]
+  )
 
   const { data: sellerConfig } = useQuery({
     ...sellerConfigQueryOptions(realmId),
@@ -96,8 +105,8 @@ export function InvoiceFormPage({ mode, realmId, invoice }: InvoiceFormPageProps
         return
       }
       navigate({
-        to: '/$realmId/manage/billing/invoices',
-        params: { realmId },
+        to: invoicesPath,
+        params: invoicesParams,
       })
     },
   })
@@ -133,17 +142,17 @@ export function InvoiceFormPage({ mode, realmId, invoice }: InvoiceFormPageProps
 
   const handleCancel = useCallback(() => {
     navigate({
-      to: '/$realmId/manage/billing/invoices',
-      params: { realmId },
+      to: invoicesPath,
+      params: invoicesParams,
     })
-  }, [navigate, realmId])
+  }, [invoicesParams, invoicesPath, navigate])
 
   // Guard: redirect external invoices back to list — they cannot be edited
   useEffect(() => {
     if (isEditing && invoice && isExternalInvoice(invoice.provider)) {
-      navigate({ to: '/$realmId/manage/billing/invoices', params: { realmId } })
+      navigate({ to: invoicesPath, params: invoicesParams })
     }
-  }, [isEditing, invoice, navigate, realmId])
+  }, [invoicesParams, invoicesPath, isEditing, invoice, navigate])
 
   return (
     <div

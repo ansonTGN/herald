@@ -25,6 +25,7 @@ import { formatInvoiceAmount } from '@/lib/invoice-utils'
 import { deriveSharedKeyColor } from '@/components/billing/shared-key-color'
 import { toast } from 'sonner'
 import { purchasePointsSearchSchema } from '@/lib/schemas/search-params'
+import { useCurrentSearch, useResolvedRealmId } from '@/lib/realm-routing'
 
 export const Route = createFileRoute('/$realmId/user/purchase-points')({
   beforeLoad: ({ context, params }) =>
@@ -64,13 +65,16 @@ export function disabledReason(
   return null
 }
 
-function PurchasePointsRoute() {
-  const { realmId } = Route.useParams()
+export function PurchasePointsRoute() {
+  const realmId = useResolvedRealmId()
   // The provider bounces the user back here with `attemptId` (+ `status`) in
   // the query string after a checkout. This is a UX bounce only — payment
   // status is confirmed via webhook + the polling in PurchasePointsPage. See
   // purchasePointsSearchSchema.
-  const { attemptId: queryAttemptId, status: queryStatus } = Route.useSearch()
+  const { attemptId: queryAttemptId, status: queryStatus } = useCurrentSearch<{
+    attemptId?: string
+    status?: 'success' | 'cancel'
+  }>()
 
   // clientAppId is not in useAuthStore or the route param; resolve it by listing
   // the realm's client apps and taking the first (same pattern as the

@@ -6,6 +6,7 @@ import { listPaymentProviders } from '@/lib/api-generated'
 import { listRealmConfigs } from '@/lib/api-generated/sdk.gen'
 import { parseStripeConfig } from '@/lib/stripe-config-utils'
 import type { StripeConfigForm } from '@/lib/schemas/stripe-config'
+import { useResolvedRealmId } from '@/lib/realm-routing'
 
 const StripeConfigFormPage = lazy(() =>
   import('@/components/billing/StripeConfigForm').then((m) => ({ default: m.StripeConfigFormPage }))
@@ -15,8 +16,8 @@ export const Route = createFileRoute('/$realmId/manage/billing/payment-providers
   component: StripeConfigRoute,
 })
 
-function StripeConfigRoute() {
-  const { realmId } = Route.useParams()
+export function StripeConfigRoute() {
+  const realmId = useResolvedRealmId()
 
   const { data: providers, isLoading } = useQuery({
     queryKey: ['payment-providers', realmId],

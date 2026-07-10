@@ -20,6 +20,7 @@ import {
   DEFAULT_ADMIN_REDIRECT,
   getSafeRedirectPath,
 } from '@/lib/constants/auth-constants'
+import { realmPath, resolvedRealmFromPath } from '@/lib/realm-routing'
 
 /**
  * Result object for login flow
@@ -204,7 +205,8 @@ export async function logoutFlow(realmId: string): Promise<void> {
 
     // Navigate to login page - use window.location for simple redirect
     // since we need to reload the page to properly clear auth state
-    window.location.href = `/${realmId}/auth/login`
+    const realmContext = resolvedRealmFromPath(window.location.pathname)
+    window.location.href = realmPath({ ...realmContext, realmId }, '/auth/login')
   }
 }
 

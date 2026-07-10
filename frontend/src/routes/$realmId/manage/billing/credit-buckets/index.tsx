@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { z } from 'zod'
 import { CreditBucketsDirectoryPage } from '@/components/billing/credit-bucket/credit-bucket-directory-page'
+import { realmPath, useCurrentSearch, useResolvedRealmContext } from '@/lib/realm-routing'
 
 const creditBucketsSearchSchema = z.object({
   selected: z.string().optional(),
@@ -11,15 +12,15 @@ export const Route = createFileRoute('/$realmId/manage/billing/credit-buckets/')
   component: CreditBucketsIndexRoute,
 })
 
-function CreditBucketsIndexRoute() {
-  const { realmId } = Route.useParams()
-  const search = Route.useSearch()
+export function CreditBucketsIndexRoute() {
+  const realmContext = useResolvedRealmContext()
+  const realmId = realmContext.realmId
+  const search = useCurrentSearch<{ selected?: string }>()
   const navigate = useNavigate()
 
   function handleSelect(bucketId: string | undefined) {
     navigate({
-      to: '/$realmId/manage/billing/credit-buckets',
-      params: { realmId },
+      to: realmPath(realmContext, '/manage/billing/credit-buckets'),
       search: (prev: { selected?: string }) =>
         bucketId ? { selected: bucketId } : { ...prev, selected: undefined },
       replace: true,

@@ -27,6 +27,7 @@ import { buildStripeConfigRequest } from '@/lib/stripe-config-utils'
 import { requireFieldOnCreate } from '@/lib/form-utils'
 import { useSaveConfigMutation } from '@/hooks/use-save-config-mutation'
 import { m } from '@/paraglide/messages'
+import { realmPath, useResolvedRealmContext } from '@/lib/realm-routing'
 
 interface StripeConfigFormDialogProps {
   open: boolean
@@ -220,6 +221,7 @@ interface StripeConfigFormPageProps {
 
 export function StripeConfigFormPage({ realmId, mode, initialValues }: StripeConfigFormPageProps) {
   const navigate = useNavigate()
+  const realmContext = useResolvedRealmContext()
   const isEditing = mode === 'edit'
 
   const defaultValues = useMemo(() => getStripeConfigDefaults(initialValues), [initialValues])
@@ -274,7 +276,9 @@ export function StripeConfigFormPage({ realmId, mode, initialValues }: StripeCon
   }, [defaultValues, form])
 
   const handleCancel = () => {
-    navigate({ to: '/$realmId/manage/billing/payment-providers', params: { realmId } })
+    navigate({
+      to: realmPath({ ...realmContext, realmId }, '/manage/billing/payment-providers'),
+    })
   }
 
   const isSubmitting = saveMutation.isPending

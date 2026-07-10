@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { z } from 'zod'
 import { requireFeature } from '@/data/query-options'
 import { AdminSubscriptionListPage } from '@/components/billing/admin-subscription-list-page'
+import { useCurrentSearch, useResolvedRealmId } from '@/lib/realm-routing'
 
 const subscriptionsSearchSchema = z.object({
   page: z.number().int().min(0).optional(),
@@ -21,9 +22,9 @@ export const Route = createFileRoute('/$realmId/manage/billing/subscriptions')({
   component: SubscriptionsRoute,
 })
 
-function SubscriptionsRoute() {
-  const { realmId } = Route.useParams()
-  const search = Route.useSearch()
+export function SubscriptionsRoute() {
+  const realmId = useResolvedRealmId()
+  const search = useCurrentSearch<z.infer<typeof subscriptionsSearchSchema>>()
 
   return <AdminSubscriptionListPage realmId={realmId} search={search} />
 }

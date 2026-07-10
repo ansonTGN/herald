@@ -23,6 +23,8 @@ import { filterByPermission } from '@/lib/utils/filter-by-permission'
 import { m } from '@/paraglide/messages'
 import { LanguageSwitcher } from '@/components/shared/language-switcher'
 import type { LucideIcon } from 'lucide-react'
+import { useLocation } from '@tanstack/react-router'
+import { realmPath, resolvedRealmFromPath } from '@/lib/realm-routing'
 
 interface MenuItem {
   id: string
@@ -83,7 +85,14 @@ function SidebarMenuLabel({ label, className }: { label: string; className?: str
 }
 
 export function Sidebar() {
-  const realmId = useRealmId()
+  const storeRealmId = useRealmId()
+  const location = useLocation()
+  const realmContext = resolvedRealmFromPath(location.pathname)
+  const realmId = realmContext.realmId || storeRealmId || 'admin'
+  const customDomainPath = useCallback(
+    (path: string) => realmPath({ ...realmContext, realmId }, path),
+    [realmContext, realmId]
+  )
   const { permissions } = useAuth()
   const { data: realm } = useQuery(realmQueryOptions(realmId))
   const { data: features } = useQuery(featureAvailabilityQueryOptions(realmId))
@@ -134,28 +143,28 @@ export function Sidebar() {
       {
         id: 'dashboard',
         name: 'Dashboard',
-        path: `/${realmId}/manage`,
+        path: customDomainPath('/manage'),
         icon: LayoutDashboard,
         permission: PERMISSION.DASHBOARD_VIEW,
       },
       {
         id: 'realms',
         name: 'Realms',
-        path: `/${realmId}/manage/realms`,
+        path: customDomainPath('/manage/realms'),
         icon: Globe,
         permission: PERMISSION.REALM_VIEW,
       },
       {
         id: 'clients',
         name: 'Clients',
-        path: `/${realmId}/manage/client-apps`,
+        path: customDomainPath('/manage/client-apps'),
         icon: Briefcase,
         permission: PERMISSION.CLIENTS_VIEW,
       },
       {
         id: 'users',
         name: 'Users',
-        path: `/${realmId}/manage/users`,
+        path: customDomainPath('/manage/users'),
         icon: Users,
         permission: PERMISSION.USERS_VIEW,
       },
@@ -168,21 +177,21 @@ export function Sidebar() {
           {
             id: 'permissions',
             name: 'Permissions',
-            path: `/${realmId}/manage/permissions`,
+            path: customDomainPath('/manage/permissions'),
             icon: Key,
             permission: PERMISSION.PERMISSIONS_VIEW,
           },
           {
             id: 'roles',
             name: 'Roles',
-            path: `/${realmId}/manage/roles`,
+            path: customDomainPath('/manage/roles'),
             icon: Shield,
             permission: PERMISSION.ROLES_VIEW,
           },
           {
             id: 'api-keys',
             name: 'API Keys',
-            path: `/${realmId}/manage/api-keys`,
+            path: customDomainPath('/manage/api-keys'),
             icon: Key,
             permission: PERMISSION.API_KEYS_VIEW,
           },
@@ -197,7 +206,7 @@ export function Sidebar() {
           {
             id: 'payment-providers',
             name: 'Payment Providers',
-            path: `/${realmId}/manage/billing/payment-providers`,
+            path: customDomainPath('/manage/billing/payment-providers'),
             icon: CreditCard,
             permission: PERMISSION.BILLING_VIEW,
             visible: adminFeatures?.billingConfigVisible ?? true,
@@ -205,7 +214,7 @@ export function Sidebar() {
           {
             id: 'entitlement-mappings',
             name: 'Entitlement Mappings',
-            path: `/${realmId}/manage/billing/entitlement-mappings`,
+            path: customDomainPath('/manage/billing/entitlement-mappings'),
             icon: CreditCard,
             permission: PERMISSION.BILLING_VIEW,
             visible: adminFeatures?.entitlementMappingsVisible ?? true,
@@ -213,7 +222,7 @@ export function Sidebar() {
           {
             id: 'points-default-config',
             name: 'Realm Config',
-            path: `/${realmId}/manage/points/default-config`,
+            path: customDomainPath('/manage/points/default-config'),
             icon: Settings,
             permission: PERMISSION.POINTS_VIEW,
             visible: adminFeatures?.pointsVisible ?? true,
@@ -221,7 +230,7 @@ export function Sidebar() {
           {
             id: 'credit-buckets',
             name: 'Credit Buckets',
-            path: `/${realmId}/manage/billing/credit-buckets`,
+            path: customDomainPath('/manage/billing/credit-buckets'),
             icon: CreditCard,
             permission: PERMISSION.POINTS_VIEW,
             visible: adminFeatures?.pointsVisible ?? true,
@@ -237,7 +246,7 @@ export function Sidebar() {
           {
             id: 'invoices',
             name: 'Invoices',
-            path: `/${realmId}/manage/billing/invoices`,
+            path: customDomainPath('/manage/billing/invoices'),
             icon: FileText,
             permission: PERMISSION.BILLING_VIEW,
             visible: adminFeatures?.invoicesVisible ?? true,
@@ -245,7 +254,7 @@ export function Sidebar() {
           {
             id: 'subscription-history',
             name: 'Subscription History',
-            path: `/${realmId}/manage/subscription-history`,
+            path: customDomainPath('/manage/subscription-history'),
             icon: History,
             permission: PERMISSION.BILLING_VIEW,
             visible: adminFeatures?.subscriptionHistoryVisible ?? true,
@@ -253,7 +262,7 @@ export function Sidebar() {
           {
             id: 'points-wallets',
             name: 'Points Wallets',
-            path: `/${realmId}/manage/points/wallets`,
+            path: customDomainPath('/manage/points/wallets'),
             icon: Users,
             permission: PERMISSION.POINTS_VIEW,
             visible: adminFeatures?.pointsVisible ?? true,
@@ -263,19 +272,19 @@ export function Sidebar() {
       {
         id: 'audit-log',
         name: 'Audit Log',
-        path: `/${realmId}/manage/audit`,
+        path: customDomainPath('/manage/audit'),
         icon: ScrollText,
         permission: PERMISSION.AUDIT_VIEW,
       },
       {
         id: 'settings',
         name: 'Settings',
-        path: `/${realmId}/manage/settings`,
+        path: customDomainPath('/manage/settings'),
         icon: Settings,
         permission: PERMISSION.SETTINGS_VIEW,
       },
     ],
-    [adminFeatures, realmId]
+    [adminFeatures, customDomainPath]
   )
 
   const filteredMenuItems = useMemo(

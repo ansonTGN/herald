@@ -9,6 +9,7 @@ import { globalSubscriptionHistoryQueryOptions, requireFeature } from '@/data/qu
 import type { HistoryFilters } from '@/types/billing'
 import { PageHeader, ListPagination } from '@/components/shared'
 import { m } from '@/paraglide/messages'
+import { useResolvedRealmId } from '@/lib/realm-routing'
 
 export const Route = createFileRoute('/$realmId/manage/subscription-history')({
   beforeLoad: ({ context, params }) =>
@@ -19,8 +20,8 @@ export const Route = createFileRoute('/$realmId/manage/subscription-history')({
   component: SubscriptionHistoryRoute,
 })
 
-function SubscriptionHistoryRoute() {
-  const { realmId } = Route.useParams()
+export function SubscriptionHistoryRoute() {
+  const realmId = useResolvedRealmId()
 
   // Filter state
   const [filters, setFilters] = useState<HistoryFilters>({

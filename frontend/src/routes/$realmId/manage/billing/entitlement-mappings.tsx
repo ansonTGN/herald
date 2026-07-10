@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { z } from 'zod'
 import { requireFeature } from '@/data/query-options'
 import { EntitlementMappingsPage } from '@/components/billing/entitlement-mappings-page'
+import { useResolvedRealmId } from '@/lib/realm-routing'
 
 const entitlementMappingsSearchSchema = z.object({
   page: z.number().int().min(0).optional(),
@@ -18,8 +19,8 @@ export const Route = createFileRoute('/$realmId/manage/billing/entitlement-mappi
   component: EntitlementMappingsRoute,
 })
 
-function EntitlementMappingsRoute() {
-  const { realmId } = Route.useParams()
+export function EntitlementMappingsRoute() {
+  const realmId = useResolvedRealmId()
 
   return <EntitlementMappingsPage realmId={realmId} />
 }

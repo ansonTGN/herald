@@ -12,7 +12,7 @@ export const Route = createFileRoute('/$realmId/user/security/totp-setup')({
   component: TotpSetupPageRoute,
 })
 
-function TotpSetupPageRoute() {
+export function TotpSetupPageRoute() {
   return (
     <Suspense
       fallback={

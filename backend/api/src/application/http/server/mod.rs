@@ -96,6 +96,7 @@ pub struct HealthCheckResponse {
         realm::custom_domain_config::handle_restore_custom_domain_config,
         realm::custom_domain_config::handle_custom_domain_authorize,
         public_config::get_public_config,
+        public_config::resolve_custom_domain,
         legal::list_agreements,
         legal::get_agreement,
         legal::get_consent_status,
@@ -157,6 +158,8 @@ pub struct HealthCheckResponse {
             herald_core::domain::realm_config::CustomDomainConfig,
             herald_core::domain::realm_config::CustomDomainStatus,
             public_config::PublicConfigResponse,
+            public_config::ResolveCustomDomainQuery,
+            public_config::ResolveCustomDomainResponse,
             public_config::PublicWhiteLabelConfig,
             public_config::RegistrationConfig,
             public_config::OAuthProviderInfo,
@@ -354,6 +357,10 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
 
     let router = Router::new()
         // Public configuration endpoint (no authentication required) - must come before other nested routes
+        .route(
+            "/api/public-config/custom-domain/resolve",
+            get(super::public_config::resolve_custom_domain),
+        )
         .route(
             "/api/public-config/{realmId}",
             get(super::public_config::get_public_config),

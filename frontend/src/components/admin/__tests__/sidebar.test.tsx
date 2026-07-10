@@ -21,6 +21,7 @@ vi.mock('@/data/query-options', () => ({
 }))
 
 vi.mock('@tanstack/react-router', () => ({
+  useLocation: () => ({ pathname: currentPath }),
   Link: ({
     to,
     className,

@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Link } from '@tanstack/react-router'
 import { useEffect } from 'react'
 import { m } from '@/paraglide/messages'
+import { realmPath, resolvedRealmFromPath } from '@/lib/realm-routing'
 
 export const Route = createFileRoute('/$realmId/auth/register')({
   component: RegisterPage,
@@ -37,9 +38,11 @@ function getRegisterPageState(
 }
 
 export function RegisterPage() {
-  const { realmId } = Route.useParams()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const pathname = window.location.pathname
+  const realmContext = resolvedRealmFromPath(pathname)
+  const { realmId } = realmContext
 
   const { data: publicConfig, isLoading, error } = useQuery(publicConfigQueryOptions(realmId))
   // Per-realm white-label config (FE-D02/FE-D03). Derived once so every register
@@ -54,7 +57,7 @@ export function RegisterPage() {
 
   function handleRegisterSuccess(verificationRequired: boolean): void {
     const destination = verificationRequired ? 'auth/verify-email' : 'auth/login'
-    navigate({ to: `/${realmId}/${destination}` })
+    navigate({ to: realmPath(realmContext, destination) })
   }
 
   if (state.isLoading) {
@@ -85,8 +88,7 @@ export function RegisterPage() {
           <CardContent>
             <p className="text-gray-600 mb-4">{m['auth.register.disabled_description']()}</p>
             <Link
-              to="/$realmId/auth/login"
-              params={{ realmId }}
+              to={realmPath(realmContext, '/auth/login')}
               className="text-primary hover:text-primary/80"
             >
               {m['auth.register.return_to_login']()}
@@ -117,8 +119,7 @@ export function RegisterPage() {
               {m['auth.register.already_have_account']()}{' '}
             </span>
             <Link
-              to="/$realmId/auth/login"
-              params={{ realmId }}
+              to={realmPath(realmContext, '/auth/login')}
               className="text-sm font-medium text-primary hover:text-primary/80"
               data-testid="login-link"
             >

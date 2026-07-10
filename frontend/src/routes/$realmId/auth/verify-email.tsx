@@ -11,6 +11,7 @@ import { TurnstileWidget } from '@/components/auth/turnstile-widget'
 import { turnstileStatusQueryOptions } from '@/data/query-options'
 import { toast } from 'sonner'
 import { m } from '@/paraglide/messages'
+import { realmPath, resolvedRealmFromPath } from '@/lib/realm-routing'
 
 const VERIFICATION_CODE_LENGTH = 6
 const RESEND_COUNTDOWN_SECONDS = 60
@@ -25,8 +26,9 @@ export const Route = createFileRoute('/$realmId/auth/verify-email')({
   component: VerifyEmailPage,
 })
 
-function VerifyEmailPage() {
-  const { realmId } = Route.useParams()
+export function VerifyEmailPage() {
+  const realmContext = resolvedRealmFromPath(window.location.pathname)
+  const { realmId } = realmContext
   const navigate = useNavigate()
 
   const [code, setCode] = useState('')
@@ -57,7 +59,7 @@ function VerifyEmailPage() {
 
       if (response.data) {
         toast.success(m['auth.verify_email.success']())
-        navigate({ to: `/${realmId}/auth/login` })
+        navigate({ to: realmPath(realmContext, '/auth/login') })
       }
     } catch (error) {
       setVerificationError(getErrorMessage(error))

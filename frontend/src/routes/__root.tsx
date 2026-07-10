@@ -17,6 +17,7 @@ import {
   queryKeys,
 } from '@/data/query-options'
 import { lazy, Suspense } from 'react'
+import { realmPath, resolveRealmContext, resolvedRealmFromPath } from '@/lib/realm-routing'
 
 const Devtools = import.meta.env.DEV
   ? lazy(() => import('@/components/devtools').then((m) => ({ default: m.Devtools })))
@@ -32,16 +33,18 @@ export const Route = createRootRouteWithContext<RouterContext>()({
   loader: async ({ location }) => {
     const pathname = location.pathname
 
-    // Extract realmId from pathname (first path segment after /)
-    const pathSegments = pathname.split('/').filter(Boolean)
-    const realmId = pathSegments[0] || 'admin' // Default to 'admin' if no realmId in path
+    const realmContext = await resolveRealmContext(pathname)
+    const { realmId } = realmContext
 
     // Route type detection
     const isRootPath = pathname === '/'
-    const isRealmRootPath = pathname.match(/^\/[^/]+\/?$/) // /admin, /admin/, /user, /user/, etc. (realm root with optional trailing slash)
-    const isAuthRoute = pathname.match(/^\/[^/]+\/auth\//) // /admin/auth/, /user/auth/, etc.
-    const isLegalRoute = pathname.match(/^\/[^/]+\/legal\//) // /admin/legal/, /user/legal/, etc.
-    const isManageRoute = pathname.match(/^\/[^/]+\/manage/)
+    const routePath = realmContext.isCustomDomain
+      ? pathname
+      : pathname.replace(new RegExp(`^/${realmId}`), '') || '/'
+    const isRealmRootPath = !realmContext.isCustomDomain && pathname.match(/^\/[^/]+\/?$/)
+    const isAuthRoute = routePath.match(/^\/auth\//)
+    const isLegalRoute = routePath.match(/^\/legal\//)
+    const isManageRoute = routePath.match(/^\/manage/)
 
     try {
       // Initialize auth and populate Zustand store
@@ -55,47 +58,42 @@ export const Route = createRootRouteWithContext<RouterContext>()({
         if (!authenticated) {
           // Redirect to login page with return URL
           throw redirect({
-            to: '/$realmId/auth/login',
-            params: { realmId },
+            to: realmPath(realmContext, '/auth/login'),
             search: { redirect: '/' },
           })
         }
 
         // Redirect to appropriate page based on permissions (from Zustand state)
-        const targetPath = checkAdminPermission() ? '/$realmId/manage' : '/$realmId/user/profile'
+        const targetPath = checkAdminPermission() ? '/manage' : '/user/profile'
         throw redirect({
-          to: targetPath,
-          params: { realmId },
+          to: realmPath(realmContext, targetPath),
         })
       }
 
       // Realm root path (e.g., /admin, /admin/, /user, /user/): redirect authenticated users based on permissions
       if (isRealmRootPath && authenticated) {
         const hasAdmin = checkAdminPermission()
-        const targetPath = hasAdmin ? '/$realmId/manage' : '/$realmId/user/profile'
+        const targetPath = hasAdmin ? '/manage' : '/user/profile'
         throw redirect({
-          to: targetPath,
-          params: { realmId },
+          to: realmPath(realmContext, targetPath),
         })
       }
 
       // Public routes (auth + legal): redirect authenticated users away from auth pages,
       // but allow them to stay on legal agreement pages.
       if (isAuthRoute && authenticated) {
-        const targetPath = checkAdminPermission() ? '/$realmId/manage' : '/$realmId/user/profile'
+        const targetPath = checkAdminPermission() ? '/manage' : '/user/profile'
         throw redirect({
-          to: targetPath,
-          params: { realmId },
+          to: realmPath(realmContext, targetPath),
         })
       }
 
       // Protected routes: require authentication (auth and legal are public)
       if (!isAuthRoute && !isLegalRoute && !authenticated) {
         // Extract the relative path (without realm prefix)
-        const relativePath = pathname.replace(new RegExp(`^/${realmId}`), '') || '/'
+        const relativePath = routePath || '/'
         throw redirect({
-          to: '/$realmId/auth/login',
-          params: { realmId },
+          to: realmPath(realmContext, '/auth/login'),
           search: { redirect: relativePath },
         })
       }
@@ -103,8 +101,7 @@ export const Route = createRootRouteWithContext<RouterContext>()({
       // Manage route: require admin permission (only for authenticated users)
       if (isManageRoute && !checkAdminPermission()) {
         throw redirect({
-          to: '/$realmId/user/profile',
-          params: { realmId },
+          to: realmPath(realmContext, '/user/profile'),
         })
       }
 
@@ -118,10 +115,9 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 
       // Other errors: redirect to login (unless it's a public route)
       if (!isAuthRoute && !isLegalRoute) {
-        const relativePath = pathname.replace(new RegExp(`^/${realmId}`), '') || '/'
+        const relativePath = routePath || '/'
         throw redirect({
-          to: '/$realmId/auth/login',
-          params: { realmId },
+          to: realmPath(realmContext, '/auth/login'),
           search: { redirect: relativePath },
         })
       }
@@ -140,13 +136,16 @@ function RootComponent() {
   const isAuthenticated = useIsAuthenticated()
   const pathname = router.state.location.pathname
 
-  const pathSegments = pathname.split('/').filter(Boolean)
-  const realmId = pathSegments[0] || 'admin'
+  const realmContext = resolvedRealmFromPath(pathname)
+  const realmId = realmContext.realmId
 
   const isRootPath = pathname === '/'
-  const isRealmRootPath = /^\/[^/]+\/?$/.test(pathname)
-  const isAuthRoute = /^\/[^/]+\/auth\//.test(pathname)
-  const isLegalRoute = /^\/[^/]+\/legal\//.test(pathname)
+  const routePath = realmContext.isCustomDomain
+    ? pathname
+    : pathname.replace(new RegExp(`^/${realmId}`), '') || '/'
+  const isRealmRootPath = !realmContext.isCustomDomain && /^\/[^/]+\/?$/.test(pathname)
+  const isAuthRoute = /^\/auth\//.test(routePath)
+  const isLegalRoute = /^\/legal\//.test(routePath)
 
   const isCoreRoute =
     isAuthenticated && !isAuthRoute && !isLegalRoute && !isRootPath && !isRealmRootPath

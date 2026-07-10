@@ -4,10 +4,81 @@
 // that need to query realm configuration without authentication or policy checks.
 
 use crate::application::http::server::api_entities::ApiError;
+use crate::application::http::state::AppState;
 use sqlx::PgPool;
 
 fn public_config_query_error(message: &'static str) -> ApiError {
     ApiError::internal(message)
+}
+
+/// Normalize a request/published host for custom-domain lookup.
+///
+/// The publish path stores lowercase hostnames without a trailing dot. Read
+/// paths apply the same canonicalization so `Login.Example.COM.` resolves to
+/// the stored `login.example.com` row.
+pub fn normalize_custom_domain_host(host: &str) -> Option<String> {
+    let host = host.trim().to_lowercase();
+    let host = host.strip_suffix('.').unwrap_or(&host);
+    if host.is_empty() {
+        None
+    } else {
+        Some(host.to_string())
+    }
+}
+
+/// Build the public web base for a realm and whether realm path prefix is
+/// required in user-facing URLs.
+///
+/// Realms with a published custom domain use `https://{hostname}` and no
+/// `/{realmId}` prefix. Realms without one continue to use
+/// `{public_base_url}/{realmId}` for backward compatibility.
+pub async fn realm_public_url_parts(
+    state: &AppState,
+    realm_id: &str,
+) -> Result<(String, bool), ApiError> {
+    let row = sqlx::query_as::<_, (String,)>(
+        "SELECT hostname FROM custom_domain_mapping
+         WHERE realm_id = $1 AND enabled = true
+         ORDER BY updated_at DESC
+         LIMIT 1",
+    )
+    .bind(realm_id)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|e| {
+        tracing::error!(
+            realm_id = %realm_id,
+            error = %e,
+            "Failed to query custom-domain mapping for public URL"
+        );
+        public_config_query_error("Failed to query custom-domain mapping")
+    })?;
+
+    if let Some((hostname,)) = row {
+        Ok((format!("https://{hostname}"), false))
+    } else {
+        Ok((
+            state.public_base_url.trim_end_matches('/').to_string(),
+            true,
+        ))
+    }
+}
+
+/// Build a user-facing absolute URL for a realm-relative frontend path.
+pub async fn realm_public_url(
+    state: &AppState,
+    realm_id: &str,
+    path: &str,
+) -> Result<String, ApiError> {
+    let (base, include_realm_prefix) = realm_public_url_parts(state, realm_id).await?;
+    let path = path.trim_start_matches('/');
+    if include_realm_prefix {
+        Ok(format!("{base}/{realm_id}/{path}"))
+    } else if path.is_empty() {
+        Ok(base)
+    } else {
+        Ok(format!("{base}/{path}"))
+    }
 }
 
 /// Query a single config value from realm_config table

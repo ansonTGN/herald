@@ -28,6 +28,7 @@ import { RoleSelector } from '@/components/shared/role-selector'
 import { ClientAppSelector } from '@/components/shared/client-app-selector'
 import { m } from '@/paraglide/messages'
 import { getErrorMessage } from '@/lib/error-utils'
+import { realmPath, useResolvedRealmContext } from '@/lib/realm-routing'
 
 type MutationResult = CreateApiKeyResponse | ApiKeyListItem
 
@@ -40,6 +41,8 @@ interface ApiKeyFormPageProps {
 export function ApiKeyFormPage({ mode, realmId, apiKey }: ApiKeyFormPageProps) {
   const isCreate = mode === 'create'
   const navigate = useNavigate()
+  const realmContext = useResolvedRealmContext()
+  const apiKeysPath = realmPath({ ...realmContext, realmId }, '/manage/api-keys')
   const { hasPermission } = usePermission()
   const canManageRoles = hasPermission(PERMISSION.ROLES_MANAGE)
   const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([])
@@ -54,7 +57,7 @@ export function ApiKeyFormPage({ mode, realmId, apiKey }: ApiKeyFormPageProps) {
     enabled: isCreate,
   })
 
-  const goToList = () => navigate({ to: '/$realmId/manage/api-keys', params: { realmId } })
+  const goToList = () => navigate({ to: apiKeysPath })
 
   const { isSubmitting, mutate } = useFormMutation<
     MutationResult,
@@ -95,8 +98,7 @@ export function ApiKeyFormPage({ mode, realmId, apiKey }: ApiKeyFormPageProps) {
           }
         }
         void navigate({
-          to: '/$realmId/manage/api-keys/reveal',
-          params: { realmId },
+          to: realmPath({ ...realmContext, realmId }, '/manage/api-keys/reveal'),
           state: {
             keyData: data,
             roleBindingError,

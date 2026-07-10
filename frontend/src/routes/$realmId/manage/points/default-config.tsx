@@ -29,6 +29,7 @@ import { useAuth } from '@/hooks/use-auth'
 import { PERMISSION } from '@/lib/constants/auth-constants'
 import { AccessDenied } from '@/components/shared'
 import { m } from '@/paraglide/messages'
+import { useOptionalRouteParams, useResolvedRealmId } from '@/lib/realm-routing'
 
 export const Route = createFileRoute('/$realmId/manage/points/default-config')({
   component: RealmConfigPage,
@@ -39,7 +40,9 @@ export const Route = createFileRoute('/$realmId/manage/points/default-config')({
 // outside a real Router context. Sibling pages (e.g. EntitlementMappingsPage)
 // are already directly importable; this mirrors that pattern.
 export function RealmConfigPage() {
-  const { realmId } = Route.useParams()
+  const fallbackRealmId = useResolvedRealmId()
+  const routeParams = useOptionalRouteParams<{ realmId?: string }>(Route)
+  const realmId = routeParams.realmId ?? fallbackRealmId
   const queryClient = useQueryClient()
   const auth = useAuth()
 

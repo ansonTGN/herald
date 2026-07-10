@@ -3,13 +3,14 @@ import { useSuspenseQuery } from '@tanstack/react-query'
 import { SubscriptionManagement } from '@/components/billing/subscription-management'
 import { clientAppsQueryOptions } from '@/data/query-options'
 import { m } from '@/paraglide/messages'
+import { useResolvedRealmId } from '@/lib/realm-routing'
 
 export const Route = createFileRoute('/$realmId/manage/subscription')({
   component: SubscriptionRoute,
 })
 
-function SubscriptionRoute() {
-  const { realmId } = Route.useParams()
+export function SubscriptionRoute() {
+  const realmId = useResolvedRealmId()
 
   const { data: clientAppsResponse } = useSuspenseQuery(
     clientAppsQueryOptions(realmId, { page: 0, pageSize: 10 })

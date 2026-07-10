@@ -19,6 +19,7 @@ use utoipa::ToSchema;
 use crate::application::http::server::api_entities::ApiError;
 use crate::application::http::state::AppState;
 use herald_api_base::application::http::common::auth_utils::AdminIdentity;
+use herald_api_base::application::http::common::public_helper::normalize_custom_domain_host;
 use herald_core::domain::authentication::Identity;
 use herald_core::domain::common::entities::app_errors::CoreError;
 use herald_core::domain::custom_domain::CustomDomainMappingRepository;
@@ -532,14 +533,11 @@ pub async fn handle_custom_domain_authorize(
     // a legitimately published domain would miss and return 404, declining TLS
     // issuance. Full validation (`normalize_and_validate_hostname`) is avoided
     // on this hot path — a syntactically invalid host simply won't match a row.
-    let host = query.host.trim().to_lowercase();
-    let host = host.strip_suffix('.').unwrap_or(&host);
-    if host.is_empty() {
-        return Err(ApiError::not_found("Custom domain not found"));
-    }
+    let host = normalize_custom_domain_host(&query.host)
+        .ok_or_else(|| ApiError::not_found("Custom domain not found"))?;
     let mapping = state
         .custom_domain_mapping_repo
-        .find_by_hostname(host)
+        .find_by_hostname(&host)
         .await
         .map_err(map_mapping_error)?;
 

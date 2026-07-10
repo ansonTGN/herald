@@ -10,6 +10,7 @@ use validator::Validate;
 use herald_api_base::application::http::auth::util::{
     ClientIp, normalize_email, rate_limit_hit, verify_turnstile_for_realm,
 };
+use herald_api_base::application::http::common::public_helper::realm_public_url_parts;
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
@@ -98,12 +99,8 @@ pub async fn trigger(
             ApiError::internal("Failed to store email verification code".to_string())
         })?;
 
-    let link = format!(
-        "{}/api/auth/{}/verify_email/confirm/{}",
-        state.public_base_url.trim_end_matches('/'),
-        realm_id,
-        code
-    );
+    let (public_base, _) = realm_public_url_parts(&state, &realm_id).await?;
+    let link = format!("{public_base}/api/auth/{realm_id}/verify_email/confirm/{code}");
     let html =
         format!("<p>Please click to verify your email:</p><p><a href=\"{link}\">{link}</a></p>");
     EmailService::send_html_email(&state.pool, &realm_id, &email, "Verify your email", &html)

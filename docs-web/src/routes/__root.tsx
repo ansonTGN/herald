@@ -11,6 +11,8 @@ import SearchDialog from "@/components/search";
 import { i18n } from "@/lib/i18n";
 import appCss from "@/styles/app.css?url";
 
+const GA_ID = "G-G6EGB7SXZV";
+
 const { provider } = defineI18nUI(i18n, {
   translations: {
     en: { displayName: "English", search: "Search Docs" },
@@ -50,6 +52,19 @@ export const Route = createRootRoute({
       // },
     ],
     links: [{ rel: "stylesheet", href: appCss }],
+    scripts: [
+      {
+        src: `https://www.googletagmanager.com/gtag/js?id=${GA_ID}`,
+        async: true,
+      },
+      {
+        type: "text/javascript",
+        children: `window.dataLayer = window.dataLayer || [];
+function gtag(){dataLayer.push(arguments);}
+gtag('js', new Date());
+gtag('config', '${GA_ID}');`,
+      },
+    ],
   }),
   component: RootComponent,
 });

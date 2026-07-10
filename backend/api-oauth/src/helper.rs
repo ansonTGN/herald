@@ -31,6 +31,35 @@ struct OAuthStateData {
     created_at: i64,
 }
 
+async fn realm_public_origin_for_oauth(
+    state: &AppState,
+    realm_id: &str,
+) -> Result<String, AuthError> {
+    let row = sqlx::query_as::<_, (String,)>(
+        "SELECT hostname FROM custom_domain_mapping
+         WHERE realm_id = $1 AND enabled = true
+         ORDER BY updated_at DESC
+         LIMIT 1",
+    )
+    .bind(realm_id)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|e| {
+        tracing::error!(
+            realm_id = %realm_id,
+            error = %e,
+            "Failed to query custom-domain mapping for OAuth URL"
+        );
+        AuthError::InternalServerError("Failed to build public realm URL".to_string())
+    })?;
+
+    if let Some((hostname,)) = row {
+        Ok(format!("https://{hostname}"))
+    } else {
+        Ok(state.public_base_url.trim_end_matches('/').to_string())
+    }
+}
+
 /// Provider handler enum
 pub enum ProviderHandler {
     Google(GoogleOAuthProvider),
@@ -155,12 +184,16 @@ pub async fn generate_oauth_auth_url(
         .map_err(|e| AuthError::InternalServerError(format!("Failed to store state: {}", e)))?;
 
     // Build OAuth config for provider handler
-    let redirect_uri_value = redirect_uri.unwrap_or_else(|| {
-        format!(
-            "{}/api/oauth/{}/{}/callback",
-            state.public_base_url, realm_id, provider_type
-        )
-    });
+    let redirect_uri_value = match redirect_uri {
+        Some(uri) => uri,
+        None => {
+            let public_origin = realm_public_origin_for_oauth(state, &realm_id).await?;
+            format!(
+                "{}/api/oauth/{}/{}/callback",
+                public_origin, realm_id, provider_type
+            )
+        }
+    };
 
     let oauth_config = OAuthConfig {
         client_id: config.client_id.clone(),
@@ -584,12 +617,16 @@ pub async fn handle_oauth_callback(
         .ok_or_else(|| AuthError::NotFound("OAuth provider not configured".to_string()))?;
 
     // Build OAuth config
-    let redirect_uri = state_data.redirect_uri.unwrap_or_else(|| {
-        format!(
-            "{}/api/oauth/{}/{}/callback",
-            state.public_base_url, realm_id, provider_type
-        )
-    });
+    let redirect_uri = match state_data.redirect_uri {
+        Some(uri) => uri,
+        None => {
+            let public_origin = realm_public_origin_for_oauth(state, &realm_id).await?;
+            format!(
+                "{}/api/oauth/{}/{}/callback",
+                public_origin, realm_id, provider_type
+            )
+        }
+    };
 
     let oauth_config = OAuthConfig {
         client_id: config.client_id.clone(),

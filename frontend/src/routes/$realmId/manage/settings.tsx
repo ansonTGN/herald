@@ -71,6 +71,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { TextField } from '@/components/shared/form-fields/text-field'
 import { TextareaField } from '@/components/shared/form-fields/textarea-field'
 import { m } from '@/paraglide/messages'
+import { useOptionalRouteParams, useResolvedRealmId } from '@/lib/realm-routing'
 
 export const Route = createFileRoute('/$realmId/manage/settings')({
   component: SettingsPage,
@@ -179,7 +180,9 @@ function resolveErrorMessage(error: unknown, fallback: string): string {
 }
 
 export function SettingsPage() {
-  const { realmId } = Route.useParams()
+  const fallbackRealmId = useResolvedRealmId()
+  const routeParams = useOptionalRouteParams<{ realmId?: string }>(Route)
+  const realmId = routeParams.realmId ?? fallbackRealmId
   const queryClient = useQueryClient()
   const auth = useAuth()
   const [activeTab, setActiveTab] = useState('general')

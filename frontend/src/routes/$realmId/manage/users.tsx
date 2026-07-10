@@ -18,6 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ConfirmDialog, PageHeader } from '@/components/shared'
 import { ResetPasswordResultDialog } from '@/components/users/reset-password-result-dialog'
 import { m } from '@/paraglide/messages'
+import { useCurrentSearch } from '@/lib/realm-routing'
 
 export const Route = createFileRoute('/$realmId/manage/users')({
   component: UsersPage,
@@ -41,8 +42,8 @@ export const Route = createFileRoute('/$realmId/manage/users')({
   },
 })
 
-function UsersPage() {
-  const search = Route.useSearch() as UsersSearchParams
+export function UsersPage() {
+  const search = useCurrentSearch<UsersSearchParams>()
   const navigate = Route.useNavigate()
   const queryClient = useQueryClient()
   const realmId = useRealmId()

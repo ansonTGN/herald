@@ -13,7 +13,7 @@ export const Route = createFileRoute('/$realmId/manage/roles')({
   component: RolesPage,
 })
 
-function RolesPage() {
+export function RolesPage() {
   const realmId = useRealmId()
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
 

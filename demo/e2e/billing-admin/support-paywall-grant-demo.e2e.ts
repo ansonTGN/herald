@@ -23,9 +23,9 @@
  * (getGrantedRoles / getReadonlyFieldValue after a page reload following save),
  * NEVER on an auto-dismissing toast.
  *
- * Demo-Seed assumption (called out — cannot be verified statically): realm-001
- * is seeded with at least one entitlement mapping. The Demo Seed
- * (`scripts/lib/demo_seed.py`) inserts a single `recurring` mapping under
+ * Demo-Seed data: realm-001 is seeded with exactly one recurring entitlement
+ * mapping. `_ensure_realm001_subscription_data` in
+ * `scripts/lib/demo_seed.py` inserts a single `recurring` mapping under
  * `realm001-product-subscription` for realm-001 and NO `one_time` mapping. This
  * test therefore targets the FIRST mapping in the master list and reads its
  * real billing type at runtime; US-PW-001 场景2 (one_time) is exercised against

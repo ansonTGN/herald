@@ -48,6 +48,10 @@ export const apiKeysSearchSchema = z.object({
   pageSize: z.number().int().min(1).max(100).optional(),
 })
 
+export const resetPasswordSearchSchema = z.object({
+  code: z.string().min(1),
+})
+
 /**
  * Search params for the purchase-points page. The payment provider redirects
  * back here with `attemptId` (so the page can resume polling) and `status`
@@ -60,6 +64,7 @@ export const purchasePointsSearchSchema = z.object({
   status: z.enum(['success', 'cancel']).optional(),
 })
 
+export type ResetPasswordSearchParams = z.infer<typeof resetPasswordSearchSchema>
 export type PaginationParams = z.infer<typeof paginationSchema>
 export type LoginSearchParams = z.infer<typeof loginSearchSchema>
 export type UsersSearchParams = z.infer<typeof usersSearchSchema>

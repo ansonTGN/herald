@@ -20,6 +20,7 @@ import { InvoicePolicyForm } from '@/components/billing/invoices/invoice-policy-
 import { useIssueInvoice, useVoidInvoice, useMarkPaid } from '@/data/invoice-mutations'
 import type { InvoiceResponse } from '@/lib/api-generated'
 import { m } from '@/paraglide/messages'
+import { realmPath, useCurrentSearch, useResolvedRealmContext } from '@/lib/realm-routing'
 
 // Search param that lets Billing hub deep-link to seller config or policy config dialog.
 // Mirrors the zod-schema-on-validateSearch convention used by sibling billing routes
@@ -33,10 +34,11 @@ export const Route = createFileRoute('/$realmId/manage/billing/invoices/')({
   validateSearch: invoiceAdminSearchSchema,
 })
 
-function InvoiceAdminRoute() {
-  const { realmId } = Route.useParams()
+export function InvoiceAdminRoute() {
+  const realmContext = useResolvedRealmContext()
+  const realmId = realmContext.realmId
   const navigate = useNavigate()
-  const search = Route.useSearch()
+  const search = useCurrentSearch<z.infer<typeof invoiceAdminSearchSchema>>()
 
   const [detailInvoiceId, setDetailInvoiceId] = useState<string | null>(null)
 
@@ -59,12 +61,11 @@ function InvoiceAdminRoute() {
       setPolicyConfigOpen(true)
     }
     navigate({
-      to: '/$realmId/manage/billing/invoices',
-      params: { realmId },
+      to: realmPath(realmContext, '/manage/billing/invoices'),
       search: { open: undefined },
       replace: true,
     })
-  }, [search.open, navigate, realmId])
+  }, [search.open, navigate, realmContext])
 
   const [issueTarget, setIssueTarget] = useState<InvoiceResponse | null>(null)
   const [issueDate, setIssueDate] = useState('')
@@ -80,19 +81,17 @@ function InvoiceAdminRoute() {
 
   const handleCreateInvoice = useCallback(() => {
     navigate({
-      to: '/$realmId/manage/billing/invoices/new',
-      params: { realmId },
+      to: realmPath(realmContext, '/manage/billing/invoices/new'),
     })
-  }, [navigate, realmId])
+  }, [navigate, realmContext])
 
   const handleEditInvoice = useCallback(
     (invoice: InvoiceResponse) => {
       navigate({
-        to: '/$realmId/manage/billing/invoices/$invoiceId/edit',
-        params: { realmId, invoiceId: invoice.id },
+        to: realmPath(realmContext, `/manage/billing/invoices/${invoice.id}/edit`),
       })
     },
-    [navigate, realmId]
+    [navigate, realmContext]
   )
 
   const handleViewInvoice = useCallback((invoice: InvoiceResponse) => {

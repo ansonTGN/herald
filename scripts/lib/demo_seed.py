@@ -113,9 +113,15 @@ def ensure_demo_seed_data(logger: "Logger | None" = None) -> bool:
         # no-ops cleanly.)
         for realm_id in (POINTS_REALM_ID, ADMIN_REALM):
             _ensure_realm_bucket_directory(realm_id, logger)
-        # Ensure payment provider credentials (realm_config only). Entitlement
-        # mappings are NOT seeded as placeholders — the admin triggers a provider
-        # sync from the UI to pull the real Stripe/Creem catalog.
+
+        # Ensure realm-001 subscription reference data. This includes the
+        # recurring entitlement mapping (`realm001-product-subscription`) that
+        # US-PW-001 expects to exist before the demo test opens the page.
+        _ensure_realm001_subscription_data(user_id, logger)
+
+        # Ensure payment provider credentials (realm_config only). This function
+        # does NOT seed entitlement mappings; the realm-001 recurring mapping is
+        # handled by `_ensure_realm001_subscription_data` above.
         _ensure_payment_provider_config(logger)
 
         # Ensure realm default points config for admin realm

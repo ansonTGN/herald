@@ -2,6 +2,7 @@ import { createFileRoute, redirect } from '@tanstack/react-router'
 import { lazy, Suspense } from 'react'
 import { Loader2 } from 'lucide-react'
 import { z } from 'zod'
+import { useCurrentSearch, useResolvedRealmId } from '@/lib/realm-routing'
 
 // Apply is now only reachable from a history row with a pre-filled resource
 // reference (P1-3). Exactly one of paymentAttemptId/subscriptionId is required;
@@ -37,9 +38,13 @@ export const Route = createFileRoute('/$realmId/user/invoices/new')({
   },
 })
 
-function ApplyInvoicePageRoute() {
-  const { realmId } = Route.useParams()
-  const search = Route.useSearch()
+export function ApplyInvoicePageRoute() {
+  const realmId = useResolvedRealmId()
+  const search = useCurrentSearch<{
+    paymentAttemptId?: string
+    subscriptionId?: string
+    returnTo?: string
+  }>()
   const prefilledReference = search.paymentAttemptId
     ? ({ type: 'paymentAttempt', id: search.paymentAttemptId } as const)
     : search.subscriptionId

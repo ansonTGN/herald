@@ -67,6 +67,19 @@ export default defineConfig({
         {
           path: "/zh",
         },
+        // Legal pages
+        {
+          path: "/en/privacy",
+        },
+        {
+          path: "/zh/privacy",
+        },
+        {
+          path: "/en/terms",
+        },
+        {
+          path: "/zh/terms",
+        },
         // OpenAPI tag pages — virtual, must be listed explicitly (crawler can't render them)
         ...openapiPages(),
         // Nested folder pages (sidebar-only links aren't auto-discovered by the crawler)

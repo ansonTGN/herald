@@ -10,7 +10,7 @@ export const Route = createFileRoute('/$realmId/user/profile')({
   component: ProfileIndex,
 })
 
-function ProfileIndex() {
+export function ProfileIndex() {
   const { data: profile, isLoading } = useQuery(profileQueryOptions)
 
   if (isLoading) {

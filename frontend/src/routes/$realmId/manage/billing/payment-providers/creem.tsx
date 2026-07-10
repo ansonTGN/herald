@@ -6,6 +6,7 @@ import { listPaymentProviders } from '@/lib/api-generated'
 import { listRealmConfigs } from '@/lib/api-generated/sdk.gen'
 import { parseCreemConfig } from '@/lib/creem-config-utils'
 import type { CreemConfigForm } from '@/lib/schemas/creem-config'
+import { useResolvedRealmId } from '@/lib/realm-routing'
 
 const CreemConfigFormPage = lazy(() =>
   import('@/components/billing/CreemConfigForm').then((m) => ({ default: m.CreemConfigFormPage }))
@@ -15,8 +16,8 @@ export const Route = createFileRoute('/$realmId/manage/billing/payment-providers
   component: CreemConfigRoute,
 })
 
-function CreemConfigRoute() {
-  const { realmId } = Route.useParams()
+export function CreemConfigRoute() {
+  const realmId = useResolvedRealmId()
 
   const { data: providers, isLoading } = useQuery({
     queryKey: ['payment-providers', realmId],

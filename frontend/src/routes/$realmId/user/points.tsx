@@ -3,6 +3,7 @@ import { UserPointsPage } from '@/components/points/UserPointsPage'
 import { useUser } from '@/stores/auth-store'
 import { requireFeature } from '@/data/query-options'
 import { transactionBucketSearchSchema } from '@/lib/schemas/points-forms'
+import { realmPath, useCurrentSearch, useResolvedRealmContext } from '@/lib/realm-routing'
 
 export const Route = createFileRoute('/$realmId/user/points')({
   beforeLoad: ({ context, params }) =>
@@ -17,18 +18,18 @@ export const Route = createFileRoute('/$realmId/user/points')({
   component: UserPointsWrapper,
 })
 
-function UserPointsWrapper() {
-  const { realmId } = Route.useParams()
+export function UserPointsWrapper() {
+  const realmContext = useResolvedRealmContext()
+  const realmId = realmContext.realmId
   const user = useUser()
   // Get userId from auth store since this is user's own points page
   const userId = user?.id || ''
-  const search = Route.useSearch()
+  const search = useCurrentSearch<{ bucketId?: string }>()
   const navigate = useNavigate()
 
   function handleBucketIdChange(bucketId: string | undefined) {
     navigate({
-      to: '/$realmId/user/points',
-      params: { realmId },
+      to: realmPath(realmContext, '/user/points'),
       search: () => ({ bucketId }),
       replace: true,
     })

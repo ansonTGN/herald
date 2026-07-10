@@ -15,6 +15,7 @@ import {
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants'
 import type { PurchaseHistoryItem } from '@/lib/api-generated'
 import { m } from '@/paraglide/messages'
+import { realmPath, useResolvedRealmContext } from '@/lib/realm-routing'
 
 export const Route = createFileRoute('/$realmId/user/subscription-history')({
   beforeLoad: ({ context, params }) =>
@@ -25,8 +26,9 @@ export const Route = createFileRoute('/$realmId/user/subscription-history')({
   component: PurchaseRecordsRoute,
 })
 
-function PurchaseRecordsRoute() {
-  const { realmId } = Route.useParams()
+export function PurchaseRecordsRoute() {
+  const realmContext = useResolvedRealmContext()
+  const realmId = realmContext.realmId
   const navigate = useNavigate()
   const [purchaseHistoryPage, setPurchaseHistoryPage] = useState(1)
   const [selectedPurchase, setSelectedPurchase] = useState<PurchaseHistoryItem | null>(null)
@@ -52,15 +54,14 @@ function PurchaseRecordsRoute() {
   const handleApplyInvoice = useCallback(
     (attemptId: string) => {
       navigate({
-        to: '/$realmId/user/invoices/new',
-        params: { realmId },
+        to: realmPath(realmContext, '/user/invoices/new'),
         search: {
           paymentAttemptId: attemptId,
-          returnTo: `/${realmId}/user/subscription-history`,
+          returnTo: realmPath(realmContext, '/user/subscription-history'),
         },
       })
     },
-    [realmId, navigate]
+    [realmContext, navigate]
   )
 
   return (
@@ -69,7 +70,7 @@ function PurchaseRecordsRoute() {
         <PageHeader title={m['billing.purchase_records_page_title']()} />
         {canPurchasePoints && (
           <Button asChild data-testid="purchase-records-purchase-points-button">
-            <Link to="/$realmId/user/purchase-points" params={{ realmId }}>
+            <Link to={realmPath(realmContext, '/user/purchase-points')}>
               <Plus className="mr-2 h-4 w-4" />
               {m['points.user_points_purchase_button']()}
             </Link>

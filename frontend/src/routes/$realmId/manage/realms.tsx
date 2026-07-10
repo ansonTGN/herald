@@ -15,14 +15,15 @@ import { Plus } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { PageHeader } from '@/components/shared'
 import { m } from '@/paraglide/messages'
+import { useCurrentSearch } from '@/lib/realm-routing'
 
 export const Route = createFileRoute('/$realmId/manage/realms')({
   component: RealmsPage,
   validateSearch: (search) => realmsSearchSchema.parse(search),
 })
 
-function RealmsPage() {
-  const search = Route.useSearch() as RealmsSearchParams
+export function RealmsPage() {
+  const search = useCurrentSearch<RealmsSearchParams>()
   const navigate = Route.useNavigate()
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const detailDialog = useDialogManager<string>()

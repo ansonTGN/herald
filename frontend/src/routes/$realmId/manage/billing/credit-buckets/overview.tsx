@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { z } from 'zod'
 import { CreditBucketOverviewPage } from '@/components/billing/credit-bucket/credit-bucket-overview-page'
+import { realmPath, useCurrentSearch, useResolvedRealmContext } from '@/lib/realm-routing'
 
 const creditTypeKeySchema = z.enum([
   'topup',
@@ -24,15 +25,15 @@ export const Route = createFileRoute('/$realmId/manage/billing/credit-buckets/ov
   component: CreditBucketOverviewRoute,
 })
 
-function CreditBucketOverviewRoute() {
-  const { realmId } = Route.useParams()
-  const search = Route.useSearch()
+export function CreditBucketOverviewRoute() {
+  const realmContext = useResolvedRealmContext()
+  const realmId = realmContext.realmId
+  const search = useCurrentSearch<OverviewSearch>()
   const navigate = useNavigate()
 
   function handleSearchChange(next: OverviewSearch) {
     navigate({
-      to: '/$realmId/manage/billing/credit-buckets/overview',
-      params: { realmId },
+      to: realmPath(realmContext, '/manage/billing/credit-buckets/overview'),
       search: () => ({
         enabledOnly: next.enabledOnly,
         creditTypes: next.creditTypes,

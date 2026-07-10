@@ -7,6 +7,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Copy, Check, TriangleAlert, ArrowLeft } from 'lucide-react'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { m } from '@/paraglide/messages'
+import { realmPath, useResolvedRealmContext } from '@/lib/realm-routing'
 
 interface ApiKeyRevealPageProps {
   realmId: string
@@ -14,6 +15,8 @@ interface ApiKeyRevealPageProps {
 
 export function ApiKeyRevealPage({ realmId }: ApiKeyRevealPageProps) {
   const navigate = useNavigate()
+  const realmContext = useResolvedRealmContext()
+  const apiKeysPath = realmPath({ ...realmContext, realmId }, '/manage/api-keys')
   const { copied, copyToClipboard } = useCopyToClipboard()
 
   const keyData = useRouterState({
@@ -34,9 +37,9 @@ export function ApiKeyRevealPage({ realmId }: ApiKeyRevealPageProps) {
 
   useEffect(() => {
     if (!keyData) {
-      void navigate({ to: '/$realmId/manage/api-keys', params: { realmId } })
+      void navigate({ to: apiKeysPath })
     }
-  }, [keyData, navigate, realmId])
+  }, [apiKeysPath, keyData, navigate])
 
   const handleCopy = useCallback(async () => {
     if (!keyData?.key) return
@@ -44,7 +47,7 @@ export function ApiKeyRevealPage({ realmId }: ApiKeyRevealPageProps) {
   }, [keyData, copyToClipboard])
 
   const handleDone = () => {
-    void navigate({ to: '/$realmId/manage/api-keys', params: { realmId } })
+    void navigate({ to: apiKeysPath })
   }
 
   if (!keyData) {

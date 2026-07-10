@@ -13,7 +13,7 @@ export const Route = createFileRoute('/$realmId/manage/permissions')({
   component: PermissionsPage,
 })
 
-function PermissionsPage() {
+export function PermissionsPage() {
   const realmId = useRealmId()
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
 

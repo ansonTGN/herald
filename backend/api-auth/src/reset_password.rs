@@ -10,6 +10,7 @@ use validator::Validate;
 use herald_api_base::application::http::auth::util::{
     ClientIp, normalize_email, rate_limit_hit, verify_turnstile_for_realm,
 };
+use herald_api_base::application::http::common::public_helper::realm_public_url;
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
@@ -100,12 +101,12 @@ pub async fn request(
     // Send email (best effort: don't expose email failure to caller)
     // Link points to the frontend reset-password page, which reads the code
     // from the query string and POSTs to the confirm endpoint via the API client.
-    let link = format!(
-        "{}/{}/auth/reset-password?code={}",
-        state.public_base_url.trim_end_matches('/'),
-        realm_id,
-        code
-    );
+    let link = realm_public_url(
+        &state,
+        &realm_id,
+        &format!("auth/reset-password?code={code}"),
+    )
+    .await?;
     let html =
         format!("<p>Please click to reset your password:</p><p><a href=\"{link}\">{link}</a></p>");
     if let Err(e) =

@@ -23,6 +23,7 @@ import type {
   CreditTypeKey,
   OverviewSearch,
 } from '@/routes/$realmId/manage/billing/credit-buckets/overview'
+import { realmPath, useResolvedRealmContext } from '@/lib/realm-routing'
 
 const CREDIT_TYPE_KEYS: ReadonlyArray<CreditTypeKey> = [
   'topup',
@@ -299,6 +300,7 @@ function OverviewRow({
 }
 
 function EmptyState({ realmId }: { realmId: string }) {
+  const realmContext = useResolvedRealmContext()
   return (
     <Card className="border-dashed" data-testid="credit-bucket-overview-empty-state">
       <CardContent className="flex flex-col items-center justify-center py-12">
@@ -307,8 +309,7 @@ function EmptyState({ realmId }: { realmId: string }) {
           {m['credit_buckets.overview.empty_realm']()}
         </p>
         <Link
-          to="/$realmId/manage/billing/credit-buckets"
-          params={{ realmId }}
+          to={realmPath({ ...realmContext, realmId }, '/manage/billing/credit-buckets')}
           className="text-sm font-medium text-primary underline-offset-4 hover:underline"
           data-testid="credit-bucket-overview-empty-cta"
         >

@@ -17,6 +17,7 @@ import type { ApiKeysSearchParams } from '@/lib/schemas/search-params'
 import { Card, CardContent } from '@/components/ui/card'
 import { PageHeader } from '@/components/shared'
 import { m } from '@/paraglide/messages'
+import { realmPath, useCurrentSearch, useResolvedRealmContext } from '@/lib/realm-routing'
 
 export const Route = createFileRoute('/$realmId/manage/api-keys/')({
   component: ApiKeysPage,
@@ -30,9 +31,10 @@ export const Route = createFileRoute('/$realmId/manage/api-keys/')({
 })
 
 export function ApiKeysPage() {
-  const { realmId } = Route.useParams()
+  const realmContext = useResolvedRealmContext()
+  const realmId = realmContext.realmId
   const navigate = useNavigate()
-  const search = Route.useSearch()
+  const search = useCurrentSearch<ApiKeysSearchParams>()
   const { hasPermission } = usePermission()
 
   const canManage = hasPermission(PERMISSION.API_KEYS_MANAGE)
@@ -80,8 +82,7 @@ export function ApiKeysPage() {
 
   const handlePageChange = (newPage: number) => {
     navigate({
-      to: '/$realmId/manage/api-keys',
-      params: { realmId },
+      to: realmPath(realmContext, '/manage/api-keys'),
       search: { ...search, page: newPage },
     })
   }
@@ -99,8 +100,7 @@ export function ApiKeysPage() {
           canManage
             ? {
                 label: m['api_keys.add_button'](),
-                onClick: () =>
-                  navigate({ to: '/$realmId/manage/api-keys/new', params: { realmId } }),
+                onClick: () => navigate({ to: realmPath(realmContext, '/manage/api-keys/new') }),
                 testId: 'add-api-key-button',
                 icon: <Plus className="h-4 w-4 mr-2" />,
               }
@@ -116,8 +116,7 @@ export function ApiKeysPage() {
             error={error}
             onEdit={(key) =>
               navigate({
-                to: '/$realmId/manage/api-keys/$apiKeyId/edit',
-                params: { realmId, apiKeyId: key.id },
+                to: realmPath(realmContext, `/manage/api-keys/${key.id}/edit`),
               })
             }
             onDelete={(key) => deleteDialog.open(key)}

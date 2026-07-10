@@ -6,6 +6,7 @@ use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use herald_api_base::application::http::common::public_helper::realm_public_url;
 use herald_api_base::application::http::server::api_entities::ApiError;
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::security_constants::{
@@ -195,11 +196,9 @@ pub async fn device_authorize(
             ApiError::internal("Internal server error".to_string())
         })?;
 
-    let verification_uri = format!("{}/{}/device", state.public_base_url, realm_id);
-    let verification_uri_complete = format!(
-        "{}/{}/device/{}",
-        state.public_base_url, realm_id, user_code
-    );
+    let verification_uri = realm_public_url(&state, &realm_id, "device").await?;
+    let verification_uri_complete =
+        realm_public_url(&state, &realm_id, &format!("device/{user_code}")).await?;
 
     Ok(Json(DeviceAuthorizationResponse {
         device_code,

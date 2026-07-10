@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { LayoutDashboard, Users, UserPlus, Activity } from 'lucide-react'
 import { dashboardStatsQueryOptions } from '@/data/query-options'
@@ -7,13 +7,15 @@ import { AuthTrendChart } from '@/components/dashboard/auth-trend-chart'
 import { QuickNav } from '@/components/dashboard/quick-nav'
 import { Skeleton } from '@/components/ui/skeleton'
 import { m } from '@/paraglide/messages'
+import { resolvedRealmFromPath } from '@/lib/realm-routing'
 
 export const Route = createFileRoute('/$realmId/manage/')({
   component: ManageDashboard,
 })
 
-function ManageDashboard() {
-  const { realmId } = Route.useParams()
+export function ManageDashboard() {
+  const router = useRouter()
+  const { realmId } = resolvedRealmFromPath(router.state.location.pathname)
   const { data, isLoading, isError, error, refetch } = useQuery(dashboardStatsQueryOptions(realmId))
 
   const userStats = data?.userStats

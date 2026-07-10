@@ -54,6 +54,7 @@ import {
   getViewInProviderUrl,
 } from '@/lib/invoice-utils'
 import { m } from '@/paraglide/messages'
+import { realmPath, useResolvedRealmContext } from '@/lib/realm-routing'
 
 interface InvoiceFilters {
   status?: string
@@ -445,6 +446,7 @@ export function InvoiceAdminPage({
   onVoidInvoice,
   onMarkPaidInvoice,
 }: InvoiceAdminPageProps) {
+  const realmContext = useResolvedRealmContext()
   const [filters, setFilters] = useState<InvoiceFilters>({})
   const [page, setPage] = useState(0)
 
@@ -467,7 +469,7 @@ export function InvoiceAdminPage({
   const noPolicy = eligibility?.policy === 'none' || eligibility?.canCreateManualInvoice === false
   const noSeller = eligibility?.hasSellerConfig === false
   const createDisabled = !!onCreateInvoice && !!eligibility && (noPolicy || noSeller)
-  const sellerConfigRoute: string = `/${realmId}/manage/billing/invoices`
+  const sellerConfigRoute = realmPath({ ...realmContext, realmId }, '/manage/billing/invoices')
 
   const handleFiltersChange = useCallback((newFilters: InvoiceFilters) => {
     setFilters(newFilters)

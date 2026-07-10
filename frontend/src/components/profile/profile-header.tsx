@@ -3,9 +3,14 @@ import { LogOut } from 'lucide-react'
 import { useCallback } from 'react'
 import { logoutFlow } from '@/lib/auth-utils'
 import { m } from '@/paraglide/messages'
+import { useLocation } from '@tanstack/react-router'
+import { resolvedRealmFromPath } from '@/lib/realm-routing'
 
 export function ProfileHeader() {
-  const realmId = useRealmId()
+  const storeRealmId = useRealmId()
+  const location = useLocation()
+  const realmContext = resolvedRealmFromPath(location.pathname)
+  const realmId = realmContext.realmId || storeRealmId || 'admin'
 
   const handleLogout = useCallback(async () => {
     await logoutFlow(realmId)

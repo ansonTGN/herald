@@ -12,14 +12,16 @@ import { TurnstileWidget } from '@/components/auth/turnstile-widget'
 import { publicConfigQueryOptions, turnstileStatusQueryOptions } from '@/data/query-options'
 import { toast } from 'sonner'
 import { m } from '@/paraglide/messages'
+import { realmPath, resolvedRealmFromPath } from '@/lib/realm-routing'
 
 export const Route = createFileRoute('/$realmId/auth/forgot-password')({
   component: ForgotPasswordPage,
 })
 
-function ForgotPasswordPage() {
-  const { realmId } = Route.useParams()
+export function ForgotPasswordPage() {
   const navigate = useNavigate()
+  const realmContext = resolvedRealmFromPath(window.location.pathname)
+  const { realmId } = realmContext
 
   const [email, setEmail] = useState('')
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
@@ -76,7 +78,7 @@ function ForgotPasswordPage() {
                 type="button"
                 variant="outline"
                 className="w-full"
-                onClick={() => navigate({ to: `/${realmId}/auth/login` })}
+                onClick={() => navigate({ to: realmPath(realmContext, '/auth/login') })}
               >
                 {m['auth.forgot_password.back_to_login']()}
               </Button>
@@ -131,8 +133,7 @@ function ForgotPasswordPage() {
 
           <div className="mt-4 text-center">
             <Link
-              to="/$realmId/auth/login"
-              params={{ realmId }}
+              to={realmPath(realmContext, '/auth/login')}
               className="text-sm font-medium text-primary hover:text-primary/80"
               data-testid="forgot-password-back-link"
             >

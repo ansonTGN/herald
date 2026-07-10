@@ -2,6 +2,7 @@ import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useAuthStore } from '@/stores/auth-store'
 import { auditSearchSchema, type AuditSearchParams } from '@/lib/schemas/search-params'
 import { AuditPage } from '@/components/audit/audit-page'
+import { useCurrentSearch, useResolvedRealmId } from '@/lib/realm-routing'
 
 export const Route = createFileRoute('/$realmId/manage/audit/')({
   component: AuditRoute,
@@ -25,8 +26,8 @@ export const Route = createFileRoute('/$realmId/manage/audit/')({
 })
 
 function AuditRoute() {
-  const search = Route.useSearch() as AuditSearchParams
-  const { realmId } = Route.useParams()
+  const search = useCurrentSearch<AuditSearchParams>()
+  const realmId = useResolvedRealmId()
 
   return <AuditPage realmId={realmId} search={search} />
 }

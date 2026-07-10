@@ -14,6 +14,7 @@ import { buildCreemConfigRequest } from '@/lib/creem-config-utils'
 import { requireFieldOnCreate } from '@/lib/form-utils'
 import { useSaveConfigMutation } from '@/hooks/use-save-config-mutation'
 import { m } from '@/paraglide/messages'
+import { realmPath, useResolvedRealmContext } from '@/lib/realm-routing'
 
 interface CreemConfigFormPageProps {
   realmId: string
@@ -23,6 +24,7 @@ interface CreemConfigFormPageProps {
 
 export function CreemConfigFormPage({ realmId, mode, initialValues }: CreemConfigFormPageProps) {
   const navigate = useNavigate()
+  const realmContext = useResolvedRealmContext()
   const isEditing = mode === 'edit'
 
   const defaultValues = useMemo(() => getCreemConfigDefaults(initialValues), [initialValues])
@@ -67,7 +69,9 @@ export function CreemConfigFormPage({ realmId, mode, initialValues }: CreemConfi
   }, [defaultValues, form])
 
   const handleCancel = () => {
-    navigate({ to: '/$realmId/manage/billing/payment-providers', params: { realmId } })
+    navigate({
+      to: realmPath({ ...realmContext, realmId }, '/manage/billing/payment-providers'),
+    })
   }
 
   const isSubmitting = saveMutation.isPending

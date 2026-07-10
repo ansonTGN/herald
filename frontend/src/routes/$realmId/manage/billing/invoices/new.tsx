@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { lazy, Suspense } from 'react'
 import { Loader2 } from 'lucide-react'
+import { useResolvedRealmId } from '@/lib/realm-routing'
 
 const InvoiceFormPage = lazy(() =>
   import('@/components/billing/invoices/invoice-form-page').then((m) => ({
@@ -12,8 +13,8 @@ export const Route = createFileRoute('/$realmId/manage/billing/invoices/new')({
   component: NewInvoicePage,
 })
 
-function NewInvoicePage() {
-  const { realmId } = Route.useParams()
+export function NewInvoicePage() {
+  const realmId = useResolvedRealmId()
 
   return (
     <Suspense

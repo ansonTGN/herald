@@ -41,6 +41,12 @@ import { toast } from 'sonner'
 import { m } from '@/paraglide/messages'
 import { AgreementLinks } from '@/components/legal/AgreementLinks'
 import { formatDate } from '@/lib/date-utils'
+import {
+  realmPath,
+  useCurrentSearch,
+  useOptionalRouteParams,
+  useResolvedRealmContext,
+} from '@/lib/realm-routing'
 
 interface TotpStep {
   tempToken: string
@@ -80,8 +86,13 @@ export const Route = createFileRoute('/$realmId/auth/login')({
 
 export function LoginPage() {
   const router = useRouter()
-  const { realmId } = Route.useParams()
-  const search = Route.useSearch() as LoginSearchParams
+  const routeParams = useOptionalRouteParams<{ realmId?: string }>(Route)
+  const resolvedRealmContext = useResolvedRealmContext()
+  const realmContext = routeParams.realmId
+    ? { ...resolvedRealmContext, realmId: routeParams.realmId, isCustomDomain: false }
+    : resolvedRealmContext
+  const { realmId } = realmContext
+  const search = loginSearchSchema.parse(useCurrentSearch()) as LoginSearchParams
   const { initiateOAuthLogin } = useOAuthLogin()
 
   const [totpStep, setTotpStep] = useState<TotpStep | null>(null)
@@ -204,7 +215,7 @@ export function LoginPage() {
       }
 
       await router.navigate({
-        to: `/${userRealmId}${redirectPath}`,
+        to: realmPath({ ...realmContext, realmId: userRealmId }, redirectPath),
         params: { realmId: userRealmId },
       })
     },
@@ -281,7 +292,7 @@ export function LoginPage() {
     }
 
     await router.navigate({
-      to: `/${realmId}${safeRedirectPath}`,
+      to: realmPath(realmContext, safeRedirectPath),
       params: { realmId },
     })
   }
@@ -315,7 +326,7 @@ export function LoginPage() {
     }
 
     await router.navigate({
-      to: `/${realmId}${safeRedirectPath}`,
+      to: realmPath(realmContext, safeRedirectPath),
       params: { realmId },
     })
   }
@@ -486,8 +497,7 @@ export function LoginPage() {
                   <div className="flex items-center justify-between">
                     <Label htmlFor="password">{m['auth.login.password']()}</Label>
                     <Link
-                      to="/$realmId/auth/forgot-password"
-                      params={{ realmId }}
+                      to={realmPath(realmContext, '/auth/forgot-password')}
                       className="text-sm font-medium text-primary hover:text-primary/80"
                       data-testid="forgot-password-link"
                     >
@@ -606,8 +616,7 @@ export function LoginPage() {
             <div className="mt-4 text-center">
               <span className="text-sm text-gray-500">{m['auth.login.no_account']()} </span>
               <Link
-                to="/$realmId/auth/register"
-                params={{ realmId }}
+                to={realmPath(realmContext, '/auth/register')}
                 className="text-sm font-medium text-primary hover:text-primary/80"
                 data-testid="register-link"
               >

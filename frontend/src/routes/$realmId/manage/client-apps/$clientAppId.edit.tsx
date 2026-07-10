@@ -3,6 +3,7 @@ import { useSuspenseQuery } from '@tanstack/react-query'
 import { lazy, Suspense } from 'react'
 import { Loader2 } from 'lucide-react'
 import { clientAppQueryOptions } from '@/data/query-options'
+import { useLastPathSegment, useResolvedRealmId } from '@/lib/realm-routing'
 
 const ClientAppFormPage = lazy(() =>
   import('@/components/client-apps/client-app-form-page').then((m) => ({
@@ -14,8 +15,9 @@ export const Route = createFileRoute('/$realmId/manage/client-apps/$clientAppId/
   component: EditClientAppPage,
 })
 
-function EditClientAppPage() {
-  const { realmId, clientAppId } = Route.useParams()
+export function EditClientAppPage() {
+  const realmId = useResolvedRealmId()
+  const clientAppId = useLastPathSegment(1)
   const { data: clientApp } = useSuspenseQuery(clientAppQueryOptions(realmId, clientAppId))
 
   return (

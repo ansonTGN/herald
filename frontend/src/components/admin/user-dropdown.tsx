@@ -8,10 +8,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { User, Settings, LogOut } from 'lucide-react'
-import { useCallback } from 'react'
 import { useAuth } from '@/hooks/use-auth'
 import { logoutFlow } from '@/lib/auth-utils'
 import { m } from '@/paraglide/messages'
+import { useLocation } from '@tanstack/react-router'
+import { realmPath, resolvedRealmFromPath } from '@/lib/realm-routing'
 
 interface UserDropdownProps {
   realmId: string
@@ -19,10 +20,13 @@ interface UserDropdownProps {
 
 export function UserDropdown({ realmId }: UserDropdownProps) {
   const { user } = useAuth()
+  const location = useLocation()
+  const realmContext = resolvedRealmFromPath(location.pathname)
+  const resolvedRealmId = realmContext.realmId || realmId
 
-  const handleLogout = useCallback(async () => {
-    await logoutFlow(realmId)
-  }, [realmId])
+  const handleLogout = async () => {
+    await logoutFlow(resolvedRealmId)
+  }
 
   return (
     <DropdownMenu>
@@ -52,13 +56,13 @@ export function UserDropdown({ realmId }: UserDropdownProps) {
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild data-testid="profile-menu-item">
-          <a href={`/${realmId}/user/profile/`}>
+          <a href={realmPath({ ...realmContext, realmId: resolvedRealmId }, '/user/profile')}>
             <User className="mr-2 h-4 w-4" />
             <span>{m['user_menu.profile']()}</span>
           </a>
         </DropdownMenuItem>
         <DropdownMenuItem asChild data-testid="security-menu-item">
-          <a href={`/${realmId}/user/security`}>
+          <a href={realmPath({ ...realmContext, realmId: resolvedRealmId }, '/user/security')}>
             <Settings className="mr-2 h-4 w-4" />
             <span>{m['user_menu.security']()}</span>
           </a>

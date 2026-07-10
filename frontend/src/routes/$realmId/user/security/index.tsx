@@ -13,6 +13,7 @@ import { PageHeader } from '@/components/shared'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { m } from '@/paraglide/messages'
+import { realmPath, useResolvedRealmContext } from '@/lib/realm-routing'
 
 export const Route = createFileRoute('/$realmId/user/security/')({
   component: ProfileSecurity,
@@ -22,7 +23,8 @@ type TotpDialogType = 'disable' | 'regenerate' | null
 
 export function ProfileSecurity() {
   const navigate = useNavigate()
-  const { realmId } = Route.useParams()
+  const realmContext = useResolvedRealmContext()
+  const realmId = realmContext.realmId
   const [totpDialog, setTotpDialog] = useState<TotpDialogType>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   // Toggles the inline passkey registration form within the passkey tab.
@@ -51,9 +53,7 @@ export function ProfileSecurity() {
         </TabsContent>
         <TabsContent value="totp" data-testid="totp-section-title">
           <TotpStatusCard
-            onEnable={() =>
-              navigate({ to: '/$realmId/user/security/totp-setup', params: { realmId } })
-            }
+            onEnable={() => navigate({ to: realmPath(realmContext, '/user/security/totp-setup') })}
             onDisable={() => setTotpDialog('disable')}
             onRegenerate={() => setTotpDialog('regenerate')}
           />

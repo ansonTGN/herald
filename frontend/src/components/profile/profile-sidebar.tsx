@@ -7,6 +7,7 @@ import { logoutFlow } from '@/lib/auth-utils'
 import { featureAvailabilityQueryOptions } from '@/data/query-options'
 import { m } from '@/paraglide/messages'
 import { LanguageSwitcher } from '@/components/shared/language-switcher'
+import { realmPath, resolvedRealmFromPath } from '@/lib/realm-routing'
 
 interface MenuItem {
   name: string
@@ -17,7 +18,9 @@ interface MenuItem {
 
 export function ProfileSidebar() {
   const location = useLocation()
-  const realmId = useRealmId()
+  const storeRealmId = useRealmId()
+  const realmContext = resolvedRealmFromPath(location.pathname)
+  const realmId = realmContext.realmId || storeRealmId || 'admin'
   const { data: features } = useQuery(featureAvailabilityQueryOptions(realmId))
   const userFeatures = features?.user
 
@@ -36,28 +39,36 @@ export function ProfileSidebar() {
   // Memoize menu items to prevent infinite re-renders
   const menuItems: MenuItem[] = useMemo(
     () => [
-      { name: 'Profile', path: `/${realmId}/user/profile`, icon: User },
-      { name: 'Security', path: `/${realmId}/user/security`, icon: Shield },
+      {
+        name: 'Profile',
+        path: realmPath({ ...realmContext, realmId }, '/user/profile'),
+        icon: User,
+      },
+      {
+        name: 'Security',
+        path: realmPath({ ...realmContext, realmId }, '/user/security'),
+        icon: Shield,
+      },
       {
         name: 'Points',
-        path: `/${realmId}/user/points`,
+        path: realmPath({ ...realmContext, realmId }, '/user/points'),
         icon: Coins,
         visible: userFeatures?.pointsVisible === true,
       },
       {
         name: 'PurchaseRecords',
-        path: `/${realmId}/user/subscription-history`,
+        path: realmPath({ ...realmContext, realmId }, '/user/subscription-history'),
         icon: CreditCard,
         visible: userFeatures?.pointsVisible === true,
       },
       {
         name: 'Invoices',
-        path: `/${realmId}/user/invoices`,
+        path: realmPath({ ...realmContext, realmId }, '/user/invoices'),
         icon: FileText,
         visible: userFeatures?.invoicesVisible === true,
       },
     ],
-    [realmId, userFeatures]
+    [realmContext, realmId, userFeatures]
   )
 
   const isActive = (path: string) => location.pathname === path

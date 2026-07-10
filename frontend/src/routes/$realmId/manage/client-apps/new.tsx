@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { lazy, Suspense } from 'react'
 import { Loader2 } from 'lucide-react'
+import { useResolvedRealmId } from '@/lib/realm-routing'
 
 const ClientAppFormPage = lazy(() =>
   import('@/components/client-apps/client-app-form-page').then((m) => ({
@@ -12,8 +13,8 @@ export const Route = createFileRoute('/$realmId/manage/client-apps/new')({
   component: NewClientAppPage,
 })
 
-function NewClientAppPage() {
-  const { realmId } = Route.useParams()
+export function NewClientAppPage() {
+  const realmId = useResolvedRealmId()
 
   return (
     <div className="container max-w-4xl mx-auto py-6 px-6">

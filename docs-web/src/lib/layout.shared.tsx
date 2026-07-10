@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import type { BaseLayoutProps } from "fumadocs-ui/layouts/shared";
 import { i18n } from "./i18n";
 import { appName, gitConfig } from "./shared";
@@ -14,7 +15,13 @@ export function baseOptions(): BaseLayoutProps {
         type: "icon",
         text: "X",
         icon: (
-          <svg role="img" viewBox="0 0 24 24" className="size-4" fill="currentColor">
+          <svg
+            role="img"
+            viewBox="0 0 24 24"
+            className="size-4"
+            fill="currentColor"
+            aria-label="X"
+          >
             <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
           </svg>
         ),
@@ -22,4 +29,52 @@ export function baseOptions(): BaseLayoutProps {
       },
     ],
   };
+}
+
+export interface FooterLabels {
+  copyright: string;
+  privacy: string;
+  terms: string;
+}
+
+export function SiteFooter({
+  lang,
+  labels,
+}: {
+  lang: string;
+  labels: FooterLabels;
+}) {
+  return (
+    <footer className="relative z-10 border-t border-stone-200 dark:border-stone-800 py-10 px-4">
+      <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-stone-500 dark:text-stone-400">
+        <span>
+          © {new Date().getFullYear()} {appName} · {labels.copyright}
+        </span>
+        <div className="flex items-center gap-6">
+          <a
+            href={`https://github.com/${gitConfig.user}/${gitConfig.repo}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-amber-700 dark:hover:text-amber-400 transition-colors"
+          >
+            GitHub
+          </a>
+          <Link
+            to="/$lang/privacy"
+            params={{ lang }}
+            className="hover:text-amber-700 dark:hover:text-amber-400 transition-colors"
+          >
+            {labels.privacy}
+          </Link>
+          <Link
+            to="/$lang/terms"
+            params={{ lang }}
+            className="hover:text-amber-700 dark:hover:text-amber-400 transition-colors"
+          >
+            {labels.terms}
+          </Link>
+        </div>
+      </div>
+    </footer>
+  );
 }

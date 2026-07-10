@@ -36,7 +36,7 @@ export default defineConfig({
   },
   server: {
     host: true,
-    allowedHosts: ['.ngrok-free.app'],
+    allowedHosts: ['.ngrok-free.app', 'local.fornetcode.com'],
     proxy: {
       '/api': {
         target: 'http://localhost:8080',

@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { z } from 'zod'
 import { resetPasswordConfirm } from '@/lib/api-generated'
 import { getErrorMessage } from '@/lib/error-utils'
+import { resetPasswordSearchSchema } from '@/lib/schemas/search-params'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -13,19 +13,19 @@ import { TurnstileWidget } from '@/components/auth/turnstile-widget'
 import { publicConfigQueryOptions, turnstileStatusQueryOptions } from '@/data/query-options'
 import { toast } from 'sonner'
 import { m } from '@/paraglide/messages'
-
-const resetPasswordSearchSchema = z.object({
-  code: z.string().min(1),
-})
+import { realmPath, resolvedRealmFromPath } from '@/lib/realm-routing'
 
 export const Route = createFileRoute('/$realmId/auth/reset-password')({
   component: ResetPasswordPage,
   validateSearch: (search) => resetPasswordSearchSchema.parse(search),
 })
 
-function ResetPasswordPage() {
-  const { realmId } = Route.useParams()
-  const { code } = Route.useSearch()
+export function ResetPasswordPage() {
+  const realmContext = resolvedRealmFromPath(window.location.pathname)
+  const { realmId } = realmContext
+  const { code } = resetPasswordSearchSchema.parse(
+    Object.fromEntries(new URLSearchParams(window.location.search))
+  )
   const navigate = useNavigate()
 
   const [newPassword, setNewPassword] = useState('')
@@ -58,7 +58,7 @@ function ResetPasswordPage() {
         throwOnError: true,
       })
       toast.success(m['auth.reset_password.success']())
-      navigate({ to: `/${realmId}/auth/login` })
+      navigate({ to: realmPath(realmContext, '/auth/login') })
     } catch (err) {
       setError(getErrorMessage(err))
     } finally {
@@ -149,8 +149,7 @@ function ResetPasswordPage() {
 
           <div className="mt-4 text-center">
             <Link
-              to="/$realmId/auth/login"
-              params={{ realmId }}
+              to={realmPath(realmContext, '/auth/login')}
               className="text-sm font-medium text-primary hover:text-primary/80"
               data-testid="reset-password-back-link"
             >

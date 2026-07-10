@@ -11,6 +11,7 @@ use validator::Validate;
 use herald_api_base::application::http::auth::util::{
     ClientIp, epoch_seconds, normalize_email, rate_limit_hit, require_session,
 };
+use herald_api_base::application::http::common::public_helper::realm_public_url_parts;
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
@@ -132,12 +133,8 @@ async fn send_confirmation_email(
     new_email: &str,
     code: &str,
 ) -> Result<(), ApiError> {
-    let link = format!(
-        "{}/api/auth/{}/change_email/confirm/{}",
-        state.public_base_url.trim_end_matches('/'),
-        realm_id,
-        code
-    );
+    let (public_base, _) = realm_public_url_parts(state, realm_id).await?;
+    let link = format!("{public_base}/api/auth/{realm_id}/change_email/confirm/{code}");
     let html =
         format!("<p>Please click to confirm change email:</p><p><a href=\"{link}\">{link}</a></p>");
     EmailService::send_html_email(

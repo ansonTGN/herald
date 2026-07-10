@@ -5,6 +5,12 @@ import { Button } from '@/components/ui/button'
 import { legalAgreementQueryOptions } from '@/data/query-options'
 import { MarkdownContent } from '@/components/legal/MarkdownContent'
 import { m } from '@/paraglide/messages'
+import {
+  realmPath,
+  useOptionalRouteParams,
+  usePathSegments,
+  useResolvedRealmContext,
+} from '@/lib/realm-routing'
 import type { LegalAgreementDetail } from '@/lib/api-generated'
 
 const VALID_AGREEMENT_TYPES: readonly string[] = ['terms_of_service', 'privacy_policy']
@@ -34,7 +40,14 @@ function renderBody(content: LegalAgreementDetail['content']): React.ReactNode {
 }
 
 export function LegalAgreementPage() {
-  const { realmId, agreementType } = Route.useParams()
+  const routeParams = useOptionalRouteParams<{ realmId?: string; agreementType?: string }>(Route)
+  const resolvedRealmContext = useResolvedRealmContext()
+  const realmContext = routeParams.realmId
+    ? { ...resolvedRealmContext, realmId: routeParams.realmId, isCustomDomain: false }
+    : resolvedRealmContext
+  const realmId = realmContext.realmId
+  const lastSegment = usePathSegments().at(-1) ?? ''
+  const agreementType = routeParams.agreementType ?? lastSegment
 
   const isValidType = VALID_AGREEMENT_TYPES.includes(agreementType)
 
@@ -52,7 +65,7 @@ export function LegalAgreementPage() {
         <CardContent className="space-y-4">
           <p className="text-muted-foreground">{m['legal.invalid_type_description']()}</p>
           <Button asChild variant="outline">
-            <Link to="/$realmId/auth/login" params={{ realmId }}>
+            <Link to={realmPath(realmContext, '/auth/login')}>
               {m['auth.register.return_to_login']()}
             </Link>
           </Button>
@@ -82,7 +95,7 @@ export function LegalAgreementPage() {
             {error instanceof Error ? error.message : m['error.generic']()}
           </p>
           <Button asChild variant="outline">
-            <Link to="/$realmId/auth/login" params={{ realmId }}>
+            <Link to={realmPath(realmContext, '/auth/login')}>
               {m['auth.register.return_to_login']()}
             </Link>
           </Button>

@@ -41,6 +41,7 @@ use test_context::test_context;
 use tower::ServiceExt;
 
 const AUTHORIZE_PATH: &str = "/api/internal/custom-domain/authorize";
+const RESOLVE_PATH: &str = "/api/public-config/custom-domain/resolve";
 /// Shared ask key the 200-path tests configure on a cloned AppState and then
 /// present via the `X-Herald-Ask-Key` header.
 const TEST_ASK_KEY: &str = "test-ask-shared-secret";
@@ -93,6 +94,15 @@ fn host_get_request(path: &str, host: &str, ask_key: Option<&str>) -> Request<Bo
         builder = builder.header("x-herald-ask-key", key);
     }
     builder.body(Body::empty()).unwrap()
+}
+
+fn resolve_request(host: &str) -> Request<Body> {
+    Request::builder()
+        .method("GET")
+        .uri(RESOLVE_PATH)
+        .header("host", host)
+        .body(Body::empty())
+        .unwrap()
 }
 
 /// ============================================================================
@@ -272,4 +282,44 @@ async fn custom_domain_authorize_does_not_leak_realm(ctx: &mut TestContext) {
         ["authorized"],
         "ask 200 body must contain only the authorized field; got: {leaked_keys:?}"
     );
+}
+
+/// ============================================================================
+/// Public custom-domain resolve endpoint — host maps to realm + public config
+/// ============================================================================
+#[test_context(TestContext)]
+#[tokio::test]
+async fn custom_domain_resolve_returns_realm_and_public_config_for_published_host(
+    ctx: &mut TestContext,
+) {
+    let hostname = "login.resolve-200-example.com";
+    insert_custom_domain_mapping(ctx, &ctx._realm_id, hostname, true).await;
+
+    let app = ctx.create_unified_test_router();
+    let response = app
+        .oneshot(resolve_request("Login.Resolve-200-Example.COM."))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body: Value = crate::tests::response_json(response).await;
+    assert_eq!(body["realmId"], ctx._realm_id);
+    assert!(
+        body.get("publicConfig").is_some(),
+        "resolve endpoint should include publicConfig; got: {body}"
+    );
+}
+
+/// ============================================================================
+/// Public custom-domain resolve endpoint — unregistered host returns 404
+/// ============================================================================
+#[test_context(TestContext)]
+#[tokio::test]
+async fn custom_domain_resolve_returns_404_for_unregistered_host(ctx: &mut TestContext) {
+    let app = ctx.create_unified_test_router();
+    let response = app
+        .oneshot(resolve_request("unregistered.resolve-404-example.com"))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
