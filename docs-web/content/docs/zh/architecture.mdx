@@ -14,7 +14,7 @@ backend/
 ├── infra/               # 基础设施层 — 数据库、Redis、第三方 API 的具体实现
 ├── infra-creem/         # Creem 支付集成
 ├── infra-stripe/        # Stripe 支付集成
-├── infra-wechat/        # 微信支付集成
+├── infra-shopify/       # Shopify 集成
 ├── core/                # 组装层 — 依赖注入、ApplicationService Builder
 ├── api/                 # 主 API crate（Axum 路由注册、中间件、AppState）
 ├── api-base/            # 共享 API 工具（AppState 定义、通用 HTTP 工具）
@@ -116,7 +116,7 @@ domain 层 trait 的具体实现。`PostgresXxxRepository` 命名，一个 trait
 - `authorization/` — `RedisPermissionChecker`，权限缓存
 - `billing/` — 发票 PDF 生成（IronPress）、加密密钥管理
 
-支付渠道客户端是独立的 crate（`infra-creem`、`infra-stripe`、`infra-wechat`），不放在主 `infra` 里。原因是避免引入不需要的支付 SDK 依赖——如果你只用 Stripe，不会把微信支付的 SDK 也编译进去。
+支付渠道客户端是独立的 crate（`infra-creem`、`infra-stripe`、`infra-shopify`），不放在主 `infra` 里。原因是避免引入不需要的 provider SDK 依赖——如果你只用 Stripe，不会把 Shopify 的 SDK 也编译进去。
 
 ### core — 组装层
 

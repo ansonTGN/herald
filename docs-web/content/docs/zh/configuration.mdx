@@ -160,6 +160,29 @@ sqlx_slow_statement_ms = 200
 
 `production.toml` 没有显式设置这一段，所以 Docker 默认走上面的代码 baseline。本地若要接自己的 collector，改 `otlp_endpoint` 即可。
 
+### [custom_domain]
+
+Per-Realm 自定义域名功能的全局配置。`ask_key` 是反代层 TLS 授权查询端点的共享密钥；`cname_target` 是租户需要把自定义登录域名 CNAME 到的 Herald 指定 hostname。两者驱动什么见 [自定义域名指南](/docs/zh/realm-custom-domain)。
+
+| 参数 | 类型 | 代码默认值 | Docker 配置值 | 必填 | 说明 |
+|---|---|---|---|---|---|
+| `ask_key` | string | `""`（空） | 未设置 | **是（生产）** | 反代层 On-Demand TLS 授权查询的共享密钥（`X-Herald-Ask-Key` 请求头）。**启动时要求非空**——启动守卫会拒绝空值。 |
+| `cname_target` | string | `""`（空） | 未设置 | 否 | 展示给 Realm 管理员的 CNAME 目标 hostname（如 `custom.herald.com`），在自定义域名配置响应中作为 `cnameTarget` 返回。 |
+
+两个字段在解析时均可省略（`#[serde(default)]`），但 `ask_key` 在服务端构建路径的启动阶段强制非空。生成随机密钥：
+
+```bash
+openssl rand -hex 32
+```
+
+```toml
+[custom_domain]
+ask_key = "你的随机共享密钥"
+cname_target = "custom.herald.com"
+```
+
+如果不用自定义域名功能，把 `ask_key` 设为任意非空占位字符串即可满足启动守卫；授权端点仍会拒绝未注册的域名。
+
 ## 用户协议与隐私政策配置
 
 每个 Realm 的用户协议和隐私政策不是写在配置文件里的，而是通过管理后台动态发布。系统初始化时会自动 seed 平台默认模板（中文草稿版，需法务审阅后替换）。

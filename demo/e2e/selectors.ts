@@ -683,6 +683,45 @@ export const SELECTORS = {
   },
 
   /**
+   * Custom-domain Configuration Selectors (Settings > Custom-domain tab)
+   *
+   * Anchors calibrated against:
+   * - frontend/src/routes/$realmId/manage/settings.tsx (`custom-domain-tab`, line 707)
+   * - frontend/src/components/realm-config/custom-domain-config-form.tsx (all form testids)
+   *
+   * The custom-domain tab surfaces the config-admin lifecycle (draft/publish/
+   * restore + CNAME guidance + CNAME/TLS status) for US-CD-003 and US-CD-001
+   * scenarios 1/2/3. Host→realm routing (US-CD-002/004, host-resolution part of
+   * US-CD-005) was reverted 2026-07-09 and is NOT covered by these selectors.
+   *
+   * User stories: US-CD-001 (config), US-CD-003 (draft/publish/restore lifecycle)
+   * @see .ai/design/observability.md / custom-domain design sections
+   * @see .ai/user-stories/core/realm-custom-domain.md (DRAFT)
+   */
+  customDomain: {
+    // Tab entry
+    tab: '[data-testid="custom-domain-tab"]',
+    // Hostname input
+    hostnameInput: '[data-testid="custom-domain-hostname"]',
+    // CNAME guidance panel (renders configured cname_target)
+    cnameGuidance: '[data-testid="custom-domain-cname-guidance"]',
+    // CNAME/TLS status badges
+    statusCname: '[data-testid="custom-domain-status-cname"]',
+    statusTls: '[data-testid="custom-domain-status-tls"]',
+    refreshStatusButton: '[data-testid="custom-domain-refresh-status"]',
+    // Draft notice (visible when hasDraft || form dirty)
+    draftNotice: '[data-testid="custom-domain-draft-notice"]',
+    // Action buttons
+    saveDraftButton: '[data-testid="custom-domain-save-draft"]',
+    publishButton: '[data-testid="custom-domain-publish"]',
+    discardDraftButton: '[data-testid="custom-domain-discard-draft"]',
+    restoreButton: '[data-testid="custom-domain-restore"]',
+    // Restore confirmation dialog
+    restoreDialog: '[data-testid="custom-domain-restore-dialog"]',
+    restoreConfirmButton: '[data-testid="custom-domain-restore-confirm"]',
+  },
+
+  /**
    * Auth page wrapper brand elements (end-user login/register pages)
    *
    * Anchors calibrated against frontend/src/components/auth/auth-page-wrapper.tsx.

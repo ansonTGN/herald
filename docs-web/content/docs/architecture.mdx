@@ -14,7 +14,7 @@ backend/
 ├── infra/               # Infrastructure layer — concrete implementations for DB, Redis, third-party APIs
 ├── infra-creem/         # Creem payment integration
 ├── infra-stripe/        # Stripe payment integration
-├── infra-wechat/        # WeChat Pay integration
+├── infra-shopify/       # Shopify integration
 ├── core/                # Assembly layer — dependency injection, ApplicationService Builder
 ├── api/                 # Main API crate (Axum route registration, middleware, AppState)
 ├── api-base/            # Shared API utilities (AppState definition, common HTTP helpers)
@@ -115,7 +115,7 @@ Beyond database repositories:
 - `authorization/` — `RedisPermissionChecker`, permission caching
 - `billing/` — invoice PDF generation (IronPress), encryption key management
 
-Payment channel clients live in separate crates (`infra-creem`, `infra-stripe`, `infra-wechat`) rather than inside the main `infra` crate. The reason is to avoid pulling in payment SDKs you don't need — if you only use Stripe, the WeChat Pay SDK won't get compiled.
+Payment channel clients live in separate crates (`infra-creem`, `infra-stripe`, `infra-shopify`) rather than inside the main `infra` crate. The reason is to avoid pulling in provider SDKs you don't need — if you only use Stripe, the Shopify SDK won't get compiled.
 
 ### core — Assembly Layer
 

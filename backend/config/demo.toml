@@ -19,3 +19,13 @@ static_dir = "../frontend/dist"
 
 [jwt]
 secret = "YWJjZGVmZ2hpamtsbW5vcHFydXN0dXZ3eHl6MDEyMzQ1Njc4OTA="
+
+# Custom-domain global settings (CustomDomainSettingsConfig,
+# backend/api/src/config.rs:98-108). Required for the demo backend to boot: the
+# startup guard at backend/api/src/lib.rs:164-171 rejects an empty `ask_key`.
+# `cname_target` is surfaced to realm admins as `cnameTarget` in the GET
+# /api/realms/{realm}/config/custom-domain response and rendered in the
+# custom-domain CNAME guidance panel.
+[custom_domain]
+ask_key = "demo-custom-domain-ask-key"
+cname_target = "custom.demo.herald.local"

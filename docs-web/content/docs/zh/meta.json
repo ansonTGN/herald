@@ -13,6 +13,7 @@
     "third-party-integration",
     "auth-passkey",
     "ui-custom",
+    "realm-custom-domain",
     "points-grant-redesign",
     "openapi"
   ]

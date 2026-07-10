@@ -87,6 +87,18 @@ export interface WhiteLabelFormValues {
 }
 
 /**
+ * Custom-domain Configuration Form Data
+ *
+ * Mirrors the frontend `CustomDomainConfigForm` schema (see
+ * frontend/src/lib/schemas/realm-config.ts and the form component
+ * custom-domain-config-form.tsx). The only field is `hostname` — the custom
+ * login domain a realm admin CNAMEs to the Herald-owned `cnameTarget`.
+ */
+export interface CustomDomainFormValues {
+  hostname: string
+}
+
+/**
  * Settings Page Object
  *
  * Represents Settings page at /admin/settings
@@ -174,6 +186,21 @@ export class SettingsPage extends BasePage {
   readonly whiteLabelPreviewLoginPanel: Locator
   readonly whiteLabelPreviewRegisterPanel: Locator
 
+  // Custom-domain Configuration elements
+  readonly customDomainTab: Locator
+  readonly customDomainHostnameInput: Locator
+  readonly customDomainCnameGuidance: Locator
+  readonly customDomainStatusCname: Locator
+  readonly customDomainStatusTls: Locator
+  readonly customDomainRefreshStatusButton: Locator
+  readonly customDomainDraftNotice: Locator
+  readonly customDomainSaveDraftButton: Locator
+  readonly customDomainPublishButton: Locator
+  readonly customDomainDiscardDraftButton: Locator
+  readonly customDomainRestoreButton: Locator
+  readonly customDomainRestoreDialog: Locator
+  readonly customDomainRestoreConfirmButton: Locator
+
   constructor(page: Page, logger?: UnifiedLogger, realmId: string = 'admin') {
     super(page, logger)
     this.realmId = realmId
@@ -256,6 +283,21 @@ export class SettingsPage extends BasePage {
     this.whiteLabelRestoreConfirmButton = page.getByTestId('white-label-restore-confirm')
     this.whiteLabelPreviewLoginPanel = page.getByTestId('white-label-preview-login-panel')
     this.whiteLabelPreviewRegisterPanel = page.getByTestId('white-label-preview-register-panel')
+
+    // Custom-domain Configuration - using data-testid selectors
+    this.customDomainTab = page.getByTestId('custom-domain-tab')
+    this.customDomainHostnameInput = page.getByTestId('custom-domain-hostname')
+    this.customDomainCnameGuidance = page.getByTestId('custom-domain-cname-guidance')
+    this.customDomainStatusCname = page.getByTestId('custom-domain-status-cname')
+    this.customDomainStatusTls = page.getByTestId('custom-domain-status-tls')
+    this.customDomainRefreshStatusButton = page.getByTestId('custom-domain-refresh-status')
+    this.customDomainDraftNotice = page.getByTestId('custom-domain-draft-notice')
+    this.customDomainSaveDraftButton = page.getByTestId('custom-domain-save-draft')
+    this.customDomainPublishButton = page.getByTestId('custom-domain-publish')
+    this.customDomainDiscardDraftButton = page.getByTestId('custom-domain-discard-draft')
+    this.customDomainRestoreButton = page.getByTestId('custom-domain-restore')
+    this.customDomainRestoreDialog = page.getByTestId('custom-domain-restore-dialog')
+    this.customDomainRestoreConfirmButton = page.getByTestId('custom-domain-restore-confirm')
   }
 
   /**
@@ -1101,6 +1143,219 @@ export class SettingsPage extends BasePage {
     } catch (error) {
       // Teardown must never hard-fail the test run; log and continue.
       console.warn(`[SettingsPage] resetWhiteLabelConfig failed for realm "${this.realmId}":`, error)
+    }
+  }
+
+  // ===========================================================================
+  // Custom-domain Configuration (US-CD-001 / US-CD-003 lifecycle)
+  //
+  // Mirrors the white-label section's lifecycle (switch→fill→saveDraft→publish
+  // →discard→restore) but against the single `hostname` field of
+  // custom-domain-config-form.tsx. The CNAME guidance panel renders the
+  // configured `cname_target` (from [custom_domain].cname_target in demo.toml);
+  // getCnameGuidanceText() reads it back so tests can assert it is non-empty.
+  // ===========================================================================
+
+  /**
+   * Switch to Custom-domain Tab.
+   *
+   * Follows switchToWhiteLabelTab: clicks the tab, waits for the save-draft
+   * button to confirm the tab content is loaded, then networkidle.
+   */
+  async switchToCustomDomainTab(): Promise<void> {
+    await this.smartClick(this.customDomainTab)
+
+    // Wait for tab content to be visible with longer timeout (re-login timing)
+    await expect(this.customDomainSaveDraftButton).toBeVisible({ timeout: 10000 })
+
+    // Additional wait to ensure React state is fully settled
+    await this.page.waitForLoadState('networkidle')
+  }
+
+  /**
+   * Fill the custom-domain hostname form field.
+   *
+   * Hostname is the only field. Coerce null/undefined to '' so Playwright
+   * .fill() receives a string (empty clears the draft hostname).
+   */
+  async fillCustomDomainForm(values: Partial<CustomDomainFormValues>): Promise<void> {
+    if (values.hostname !== undefined) {
+      await this.fillField(this.customDomainHostnameInput, values.hostname ?? '')
+    }
+  }
+
+  /**
+   * Save the custom-domain draft (writes the unpublished draft).
+   *
+   * Clicks the submit button and waits for it to return to idle, mirroring the
+   * white-label saveDraft button-idle pattern.
+   */
+  async saveCustomDomainDraft(): Promise<void> {
+    await this.smartClick(this.customDomainSaveDraftButton)
+
+    await expect(async () => {
+      const disabled = await this.customDomainSaveDraftButton.isDisabled()
+      expect(disabled).toBeFalsy()
+    }).toPass({ timeout: 15000 })
+    await this.page.waitForLoadState('networkidle')
+  }
+
+  /**
+   * Publish the custom-domain config (writes the published settings).
+   *
+   * Clicks the publish button and waits for it to return to idle. Critically,
+   * waits for the publish POST response (not just button-idle): tests read
+   * `published.hostname` via a direct API GET right after this returns, and
+   * button-idle resolves as soon as React Query receives the response headers,
+   * which can race the backend's commit sequence. Waiting for the actual
+   * `/publish` response guarantees the server-side write is acknowledged before
+   * the caller reads persisted state (fixes the test-4 "恢复上一版" flake).
+   */
+  async publishCustomDomain(): Promise<void> {
+    const publishResponse = this.page
+      .waitForResponse(
+        (r) =>
+          /\/api\/realms\/[^/]+\/config\/custom-domain\/publish$/.test(r.url()) &&
+          r.request().method() === 'POST',
+        { timeout: 15000 },
+      )
+      .then((r) => r)
+    await this.smartClick(this.customDomainPublishButton)
+    await expect((await publishResponse).ok(), 'publish POST must succeed').toBeTruthy()
+
+    await expect(async () => {
+      const disabled = await this.customDomainPublishButton.isDisabled()
+      expect(disabled).toBeFalsy()
+    }).toPass({ timeout: 15000 })
+    await this.page.waitForLoadState('networkidle')
+  }
+
+  /**
+   * Discard the saved custom-domain draft (resets editor to published config).
+   *
+   * Clicks the discard button and waits for it to return to idle. The button is
+   * disabled when no draft exists, so callers must ensure a draft is present.
+   */
+  async discardCustomDomainDraft(): Promise<void> {
+    await this.smartClick(this.customDomainDiscardDraftButton)
+
+    await expect(async () => {
+      const disabled = await this.customDomainDiscardDraftButton.isDisabled()
+      expect(disabled).toBeFalsy()
+    }).toPass({ timeout: 15000 })
+    await this.page.waitForLoadState('networkidle')
+  }
+
+  /**
+   * Restore the previous published custom-domain config.
+   *
+   * Drives the restore AlertDialog: open via the restore button, then confirm
+   * via custom-domain-restore-confirm. Waits for the dialog to close and the
+   * restore button to return to idle. Requires a previous version to exist
+   * (the restore button is disabled otherwise).
+   */
+  async restoreCustomDomain(): Promise<void> {
+    // Open the restore confirmation dialog
+    await this.smartClick(this.customDomainRestoreButton)
+    await expect(this.customDomainRestoreDialog).toBeVisible({ timeout: 5000 })
+
+    // Confirm the restore action — the confirm click fires the POST /restore.
+    // Wait for that response (not just dialog-close): tests read
+    // `published.hostname` via a direct API GET right after this returns, and
+    // the dialog closing can race the backend commit the same way publish does.
+    const restoreResponse = this.page
+      .waitForResponse(
+        (r) =>
+          /\/api\/realms\/[^/]+\/config\/custom-domain\/restore$/.test(r.url()) &&
+          r.request().method() === 'POST',
+        { timeout: 15000 },
+      )
+      .then((r) => r)
+    await this.smartClick(this.customDomainRestoreConfirmButton)
+    await expect((await restoreResponse).ok(), 'restore POST must succeed').toBeTruthy()
+
+    // Wait for the dialog to close (restore action settled)
+    await expect(this.customDomainRestoreDialog).toBeHidden({ timeout: 15000 })
+    await expect(async () => {
+      const disabled = await this.customDomainRestoreButton.isDisabled()
+      expect(disabled).toBeFalsy()
+    }).toPass({ timeout: 15000 })
+    await this.page.waitForLoadState('networkidle')
+  }
+
+  /**
+   * Whether the custom-domain draft notice is currently visible (draft exists
+   * or form is dirty).
+   */
+  async hasCustomDomainDraftNotice(): Promise<boolean> {
+    return await this.customDomainDraftNotice.isVisible().catch(() => false)
+  }
+
+  /**
+   * Read the text content of the CNAME guidance panel.
+   *
+   * The panel (custom-domain-config-form.tsx:184) renders the configured
+   * `cnameTarget` (from [custom_domain].cname_target). Tests assert the
+   * configured target appears so the panel is never empty.
+   */
+  async getCnameGuidanceText(): Promise<string> {
+    await expect(this.customDomainCnameGuidance).toBeVisible({ timeout: 10000 })
+    return (await this.customDomainCnameGuidance.textContent()) || ''
+  }
+
+  /**
+   * Read the current custom-domain form values (the hostname input value).
+   *
+   * Named distinctly from the white-label getFormValues() to keep each
+   * lifecycle's return type explicit and avoid overload ambiguity.
+   */
+  async getCustomDomainFormValues(): Promise<CustomDomainFormValues> {
+    const hostname = (await this.customDomainHostnameInput.inputValue().catch(() => '')) || ''
+    return { hostname }
+  }
+
+  /**
+   * Tear down the custom-domain config for the current realm (restore-balanced).
+   *
+   * Unlike white-label, custom-domain CANNOT be "published empty" to clear it:
+   * the backend (handle_publish, custom_domain_config.rs:260-263) rejects
+   * publishing a draft without a hostname (400 "Cannot publish a custom-domain
+   * draft without a hostname"), and there is no HTTP endpoint to delete the
+   * published `settings` row. So the restore-balanced teardown for custom-domain
+   * is narrower than white-label's: it targets the residue that actually causes
+   * cross-run/cross-test interference —
+   *
+   *   1. Discard any dangling draft (DELETE /draft). A lingering draft would
+   *      hold a hostname that the global-uniqueness check treats as occupied,
+   *      blocking other realms/tests from drafting the same name, and would
+   *      leave the draft-notice visible for the next run.
+   *
+   * Published hostnames are NOT torn down here: each test publishes its own
+   * unique test-specific hostname (overwriting the prior published value), so a
+   * stale published hostname never blocks a subsequent test, and the uniqueness
+   * check only conflicts on an *exact* hostname match across realms — which the
+   * unique test hostnames avoid by construction.
+   *
+   * Best-effort: catches + warns internally so teardown never hard-fails the
+   * test run. Mirrors resetWhiteLabelConfig() semantics. Callers must already
+   * be logged in as the realm's admin and navigated to the Settings page.
+   */
+  async resetCustomDomainConfig(): Promise<void> {
+    try {
+      await this.switchToCustomDomainTab()
+
+      // Discard any lingering draft so no hostname stays reserved as a draft
+      // across runs. The discard button is disabled when no draft exists; guard
+      // with an enabled check so a no-draft state is a no-op, not an error.
+      const discardEnabled = await this.customDomainDiscardDraftButton
+        .isEnabled()
+        .catch(() => false)
+      if (discardEnabled) {
+        await this.discardCustomDomainDraft()
+      }
+    } catch (error) {
+      // Teardown must never hard-fail the test run; log and continue.
+      console.warn(`[SettingsPage] resetCustomDomainConfig failed for realm "${this.realmId}":`, error)
     }
   }
 

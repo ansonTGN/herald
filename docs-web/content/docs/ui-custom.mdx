@@ -5,7 +5,7 @@ description: "Herald lets a Realm Admin brand the hosted auth pages — logo, ac
 
 Herald lets a Realm Admin brand the hosted auth pages — logo, accent color, background, footer, and login/register copy — so end users see the tenant's brand instead of the default Herald chrome. Branding is per-Realm, covers every auth-flow page and sub-state, and falls back to the Herald defaults on any missing or broken asset.
 
-This is a Standard White-label feature, not a full theming system. The scope matches what Auth0 / Clerk / WorkOS call "basic branding": asset URLs and color picks chosen through a form, applied to Herald's hosted auth pages. There is no custom HTML/CSS, no custom domain, and no asset upload.
+This is a Standard White-label feature, not a full theming system. The scope matches what Auth0 / Clerk / WorkOS call "basic branding": asset URLs and color picks chosen through a form, applied to Herald's hosted auth pages. There is no custom HTML/CSS and no asset upload. (Branding the URL itself via a custom domain is a separate feature — see the [Custom Domain](/docs/realm-custom-domain) guide.)
 
 ## Who this is for
 
@@ -114,7 +114,7 @@ The admin mutates config through the management endpoints (draft / publish / res
 ## What is intentionally out of scope
 
 - Custom HTML or CSS templates (Full Custom). Too large an XSS / CSP surface for a Standard tier.
-- Custom subdomain / custom domain. That belongs to a higher tier.
+- Custom subdomain / custom domain. That is a separate feature, covered in the [Custom Domain](/docs/realm-custom-domain) guide.
 - Asset upload and storage. Logos and backgrounds are URL references this release; upload is a possible expansion if tenants without a CDN turn out to be common.
 - An asset / content safety review pipeline. External URLs are the tenant's responsibility.
 - Multi-locale brand copy. i18n is a separate concern covered by its own PRD.

@@ -160,6 +160,29 @@ sqlx_slow_statement_ms = 200
 
 `production.toml` does not set this section, so Docker runs on the code baseline above. To point at your own collector locally, change `otlp_endpoint`.
 
+### [custom_domain]
+
+Global settings for the per-Realm custom-domain feature. `ask_key` is a shared secret that gates the reverse-proxy TLS authorization endpoint; `cname_target` is the Herald-owned hostname tenants must CNAME their custom login domain to. See the [custom-domain guide](/docs/realm-custom-domain) for what these drive.
+
+| Parameter | Type | Code Default | Docker Config Value | Required | Description |
+|---|---|---|---|---|---|
+| `ask_key` | string | `""` (empty) | unset | **Yes (production)** | Shared secret for the reverse-proxy On-Demand TLS authorization query (`X-Herald-Ask-Key` header). A non-empty value is **required for the server to boot** — the startup guard rejects an empty key. |
+| `cname_target` | string | `""` (empty) | unset | No | Herald-owned hostname shown to Realm Admins as the CNAME target (e.g. `custom.herald.com`). Surfaced as `cnameTarget` in the custom-domain config response. |
+
+Both fields are optional at parse time (`#[serde(default)]`), but `ask_key` is enforced non-empty at startup on the server-build path. Generate a random secret:
+
+```bash
+openssl rand -hex 32
+```
+
+```toml
+[custom_domain]
+ask_key = "your-random-shared-secret"
+cname_target = "custom.herald.com"
+```
+
+If you are not using custom domains, set `ask_key` to any non-empty placeholder string to satisfy the boot guard; the authorization endpoint will still reject unregistered hosts.
+
 ## RBAC Configuration
 
 RBAC policies are not stored in the main config file. They live in the `role_policies` database table. During initialization, `RealmInitializationService` creates default roles and permissions for each realm. Permission checks are handled by `RedisPermissionChecker`, which checks Redis cache first and falls back to PostgreSQL on cache miss.

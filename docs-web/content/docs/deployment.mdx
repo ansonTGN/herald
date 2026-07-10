@@ -70,9 +70,15 @@ app_env = "production"
 [frontend]
 url = "https://your-domain.com"
 static_dir = "/app/frontend/dist"
+
+[custom_domain]
+# Required for the server to boot. Generate with: openssl rand -hex 32
+ask_key = "YOUR_CUSTOM_DOMAIN_ASK_KEY"
+# Shown to Realm Admins as the CNAME target. Use your own hostname.
+cname_target = "custom.your-domain.com"
 ```
 
-Replace `YOUR_PASSWORD` and `your-domain.com` with actual values. Redis runs without a password because the Docker network doesn't expose its port externally. If you do expose the Redis port outside Docker, add a password.
+Replace `YOUR_PASSWORD`, `your-domain.com`, and `YOUR_CUSTOM_DOMAIN_ASK_KEY` with actual values. Redis runs without a password because the Docker network doesn't expose its port externally. If you do expose the Redis port outside Docker, add a password. The `[custom_domain].ask_key` must be non-empty or the server will refuse to start — see [Configuration](/docs/configuration#custom-domain).
 
 ### Caddy Configuration
 

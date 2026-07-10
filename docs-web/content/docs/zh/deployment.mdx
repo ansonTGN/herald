@@ -70,9 +70,15 @@ app_env = "production"
 [frontend]
 url = "https://your-domain.com"
 static_dir = "/app/frontend/dist"
+
+[custom_domain]
+# 服务端启动必填。生成方式：openssl rand -hex 32
+ask_key = "你的自定义域名共享密钥"
+# 展示给 Realm 管理员的 CNAME 目标，用你自己的 hostname
+cname_target = "custom.your-domain.com"
 ```
 
-把 `你的密码` 和 `your-domain.com` 替换成实际值。Redis 没有密码，因为 Docker 网络不对外暴露端口。如果你对外暴露了 Redis 端口，需要加密码。
+把 `你的密码`、`your-domain.com` 和 `你的自定义域名共享密钥` 替换成实际值。Redis 没有密码，因为 Docker 网络不对外暴露端口。如果你对外暴露了 Redis 端口，需要加密码。`[custom_domain].ask_key` 必须非空，否则服务端拒绝启动——见 [配置](/docs/zh/configuration#custom_domain)。
 
 ### 准备 Caddy 配置
 

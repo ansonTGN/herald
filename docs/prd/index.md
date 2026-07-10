@@ -30,6 +30,7 @@ docs/
 | [users.md](core/users.md) | 用户管理 | Realm Admin, Regular User |
 | [realm-settings.md](core/realm-settings.md) | Realm 设置 | Realm Admin |
 | [ui-custom.md](core/ui-custom.md) | White-label（Per-Realm 登录/注册及 Auth 流 UI 定制） | Realm Admin, Regular User |
+| [realm-custom-domain.md](core/realm-custom-domain.md) | Realm 自定义域名（配置生命周期 + 证书授权门控） | Realm Admin, Regular User |
 | [audit.md](core/audit.md) | Audit 审计日志 | Realm Admin, Admin Realm |
 | [dashboard.md](core/dashboard.md) | Dashboard | Realm Admin |
 | [i18n.md](core/i18n.md) | 国际化（i18n）支持 | All Users |
