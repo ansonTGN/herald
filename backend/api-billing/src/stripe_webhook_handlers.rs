@@ -1606,18 +1606,19 @@ async fn handle_checkout_session_async_failed(
 
         // Resolve the originating subscription's internal id. BE-D06 revokes the
         // active quota entitlement by `source_id = subscription_id`, so the
-        // cancel must pass the subscription that was eagerly granted. Prefer the
-        // external subscription id from the event. When no external id is
-        // present there is no lookup path to the internal id here, so the
-        // revoke is skipped (Uuid::nil() ⟹ idempotent no-op); the pre-redesign
-        // code already warned on this edge.
-        let subscription_id = if let Some(ext_sub_id) = stripe_subscription_id {
+        // cancel must pass the subscription that was eagerly granted.
+        //
+        // PRD §4.1: a missed role/quota revoke is a P0 fault. Previously a nil
+        // subscription_id was passed into handle_subscription_cancel, which
+        // silently matched zero rows (idempotent no-op) and masked the miss.
+        // Now we keep the id as Option and skip the revoke call when None,
+        // logging a warning so the compensation/retry sweep can reconcile.
+        let subscription_id: Option<Uuid> = if let Some(ext_sub_id) = stripe_subscription_id {
             app_state
                 .billing_repository
                 .find_by_external_subscription_id(ext_sub_id, "stripe")
                 .await?
                 .map(|s| s.id)
-                .unwrap_or_default()
         } else if let Some(ref ekey) = entitlement_key {
             app_state
                 .billing_repository
@@ -1627,39 +1628,37 @@ async fn handle_checkout_session_async_failed(
                 .into_iter()
                 .find(|s| s.user_id == attempt.user_id)
                 .map(|s| s.id)
-                .unwrap_or_else(|| {
-                    warn!(
-                        realm_id = %realm_id,
-                        attempt_id = %attempt_id,
-                        entitlement_key = %ekey,
-                        "No active subscription matched async_payment_failed fallback revoke"
-                    );
-                    Uuid::nil()
-                })
+        } else {
+            None
+        };
+
+        let result = if let Some(sub_id) = subscription_id {
+            // Subscription: cancel subscription + revoke the subscription's active
+            // quota entitlement (done internally by handle_subscription_cancel via
+            // source_id = subscription_id). Idempotent on no-match.
+            app_state
+                .subscription_service
+                .handle_subscription_cancel(
+                    attempt.user_id,
+                    bucket_id,
+                    realm_id,
+                    sub_id,
+                    CancelMode::ImmediateCancel,
+                    None,
+                    entitlement_key.as_deref(),
+                )
+                .await?
         } else {
             warn!(
                 realm_id = %realm_id,
                 attempt_id = %attempt_id,
-                "No subscription field or entitlement_key in async_payment_failed event — entitlement revoke skipped (idempotent)"
+                "async_payment_failed: no subscription resolvable (no external id and no \
+                 active subscription match); skipping entitlement revoke to avoid a \
+                 nil-source_id silent no-op. The compensation/retry sweep must reconcile. \
+                 (PRD §4.1: missed revoke = P0 fault)"
             );
-            Uuid::nil()
+            herald_core::domain::points::dtos::RevokePointsOutput::empty()
         };
-
-        // Subscription: cancel subscription + revoke the subscription's active
-        // quota entitlement (done internally by handle_subscription_cancel via
-        // source_id = subscription_id). Idempotent on no-match.
-        let result = app_state
-            .subscription_service
-            .handle_subscription_cancel(
-                attempt.user_id,
-                bucket_id,
-                realm_id,
-                subscription_id,
-                CancelMode::ImmediateCancel,
-                None,
-                entitlement_key.as_deref(),
-            )
-            .await?;
 
         let rows_updated = if let Some(ext_sub_id) = stripe_subscription_id {
             app_state

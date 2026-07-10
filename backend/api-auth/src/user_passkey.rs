@@ -14,6 +14,9 @@ use herald_api_base::application::http::auth::util::rate_limit_hit;
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
+use herald_core::domain::audit::{
+    AuditAction, AuditCategory, AuditEventRepository, AuditResult, AuditTargetType, NewAuditEvent,
+};
 use herald_core::domain::authentication::Identity;
 use herald_core::domain::common::entities::app_errors::CoreError;
 use herald_core::domain::realm_config::ConfigType;
@@ -23,7 +26,7 @@ use herald_core::domain::user_passkey::{
 };
 use herald_core::infrastructure::user::repositories::PostgresUserRepository;
 use herald_core::infrastructure::user_passkey::{
-    PostgresUserPasskeyRepository, RedisPasskeyChallengeStore,
+    PostgresPasskeyRealmConfigReader, PostgresUserPasskeyRepository, RedisPasskeyChallengeStore,
 };
 
 const PASSKEY_USER_RATE_LIMIT: (i64, usize) = (5, 60);
@@ -200,6 +203,30 @@ pub async fn handle_finish_passkey_registration(
         ));
     }
 
+    // Audit passkey credential registration (PRD §4.1 audit rule).
+    if let Err(audit_err) = state
+        .audit_event_repository
+        .create(NewAuditEvent {
+            realm_id: identity.realm_id(),
+            category: AuditCategory::Auth,
+            action: AuditAction::UserCreate,
+            actor_id: user_id.to_string(),
+            actor_type: None,
+            actor_name: identity.as_user().map(|u| u.email.clone()),
+            target_type: AuditTargetType::User,
+            target_id: credential.id.to_string(),
+            target_name: credential.nickname.clone(),
+            result: AuditResult::Success,
+            details: Some(serde_json::json!({"action": "passkey_register"})),
+            ip_address: None,
+            user_agent: None,
+            trace_id: None,
+        })
+        .await
+    {
+        tracing::warn!(error = %audit_err, "Failed to record passkey register audit event");
+    }
+
     Ok(ApiResult::ok(FinishRegistrationResponse {
         credential_id: credential.id.to_string(),
         nickname: credential.nickname,
@@ -307,6 +334,30 @@ pub async fn handle_delete_passkey_credential(
     repo.delete(&identity.realm_id(), user_id, credential_id)
         .await
         .map_err(map_repository_error)?;
+
+    // Audit passkey credential deletion (PRD §4.1 audit rule).
+    if let Err(audit_err) = state
+        .audit_event_repository
+        .create(NewAuditEvent {
+            realm_id: identity.realm_id(),
+            category: AuditCategory::Auth,
+            action: AuditAction::UserDelete,
+            actor_id: user_id.to_string(),
+            actor_type: None,
+            actor_name: identity.as_user().map(|u| u.email.clone()),
+            target_type: AuditTargetType::User,
+            target_id: credential_id.to_string(),
+            target_name: None,
+            result: AuditResult::Success,
+            details: Some(serde_json::json!({"action": "passkey_delete"})),
+            ip_address: None,
+            user_agent: None,
+            trace_id: None,
+        })
+        .await
+    {
+        tracing::warn!(error = %audit_err, "Failed to record passkey delete audit event");
+    }
 
     Ok(ApiResult::no_content())
 }
@@ -426,15 +477,23 @@ fn registration_nickname_key(reg_token: &str) -> String {
 fn passkey_service(
     state: &AppState,
     repo: Arc<PostgresUserPasskeyRepository>,
-) -> Result<UserPasskeyService<PostgresUserPasskeyRepository, RedisPasskeyChallengeStore>, ApiError>
-{
+) -> Result<
+    UserPasskeyService<
+        PostgresUserPasskeyRepository,
+        RedisPasskeyChallengeStore,
+        PostgresPasskeyRealmConfigReader,
+    >,
+    ApiError,
+> {
     let rp_id =
         std::env::var("RP_ID").map_err(|_| ApiError::internal("RP_ID is not configured"))?;
     let rp_origin = std::env::var("RP_ORIGIN")
         .map_err(|_| ApiError::internal("RP_ORIGIN is not configured"))?;
     let challenge_store = Arc::new(RedisPasskeyChallengeStore::new(state.redis_manager.clone()));
+    let config_reader = Arc::new(PostgresPasskeyRealmConfigReader::new(state.pool.clone()));
 
-    UserPasskeyService::new(&rp_id, &rp_origin, repo, challenge_store).map_err(map_passkey_error)
+    UserPasskeyService::new(&rp_id, &rp_origin, repo, challenge_store, config_reader)
+        .map_err(map_passkey_error)
 }
 
 fn map_registration_begin_error(err: PasskeyError) -> ApiError {

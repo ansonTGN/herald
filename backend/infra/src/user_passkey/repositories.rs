@@ -1,10 +1,14 @@
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
+use sqlx::PgPool;
 use std::sync::Arc;
 use uuid::Uuid;
 
 use herald_domain::common::entities::app_errors::CoreError;
+use herald_domain::realm_config::ConfigType;
 use herald_domain::user_passkey::entities::UserPasskeyCredential;
-use herald_domain::user_passkey::ports::UserPasskeyRepository;
+use herald_domain::user_passkey::ports::{
+    PasskeyRealmConfigReader, PasskeyRealmPolicy, UserPasskeyRepository, UserVerificationPolicy,
+};
 use herald_entity::user_passkey_credential;
 
 pub struct PostgresUserPasskeyRepository {
@@ -170,5 +174,52 @@ impl UserPasskeyRepository for PostgresUserPasskeyRepository {
         active_model.update(&*self.db).await?;
 
         Ok(())
+    }
+}
+
+/// Reads the realm passkey policy from the `realm_config` table for the
+/// `PasskeyRealmConfigReader` port. Used by `UserPasskeyService` to tailor the
+/// ceremony (user-verification requirement, authenticator attachment) per realm.
+pub struct PostgresPasskeyRealmConfigReader {
+    pool: PgPool,
+}
+
+impl PostgresPasskeyRealmConfigReader {
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
+    }
+}
+
+impl PasskeyRealmConfigReader for PostgresPasskeyRealmConfigReader {
+    async fn get_policy(&self, realm_id: &str) -> Result<PasskeyRealmPolicy, CoreError> {
+        let row = sqlx::query_as::<_, (String,)>(
+            "SELECT config_value FROM realm_config
+             WHERE realm_id = $1 AND config_type = $2 AND config_key = 'settings' AND enabled = true",
+        )
+        .bind(realm_id)
+        .bind(ConfigType::Passkey.as_ref())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| {
+            CoreError::DatabaseError(format!("Failed to query passkey realm config: {e}"))
+        })?;
+
+        let config =
+            row.and_then(|(value,)| serde_json::from_str::<serde_json::Value>(&value).ok());
+
+        Ok(PasskeyRealmPolicy {
+            user_verification: config
+                .as_ref()
+                .and_then(|v| v.get("user_verification"))
+                .and_then(|v| v.as_str())
+                .map(UserVerificationPolicy::parse)
+                .unwrap_or_default(),
+            cross_platform_authenticator: config
+                .as_ref()
+                .and_then(|v| v.get("cross_platform_authenticator"))
+                .and_then(|v| v.as_bool())
+                // Default mirrors passkey_config.rs DEFAULT_CROSS_PLATFORM_AUTHENTICATOR.
+                .unwrap_or(true),
+        })
     }
 }

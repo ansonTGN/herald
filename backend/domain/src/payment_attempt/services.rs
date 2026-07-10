@@ -40,6 +40,7 @@ impl<R: PaymentAttemptRepository> PaymentAttemptService<R> {
             currency: input.currency.clone(),
             provider_reference: input.provider_reference,
             metadata: input.metadata,
+            is_one_time_role: input.is_one_time_role,
         };
 
         let attempt = self
@@ -402,6 +403,7 @@ mod tests {
                 amount: input.amount,
                 currency: input.currency,
                 status: PaymentAttemptStatus::Pending,
+                is_one_time_role: input.is_one_time_role,
                 provider_reference: input.provider_reference,
                 provider_status: None,
                 metadata: input.metadata,
@@ -532,6 +534,7 @@ mod tests {
                 amount: input.amount,
                 currency: input.currency,
                 status: PaymentAttemptStatus::Succeeded,
+                is_one_time_role: false,
                 provider_reference: Some(input.provider_reference),
                 provider_status: Some("succeeded".to_string()),
                 metadata: None,
@@ -582,6 +585,7 @@ mod tests {
             amount: 1000,
             currency: "USD".to_string(),
             status,
+            is_one_time_role: false,
             provider_reference: None,
             provider_status: None,
             metadata: None,

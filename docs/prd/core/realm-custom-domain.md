@@ -69,6 +69,8 @@
 - **动态 CORS**（按已解析 Realm 的域做动态 origin 校验）。
 
 > 上述未来范围的落地依赖先解决框架层面的 host→realm 请求解析机制。当前已交付的配置生命周期与证书授权门控为其预留了映射基础。
+>
+> **已交付的只读 lookup helper（区别于上述框架层路由改写）**：`GET /api/public-config/custom-domain/resolve?host=<hostname>` 是一个公开、无认证的只读查询端点，供前端 SPA 在自定义域名入口处查表确定目标 realmId + publicConfig，不改变后端路由匹配或 path 解析方式。它不属于上述「框架层 host→realm 路由改写」未来范围，而是为其预留的映射基础的可读出口。
 
 ### 2.4 依赖项
 

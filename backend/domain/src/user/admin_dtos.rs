@@ -37,6 +37,12 @@ pub struct RoleDetail {
     pub id: Uuid,
     pub name: String,
     pub description: Option<String>,
+    /// Grant origin: 'manual' or 'payment'.
+    pub source: String,
+    /// Payment origin identifier. NULL for manual grants.
+    pub source_id: Option<String>,
+    /// INFORMATIONAL provenance: billing period end at grant time. Not an authz TTL.
+    pub expires_at: Option<String>,
 }
 
 /// Policy detail

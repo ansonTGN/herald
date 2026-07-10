@@ -47,6 +47,52 @@ pub trait UserPasskeyRepository: Send + Sync {
     ) -> impl Future<Output = Result<(), CoreError>> + Send;
 }
 
+/// Realm-level Passkey policy resolved from `realm_config` (config_type='passkey').
+///
+/// Drives the per-realm ceremony options (user-verification requirement and
+/// authenticator-attachment selection) applied at challenge-generation time.
+#[derive(Debug, Clone, Default)]
+pub struct PasskeyRealmPolicy {
+    /// "preferred" | "required". "required" enforces UV at the ceremony level.
+    pub user_verification: UserVerificationPolicy,
+    /// When false, restrict registration/authentication to platform
+    /// authenticators. When true, allow cross-platform authenticators.
+    pub cross_platform_authenticator: bool,
+}
+
+/// User-verification requirement for the passkey ceremony.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum UserVerificationPolicy {
+    /// UV preferred but not required (passkey-auth builder default).
+    #[default]
+    Preferred,
+    /// UV strictly required; authenticators that cannot do UV are rejected.
+    Required,
+}
+
+impl UserVerificationPolicy {
+    pub fn is_required(&self) -> bool {
+        matches!(self, Self::Required)
+    }
+
+    /// Parse from the realm config string value stored in `realm_config`.
+    pub fn parse(s: &str) -> Self {
+        match s.to_ascii_lowercase().as_str() {
+            "required" => Self::Required,
+            _ => Self::Preferred,
+        }
+    }
+}
+
+/// Reads the realm passkey policy so the ceremony can apply per-realm options.
+#[cfg_attr(test, mockall::automock)]
+pub trait PasskeyRealmConfigReader: Send + Sync {
+    fn get_policy(
+        &self,
+        realm_id: &str,
+    ) -> impl Future<Output = Result<PasskeyRealmPolicy, CoreError>> + Send;
+}
+
 #[cfg_attr(test, mockall::automock)]
 pub trait PasskeyChallengeStore: Send + Sync {
     fn store(

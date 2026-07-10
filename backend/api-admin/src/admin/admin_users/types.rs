@@ -71,10 +71,17 @@ pub struct ResetPasswordResponse {
 // ==================== User Role & Permission Types ====================
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
 pub struct UserRoleDetail {
     pub id: Uuid,     // UUID
     pub name: String, // role name
     pub description: Option<String>,
+    /// Grant origin: 'manual' (hand-assigned) or 'payment' (granted on payment success).
+    pub source: String,
+    /// Payment origin identifier (attempt_id / subscription_id). Null for manual grants.
+    pub source_id: Option<String>,
+    /// INFORMATIONAL provenance: the billing period end aligned at grant time. Not an authz TTL.
+    pub expires_at: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]

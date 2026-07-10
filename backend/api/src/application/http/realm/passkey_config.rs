@@ -11,6 +11,9 @@ use validator::Validate;
 
 use crate::application::http::server::api_entities::{ApiError, ApiResult};
 use crate::application::http::state::AppState;
+use herald_core::domain::audit::{
+    AuditAction, AuditCategory, AuditEventRepository, AuditResult, AuditTargetType, NewAuditEvent,
+};
 use herald_core::domain::authentication::Identity;
 use herald_core::domain::authorization::PermissionService;
 use herald_core::domain::realm_config::{ConfigType, RealmConfigService, UpsertRealmConfigRequest};
@@ -143,6 +146,34 @@ pub async fn handle_update_realm_passkey_config(
                 _ => ApiError::internal("Internal server error"),
             }
         })?;
+
+    // Audit Passkey policy change (PRD §4.1 audit rule: "管理员变更 Passkey 策略").
+    if let Err(audit_err) = state
+        .audit_event_repository
+        .create(NewAuditEvent {
+            realm_id: realm_id.clone(),
+            category: AuditCategory::Auth,
+            action: AuditAction::RoleUpdate,
+            actor_id: identity.user_id(),
+            actor_type: None,
+            actor_name: identity.as_user().map(|u| u.email.clone()),
+            target_type: AuditTargetType::Realm,
+            target_id: realm_id.clone(),
+            target_name: None,
+            result: AuditResult::Success,
+            details: Some(serde_json::json!({
+                "action": "passkey_config_update",
+                "enabled": req.enabled,
+                "force_enabled": req.force_enabled,
+            })),
+            ip_address: None,
+            user_agent: None,
+            trace_id: None,
+        })
+        .await
+    {
+        tracing::warn!(error = %audit_err, "Failed to record passkey config audit event");
+    }
 
     Ok(ApiResult::ok(UpdateRealmPasskeyConfigResponse {
         message: "Realm Passkey configuration updated".to_string(),

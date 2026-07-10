@@ -19,8 +19,9 @@ pub struct PaymentAttempt {
     pub amount: i64,
     pub currency: String,
     pub status: PaymentAttemptStatus,
+    pub is_one_time_role: bool, // anti-repeat flag (one_time + role mappings)
     pub provider_reference: Option<String>, // checkout session ID for Stripe/Creem
-    pub provider_status: Option<String>,    // Raw status from provider
+    pub provider_status: Option<String>, // Raw status from provider
     pub metadata: Option<serde_json::Value>,
     pub expires_at: DateTime<Utc>,
     pub completed_at: Option<DateTime<Utc>>,

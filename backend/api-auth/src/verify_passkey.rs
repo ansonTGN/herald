@@ -19,6 +19,9 @@ use herald_api_base::application::http::auth::util::{
 use herald_api_base::application::http::server::api_entities::ApiError;
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
 use herald_api_base::application::http::state::AppState;
+use herald_core::domain::audit::{
+    AuditAction, AuditCategory, AuditEventRepository, AuditResult, AuditTargetType, NewAuditEvent,
+};
 use herald_core::domain::client::ports::ClientService;
 use herald_core::domain::realm_config::ConfigType;
 use herald_core::domain::security_constants::{
@@ -29,12 +32,18 @@ use herald_core::domain::security_constants::{
 use herald_core::domain::user::ports::UserRepository;
 use herald_core::domain::user_passkey::{PasskeyError, PasskeyLoginState, UserPasskeyService};
 use herald_core::infrastructure::user_passkey::{
-    PostgresUserPasskeyRepository, RedisPasskeyChallengeStore,
+    PostgresPasskeyRealmConfigReader, PostgresUserPasskeyRepository, RedisPasskeyChallengeStore,
 };
 
 use crate::consent_gate::AuthConsentAgreement;
 
 const PASSKEY_VERIFY_FAILED: &str = "Passkey 验证失败";
+
+/// Usernameless passkey verify cannot resolve a user id before authentication,
+/// so failed attempts are audited with this generic actor id.
+fn passkey_audit_actor() -> String {
+    "passkey:unknown".to_string()
+}
 
 #[derive(Debug, Deserialize, ToSchema, Validate)]
 #[serde(rename_all = "camelCase")]
@@ -219,10 +228,42 @@ pub async fn handle_passkey_verify(
     .await?;
 
     let service = passkey_service(&state)?;
-    let (user_id, _credential, login_state) = service
+    let (user_id, _credential, login_state) = match service
         .finish_login_first_factor(&req.auth_token, &req.assertion)
         .await
-        .map_err(map_passkey_verify_error)?;
+    {
+        Ok(value) => value,
+        Err(e) => {
+            // Audit passkey login failure (mirrors login.rs password-failure audit).
+            let actor = passkey_audit_actor();
+            if let Err(audit_err) = state
+                .audit_event_repository
+                .create(NewAuditEvent {
+                    realm_id: realm_id.clone(),
+                    category: AuditCategory::Auth,
+                    action: AuditAction::AuthLoginFailed,
+                    actor_id: actor.clone(),
+                    actor_type: None,
+                    actor_name: None,
+                    target_type: AuditTargetType::User,
+                    target_id: actor,
+                    target_name: None,
+                    result: AuditResult::Failure,
+                    details: Some(serde_json::json!({
+                        "method": "passkey",
+                        "reason": "verify_failed",
+                    })),
+                    ip_address: Some(client_ip.clone()),
+                    user_agent: None,
+                    trace_id: None,
+                })
+                .await
+            {
+                tracing::warn!(error = %audit_err, "Failed to record passkey login-failure audit event");
+            }
+            return Err(map_passkey_verify_error(e));
+        }
+    };
 
     if login_state.realm_id != realm_id {
         return Err(ApiError::unauthorized(PASSKEY_VERIFY_FAILED));
@@ -501,6 +542,30 @@ async fn finish_login(
 
     store_session(state, &token, &session_data, session_ttl).await?;
 
+    // Audit passkey login success (mirrors login.rs password-success audit).
+    if let Err(audit_err) = state
+        .audit_event_repository
+        .create(NewAuditEvent {
+            realm_id: session_data.realm_id.clone(),
+            category: AuditCategory::Auth,
+            action: AuditAction::AuthLogin,
+            actor_id: user_id.to_string(),
+            actor_type: None,
+            actor_name: Some(user.email.clone()),
+            target_type: AuditTargetType::User,
+            target_id: user_id.to_string(),
+            target_name: Some(user.email.clone()),
+            result: AuditResult::Success,
+            details: Some(serde_json::json!({"method": "passkey"})),
+            ip_address: Some(session_data.client_ip.clone()),
+            user_agent: None,
+            trace_id: None,
+        })
+        .await
+    {
+        tracing::warn!(error = %audit_err, "Failed to record passkey login-success audit event");
+    }
+
     let cookie_header = build_set_cookie(
         "X-Auth",
         &token,
@@ -718,16 +783,23 @@ fn fail_count_key(user_id: Uuid) -> String {
 
 fn passkey_service(
     state: &AppState,
-) -> Result<UserPasskeyService<PostgresUserPasskeyRepository, RedisPasskeyChallengeStore>, ApiError>
-{
+) -> Result<
+    UserPasskeyService<
+        PostgresUserPasskeyRepository,
+        RedisPasskeyChallengeStore,
+        PostgresPasskeyRealmConfigReader,
+    >,
+    ApiError,
+> {
     let rp_id =
         std::env::var("RP_ID").map_err(|_| ApiError::internal("RP_ID is not configured"))?;
     let rp_origin = std::env::var("RP_ORIGIN")
         .map_err(|_| ApiError::internal("RP_ORIGIN is not configured"))?;
     let repo = Arc::new(PostgresUserPasskeyRepository::new(state.db.clone()));
     let challenge_store = Arc::new(RedisPasskeyChallengeStore::new(state.redis_manager.clone()));
+    let config_reader = Arc::new(PostgresPasskeyRealmConfigReader::new(state.pool.clone()));
 
-    UserPasskeyService::new(&rp_id, &rp_origin, repo, challenge_store)
+    UserPasskeyService::new(&rp_id, &rp_origin, repo, challenge_store, config_reader)
         .map_err(map_passkey_setup_error)
 }
 

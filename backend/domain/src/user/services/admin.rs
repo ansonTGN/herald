@@ -906,6 +906,9 @@ where
                 id: r.id,
                 name: r.name,
                 description: r.description,
+                source: r.source,
+                source_id: r.source_id,
+                expires_at: r.expires_at.map(|dt| dt.to_rfc3339()),
             })
             .collect())
     }

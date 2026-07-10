@@ -47,6 +47,9 @@ pub struct PurchaseTargetSnapshot {
     pub provider_external_price_id: Option<String>,
     pub billing_period: Option<String>,
     pub billing_type: Option<BillingType>,
+    /// Anti-repeat flag: TRUE only for one_time + non-empty granted_role_ids.
+    /// Drives the `payment_attempts.is_one_time_role` column + DB unique guard.
+    pub is_one_time_role: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]

@@ -21,6 +21,8 @@ pub struct CreatePaymentAttemptInput {
     pub currency: String,
     pub provider_reference: Option<String>,
     pub metadata: Option<Value>,
+    /// Anti-repeat flag: TRUE only for one_time + role mappings.
+    pub is_one_time_role: bool,
 }
 
 /// Input for recording a subscription renewal payment attempt (find-or-create).

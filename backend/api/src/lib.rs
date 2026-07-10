@@ -170,6 +170,18 @@ pub async fn build_app_state_with_migrations(
         ));
     }
 
+    // Custom-domain CNAME target: PRD §5.1 mandates the system show Realm
+    // Admins the Herald hostname they must CNAME to. An empty `cname_target`
+    // would make the config endpoint return an empty CNAME guidance, leaving
+    // admins unable to complete domain setup. Mirror the ask_key fail-fast.
+    if config.custom_domain.cname_target.trim().is_empty() {
+        return Err(anyhow::anyhow!(
+            "Configuration error: [custom_domain].cname_target must be set to the Herald \
+             hostname that Realm Admins should point their custom domain's CNAME record at. \
+             See PRD §5.1 / design §4.2."
+        ));
+    }
+
     // Connect to database with pool tuning from config
     let mut connect_options = sea_orm::ConnectOptions::new(&config.database.url);
     connect_options

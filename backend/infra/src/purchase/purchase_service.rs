@@ -144,6 +144,7 @@ where
                     currency: target.currency.clone(),
                     provider_reference: None,
                     metadata: input.metadata,
+                    is_one_time_role: target.is_one_time_role,
                 },
                 PaymentContext {
                     stripe_checkout_url: None,
@@ -358,6 +359,9 @@ where
             provider_external_product_id: Some(mapping.external_product_id.clone()),
             provider_external_price_id: mapping.external_price_id.clone(),
             billing_period: mapping.billing_period.clone(),
+            // one_time + non-empty granted_role_ids drives the anti-repeat guard.
+            is_one_time_role: mapping.billing_type == Some(BillingType::OneTime)
+                && !mapping.granted_role_ids.is_empty(),
             billing_type: mapping.billing_type,
         })
     }

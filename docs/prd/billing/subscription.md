@@ -76,7 +76,6 @@
 - 前端历史记录页面（全局查询和单订阅详情）
 - 权限控制（Realm Admin 可查看所有历史，Regular User 只能查看自己的）
 - 支付平台 Webhook 集成与事件处理
-- 订阅升级/降级（按比例计费）
 - 积分充值与订阅事件联动
 
 ### 2.2 不包含功能 (Out of Scope)
@@ -142,31 +141,14 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 - 更新 checkout_url 立即生效，所有新订阅用户使用新 URL
 - Provider-to-Entitlement 映射是 Herald 本地的 allowlist 和只读缓存，不是本地商业目录
 - 映射数据以 Herald 本地配置为准；Stripe Product/Price metadata 可作为导入入口，Creem 需要在 Herald 中配置 entitlement 和积分策略
-- 映射承载的信息包括：provider、external_product_id、external_price_id（Creem 不适用）、entitlement_key、积分策略字段、provider_product_info、synced_at
+- 映射承载的信息包括：provider、external_product_id、external_price_id（Creem 不适用）、entitlement_key、积分策略字段、`granted_role_ids`（支付成功后授予的 role，见 [support-paywall.md](support-paywall.md)）、`quota_windows`（配额窗口策略）、provider_product_info、synced_at
 - 禁用映射后，匹配该映射的 webhook 订阅事件仍更新订阅投影，但不触发积分策略的发放或回收；管理员重新启用后恢复积分策略执行
-- 映射同步失败不应静默降级为默认策略，应 fail loud 并记录诊断
+- 映射同步失败不应静默降级为默认策略，应 fail loud 并记录诊断；「fail loud」指单行同步失败可观测（返回 `Partial` 状态 + `partial_errors` 列表），非整体回滚
 
-**删除规则**：
-- 无法删除有活跃订阅的套餐
-- 可以删除无订阅的套餐（包括已取消订阅的套餐）
-- 删除套餐时级联删除所有支付平台映射（数据库层面通过外键级联或应用层逐条删除实现）
-
-**支付平台映射规则**：
-- 同一 Plan 不能重复配置同一个支付平台
-- 删除支付平台映射前需检查是否有活跃订阅
-  > 存在活跃订阅时拒绝删除支付平台映射。
-- 禁用支付平台映射不影响已订阅用户，但新用户无法使用该支付平台
-- 启用支付平台映射时，如果该平台未在 Realm 层配置，应提示用户先配置支付平台
-
-**套餐分配规则**：
-- Realm Admin 为特定 Client App 分配可用套餐，最终用户只能看到已分配的套餐
-- 移除分配不影响已订阅用户，但新用户无法看到该套餐
-
-**订阅变更规则**：
-- 升级订阅采用按比例计费（Proration）
-- 降级在下个计费周期生效，当前周期保持原套餐
-- 取消在当前计费周期结束生效，用户可继续使用直到周期结束
-- 取消后不自动删除数据，数据保留期由第三方应用决定
+> **编目边界（已废弃）**：本地 Product/Plan 编目已废弃，当前模型以 `entitlement_key` 为准（见 §8 已确认决策）。下列历史声明已下沉到支付平台或废弃，不再由 Herald 本地维护：
+> - ~~删除套餐~~：套餐生命周期由支付平台管理；Herald 仅维护 `entitlement_mapping`，无本地 Plan 实体可删
+> - ~~升级/降级（按比例计费 Proration）~~：升降级由支付平台原生处理，Herald 通过 webhook 订阅事件感知变更
+> - ~~套餐分配（Client App 维度）~~：不再由本地套餐实体承载
 
 **Webhook 处理规则**：
 - 系统采用 realm 隔离的 webhook 端点架构，每个 realm 使用独立的 webhook URL
@@ -240,8 +222,9 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 | 操作 | 需要权限 | 说明 |
 |------|---------|------|
 | 查看 Entitlement 映射 | `billing.view` | Realm Admin |
-| 触发 Provider 同步 | `billing.manage` | Realm Admin |
-| 查看/禁用映射 | `billing.manage` | Realm Admin |
+| 触发 Provider 同步 | `points.manage` | Realm Admin；同步会创建 draft mapping 并绑定 credit bucket，故门控在 points.manage（domain 层另校验 billing.manage） |
+| 更新/禁用映射（single PATCH） | `points.manage` | Realm Admin；写 credit 字段时需 points.manage。batch 更新路径用 `billing.manage` 无条件 + credit 字段附加 `points.manage` |
+| 查看/禁用映射（batch 更新） | `billing.manage`（+ credit 字段附加 `points.manage`） | Realm Admin |
 | 查看订阅投影 | `billing.view` | Realm Admin |
 | 管理订阅 | `billing.manage` | Realm Admin |
 | 查看订阅变更历史（Realm Admin） | `billing.view` | Realm Admin |

@@ -116,13 +116,13 @@ Herald 当前付费履约硬绑积分：one-time 购买不配积分时履约直�
 - role 来自用户在 Herald 自定义的角色/权限（复用现有 RBAC），不新建权限空间、不引入 `entitlement.*` 新权限格式
 - 支付成功自动授予映射配置的 role
 - 一次性购买（one_time + role）= 永久解锁，role 不设过期、不撤销（买断制）；`validity_days` 只约束积分有效期，不约束 role
-- 订阅（recurring + role）= 周期内有效，续费 webhook 续授
+- 订阅（recurring + role）= 周期内有效（靠 webhook 撤销 + 补偿框架最终一致，非 expires_at TTL 自动失效），续费 webhook 续授
 
 **重复购买判定规则**：
 - 仅「one_time + 授予 role」组合强制一人一次
 - 购买前检查：是否已存在该 mapping 的成功购买记录，或用户已拥有对应 role
 - 积分包（one_time + 无 role）保持可重复购买，recurring 续费不受限
-- 需保证并发安全（防并发双购）
+- 并发安全：应用层购买前检查为 UX 快路径，DB 层在 `payment_attempts(user_id, target_id) WHERE status='Succeeded' AND is_one_time_role=TRUE` 上有 partial unique index 兜底，关闭并发双购窗口
 
 **role 撤销规则（仅订阅类）**：
 - 仅覆盖订阅类：subscription.canceled / expired / refund（Creem `refund.created` / Stripe `charge.refunded`）触发撤销
@@ -218,7 +218,7 @@ Herald 当前付费履约硬绑积分：one-time 购买不配积分时履约直�
 
 **能力边界**：
 - 不新建权限空间；role 授予复用现有 RBAC role/权限模型
-- entitlement mapping 配置接口扩展「role 授予维度」配置能力（与既有积分策略配置同层）
+- entitlement mapping 配置接口扩展「role 授予维度」配置能力（与既有积分策略配置同层）；role 授予维度的写入入口为 batch 更新端点（多价格批量管理），single PATCH 不写 `granted_role_ids`
 - 支付成功 webhook 处理链路扩展：支付成功→授 role、订阅 canceled/expired/refund→撤 role
 - 第三方应用查询/判断：复用既有 RBAC 权限检查能力，不新增 entitlement 专用门控接口
 
@@ -250,7 +250,7 @@ Herald 当前付费履约硬绑积分：one-time 购买不配积分时履约直�
 - 支付成功后用户无需额外操作即获得 role
 
 **状态反馈**：
-- 一人一次拦截提示：「You already own this item」
+- 一人一次拦截：后端返回结构化错误 `{ "code": "already_owned", "entitlementKey": <key> }`，前端据 code 自行渲染文案（示例：「You already own this item」）
 - role 授予/撤销为系统自动行为，用户侧体现为功能可用性变化，无需显式提示（除非第三方应用自行展示）
 
 **管理端可见性**：

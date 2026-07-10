@@ -374,6 +374,24 @@ impl UserRepository for PostgresUserRepository {
                 .await?;
         }
 
+        // 4. OAuth provider binding wipe. The `provider` table holds the
+        //    user's third-party identity bindings (open_id / union_id / email).
+        //    Because account deletion is a soft delete (status=Deleted, the
+        //    account row is NOT removed), the `ON DELETE CASCADE` foreign key
+        //    never fires — so provider rows must be removed explicitly here,
+        //    otherwise the deleted user's PII survives and the OAuth identity
+        //    can still be resolved on a future login attempt.
+        use sea_orm::ConnectionTrait;
+        let delete_stmt = sea_orm::sea_query::Query::delete()
+            .from_table(sea_orm::sea_query::Alias::new("provider"))
+            .cond_where(
+                sea_orm::sea_query::Expr::col(sea_orm::sea_query::Alias::new("user_id"))
+                    .eq(user_id),
+            )
+            .to_owned();
+        let backend = txn.get_database_backend();
+        txn.execute(backend.build(&delete_stmt)).await?;
+
         txn.commit().await?;
         Ok(())
     }

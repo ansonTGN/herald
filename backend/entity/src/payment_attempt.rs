@@ -15,6 +15,7 @@ pub struct Model {
     pub amount: i64,
     pub currency: String,
     pub status: String,
+    pub is_one_time_role: bool,
     #[sea_orm(nullable)]
     pub provider_reference: Option<String>,
     #[sea_orm(nullable)]

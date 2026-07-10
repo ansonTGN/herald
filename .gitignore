@@ -28,3 +28,6 @@ skill-eval-workspace/
 # Local config overrides
 backend/config/*-local.toml
 .claude
+
+# ZCode workspace artifacts
+.zcode/

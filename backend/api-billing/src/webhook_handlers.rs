@@ -1525,10 +1525,26 @@ async fn handle_subscription_updated(
 
     // bucket_id was resolved eagerly above; synced carries the persisted
     // subscription (create binds the resolved bucket, update keeps the existing).
-    let (subscription_id, subscription_bucket_id) = synced
-        .as_ref()
-        .map(|(subscription, _)| (subscription.id, subscription.bucket_id))
-        .unwrap_or((Uuid::nil(), bucket_id));
+    //
+    // If sync returned None we must NOT pass a nil subscription_id into the
+    // upgrade/downgrade handlers — they revoke the old entitlement by
+    // source_id and a nil would silently match zero rows. Fail loud instead.
+    let (subscription_id, subscription_bucket_id) = match synced.as_ref() {
+        Some((subscription, _)) => (subscription.id, subscription.bucket_id),
+        None => {
+            tracing::warn!(
+                realm_id = %realm_id,
+                user_id = %user_id,
+                "subscription change webhook: sync returned no subscription; skipping \
+                 upgrade/downgrade revoke to avoid a nil-source_id silent no-op."
+            );
+            return Ok(create_placeholder_transaction(
+                user_id,
+                realm_id,
+                TransactionType::SubscriptionDowngrade,
+            ));
+        }
+    };
 
     let history_event_type = if is_upgrade {
         app_state
@@ -1690,27 +1706,38 @@ async fn handle_subscription_canceled(
     // entitlement by `source_id = subscription_id`. No ledger-row reclaim; the
     // pre-redesign chained pre-grant reclaim path is retired under the window
     // quota model. Idempotent: no active entitlement ⟹ no-op.
-    // `subscription_id` resolves from the synced subscription; fall back to
-    // `Uuid::nil()` when the sync returned None (defensive — sync_creem_subscription
-    // always returns the persisted subscription on a cancel event).
-    let subscription_id = synced
-        .as_ref()
-        .map(|(subscription, _previous)| subscription.id)
-        .unwrap_or_default();
-
-    // bucket_id resolved above; synced carries the persisted subscription.
-    let _output = app_state
-        .subscription_service
-        .handle_subscription_cancel(
-            user_id,
-            bucket_id,
-            realm_id,
-            subscription_id,
-            cancel_mode,
-            period_end,
-            Some(&entitlement_key),
-        )
-        .await?;
+    //
+    // PRD §4.1: a missed role/quota revoke on a subscription cancel is a P0
+    // fault ("漏撤视为 P0 故障"). Passing `Uuid::nil()` as the source_id would
+    // match zero rows and silently skip the revoke. Instead, when sync returned
+    // None we fail loud: log a warning and skip the (no-op) call so the
+    // compensation framework / retry sweep can intervene, rather than masking
+    // the miss as an idempotent success.
+    if let Some(ref synced_pair) = synced {
+        let subscription_id = synced_pair.0.id;
+        let _output = app_state
+            .subscription_service
+            .handle_subscription_cancel(
+                user_id,
+                bucket_id,
+                realm_id,
+                subscription_id,
+                cancel_mode,
+                period_end,
+                Some(&entitlement_key),
+            )
+            .await?;
+    } else {
+        tracing::warn!(
+            realm_id = %realm_id,
+            user_id = %user_id,
+            entitlement_key = %entitlement_key,
+            external_subscription_id = %payload.external_subscription_id,
+            "subscription cancel webhook: sync returned no subscription; skipping role/quota \
+             revoke to avoid a nil-source_id silent no-op. The compensation/retry sweep must \
+             reconcile this entitlement. (PRD §4.1: missed revoke = P0 fault)"
+        );
+    }
 
     if let Some((subscription, previous)) = synced {
         save_subscription_history(
@@ -1993,32 +2020,46 @@ async fn handle_subscription_lifecycle_status(
     // immediately so the user's window availability drops to zero. This is
     // idempotent because `revoke_quota_entitlement` is keyed by
     // (realm_id, user_id, bucket_id, credit_type, source_id).
+    //
+    // PRD §4.1: a missed revoke is a P0 fault. If sync returned no
+    // subscription we must NOT fall back to `Uuid::nil()` (that would match
+    // zero rows and silently skip the revoke). Instead fail loud so the
+    // compensation/retry sweep reconciles.
     if status == SubscriptionStatus::Expired {
-        let (subscription_id, bucket_id) = synced
-            .as_ref()
-            .map(|(subscription, _)| (subscription.id, subscription.bucket_id))
-            .unwrap_or((Uuid::nil(), bucket_id));
-
-        let _output = app_state
-            .subscription_service
-            .handle_subscription_cancel(
-                user_id,
-                bucket_id,
-                realm_id,
-                subscription_id,
-                CancelMode::ImmediateCancel,
-                None,
-                Some(&entitlement_key),
-            )
-            .await?;
-
-        info!(
-            realm_id = %realm_id,
-            user_id = %user_id,
-            entitlement_key = %entitlement_key,
-            subscription_id = %subscription_id,
-            "Subscription expired - revoked active quota entitlement (window quota model)"
-        );
+        match synced.as_ref() {
+            Some((subscription, _)) => {
+                let _output = app_state
+                    .subscription_service
+                    .handle_subscription_cancel(
+                        user_id,
+                        subscription.bucket_id,
+                        realm_id,
+                        subscription.id,
+                        CancelMode::ImmediateCancel,
+                        None,
+                        Some(&entitlement_key),
+                    )
+                    .await?;
+                info!(
+                    realm_id = %realm_id,
+                    user_id = %user_id,
+                    entitlement_key = %entitlement_key,
+                    subscription_id = %subscription.id,
+                    "Subscription expired - revoked active quota entitlement (window quota model)"
+                );
+            }
+            None => {
+                tracing::warn!(
+                    realm_id = %realm_id,
+                    user_id = %user_id,
+                    entitlement_key = %entitlement_key,
+                    external_subscription_id = %payload.external_subscription_id,
+                    "subscription.expired webhook: sync returned no subscription; skipping \
+                     role/quota revoke to avoid a nil-source_id silent no-op. The \
+                     compensation/retry sweep must reconcile. (PRD §4.1: missed revoke = P0 fault)"
+                );
+            }
+        }
     }
 
     Ok(create_placeholder_transaction(

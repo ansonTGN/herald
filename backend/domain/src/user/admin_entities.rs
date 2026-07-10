@@ -25,6 +25,12 @@ pub struct RoleEntity {
     pub is_builtin: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// Grant origin: 'manual' (hand-assigned) or 'payment' (granted on payment success).
+    pub source: String,
+    /// Payment origin identifier (attempt_id / subscription_id). NULL for manual grants.
+    pub source_id: Option<String>,
+    /// INFORMATIONAL provenance: the billing period end aligned at grant time. Not an authz TTL.
+    pub expires_at: Option<DateTime<Utc>>,
 }
 
 /// Policy domain entity

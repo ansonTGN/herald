@@ -407,11 +407,13 @@ impl UserRoleRepository for PostgresUserRoleRepository {
             UserAdminError::DatabaseError(format!("Failed to begin transaction: {}", e))
         })?;
 
-        // Delete existing roles for this user in the realm/client context
+        // Delete existing MANUAL roles for this user in the realm/client context.
+        // Payment-granted roles (source='payment') are preserved so that admin
+        // re-assignment does not wipe entitlements acquired through purchases.
         sqlx::query(
             r#"
             DELETE FROM user_roles
-            WHERE user_id = $1 AND realm_id = $2 AND client_id = $3
+            WHERE user_id = $1 AND realm_id = $2 AND client_id = $3 AND source = 'manual'
             "#,
         )
         .bind(user_id)
@@ -490,10 +492,15 @@ impl UserRoleRepository for PostgresUserRoleRepository {
                 bool,
                 DateTime<Utc>,
                 DateTime<Utc>,
+                String,
+                Option<String>,
+                Option<DateTime<Utc>>,
             ),
         >(
             r#"
-            SELECT r.id, r.realm_id, r.name, r.description, r.is_builtin, r.created_at, r.updated_at
+            SELECT r.id, r.realm_id, r.name, r.description, r.is_builtin,
+                   r.created_at, r.updated_at,
+                   ur.source, ur.source_id, ur.expires_at
             FROM roles r
             INNER JOIN user_roles ur ON r.id = ur.role_id
             WHERE ur.user_id = $1
@@ -510,7 +517,18 @@ impl UserRoleRepository for PostgresUserRoleRepository {
         let roles = rows
             .into_iter()
             .map(
-                |(id, realm_id, name, description, is_builtin, created_at, updated_at)| {
+                |(
+                    id,
+                    realm_id,
+                    name,
+                    description,
+                    is_builtin,
+                    created_at,
+                    updated_at,
+                    source,
+                    source_id,
+                    expires_at,
+                )| {
                     RoleEntity {
                         id,
                         realm_id,
@@ -519,6 +537,9 @@ impl UserRoleRepository for PostgresUserRoleRepository {
                         is_builtin,
                         created_at,
                         updated_at,
+                        source,
+                        source_id,
+                        expires_at,
                     }
                 },
             )
@@ -913,6 +934,10 @@ impl UserRoleRepository for PostgresUserRoleRepository {
                         is_builtin,
                         created_at,
                         updated_at,
+                        // API keys are never payment-granted; provenance is always manual.
+                        source: "manual".to_string(),
+                        source_id: None,
+                        expires_at: None,
                     }
                 },
             )
@@ -1124,6 +1149,11 @@ impl RolePolicyRepository for PostgresRolePolicyRepository {
                         is_builtin,
                         created_at,
                         updated_at,
+                        // This query reads from the roles table (no user_roles join);
+                        // provenance columns are not applicable here.
+                        source: "manual".to_string(),
+                        source_id: None,
+                        expires_at: None,
                     }
                 },
             )
@@ -1131,7 +1161,6 @@ impl RolePolicyRepository for PostgresRolePolicyRepository {
 
         Ok(roles)
     }
-
     async fn assign_direct_permission(
         &self,
         _user_id: Uuid,

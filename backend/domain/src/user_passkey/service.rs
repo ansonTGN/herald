@@ -2,7 +2,9 @@ use crate::common::entities::app_errors::CoreError;
 use crate::common::generate_uuid_v7;
 use crate::user::entities::User;
 use crate::user_passkey::entities::UserPasskeyCredential;
-use crate::user_passkey::ports::{PasskeyChallengeStore, UserPasskeyRepository};
+use crate::user_passkey::ports::{
+    PasskeyChallengeStore, PasskeyRealmConfigReader, PasskeyRealmPolicy, UserPasskeyRepository,
+};
 use chrono::Utc;
 use passkey_auth::{
     AuthenticationChallenge, AuthenticationResponse, AuthenticationState, PasskeyCredential,
@@ -58,26 +60,37 @@ pub enum PasskeyError {
     Repo(#[from] CoreError),
 }
 
-pub struct UserPasskeyService<R, S>
+pub struct UserPasskeyService<R, S, C>
 where
     R: UserPasskeyRepository,
     S: PasskeyChallengeStore,
+    C: PasskeyRealmConfigReader,
 {
+    /// Base ceremony instance (no per-realm policy applied). Used for the
+    /// `finish_*` methods, which only verify the signed assertion and do not
+    /// depend on the UV/attachment policy that was active at challenge time.
     webauthn: Webauthn,
+    /// Bare RP id (domain), kept so begin_* can rebuild a policy-tailored Webauthn.
+    rp_id: String,
+    /// Full RP origin (scheme+host), kept for the same reason as rp_id.
+    rp_origin: String,
     repo: Arc<R>,
     challenge_store: Arc<S>,
+    config_reader: Arc<C>,
 }
 
-impl<R, S> UserPasskeyService<R, S>
+impl<R, S, C> UserPasskeyService<R, S, C>
 where
     R: UserPasskeyRepository,
     S: PasskeyChallengeStore,
+    C: PasskeyRealmConfigReader,
 {
     pub fn new(
         rp_id: &str,
         rp_origin: &str,
         repo: Arc<R>,
         challenge_store: Arc<S>,
+        config_reader: Arc<C>,
     ) -> Result<Self, PasskeyError> {
         // passkey-auth expects the RP id (bare domain) and the origin
         // (full scheme+host) as separate inputs; extract the host from
@@ -87,9 +100,29 @@ where
         let webauthn = Webauthn::new(rp_id, rp_id, origin);
         Ok(Self {
             webauthn,
+            rp_id: rp_id.to_string(),
+            rp_origin: origin.to_string(),
             repo,
             challenge_store,
+            config_reader,
         })
+    }
+
+    /// Build a per-realm `Webauthn` applying the realm's UV/attachment policy.
+    ///
+    /// The builder options (`require_user_verification`, `authenticator_attachment`)
+    /// only affect challenge generation (the `start_*` calls), so only the
+    /// `begin_*` methods use the policy-tailored instance; `finish_*` reuse the
+    /// base `self.webauthn` since verification is policy-agnostic.
+    fn build_policy_webauthn(&self, policy: &PasskeyRealmPolicy) -> Webauthn {
+        let mut builder = Webauthn::new(&self.rp_id, &self.rp_id, &self.rp_origin);
+        if policy.user_verification.is_required() {
+            builder = builder.require_user_verification(true);
+        }
+        if policy.cross_platform_authenticator {
+            builder = builder.authenticator_attachment(passkey_auth::Attachment::Any);
+        }
+        builder
     }
 
     pub async fn begin_registration(
@@ -98,13 +131,21 @@ where
         user: &User,
         exclude: &[Vec<u8>],
     ) -> Result<(RegistrationChallenge, String), PasskeyError> {
+        // Apply the realm's UV/attachment policy to the ceremony challenge.
+        let policy = self
+            .config_reader
+            .get_policy(realm_id)
+            .await
+            .unwrap_or_default();
+        let webauthn = self.build_policy_webauthn(&policy);
+
         let exclude_credentials = exclude
             .iter()
             .map(|id| passkey_auth::CredentialId(id.clone()))
             .collect::<Vec<_>>();
         let display_name = user.nickname.as_deref().unwrap_or(&user.email);
         let user_handle = user.id.as_bytes();
-        let (challenge, state) = self.webauthn.start_registration(
+        let (challenge, state) = webauthn.start_registration(
             user_handle,
             &user.email,
             display_name,
@@ -171,12 +212,18 @@ where
 
     pub async fn begin_login_first_factor(
         &self,
-        _realm_id: &str,
+        realm_id: &str,
         state: PasskeyLoginState,
     ) -> Result<(AuthenticationChallenge, String), PasskeyError> {
         // Discoverable / passwordless flow: no allow-credentials list,
         // the browser picks the credential.
-        let (challenge, auth_state) = self.webauthn.start_authentication(&[]);
+        let policy = self
+            .config_reader
+            .get_policy(realm_id)
+            .await
+            .unwrap_or_default();
+        let webauthn = self.build_policy_webauthn(&policy);
+        let (challenge, auth_state) = webauthn.start_authentication(&[]);
 
         let auth_token = generate_token();
         let payload = AuthenticationChallengeState {
@@ -217,7 +264,13 @@ where
         }
 
         let allow = credentials_to_passkey_credentials(&credentials)?;
-        let (challenge, auth_state) = self.webauthn.start_authentication_with_creds(&allow);
+        let policy = self
+            .config_reader
+            .get_policy(&temp_session.realm_id)
+            .await
+            .unwrap_or_default();
+        let webauthn = self.build_policy_webauthn(&policy);
+        let (challenge, auth_state) = webauthn.start_authentication_with_creds(&allow);
 
         let token = generate_token();
         let payload = AuthenticationChallengeState {

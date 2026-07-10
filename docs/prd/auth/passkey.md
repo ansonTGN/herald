@@ -86,7 +86,7 @@
 - Realm 配置系统 — 存储 Realm 级别 Passkey 开关与策略
 - Session 管理 — Passkey 验证通过后创建 Session
 - TOTP 系统 — 作为 Passkey 不可用时的一种回退认证方式
-- WebAuthn RP 库 — 后端 challenge 生成、attestation/assertion 验证（依赖经过安全审计的第三方 WebAuthn RP 库）
+- WebAuthn RP 库 — 后端 challenge 生成、attestation/assertion 验证，采用 [passkey-auth 0.1](https://crates.io/crates/passkey-auth)（纯 Rust，RustCrypto end-to-end，不依赖 openssl）
 - 浏览器 Web Authentication API — 前端创建/获取 credential
 - HTTPS 生产环境 — WebAuthn 规范强制要求
 - 可配置的 RP_ID 与 RP_ORIGIN — 支持不同部署域名
@@ -124,7 +124,7 @@ Passkey 同时支持两种认证场景：
 ### 4.1 业务规则
 
 - **Realm 开关规则**：Realm 管理员可启用/禁用 Passkey 功能。禁用后新用户无法注册 Passkey，已注册用户仍可继续使用已注册凭证登录或回退到密码/TOTP。
-- **强制 Passkey 模式规则**：Realm 管理员可开启强制模式。强制模式下，未注册 Passkey 的用户下次登录时被引导注册，但系统必须保留密码/TOTP 回退入口，防止用户因设备或浏览器限制被锁定。
+- **强制 Passkey 模式规则**：Realm 管理员可开启强制模式。强制模式下，未注册 Passkey 的用户下次登录时被引导注册，但系统必须保留密码/TOTP 回退入口，防止用户因设备或浏览器限制被锁定。该强制引导为**前端读取 realm config 后的 UI 行为**，后端不阻断登录（登录成功响应可携带引导信号供前端消费）。
 - **多设备规则**：一个用户可以拥有多个 Passkey credential。同一 credential ID 在一个 realm 内必须唯一。
 - **设备命名规则**：注册成功后系统显示默认设备名（如"iCloud Keychain"、"YubiKey"或浏览器提示的 authenticator 名称），用户可在管理页修改。
 - **删除规则**：删除单个 Passkey 后立即失效；删除最后一个 Passkey 前，系统必须明确提示用户将只能使用密码/TOTP 登录。
@@ -134,6 +134,7 @@ Passkey 同时支持两种认证场景：
 - **用户验证策略规则**：Realm 可配置用户验证（User Verification）要求为 `preferred` 或 `required`；注册和认证流程按当前策略执行。
 - **跨平台 Authenticator 规则**：Realm 可配置是否允许跨平台 authenticator（如 YubiKey、手机作为漫游 authenticator）；默认允许以兼容常见 passkey 同步生态。
 - **安全存储规则**：服务器仅存储 credential ID、公钥（COSE）、签名计数器、transports、aaguid、backup eligibility/state、设备昵称和元数据；私钥不得离开用户设备，也不得在服务端持久化。
+  > **已知限制**：passkey-auth 0.1 不暴露 BE/BS（backup eligibility/state）flags，因此这两个字段当前恒为 `false`，sync passkey 同步状态展示失真。后续需升级库或调整字段语义。
 - **审计规则**：关键事件（注册成功、删除 credential、管理员变更 Passkey 策略、强制模式变更、Passkey 登录成功/失败）应记录审计日志。
 
 ### 4.2 关键状态与异常
@@ -153,7 +154,7 @@ Passkey 同时支持两种认证场景：
 
 ### 5.1 核心需求
 
-- **Realm 级别 Passkey 配置**：管理员在 Settings -> Security 页面控制 Passkey 开关、强制模式和基础安全策略，查看 Passkey 启用率统计。
+- **Realm 级别 Passkey 配置**：管理员在 Settings -> Security 页面控制 Passkey 开关、强制模式和基础安全策略。启用率与登录统计接口（US-PK-010）为 P2，本期未实现。
 - **用户注册 Passkey**：已登录用户在个人资料 -> Security 页面发起注册，系统与浏览器交互创建 credential，成功后显示设备名称并允许用户修改。
 - **Passkey 第一因素登录**：登录页支持 conditional UI，已注册用户在聚焦用户名输入框时自动收到 Passkey 提示；也可主动点击"Use Passkey"按钮。
 - **Passkey 第二因素登录**：用户在输入邮箱和密码后，若已启用 Passkey 作为第二因素，则进入 Passkey 验证步骤；验证通过后创建 Session。

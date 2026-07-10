@@ -82,3 +82,22 @@ ALTER TABLE payment_event
 
 COMMENT ON COLUMN payment_event.next_retry_at IS
     'Backoff-scheduled retry time for the processed=false sweep job (PaymentEventRetryJob). NULL = eligible for immediate retry.';
+
+-- ------------------------------------
+-- payment_attempts: one-time+role anti-repeat DB guard
+-- ------------------------------------
+-- Marks attempts that are subject to the "one purchase per user" rule:
+-- billing_type=one_time + non-empty granted_role_ids. A partial unique index
+-- on (user_id, target_id) WHERE status='Succeeded' AND is_one_time_role=TRUE
+-- closes the concurrent double-purchase window that the application-layer
+-- pre-check (purchase_service.rs) cannot fully prevent.
+ALTER TABLE payment_attempts
+    ADD COLUMN is_one_time_role BOOLEAN NOT NULL DEFAULT FALSE;
+
+COMMENT ON COLUMN payment_attempts.is_one_time_role IS
+    'TRUE only for one_time + role entitlement mappings (anti-repeat). '
+    'Gates the partial unique index that prevents concurrent double-purchase.';
+
+CREATE UNIQUE INDEX idx_payment_attempts_one_time_role
+    ON payment_attempts(user_id, target_id)
+    WHERE status = 'Succeeded' AND is_one_time_role = TRUE;
