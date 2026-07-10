@@ -146,9 +146,13 @@ async fn custom_domain_authorize_normalizes_host_case_and_trailing_dot(ctx: &mut
     let app = router_with_ask_key(ctx);
 
     // Mixed-case host → must still authorize (normalized to the stored form).
+    // The query string MUST mirror the stored canonical label exactly (modulo
+    // case/trailing dot); `login.authorize-normalize-example.com` is what the
+    // publish path writes, so the mixed-case variant is
+    // `Login.Authorize-Normalize-Example.COM`.
     let upper_req = host_get_request(
         AUTHORIZE_PATH,
-        "Login.Normalize-Example.COM",
+        "Login.Authorize-Normalize-Example.COM",
         Some(TEST_ASK_KEY),
     );
     let upper_resp = app.clone().oneshot(upper_req).await.unwrap();

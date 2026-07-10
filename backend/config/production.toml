@@ -30,3 +30,12 @@ static_dir = "/app/frontend/dist"
 [jwt]
 # MUST be overridden at deploy time. Use: openssl rand -base64 48
 secret = "change-me-in-production"
+
+# [custom_domain] — required for the Caddy On-Demand TLS ask gate.
+# ask_key MUST be overridden at deploy time with a high-entropy shared
+# secret (it gates /api/internal/custom-domain/authorize via X-Herald-Ask-Key).
+# cname_target is the Herald-owned hostname tenants CNAME to; override per
+# deployment. See design §4.2.2 and backend/api/src/lib.rs:164 startup guard.
+[custom_domain]
+ask_key = "change-me-in-production"
+cname_target = "custom.example.com"

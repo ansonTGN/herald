@@ -21,6 +21,13 @@ url = "http://localhost:3000"
 [jwt]
 secret = "change-me-to-a-secure-random-base64-string"
 
+# Custom-domain global settings (CustomDomainSettingsConfig,
+# backend/api/src/config.rs:97-108). Required for the local-dev backend to boot:
+# the startup guard at backend/api/src/lib.rs:164 rejects an empty `ask_key`.
+[custom_domain]
+ask_key = "dev-custom-domain-ask-key"
+cname_target = "custom.localhost"
+
 [observability]
 service_name = "herald-api"
 otlp_endpoint = "http://localhost:4318"

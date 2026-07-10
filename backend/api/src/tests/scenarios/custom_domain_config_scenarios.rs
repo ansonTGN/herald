@@ -486,6 +486,24 @@ async fn custom_domain_restore_swaps_settings_and_rolls_back_mapping(ctx: &mut T
         restored_count, 1,
         "restore must (re)publish the previous hostname as the realm's mapping"
     );
+
+    // The superseded current hostname mapping row is removed on rollback
+    // (design §4.2.2 restore: 「被替换下的 hostname 行删除」 — the replaced
+    // hostname row is deleted, not just disabled). `upsert_for_realm` enforces
+    // the at-most-one-enabled-row-per-realm invariant by deleting every other
+    // hostname for the realm; assert that rollback actually achieved it.
+    let superseded_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM custom_domain_mapping WHERE realm_id = $1 AND hostname = $2",
+    )
+    .bind(&ctx._realm_id)
+    .bind(current_hostname)
+    .fetch_one(&ctx._app_state.pool)
+    .await
+    .expect("Failed to count superseded mapping");
+    assert_eq!(
+        superseded_count, 0,
+        "restore must delete the superseded current hostname mapping row"
+    );
 }
 
 /// User Story: US-CD-003 — Restore without a previous snapshot is rejected.
