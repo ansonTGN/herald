@@ -47,6 +47,7 @@ export const QUERY_KEYS = {
   PASSKEY_LIST: 'passkey-list',
   PASSKEY_REALM_CONFIG: 'passkey-realm-config',
   WHITE_LABEL_REALM_CONFIG: 'white-label-realm-config',
+  CUSTOM_DOMAIN_REALM_CONFIG: 'custom-domain-realm-config',
   TURNSTILE_STATUS: 'turnstile-status',
   USER_SUBSCRIPTIONS: 'user-subscriptions',
   SUBSCRIPTION_DETAILS: 'subscription-details',

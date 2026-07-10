@@ -68,6 +68,16 @@ export const whiteLabelConfigSchema = z.object({
   registerSubtitle: z.string().nullable(),
 })
 
+// Custom-domain 配置 Schema
+// ✅ camelCase：对齐后端 `CustomDomainConfig` / `UpdateCustomDomainConfigRequest`
+//    （均为 camelCase 线传输）。`hostname` 为精确域名（如 `login.acme.com`），
+//    表单允许 `null` 或空字符串，保存时空字符串 normalize 为 `null`
+//    （见 realm-config-utils 的 toUpdateCustomDomainConfigRequest）。
+//    刻意使用 z.string()（而非 .email()），格式校验留给后端，mapper 仅 trim。
+export const customDomainConfigSchema = z.object({
+  hostname: z.string().nullable(),
+})
+
 // 类型导出
 export type TOTPConfigForm = z.infer<typeof totpConfigSchema>
 export type PasskeyConfigForm = z.infer<typeof passkeyConfigSchema>
@@ -76,3 +86,4 @@ export type TurnstileConfigForm = z.infer<typeof turnstileConfigSchema>
 export type EmailConfigForm = z.infer<typeof emailConfigSchema>
 export type WhiteLabelBackgroundForm = z.infer<typeof whiteLabelBackgroundSchema>
 export type WhiteLabelConfigForm = z.infer<typeof whiteLabelConfigSchema>
+export type CustomDomainConfigForm = z.infer<typeof customDomainConfigSchema>

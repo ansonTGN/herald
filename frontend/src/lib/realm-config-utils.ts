@@ -1,12 +1,18 @@
-import type { RealmConfigResponse, UpdateWhiteLabelConfigRequest } from '@/lib/api-generated'
+import type {
+  RealmConfigResponse,
+  UpdateWhiteLabelConfigRequest,
+  UpdateCustomDomainConfigRequest,
+} from '@/lib/api-generated'
 import {
   whiteLabelConfigSchema,
+  customDomainConfigSchema,
   type TOTPConfigForm,
   type RegistrationConfigForm,
   type TurnstileConfigForm,
   type EmailConfigForm,
   type WhiteLabelConfigForm,
   type WhiteLabelBackgroundForm,
+  type CustomDomainConfigForm,
 } from '@/lib/schemas/realm-config'
 
 /**
@@ -280,5 +286,44 @@ export function toUpdateWhiteLabelConfigRequest(
     loginSubtitle: normalizeOptionalString(config.loginSubtitle),
     registerTitle: normalizeOptionalString(config.registerTitle),
     registerSubtitle: normalizeOptionalString(config.registerSubtitle),
+  }
+}
+
+// ==================== Custom-domain 配置 ====================
+
+/**
+ * Empty custom-domain form values. `hostname` defaults to `null` so the form
+ * starts with no custom login domain configured.
+ */
+export function emptyCustomDomainConfig(): CustomDomainConfigForm {
+  return {
+    hostname: null,
+  }
+}
+
+/**
+ * Safely parses an unknown value (e.g. a backend `CustomDomainConfig` object or
+ * raw JSON) into a `CustomDomainConfigForm`. Invalid or missing fields fall back
+ * to `emptyCustomDomainConfig()`, so a malformed stored config never crashes the
+ * admin form. Used by the settings tab to normalize `draft ?? published`.
+ */
+export function normalizeCustomDomainConfig(value: unknown): CustomDomainConfigForm {
+  const parsed = customDomainConfigSchema.safeParse(value)
+  if (!parsed.success) {
+    return emptyCustomDomainConfig()
+  }
+  return parsed.data
+}
+
+/**
+ * Converts form values into the backend PUT /draft request body. The hostname is
+ * trimmed and empty strings are normalized to `null`. The returned shape matches
+ * the generated `UpdateCustomDomainConfigRequest` (`{ hostname: string | null }`).
+ */
+export function toUpdateCustomDomainConfigRequest(
+  config: CustomDomainConfigForm
+): UpdateCustomDomainConfigRequest {
+  return {
+    hostname: normalizeOptionalString(config.hostname),
   }
 }

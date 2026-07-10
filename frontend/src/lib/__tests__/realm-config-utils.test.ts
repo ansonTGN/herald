@@ -1,6 +1,13 @@
-import { describe, test, expect } from 'vitest'
-import { parseEmailConfig, buildEmailConfigRequest } from '../realm-config-utils'
-import type { RealmConfigResponse } from '@/lib/api-generated'
+import { describe, test, expect, it } from 'vitest'
+import {
+  parseEmailConfig,
+  buildEmailConfigRequest,
+  emptyCustomDomainConfig,
+  normalizeCustomDomainConfig,
+  toUpdateCustomDomainConfigRequest,
+} from '../realm-config-utils'
+import type { RealmConfigResponse, UpdateCustomDomainConfigRequest } from '@/lib/api-generated'
+import type { CustomDomainConfigForm } from '@/lib/schemas/realm-config'
 
 const makeConfig = (
   configType: string,
@@ -219,5 +226,65 @@ describe('buildEmailConfigRequest', () => {
     for (const entry of result) {
       expect(entry).not.toHaveProperty('enabled')
     }
+  })
+})
+
+// ==================== Custom-domain mapper pure functions ====================
+
+describe('emptyCustomDomainConfig', () => {
+  test('returns a config with a null hostname (no custom login domain configured)', () => {
+    expect(emptyCustomDomainConfig()).toEqual({ hostname: null })
+  })
+})
+
+describe('normalizeCustomDomainConfig', () => {
+  test('passes a valid custom-domain config through unchanged', () => {
+    expect(normalizeCustomDomainConfig({ hostname: 'login.acme.com' })).toEqual({
+      hostname: 'login.acme.com',
+    })
+  })
+
+  test('keeps an empty-string hostname as-is (trim happens in toUpdate, not normalize)', () => {
+    // z.string() accepts '' — the schema intentionally does not coerce empties
+    // to null, so a stored-but-empty hostname round-trips without being lost.
+    expect(normalizeCustomDomainConfig({ hostname: '' })).toEqual({ hostname: '' })
+  })
+
+  // A malformed stored config must never crash the admin form: safeParse fails
+  // and we fall back to the empty config so the editor renders a clean state.
+  it.each([
+    ['null', null],
+    ['undefined', undefined],
+    ['empty object', {}],
+    ['non-object', 'login.acme.com'],
+    ['hostname of wrong type', { hostname: 123 }],
+    ['hostname as array', { hostname: ['login.acme.com'] }],
+    ['extra junk object', { unrelated: 'x' }],
+  ])('falls back to empty config when value is %s', (_label, value) => {
+    expect(normalizeCustomDomainConfig(value)).toEqual({ hostname: null })
+  })
+})
+
+describe('toUpdateCustomDomainConfigRequest', () => {
+  const trimCases: Array<[string, string | null, string | null]> = [
+    ['trims surrounding whitespace', '  login.acme.com  ', 'login.acme.com'],
+    ['collapses a whitespace-only hostname to null', '   ', null],
+    ['collapses an empty hostname to null', '', null],
+    ['keeps an already-trimmed hostname unchanged', 'login.acme.com', 'login.acme.com'],
+    ['keeps a null hostname as null', null, null],
+  ]
+
+  it.each(trimCases)('%s', (_label, hostname, expected) => {
+    const form: CustomDomainConfigForm = { hostname }
+    expect(toUpdateCustomDomainConfigRequest(form)).toEqual({ hostname: expected })
+  })
+
+  test('returns a value assignable to the generated UpdateCustomDomainConfigRequest shape', () => {
+    // Shape guard: ensures the mapper keeps matching the wire contract even if
+    // the schema gains fields later. `hostname` must be `string | null`.
+    const result: UpdateCustomDomainConfigRequest = toUpdateCustomDomainConfigRequest({
+      hostname: 'login.acme.com',
+    })
+    expect(result).toEqual({ hostname: 'login.acme.com' })
   })
 })

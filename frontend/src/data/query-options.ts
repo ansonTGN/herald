@@ -25,6 +25,7 @@ import {
   handleListPasskeyCredentials,
   handleGetRealmPasskeyConfig,
   handleGetWhiteLabelConfig,
+  handleGetCustomDomainConfig,
   getSubscriptionForClientApp,
   listWallets,
   getWallet,
@@ -87,6 +88,7 @@ import type {
   LegalAgreementDraftResponse,
   SaveDraftRequest,
   WhiteLabelConfigStateResponse,
+  CustomDomainConfigStateResponse,
 } from '@/lib/api-generated'
 import type {
   HistoryFilters,
@@ -211,6 +213,8 @@ export const queryKeys = {
   passkeyRealmConfig: (realmId: string) => [QUERY_KEYS.PASSKEY_REALM_CONFIG, realmId] as const,
   whiteLabelRealmConfig: (realmId: string) =>
     [QUERY_KEYS.WHITE_LABEL_REALM_CONFIG, realmId] as const,
+  customDomainRealmConfig: (realmId: string) =>
+    [QUERY_KEYS.CUSTOM_DOMAIN_REALM_CONFIG, realmId] as const,
   turnstileStatus: (realmId: string) => [QUERY_KEYS.TURNSTILE_STATUS, realmId] as const,
   subscription: (realmId: string, clientAppId: string) =>
     [QUERY_KEYS.SUBSCRIPTION, realmId, clientAppId] as const,
@@ -667,6 +671,26 @@ export const whiteLabelRealmConfigQueryOptions = (realmId: string) =>
       const response = await handleGetWhiteLabelConfig({ path: { realmId } })
       if (response.error) throw response.error
       return response.data as WhiteLabelConfigStateResponse
+    },
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_2_MIN,
+    gcTime: GC_TIME_5_MIN,
+  })
+
+// ==================== Custom-domain Realm Config (admin) ====================
+//
+// Reads a realm's custom-domain management state
+// (`GET /api/realms/{realmId}/config/custom-domain`): the published config, an
+// optional draft, whether a previous version can be restored, the CNAME target,
+// and the live CNAME/TLS status. Requires `settings.view`; consumed by the
+// Settings custom-domain tab.
+export const customDomainRealmConfigQueryOptions = (realmId: string) =>
+  queryOptions({
+    queryKey: queryKeys.customDomainRealmConfig(realmId),
+    queryFn: async () => {
+      const response = await handleGetCustomDomainConfig({ path: { realmId } })
+      if (response.error) throw response.error
+      return response.data as CustomDomainConfigStateResponse
     },
     retry: RETRY_COUNT,
     staleTime: STALE_TIME_2_MIN,
