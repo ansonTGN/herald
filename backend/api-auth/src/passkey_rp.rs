@@ -1,0 +1,145 @@
+use axum::http::{HeaderMap, Uri, header::ORIGIN};
+
+use herald_api_base::application::http::server::api_entities::ApiError;
+use herald_api_base::application::http::state::AppState;
+use herald_core::domain::custom_domain::CustomDomainMappingRepository;
+use herald_core::domain::user_passkey::PasskeyRelyingParty;
+
+pub async fn resolve_passkey_rp(
+    state: &AppState,
+    realm_id: &str,
+    headers: &HeaderMap,
+) -> Result<PasskeyRelyingParty, ApiError> {
+    let configured_id =
+        std::env::var("RP_ID").map_err(|_| ApiError::internal("RP_ID is not configured"))?;
+    let configured_origin = std::env::var("RP_ORIGIN")
+        .map_err(|_| ApiError::internal("RP_ORIGIN is not configured"))?;
+
+    let request_origin = headers
+        .get(ORIGIN)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or(configured_origin.as_str());
+    let request_uri = parse_origin(request_origin)?;
+    let configured_uri = parse_origin(&configured_origin)?;
+
+    if same_origin(&request_uri, &configured_uri) {
+        return Ok(PasskeyRelyingParty {
+            id: configured_id,
+            origin: normalized_origin(&configured_uri),
+        });
+    }
+
+    let hostname = request_uri
+        .host()
+        .ok_or_else(|| ApiError::bad_request("Passkey origin has no hostname"))?;
+    let mapping = state
+        .custom_domain_mapping_repo
+        .find_by_hostname(hostname)
+        .await
+        .map_err(|error| {
+            tracing::error!(%error, %hostname, "Failed to resolve Passkey custom domain");
+            ApiError::internal("Failed to resolve Passkey origin")
+        })?;
+
+    select_custom_domain_rp(
+        realm_id,
+        hostname,
+        &normalized_origin(&request_uri),
+        mapping.as_ref().map(|mapping| mapping.realm_id.as_str()),
+    )
+}
+
+fn select_custom_domain_rp(
+    realm_id: &str,
+    hostname: &str,
+    origin: &str,
+    mapped_realm_id: Option<&str>,
+) -> Result<PasskeyRelyingParty, ApiError> {
+    if mapped_realm_id != Some(realm_id) {
+        return Err(ApiError::bad_request(
+            "Passkey origin is not configured for this realm",
+        ));
+    }
+    Ok(PasskeyRelyingParty {
+        id: hostname.to_string(),
+        origin: origin.to_string(),
+    })
+}
+
+fn parse_origin(origin: &str) -> Result<Uri, ApiError> {
+    let uri = origin
+        .trim_end_matches('/')
+        .parse::<Uri>()
+        .map_err(|_| ApiError::internal("Invalid Passkey origin configuration"))?;
+    if uri.scheme().is_none() || uri.authority().is_none() || uri.path() != "/" {
+        return Err(ApiError::internal("Invalid Passkey origin configuration"));
+    }
+    Ok(uri)
+}
+
+fn same_origin(left: &Uri, right: &Uri) -> bool {
+    left.scheme_str() == right.scheme_str() && left.authority() == right.authority()
+}
+
+fn normalized_origin(uri: &Uri) -> String {
+    format!(
+        "{}://{}",
+        uri.scheme_str().expect("validated origin has scheme"),
+        uri.authority().expect("validated origin has authority")
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn origin_comparison_includes_scheme_and_port() {
+        let base = parse_origin("http://localhost:3000").unwrap();
+
+        assert!(same_origin(
+            &base,
+            &parse_origin("http://localhost:3000/").unwrap()
+        ));
+        assert!(!same_origin(
+            &base,
+            &parse_origin("http://localhost:3001").unwrap()
+        ));
+        assert!(!same_origin(
+            &base,
+            &parse_origin("https://localhost:3000").unwrap()
+        ));
+    }
+
+    #[test]
+    fn origin_must_not_contain_a_path() {
+        assert!(parse_origin("https://login.example.com/path").is_err());
+    }
+
+    #[test]
+    fn custom_domain_must_belong_to_requested_realm() {
+        let rp = select_custom_domain_rp(
+            "realm-a",
+            "login.customer.test",
+            "https://login.customer.test",
+            Some("realm-a"),
+        )
+        .unwrap();
+        assert_eq!(rp.id, "login.customer.test");
+        assert_eq!(rp.origin, "https://login.customer.test");
+
+        assert!(
+            select_custom_domain_rp(
+                "realm-b",
+                "login.customer.test",
+                "https://login.customer.test",
+                Some("realm-a"),
+            )
+            .is_err()
+        );
+        assert!(
+            select_custom_domain_rp("realm-a", "unknown.test", "https://unknown.test", None,)
+                .is_err()
+        );
+    }
+}

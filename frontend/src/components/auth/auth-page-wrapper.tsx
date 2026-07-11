@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { PublicWhiteLabelConfig } from '@/lib/api-generated/types.gen'
+import { BRAND_NAME } from '@/lib/constants'
 
 interface AuthPageWrapperProps {
   children: React.ReactNode
@@ -11,8 +12,6 @@ interface AuthPageWrapperProps {
    */
   whiteLabel?: PublicWhiteLabelConfig | null
 }
-
-const FALLBACK_BRAND_NAME = 'Herald'
 
 /**
  * A gradient string is only applied when it begins with a safe, supported
@@ -146,7 +145,7 @@ export function AuthPageWrapper({ children, whiteLabel }: AuthPageWrapperProps) 
         />
       ) : (
         <div data-testid="auth-brand-text" className="mb-8 text-2xl font-semibold">
-          {FALLBACK_BRAND_NAME}
+          {BRAND_NAME}
         </div>
       )}
       {children}

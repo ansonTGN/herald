@@ -565,7 +565,7 @@ export function WhiteLabelConfigForm({
  */
 function PreviewCard({ title, subtitle }: { title: string | null; subtitle: string | null }) {
   return (
-    <div className="w-full max-w-sm rounded-lg border bg-card p-6 text-card-foreground shadow-sm">
+    <div className="w-full max-w-sm rounded-lg border bg-card p-6 text-center text-card-foreground shadow-sm">
       <h1 className="text-lg font-semibold">
         {title || m['settings.white_label.preview_default_title']()}
       </h1>

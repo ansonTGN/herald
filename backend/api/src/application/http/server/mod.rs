@@ -90,10 +90,7 @@ pub struct HealthCheckResponse {
         realm::white_label_config::handle_publish_white_label_config,
         realm::white_label_config::handle_restore_white_label_config,
         realm::custom_domain_config::handle_get_custom_domain_config,
-        realm::custom_domain_config::handle_save_custom_domain_draft,
-        realm::custom_domain_config::handle_discard_custom_domain_draft,
-        realm::custom_domain_config::handle_publish_custom_domain_config,
-        realm::custom_domain_config::handle_restore_custom_domain_config,
+        realm::custom_domain_config::handle_update_custom_domain_config,
         realm::custom_domain_config::handle_custom_domain_authorize,
         public_config::get_public_config,
         public_config::resolve_custom_domain,
@@ -152,7 +149,7 @@ pub struct HealthCheckResponse {
             realm::white_label_config::WhiteLabelLifecycleResponse,
             realm::custom_domain_config::CustomDomainConfigStateResponse,
             realm::custom_domain_config::UpdateCustomDomainConfigRequest,
-            realm::custom_domain_config::CustomDomainLifecycleResponse,
+            realm::custom_domain_config::CustomDomainUpdateResponse,
             realm::custom_domain_config::CustomDomainAuthorizeResponse,
             realm::custom_domain_config::CustomDomainHostQuery,
             herald_core::domain::realm_config::CustomDomainConfig,
@@ -279,6 +276,10 @@ pub fn create_router(
                 .layer(SetRequestIdLayer::new(
                     request_id_header_name.clone(),
                     MakeRequestUuid,
+                ))
+                // Make the generated id available to structured API error bodies.
+                .layer(axum::middleware::from_fn(
+                    herald_api_base::application::http::request_context::bind_request_id,
                 ))
                 // 2. Propagate X-Request-ID to downstream services (if any)
                 .layer(PropagateRequestIdLayer::new(request_id_header_name.clone()))

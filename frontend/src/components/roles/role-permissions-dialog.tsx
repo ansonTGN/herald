@@ -17,6 +17,7 @@ import { useRealmId } from '@/stores/auth-store'
 import type { RoleResponse, PermissionResponse } from '@/lib/api-generated'
 import { queryKeys } from '@/data/query-options'
 import { m } from '@/paraglide/messages'
+import { getErrorMessage } from '@/lib/error-utils'
 
 interface RolePermissionsDialogProps {
   open: boolean
@@ -88,8 +89,8 @@ export function RolePermissionsDialog({
       })
       onOpenChange(false)
     },
-    onError: (error: Error) => {
-      toast.error(m['roles.permissions_save_failed']({ message: error.message }))
+    onError: (error: unknown) => {
+      toast.error(m['roles.permissions_save_failed']({ message: getErrorMessage(error) }))
     },
   })
 

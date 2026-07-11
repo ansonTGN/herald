@@ -26,6 +26,7 @@ import { deriveSharedKeyColor } from '@/components/billing/shared-key-color'
 import { toast } from 'sonner'
 import { purchasePointsSearchSchema } from '@/lib/schemas/search-params'
 import { useCurrentSearch, useResolvedRealmId } from '@/lib/realm-routing'
+import { getErrorMessage } from '@/lib/error-utils'
 
 export const Route = createFileRoute('/$realmId/user/purchase-points')({
   beforeLoad: ({ context, params }) =>
@@ -402,8 +403,8 @@ export function PurchasePointsPage({
         setCurrentStep('processing')
       }
     },
-    onError: (error: Error) => {
-      toast.error(m['points.purchase_create_failed']({ message: error.message }))
+    onError: (error: unknown) => {
+      toast.error(m['points.purchase_create_failed']({ message: getErrorMessage(error) }))
     },
   })
 
@@ -419,8 +420,8 @@ export function PurchasePointsPage({
       setCurrentStep('payment')
       toast.info(m['points.purchase_cancelled']())
     },
-    onError: (error: Error) => {
-      toast.error(m['points.purchase_cancel_failed']({ message: error.message }))
+    onError: (error: unknown) => {
+      toast.error(m['points.purchase_cancel_failed']({ message: getErrorMessage(error) }))
     },
   })
 

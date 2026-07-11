@@ -336,8 +336,8 @@ async fn publish_new_version_as_admin(
 
 /// User Story: US-RU-015 (login when already consented to the latest version)
 /// Covers: Design §5.1 — when the user's recorded consent matches the current
-/// effective versions, login records consent(Login) idempotently and falls
-/// through to the existing session issuance.
+/// effective versions, login falls through to the existing session issuance
+/// without recording consent again.
 ///
 /// WHY this matters: this is the happy path after the gate is injected. It must
 /// remain indistinguishable from the pre-BE-D08 login flow: a valid password
@@ -405,9 +405,8 @@ async fn test_login_consented_latest_issues_session(ctx: &mut TestContext) {
     .await
     .unwrap();
     assert_eq!(
-        login_audit_after,
-        login_audit_before + 2,
-        "normal login must record current ToS and Privacy consent with source=login"
+        login_audit_after, login_audit_before,
+        "normal login must not record consent again when current consent already exists"
     );
 }
 

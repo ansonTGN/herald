@@ -223,13 +223,14 @@ export function protectedPrice409Body(
  * 400 body for a batch save rejected by validation. Two canonical cases
  * entitlement-key regex violation and cross-product
  * shared-key rename. The backend ships these as the generic `ErrorResponse`
- * shape (`code: number, message: string`), NOT as the 409 lock body.
+ * shape (`status: number, code: string, message: string`), NOT as the 409 lock body.
  */
 export function batch400Body(
   message: string = 'Entitlement key does not match ^[a-z0-9-]{1,64}$'
 ): ErrorResponse {
   return {
-    code: 400,
+    status: 400,
+    code: 'bad_request',
     message,
   }
 }

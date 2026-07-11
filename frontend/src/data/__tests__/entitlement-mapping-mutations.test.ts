@@ -26,7 +26,8 @@ describe('isProtectedPriceError', () => {
 
   it('returns false for a 400 ErrorResponse (wrong code)', () => {
     const error400: ErrorResponse = {
-      code: 400,
+      status: 400,
+      code: 'bad_request',
       message: 'Entitlement key does not match ^[a-z0-9-]{1,64}$',
     }
     expect(isProtectedPriceError(error400)).toBe(false)
@@ -34,7 +35,8 @@ describe('isProtectedPriceError', () => {
 
   it('returns false for a 400 cross-product shared-key rename', () => {
     const error400: ErrorResponse = {
-      code: 400,
+      status: 400,
+      code: 'bad_request',
       message: 'Cross-product shared-key rename is not allowed',
     }
     expect(isProtectedPriceError(error400)).toBe(false)
@@ -62,7 +64,7 @@ describe('extractActiveSubscriptions', () => {
   })
 
   it('returns null for a non-lock error', () => {
-    const error400: ErrorResponse = { code: 400, message: 'bad' }
+    const error400: ErrorResponse = { status: 400, code: 'bad_request', message: 'bad' }
     expect(extractActiveSubscriptions(error400)).toBeNull()
   })
 
@@ -91,9 +93,9 @@ describe('isRoleNotInRealmError', () => {
     expect(isRoleNotInRealmError({ code: 'mapping_in_use', activeSubscriptions: 5 })).toBe(false)
   })
 
-  it('returns false for a 400 ErrorResponse (numeric code)', () => {
+  it('returns false for a standard 400 ErrorResponse', () => {
     // A generic validation 400 carries a numeric `code`, not the role string.
-    const error400: ErrorResponse = { code: 400, message: 'bad request' }
+    const error400: ErrorResponse = { status: 400, code: 'bad_request', message: 'bad request' }
     expect(isRoleNotInRealmError(error400)).toBe(false)
   })
 

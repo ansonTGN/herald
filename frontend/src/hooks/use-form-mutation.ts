@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient, type QueryKey } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { getErrorMessage } from '@/lib/error-utils'
 
 interface UseFormMutationOptions<TData, TVariables> {
   mutationFn: (variables: TVariables) => Promise<TData>
@@ -24,21 +25,7 @@ export function useFormMutation<TData, TVariables>({
       onSuccess?.(data)
     },
     onError: (error) => {
-      // Handle multiple error formats: Error instances, objects with error field, strings, or fallback
-      let errorMsg: string
-
-      if (error instanceof Error) {
-        errorMsg = error.message
-      } else if (error && typeof error === 'object' && 'error' in error) {
-        const errorObj = error as { error: unknown }
-        errorMsg = typeof errorObj.error === 'string' ? errorObj.error : 'Operation failed'
-      } else if (typeof error === 'string') {
-        errorMsg = error
-      } else {
-        errorMsg = 'Operation failed'
-      }
-
-      toast.error(errorMsg)
+      toast.error(getErrorMessage(error))
     },
   })
 

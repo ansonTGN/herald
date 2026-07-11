@@ -1,12 +1,12 @@
 // Realm custom-domain configuration handlers, DTOs, and helpers.
 //
-// Mirrors the white-label configuration lifecycle (draft/publish/restore,
-// design §4.2.2) using `ConfigType::CustomDomain` and the same three
-// `config_key` slots (`settings` / `draft` / `previous_settings`). The
-// publish/restore handlers additionally write/rollback the
-// `custom_domain_mapping` host→realm table (design §4.2.2 publish/restore,
-// BE-D02 repo) so that request-time host resolution and Caddy On-Demand TLS
-// authorization reflect the published hostname.
+// Custom-domain config is a single `settings` row under
+// `ConfigType::CustomDomain`. A PUT to the config endpoint normalizes and
+// globally-uniqueness-checks the hostname, then atomically writes the
+// `custom_domain_mapping` host→realm table (request-time host resolution +
+// Caddy On-Demand TLS authorization) and the `settings` row. There is no
+// draft/publish/restore lifecycle: the low frequency of this config and the
+// CNAME/TLS verification gate make a multi-step flow unnecessary.
 
 use axum::{
     Json,
@@ -24,15 +24,13 @@ use herald_core::domain::authentication::Identity;
 use herald_core::domain::common::entities::app_errors::CoreError;
 use herald_core::domain::custom_domain::CustomDomainMappingRepository;
 use herald_core::domain::realm_config::{
-    BatchUpsertRealmConfigRequest, ConfigType, CustomDomainConfig, CustomDomainStatus, RealmConfig,
-    RealmConfigService, UpsertRealmConfigRequest, normalize_and_validate_hostname,
+    ConfigType, CustomDomainConfig, CustomDomainStatus, RealmConfig, RealmConfigService,
+    UpsertRealmConfigRequest, normalize_and_validate_hostname,
 };
 
 pub use crate::application::http::server::api_entities::ErrorResponse;
 
 const SETTINGS_KEY: &str = "settings";
-const DRAFT_KEY: &str = "draft";
-const PREVIOUS_SETTINGS_KEY: &str = "previous_settings";
 const CUSTOM_DOMAIN_CLAIM_LOCK_ID: i64 = 0x4845_5241_4C44;
 
 // ---------------------------------------------------------------------------
@@ -43,38 +41,32 @@ const CUSTOM_DOMAIN_CLAIM_LOCK_ID: i64 = 0x4845_5241_4C44;
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CustomDomainConfigStateResponse {
-    /// Currently published configuration (effective for host→realm resolution).
-    /// `hostname = null` means the realm has no custom domain published.
+    /// Current configuration (effective for host→realm resolution).
+    /// `hostname = null` means the realm has no custom domain configured.
     pub published: CustomDomainConfig,
-    /// Unpublished draft, if any.
-    pub draft: Option<CustomDomainConfig>,
-    /// Whether a `previous_settings` snapshot exists (one-step restore available).
-    pub has_previous: bool,
     /// Herald-owned hostname tenants must CNAME their custom login domain to
     /// (global config, e.g. `custom.herald.com`).
     pub cname_target: String,
-    /// Live CNAME/TLS status of the published hostname. `null` when no
-    /// hostname is published or no mapping row exists yet.
+    /// Live CNAME/TLS status of the configured hostname. `null` when no
+    /// hostname is configured or no mapping row exists yet.
     pub status: Option<CustomDomainStatus>,
 }
 
-/// Request body for saving a custom-domain draft.
+/// Request body for updating custom-domain configuration.
 #[derive(Debug, Clone, Default, Deserialize, Serialize, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateCustomDomainConfigRequest {
     /// Precise custom login hostname (e.g. `login.acme.com`). `null`/empty
-    /// clears the draft hostname.
+    /// clears the configured hostname.
     pub hostname: Option<String>,
 }
 
-/// Response shape returned by publish / restore lifecycle operations.
+/// Response shape returned by the custom-domain update operation.
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct CustomDomainLifecycleResponse {
+pub struct CustomDomainUpdateResponse {
     pub message: String,
-    /// Whether a `previous_settings` snapshot now exists.
-    pub has_previous: bool,
-    /// Live CNAME/TLS status of the published hostname after the operation.
+    /// Live CNAME/TLS status of the configured hostname after the operation.
     pub status: Option<CustomDomainStatus>,
 }
 
@@ -112,17 +104,17 @@ pub async fn handle_get_custom_domain_config(
     ))
 }
 
-/// Save custom-domain draft without publishing.
+/// Update custom-domain configuration (writes the host→realm mapping).
 #[utoipa::path(
     put,
-    path = "/api/realms/{realmId}/config/custom-domain/draft",
+    path = "/api/realms/{realmId}/config/custom-domain",
     tag = "realms",
     params(
         ("realmId" = String, Path, description = "Realm ID")
     ),
     request_body = UpdateCustomDomainConfigRequest,
     responses(
-        (status = 200, description = "Custom-domain draft saved"),
+        (status = 200, description = "Custom-domain configuration updated", body = CustomDomainUpdateResponse),
         (status = 400, description = "Invalid custom domain", body = ErrorResponse),
         (status = 401, description = "Unauthorized", body = ErrorResponse),
         (status = 403, description = "Forbidden - Insufficient permissions", body = ErrorResponse),
@@ -131,12 +123,12 @@ pub async fn handle_get_custom_domain_config(
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn handle_save_custom_domain_draft(
+pub async fn handle_update_custom_domain_config(
     State(state): State<AppState>,
     Path(realm_id): Path<String>,
     Extension(identity): Extension<Identity>,
     Json(req): Json<UpdateCustomDomainConfigRequest>,
-) -> Result<Json<serde_json::Value>, ApiError> {
+) -> Result<Json<CustomDomainUpdateResponse>, ApiError> {
     let admin = AdminIdentity::require(identity, &realm_id, "realm custom-domain configuration")?;
     admin
         .require_permission(&state, "settings", "manage")
@@ -144,9 +136,7 @@ pub async fn handle_save_custom_domain_draft(
 
     let identity = admin.identity().clone();
 
-    // Empty / whitespace hostname clears the draft. We still persist an empty
-    // config row so the lifecycle reads consistently, mirroring white-label's
-    // "draft present even when fields are blank" shape.
+    // Empty / whitespace hostname clears the configuration.
     let normalized_hostname = match req.hostname.as_deref() {
         None => None,
         Some(raw) if raw.trim().is_empty() => None,
@@ -157,277 +147,29 @@ pub async fn handle_save_custom_domain_draft(
         }
     };
 
-    // Global uniqueness: a hostname draft occupies the name across all realms
-    // so two realms can't draft-collide then fail at publish. We check both
-    // other realms' realm_config custom_domain rows (settings + draft) and the
-    // published mapping table. The current realm's own rows are excluded.
-    let claim_lock = if normalized_hostname.is_some() {
-        Some(acquire_custom_domain_claim_lock(&state).await?)
-    } else {
-        None
-    };
+    let claim_lock = acquire_custom_domain_claim_lock(&state).await?;
+
+    // Global uniqueness: a hostname must not be claimed by another realm. We
+    // check the published mapping table and other realms' realm_config
+    // custom_domain settings rows. The current realm's own row is excluded.
     if let Some(ref hostname) = normalized_hostname {
         assert_hostname_globally_unique(&state, &realm_id, hostname).await?;
     }
 
-    let draft = CustomDomainConfig {
-        hostname: normalized_hostname,
-    };
-    let request = build_custom_domain_upsert_request(DRAFT_KEY, &draft)?;
-    state
-        .service
-        .realm_config_service()
-        .upsert_config(identity, realm_id, request)
-        .await
-        .map_err(map_realm_config_error)?;
-    if let Some(lock) = claim_lock {
-        lock.commit().await.map_err(|error| {
-            tracing::error!(%error, "Failed to release custom-domain claim lock");
-            ApiError::internal("Failed to save custom-domain draft")
-        })?;
-    }
-
-    Ok(Json(serde_json::json!({
-        "message": "Custom-domain draft saved",
-        "draft": draft,
-    })))
-}
-
-/// Discard custom-domain draft.
-#[utoipa::path(
-    delete,
-    path = "/api/realms/{realmId}/config/custom-domain/draft",
-    tag = "realms",
-    params(
-        ("realmId" = String, Path, description = "Realm ID")
-    ),
-    responses(
-        (status = 200, description = "Custom-domain draft discarded"),
-        (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 403, description = "Forbidden - Insufficient permissions", body = ErrorResponse),
-        (status = 404, description = "Realm not found", body = ErrorResponse),
-        (status = 500, description = "Internal server error", body = ErrorResponse),
-    ),
-    security(("bearer_auth" = []))
-)]
-pub async fn handle_discard_custom_domain_draft(
-    State(state): State<AppState>,
-    Path(realm_id): Path<String>,
-    Extension(identity): Extension<Identity>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    let admin = AdminIdentity::require(identity, &realm_id, "realm custom-domain configuration")?;
-    admin
-        .require_permission(&state, "settings", "manage")
-        .await?;
-
-    delete_custom_domain_config(
-        &state,
-        admin.identity().clone(),
-        realm_id.clone(),
-        DRAFT_KEY,
-        true,
-    )
-    .await?;
-
-    Ok(Json(serde_json::json!({
-        "message": "Custom-domain draft discarded",
-    })))
-}
-
-/// Publish the custom-domain draft (writes the host→realm mapping).
-#[utoipa::path(
-    post,
-    path = "/api/realms/{realmId}/config/custom-domain/publish",
-    tag = "realms",
-    params(
-        ("realmId" = String, Path, description = "Realm ID")
-    ),
-    responses(
-        (status = 200, description = "Custom-domain configuration published", body = CustomDomainLifecycleResponse),
-        (status = 400, description = "No draft to publish / invalid", body = ErrorResponse),
-        (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 403, description = "Forbidden - Insufficient permissions", body = ErrorResponse),
-        (status = 409, description = "Custom domain already in use", body = ErrorResponse),
-        (status = 500, description = "Internal server error", body = ErrorResponse),
-    ),
-    security(("bearer_auth" = []))
-)]
-pub async fn handle_publish_custom_domain_config(
-    State(state): State<AppState>,
-    Path(realm_id): Path<String>,
-    Extension(identity): Extension<Identity>,
-) -> Result<Json<CustomDomainLifecycleResponse>, ApiError> {
-    let admin = AdminIdentity::require(identity, &realm_id, "realm custom-domain configuration")?;
-    admin
-        .require_permission(&state, "settings", "manage")
-        .await?;
-
-    let identity = admin.identity().clone();
-
-    let draft = load_config(&state, identity.clone(), realm_id.clone(), DRAFT_KEY)
-        .await?
-        .ok_or_else(|| ApiError::bad_request("No custom-domain draft exists to publish"))?
-        .config;
-
-    // Publishing requires a concrete hostname — an empty draft cannot become
-    // the published mapping (there is nothing to CNAME/resolve).
-    let new_hostname = draft.hostname.clone().ok_or_else(|| {
-        ApiError::bad_request("Cannot publish a custom-domain draft without a hostname")
-    })?;
-
-    let claim_lock = acquire_custom_domain_claim_lock(&state).await?;
-
-    // Re-validate global uniqueness at publish time. The draft was checked when
-    // saved, but another realm may have published the same name since; and the
-    // mapping table is the authoritative request-time source, so we confirm
-    // against it before committing config + mapping.
-    assert_hostname_globally_unique(&state, &realm_id, &new_hostname).await?;
-
-    let current_published = load_config(&state, identity.clone(), realm_id.clone(), SETTINGS_KEY)
-        .await?
-        .map(|entry| entry.config)
-        .unwrap_or_default();
-
-    // Write the host→realm mapping BEFORE committing the config rows. The
+    // Write the host→realm mapping BEFORE committing the config row. The
     // mapping op is atomic (own conflict guard), so a failure here leaves only
-    // read-only state touched and the draft intact — the admin can retry
-    // publish. Committing config first (the old order) and *then* writing the
-    // mapping left the realm with `settings` already pointing at the new
-    // hostname but no enabled mapping row, and the draft deleted — not
-    // retryable. `upsert_for_realm` deletes the realm's prior enabled hostname
-    // (if different), resets CNAME/TLS status to pending unless the hostname is
-    // unchanged (idempotent), and surfaces a hostname owned by another realm as
-    // Conflict.
-    let mapping = state
-        .custom_domain_mapping_repo
-        .upsert_for_realm(&realm_id, &new_hostname)
-        .await
-        .map_err(map_mapping_error)?;
-
-    // Atomically write both settings and previous_settings: if either write
-    // fails, neither is committed, so previous_settings never points at a stale
-    // snapshot and a failed publish leaves published branding untouched.
+    // read-only state touched and the admin can retry. `upsert_for_realm`
+    // deletes the realm's prior enabled hostname (if different), resets
+    // CNAME/TLS status to pending unless the hostname is unchanged (idempotent),
+    // and surfaces a hostname owned by another realm as Conflict.
     //
-    // Residual non-atomicity (not shared-transaction without a repo refactor):
-    // if this config batch fails after the mapping committed, the mapping
-    // reflects the new hostname while `settings` still shows the old value.
-    // That is benign — host resolution keys on the mapping (the request-time
-    // source of truth) and stays correct, and the admin can re-run publish
-    // (mapping upsert is idempotent, the draft is preserved). Draft deletion is
-    // best-effort afterwards (mirrors white-label).
-    let batch = BatchUpsertRealmConfigRequest {
-        configs: vec![
-            build_custom_domain_upsert_request(PREVIOUS_SETTINGS_KEY, &current_published)?,
-            build_custom_domain_upsert_request(SETTINGS_KEY, &draft)?,
-        ],
-    };
-    let mut committed = state
-        .service
-        .realm_config_service()
-        .batch_upsert_configs(identity.clone(), realm_id.clone(), batch)
-        .await
-        .map_err(map_realm_config_error)?;
-    let published = committed
-        .pop()
-        .expect("batch returns entries in input order; settings is the last entry");
-    debug_assert!(
-        committed.len() == 1
-            && committed[0].config_key == PREVIOUS_SETTINGS_KEY
-            && published.config_key == SETTINGS_KEY,
-        "batch_upsert_configs must preserve input order"
-    );
-    delete_custom_domain_config(&state, identity.clone(), realm_id.clone(), DRAFT_KEY, true)
-        .await?;
-    claim_lock.commit().await.map_err(|error| {
-        tracing::error!(%error, "Failed to release custom-domain claim lock");
-        ApiError::internal("Failed to publish custom-domain configuration")
-    })?;
-
-    // The mapping was just written; derive status from it instead of re-querying.
-    let status = Some(CustomDomainStatus {
-        cname_verified: mapping.cname_verified,
-        tls_ready: mapping.tls_ready,
-        checked_at: mapping.status_checked_at,
-    });
-
-    Ok(Json(CustomDomainLifecycleResponse {
-        message: "Custom-domain configuration published".to_string(),
-        has_previous: true,
-        status,
-    }))
-}
-
-/// Restore previous custom-domain settings (rolls back the host→realm mapping).
-#[utoipa::path(
-    post,
-    path = "/api/realms/{realmId}/config/custom-domain/restore",
-    tag = "realms",
-    params(
-        ("realmId" = String, Path, description = "Realm ID")
-    ),
-    responses(
-        (status = 200, description = "Previous custom-domain configuration restored", body = CustomDomainLifecycleResponse),
-        (status = 400, description = "No previous custom-domain settings to restore", body = ErrorResponse),
-        (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 403, description = "Forbidden - Insufficient permissions", body = ErrorResponse),
-        (status = 409, description = "Custom domain already in use", body = ErrorResponse),
-        (status = 500, description = "Internal server error", body = ErrorResponse),
-    ),
-    security(("bearer_auth" = []))
-)]
-pub async fn handle_restore_custom_domain_config(
-    State(state): State<AppState>,
-    Path(realm_id): Path<String>,
-    Extension(identity): Extension<Identity>,
-) -> Result<Json<CustomDomainLifecycleResponse>, ApiError> {
-    let admin = AdminIdentity::require(identity, &realm_id, "realm custom-domain configuration")?;
-    admin
-        .require_permission(&state, "settings", "manage")
-        .await?;
-
-    let identity = admin.identity().clone();
-
-    let previous = load_config(
-        &state,
-        identity.clone(),
-        realm_id.clone(),
-        PREVIOUS_SETTINGS_KEY,
-    )
-    .await?
-    .ok_or_else(|| ApiError::bad_request("No previous custom-domain settings to restore"))?
-    .config;
-
-    let current_published = load_config(&state, identity.clone(), realm_id.clone(), SETTINGS_KEY)
-        .await?
-        .map(|entry| entry.config)
-        .unwrap_or_default();
-
-    // Perform the mapping rollback BEFORE committing the config swap. The
-    // mapping op is atomic; a failure here touches only the mapping table and
-    // leaves `settings`/`previous_settings` unchanged (the restore is
-    // retryable). Committing the config swap first and then failing the mapping
-    // left `settings` pointing at the restored hostname while the old mapping
-    // was still live — request-time resolution would serve the wrong hostname.
-    //
-    // Residual non-atomicity (not shared-transaction without a repo refactor):
-    // if the config swap fails after the mapping committed, the mapping already
-    // reflects the restored hostname while `settings` is stale. That is benign —
-    // host resolution keys on the mapping and stays correct, and the admin can
-    // re-run restore (idempotent). Two cases:
-    //  (1) restored previous config HAS a hostname → re-publish the restored
-    //      hostname (upsert_for_realm deletes the realm's superseded current
-    //      hostname row and re-enables the restored one).
-    //  (2) restored previous config has NO hostname (restore to "no custom
-    //      domain") → delete all mapping rows for this realm.
-    let claim_lock = acquire_custom_domain_claim_lock(&state).await?;
-    if let Some(hostname) = previous.hostname.as_deref() {
-        assert_hostname_globally_unique(&state, &realm_id, hostname).await?;
-    }
-    let status = match previous.hostname.as_deref() {
-        Some(restored_hostname) => {
+    // Clearing the hostname removes every mapping row for this realm so that
+    // request-time resolution no longer treats it as having a custom domain.
+    let status = match normalized_hostname.as_deref() {
+        Some(new_hostname) => {
             let mapping = state
                 .custom_domain_mapping_repo
-                .upsert_for_realm(&realm_id, restored_hostname)
+                .upsert_for_realm(&realm_id, new_hostname)
                 .await
                 .map_err(map_mapping_error)?;
             Some(CustomDomainStatus {
@@ -437,8 +179,6 @@ pub async fn handle_restore_custom_domain_config(
             })
         }
         None => {
-            // Restore target is "no custom domain": remove every mapping row
-            // for this realm (both the superseded and any prior hostname).
             state
                 .custom_domain_mapping_repo
                 .delete_by_realm_or_hostname(Some(realm_id.clone()), None)
@@ -448,29 +188,26 @@ pub async fn handle_restore_custom_domain_config(
         }
     };
 
-    // Now swap the config rows to match the rolled-back mapping. Atomic batch:
-    // if either write fails neither is committed (previous_settings never
-    // points at a stale snapshot).
-    let batch = BatchUpsertRealmConfigRequest {
-        configs: vec![
-            build_custom_domain_upsert_request(PREVIOUS_SETTINGS_KEY, &current_published)?,
-            build_custom_domain_upsert_request(SETTINGS_KEY, &previous)?,
-        ],
+    // Persist the settings row to match the mapping. The mapping is the
+    // request-time source of truth; `settings` is the admin-view source.
+    let config = CustomDomainConfig {
+        hostname: normalized_hostname,
     };
+    let request = build_custom_domain_upsert_request(SETTINGS_KEY, &config)?;
     state
         .service
         .realm_config_service()
-        .batch_upsert_configs(identity, realm_id.clone(), batch)
+        .upsert_config(identity.clone(), realm_id.clone(), request)
         .await
         .map_err(map_realm_config_error)?;
+
     claim_lock.commit().await.map_err(|error| {
         tracing::error!(%error, "Failed to release custom-domain claim lock");
-        ApiError::internal("Failed to restore custom-domain configuration")
+        ApiError::internal("Failed to update custom-domain configuration")
     })?;
 
-    Ok(Json(CustomDomainLifecycleResponse {
-        message: "Previous custom-domain configuration restored".to_string(),
-        has_previous: true,
+    Ok(Json(CustomDomainUpdateResponse {
+        message: "Custom-domain configuration updated".to_string(),
         status,
     }))
 }
@@ -600,18 +337,14 @@ async fn load_state(
     identity: Identity,
     realm_id: String,
 ) -> Result<CustomDomainConfigStateResponse, ApiError> {
-    let published = load_config(state, identity.clone(), realm_id.clone(), SETTINGS_KEY).await?;
-    let draft = load_config(state, identity.clone(), realm_id.clone(), DRAFT_KEY).await?;
-    let has_previous = load_config(state, identity, realm_id.clone(), PREVIOUS_SETTINGS_KEY)
-        .await?
-        .is_some();
+    let published = load_config(state, identity, realm_id.clone(), SETTINGS_KEY).await?;
 
     let published_config = published
         .as_ref()
         .map(|entry| entry.config.clone())
         .unwrap_or_default();
 
-    // The published hostname drives the mapping lookup for live status. A
+    // The configured hostname drives the mapping lookup for live status. A
     // missing/empty hostname means no mapping row, hence null status.
     let status = match published_config.hostname.as_deref() {
         Some(hostname) => load_status(state, hostname).await?,
@@ -620,8 +353,6 @@ async fn load_state(
 
     Ok(CustomDomainConfigStateResponse {
         published: published_config,
-        draft: draft.as_ref().map(|entry| entry.config.clone()),
-        has_previous,
         cname_target: state.custom_domain_cname_target.clone(),
         status,
     })
@@ -708,41 +439,16 @@ fn build_custom_domain_upsert_request(
     })
 }
 
-async fn delete_custom_domain_config(
-    state: &AppState,
-    identity: Identity,
-    realm_id: String,
-    config_key: &str,
-    ignore_not_found: bool,
-) -> Result<(), ApiError> {
-    let result = state
-        .service
-        .realm_config_service()
-        .delete_config(
-            identity,
-            realm_id,
-            ConfigType::CustomDomain.as_ref().to_string(),
-            config_key.to_string(),
-        )
-        .await;
-
-    match result {
-        Ok(()) => Ok(()),
-        Err(CoreError::NotFound) if ignore_not_found => Ok(()),
-        Err(e) => Err(map_realm_config_error(e)),
-    }
-}
-
 /// Assert a hostname is not claimed by another realm.
 ///
-/// Checks two sources (design §4.2.2 409):
-/// 1. The `custom_domain_mapping` table (published hostnames) — via the repo
+/// Checks two sources:
+/// 1. The `custom_domain_mapping` table (configured hostnames) — via the repo
 ///    port, filtered to enabled rows.
 /// 2. Other realms' `realm_config` `custom_domain` rows for the `settings`
-///    (published) and `draft` keys — a direct SQL query against `state.pool`
-///    because the `RealmConfigRepository` port is per-realm and cannot express
-///    a cross-realm scan. The current realm's own rows are excluded so saving
-///    a realm's own draft/publish is not a self-conflict.
+///    key — a direct SQL query against `state.pool` because the
+///    `RealmConfigRepository` port is per-realm and cannot express a
+///    cross-realm scan. The current realm's own row is excluded so updating
+///    a realm's own config is not a self-conflict.
 ///
 /// Returns `ApiError::conflict("Custom domain already in use")` on conflict.
 async fn assert_hostname_globally_unique(
@@ -750,7 +456,7 @@ async fn assert_hostname_globally_unique(
     realm_id: &str,
     hostname: &str,
 ) -> Result<(), ApiError> {
-    // 1) Published mapping table.
+    // 1) Configured mapping table.
     if let Some(mapping) = state
         .custom_domain_mapping_repo
         .find_by_hostname(hostname)
@@ -761,7 +467,7 @@ async fn assert_hostname_globally_unique(
         return Err(ApiError::conflict("Custom domain already in use"));
     }
 
-    // 2) Other realms' realm_config custom_domain settings/draft rows.
+    // 2) Other realms' realm_config custom_domain settings rows.
     //
     // We look for any row of config_type='custom_domain' whose config_value
     // JSON contains the exact normalized hostname, on a *different* realm.
@@ -773,7 +479,7 @@ async fn assert_hostname_globally_unique(
     let conflict: Option<(String,)> = sqlx::query_as(
         "SELECT realm_id FROM realm_config
          WHERE config_type = 'custom_domain'
-           AND config_key IN ('settings', 'draft')
+           AND config_key = 'settings'
            AND realm_id <> $1
            AND config_value LIKE $2
          LIMIT 1",

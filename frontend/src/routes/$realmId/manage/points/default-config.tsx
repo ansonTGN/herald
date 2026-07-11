@@ -30,6 +30,7 @@ import { PERMISSION } from '@/lib/constants/auth-constants'
 import { AccessDenied } from '@/components/shared'
 import { m } from '@/paraglide/messages'
 import { useOptionalRouteParams, useResolvedRealmId } from '@/lib/realm-routing'
+import { getErrorMessage } from '@/lib/error-utils'
 
 export const Route = createFileRoute('/$realmId/manage/points/default-config')({
   component: RealmConfigPage,
@@ -90,9 +91,9 @@ export function RealmConfigPage() {
       queryClient.invalidateQueries({ queryKey: queryKeys.pointsDefaultConfig(realmId) })
       toast.success(m['points.default_config_saved']())
     },
-    onError: (error) => {
+    onError: (error: unknown) => {
       console.error('Failed to update realm config:', error)
-      toast.error(error.message || m['points.default_config_save_failed']())
+      toast.error(getErrorMessage(error) || m['points.default_config_save_failed']())
     },
   })
 

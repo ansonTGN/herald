@@ -77,7 +77,10 @@ describe('Email API error states', () => {
     it('shows email-status-error and keeps form usable', async () => {
       server.use(
         http.get('*/api/configs/:realmId/email/status', () =>
-          HttpResponse.json({ code: 500, message: 'Internal server error' }, { status: 500 })
+          HttpResponse.json(
+            { status: 500, code: 'internal_error', message: 'Internal server error' },
+            { status: 500 }
+          )
         )
       )
 
@@ -85,7 +88,9 @@ describe('Email API error states', () => {
 
       const statusError = await screen.findByTestId('email-status-error')
       expect(statusError).toBeInTheDocument()
-      expect(statusError.textContent).toContain('Internal server error')
+      // A 5xx response must use the localized safe message rather than trusting
+      // any backend cause that might accidentally be included in the payload.
+      expect(statusError.textContent).toContain('Server error. Please try again later.')
 
       // Form remains usable
       expect(screen.getByTestId('email-from-address-input')).toBeInTheDocument()
@@ -98,7 +103,10 @@ describe('Email API error states', () => {
     it('shows email-test-error and keeps form usable', async () => {
       server.use(
         http.post(`http://localhost:3000/api/configs/${REALM_ID}/email/test`, () =>
-          HttpResponse.json({ code: 500, message: 'Failed to send test email' }, { status: 500 })
+          HttpResponse.json(
+            { status: 500, code: 'internal_error', message: 'Failed to send test email' },
+            { status: 500 }
+          )
         )
       )
 
@@ -110,6 +118,8 @@ describe('Email API error states', () => {
 
       const testError = await screen.findByTestId('email-test-error')
       expect(testError).toBeInTheDocument()
+      expect(testError.textContent).toContain('Server error. Please try again later.')
+      expect(testError.textContent).not.toContain('Failed to send test email')
 
       // Form remains usable after error
       expect(screen.getByTestId('email-from-address-input')).toBeInTheDocument()
@@ -123,7 +133,8 @@ describe('Email API error states', () => {
         http.post(`http://localhost:3000/api/configs/${REALM_ID}/email/test`, () =>
           HttpResponse.json(
             {
-              code: 400,
+              status: 400,
+              code: 'bad_request',
               message: 'Email is not configured for this realm',
             },
             { status: 400 }

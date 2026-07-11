@@ -12,6 +12,7 @@ import {
   useResolvedRealmContext,
 } from '@/lib/realm-routing'
 import type { LegalAgreementDetail } from '@/lib/api-generated'
+import { getErrorMessage } from '@/lib/error-utils'
 
 const VALID_AGREEMENT_TYPES: readonly string[] = ['terms_of_service', 'privacy_policy']
 
@@ -91,9 +92,7 @@ export function LegalAgreementPage() {
           <CardTitle>{m['legal.error_title']()}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <p className="text-muted-foreground">
-            {error instanceof Error ? error.message : m['error.generic']()}
-          </p>
+          <p className="text-muted-foreground">{getErrorMessage(error)}</p>
           <Button asChild variant="outline">
             <Link to={realmPath(realmContext, '/auth/login')}>
               {m['auth.register.return_to_login']()}

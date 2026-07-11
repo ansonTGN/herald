@@ -1,7 +1,7 @@
 use axum::{
     Json,
     extract::{Path, State},
-    http::header::SET_COOKIE,
+    http::{HeaderMap, header::SET_COOKIE},
     response::{IntoResponse, Response},
 };
 use axum_valid::Valid;
@@ -35,6 +35,7 @@ use herald_core::infrastructure::user_passkey::{
 };
 
 use crate::consent_gate::AuthConsentAgreement;
+use crate::passkey_rp::resolve_passkey_rp;
 
 const PASSKEY_VERIFY_FAILED: &str = "Passkey 验证失败";
 
@@ -159,6 +160,7 @@ struct TempSessionData {
 pub async fn handle_passkey_options(
     Path(realm_id): Path<String>,
     State(state): State<AppState>,
+    headers: HeaderMap,
     ClientIp(client_ip): ClientIp,
     Valid(Json(req)): Valid<Json<PasskeyOptionsRequest>>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -182,8 +184,9 @@ pub async fn handle_passkey_options(
     };
 
     let service = passkey_service(&state)?;
+    let relying_party = resolve_passkey_rp(&state, &realm_id, &headers).await?;
     let (options, auth_token) = service
-        .begin_login_first_factor(&realm_id, login_state)
+        .begin_login_first_factor(&realm_id, login_state, relying_party)
         .await
         .map_err(map_passkey_begin_error)?;
     let options =
@@ -298,6 +301,7 @@ pub async fn handle_passkey_verify(
 pub async fn handle_passkey_2fa_options(
     Path(realm_id): Path<String>,
     State(state): State<AppState>,
+    headers: HeaderMap,
     ClientIp(client_ip): ClientIp,
     Valid(Json(req)): Valid<Json<Passkey2faOptionsRequest>>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -315,8 +319,9 @@ pub async fn handle_passkey_2fa_options(
 
     let login_state = temp_session.to_login_state();
     let service = passkey_service(&state)?;
+    let relying_party = resolve_passkey_rp(&state, &realm_id, &headers).await?;
     let (options, auth_token) = service
-        .begin_second_factor(&login_state, user_id)
+        .begin_second_factor(&login_state, user_id, relying_party)
         .await
         .map_err(map_passkey_verify_error)?;
     let options =
@@ -763,16 +768,11 @@ fn passkey_service(
     >,
     ApiError,
 > {
-    let rp_id =
-        std::env::var("RP_ID").map_err(|_| ApiError::internal("RP_ID is not configured"))?;
-    let rp_origin = std::env::var("RP_ORIGIN")
-        .map_err(|_| ApiError::internal("RP_ORIGIN is not configured"))?;
     let repo = Arc::new(PostgresUserPasskeyRepository::new(state.db.clone()));
     let challenge_store = Arc::new(RedisPasskeyChallengeStore::new(state.redis_manager.clone()));
     let config_reader = Arc::new(PostgresPasskeyRealmConfigReader::new(state.pool.clone()));
 
-    UserPasskeyService::new(&rp_id, &rp_origin, repo, challenge_store, config_reader)
-        .map_err(map_passkey_setup_error)
+    UserPasskeyService::new(repo, challenge_store, config_reader).map_err(map_passkey_setup_error)
 }
 
 fn map_passkey_begin_error(err: PasskeyError) -> ApiError {

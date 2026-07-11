@@ -33,9 +33,9 @@ pub fn require_realm_membership(
             target_realm = %realm_id,
             "Cross-realm {operation} attempt blocked"
         );
-        Err(ApiError::with_code(
+        Err(ApiError::with_error_code(
             StatusCode::FORBIDDEN,
-            ErrorCode::CrossRealmAccessForbidden.as_u32(),
+            ErrorCode::CrossRealmAccessForbidden.as_str(),
             ErrorCode::CrossRealmAccessForbidden.as_str(),
         ))
     }
@@ -71,9 +71,9 @@ pub async fn require_principal_permission(
     if allowed {
         Ok(())
     } else {
-        Err(ApiError::with_code(
+        Err(ApiError::with_error_code(
             StatusCode::FORBIDDEN,
-            ErrorCode::PermissionDenied.as_u32(),
+            ErrorCode::PermissionDenied.as_str(),
             ErrorCode::PermissionDenied.as_str(),
         ))
     }

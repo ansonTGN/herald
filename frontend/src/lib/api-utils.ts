@@ -1,3 +1,5 @@
+import { ApiResponseError } from './error-utils'
+
 /**
  * Utility functions for API response handling
  */
@@ -15,19 +17,11 @@ export function handleApiResponse<T extends { data?: unknown; error?: unknown }>
   response: T
 ): NonNullable<T['data']> {
   if (response.error) {
-    if (response.error instanceof Error) {
-      throw response.error
-    }
-    // API client returns parsed JSON error objects with a message field
-    if (
-      typeof response.error === 'object' &&
-      'message' in (response.error as Record<string, unknown>)
-    ) {
-      throw new Error((response.error as Record<string, unknown>).message as string)
-    }
-    throw new Error(String(response.error))
+    throw response.error instanceof ApiResponseError
+      ? response.error
+      : new ApiResponseError(response.error)
   }
-  if (!response.data) {
+  if (response.data === undefined) {
     throw new Error('No data in response')
   }
   return response.data as NonNullable<T['data']>

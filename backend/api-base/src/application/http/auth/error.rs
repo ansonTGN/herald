@@ -8,9 +8,12 @@ use utoipa::ToSchema;
 
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct ErrorResponse {
-    pub code: u32,
+    pub status: u16,
+    pub code: String,
     pub message: String,
     pub details: Option<serde_json::Value>,
+    #[serde(rename = "requestId")]
+    pub request_id: Option<String>,
 }
 
 #[derive(Debug)]
@@ -82,7 +85,7 @@ impl From<herald_core::domain::common::entities::app_errors::CoreError> for Auth
 
 impl IntoResponse for AuthError {
     fn into_response(self) -> Response {
-        let (status, error_message) = match self {
+        let (status, mut error_message) = match self {
             AuthError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
             AuthError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, msg),
             AuthError::Forbidden(msg) => (StatusCode::FORBIDDEN, msg),
@@ -91,11 +94,26 @@ impl IntoResponse for AuthError {
             AuthError::Conflict(msg) => (StatusCode::CONFLICT, msg),
             AuthError::InternalServerError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
         };
+        if status.is_server_error() {
+            tracing::error!(%status, error = %error_message, "Authentication API request failed");
+            error_message = "Internal server error".to_string();
+        }
 
         let body = Json(ErrorResponse {
-            code: status.as_u16() as u32,
+            status: status.as_u16(),
+            code: match status {
+                StatusCode::BAD_REQUEST => "bad_request",
+                StatusCode::UNAUTHORIZED => "unauthorized",
+                StatusCode::FORBIDDEN => "forbidden",
+                StatusCode::NOT_FOUND => "not_found",
+                StatusCode::TOO_MANY_REQUESTS => "rate_limit_exceeded",
+                StatusCode::CONFLICT => "conflict",
+                _ => "internal_error",
+            }
+            .to_string(),
             message: error_message,
             details: None,
+            request_id: crate::application::http::request_context::current_request_id(),
         });
 
         (status, body).into_response()

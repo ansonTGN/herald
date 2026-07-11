@@ -89,5 +89,5 @@ pub fn core_error_to_api_error(e: CoreError, operation: &str) -> ApiError {
 }
 
 pub fn json_error(status: StatusCode, error_code: ErrorCode) -> Response {
-    ApiError::with_code(status, error_code.as_u32(), error_code.as_str()).into_response()
+    ApiError::with_error_code(status, error_code.as_str(), error_code.as_str()).into_response()
 }

@@ -1,35 +1,92 @@
 import { m } from '@/paraglide/messages'
 
+export interface ResolvedApiError {
+  status?: number
+  code?: string
+  message?: string
+  details?: unknown
+  requestId?: string
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === 'object' && value !== null
+    ? (value as Record<string, unknown>)
+    : undefined
+}
+
+export function resolveApiError(error: unknown): ResolvedApiError {
+  if (error instanceof ApiResponseError) {
+    return {
+      status: error.status,
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      requestId: error.requestId,
+    }
+  }
+
+  if (error instanceof Error) return { message: error.message }
+  if (typeof error === 'string') return { message: error }
+
+  const outer = asRecord(error)
+  if (!outer) return {}
+  const nested = asRecord(outer.error)
+  const value = nested ?? outer
+  const status =
+    typeof value.status === 'number'
+      ? value.status
+      : typeof outer.status === 'number'
+        ? outer.status
+        : undefined
+
+  return {
+    status,
+    code: typeof value.code === 'string' ? value.code : undefined,
+    message:
+      typeof value.message === 'string'
+        ? value.message
+        : typeof value.detail === 'string'
+          ? value.detail
+          : typeof value.error_description === 'string'
+            ? value.error_description
+            : typeof value.error === 'string'
+              ? value.error
+              : undefined,
+    details: value.details,
+    requestId:
+      typeof value.requestId === 'string'
+        ? value.requestId
+        : typeof value.request_id === 'string'
+          ? value.request_id
+          : undefined,
+  }
+}
+
+export class ApiResponseError extends Error {
+  readonly status?: number
+  readonly code?: string
+  readonly details?: unknown
+  readonly requestId?: string
+
+  constructor(error: unknown) {
+    const resolved = resolveApiError(error)
+    super(resolved.message ?? m['error.generic']())
+    this.name = 'ApiResponseError'
+    this.status = resolved.status
+    this.code = resolved.code
+    this.details = resolved.details
+    this.requestId = resolved.requestId
+  }
+}
+
 export function getErrorMessage(error: unknown): string {
-  // Handle Error instances
-  if (error instanceof Error) {
-    return error.message
-  }
+  const resolved = resolveApiError(error)
+  const message =
+    resolved.status !== undefined && resolved.status >= 500
+      ? m['error.server_error']()
+      : (resolved.message ?? m['error.generic']())
 
-  // Handle API error objects (common patterns)
-  if (typeof error === 'object' && error !== null) {
-    // Try common error message fields
-    if ('message' in error && typeof error.message === 'string') {
-      return error.message
-    }
-    if ('detail' in error && typeof error.detail === 'string') {
-      return error.detail
-    }
-    if ('error_description' in error && typeof error.error_description === 'string') {
-      return error.error_description
-    }
-    if ('error' in error && typeof error.error === 'string') {
-      return error.error
-    }
-  }
-
-  // Handle strings
-  if (typeof error === 'string') {
-    return error
-  }
-
-  // Fallback
-  return m['error.generic']()
+  return resolved.requestId ? `${message} (${resolved.requestId})` : message
 }
 
 /**
@@ -39,53 +96,10 @@ export function getErrorMessage(error: unknown): string {
  * @returns 错误消息字符串
  */
 export function handleApiError(error: unknown, defaultMessage?: string): string {
-  const fallback = defaultMessage ?? m['error.generic']()
-
   console.error('[API Error]', error)
-
-  let errorMessage = fallback
-
-  // 处理不同类型的错误
-  if (typeof error === 'string') {
-    errorMessage = error
-  } else if (error instanceof Error) {
-    errorMessage = error.message
-  } else if (error && typeof error === 'object') {
-    if ('message' in error && typeof error.message === 'string') {
-      errorMessage = error.message
-    } else if ('detail' in error && typeof error.detail === 'string') {
-      errorMessage = error.detail
-    } else if ('status' in error && typeof error.status === 'number') {
-      // HTTP 状态码错误
-      switch (error.status) {
-        case 400:
-          errorMessage = m['error.bad_request']()
-          break
-        case 401:
-          errorMessage = m['error.unauthorized']()
-          break
-        case 403:
-          errorMessage = m['error.forbidden']()
-          break
-        case 404:
-          errorMessage = m['error.not_found']()
-          break
-        case 409:
-          errorMessage =
-            'detail' in error && typeof error.detail === 'string'
-              ? error.detail
-              : m['error.conflict']()
-          break
-        case 500:
-          errorMessage = m['error.server_error']()
-          break
-        default:
-          errorMessage = fallback
-      }
-    }
-  }
-
-  return errorMessage
+  const resolved = resolveApiError(error)
+  if (!resolved.message && defaultMessage) return defaultMessage
+  return getErrorMessage(error)
 }
 
 /**

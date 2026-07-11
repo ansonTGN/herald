@@ -12,6 +12,7 @@ import { AuditEventTable } from './audit-event-table'
 import { AuditEventDetailSheet } from './audit-event-detail-sheet'
 import { m } from '@/paraglide/messages'
 import { realmPath, useResolvedRealmContext } from '@/lib/realm-routing'
+import { getErrorMessage } from '@/lib/error-utils'
 
 interface AuditPageProps {
   realmId: string
@@ -37,7 +38,7 @@ export function AuditPage({ realmId, search }: AuditPageProps) {
 
   useEffect(() => {
     if (error) {
-      toast.error(error.message || m['audit.failed_to_load']())
+      toast.error(getErrorMessage(error) || m['audit.failed_to_load']())
     }
   }, [error])
 

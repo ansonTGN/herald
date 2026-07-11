@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { getErrorMessage } from '@/lib/error-utils'
 import { useEffect, useState } from 'react'
 import { z } from 'zod'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -626,7 +627,7 @@ export function LegalAgreementTab({ realmId, canManage }: { realmId: string; can
         <AlertCircle className="h-4 w-4" />
         <AlertTitle>{m['settings.legal.error']()}</AlertTitle>
         <AlertDescription className="space-y-2">
-          <p>{error instanceof Error ? error.message : m['error.generic']()}</p>
+          <p>{getErrorMessage(error)}</p>
           <Button
             variant="outline"
             size="sm"

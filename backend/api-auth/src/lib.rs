@@ -5,6 +5,7 @@ pub mod change_email;
 pub mod consent_gate;
 pub mod login;
 pub mod logout;
+mod passkey_rp;
 pub mod register;
 pub mod registration_status;
 pub mod reset_password;

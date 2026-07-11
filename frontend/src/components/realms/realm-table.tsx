@@ -18,11 +18,12 @@ import { Button } from '@/components/ui/button'
 import { ArrowUpDown } from 'lucide-react'
 import { formatDate } from '@/lib/date-utils'
 import { m } from '@/paraglide/messages'
+import { getErrorMessage } from '@/lib/error-utils'
 
 interface RealmTableProps {
   data?: RealmResponse[]
   isLoading?: boolean
-  error?: Error
+  error?: unknown
   onViewDetail?: (realm: RealmResponse) => void
 }
 
@@ -153,7 +154,9 @@ export function RealmTable({ data, isLoading, error, onViewDetail }: RealmTableP
         className="text-red-500 p-4 border border-red-200 rounded-md bg-red-50"
       >
         <div className="font-semibold">{m['realms.failed_to_load']()}</div>
-        <div className="text-sm mt-1">{error.message || m['realms.failed_to_load_detail']()}</div>
+        <div className="text-sm mt-1">
+          {getErrorMessage(error) || m['realms.failed_to_load_detail']()}
+        </div>
       </div>
     )
   }

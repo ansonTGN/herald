@@ -19,6 +19,7 @@ import { ConfirmDialog, PageHeader } from '@/components/shared'
 import { ResetPasswordResultDialog } from '@/components/users/reset-password-result-dialog'
 import { m } from '@/paraglide/messages'
 import { useCurrentSearch } from '@/lib/realm-routing'
+import { getErrorMessage } from '@/lib/error-utils'
 
 export const Route = createFileRoute('/$realmId/manage/users')({
   component: UsersPage,
@@ -74,8 +75,8 @@ export function UsersPage() {
       queryClient.invalidateQueries({ queryKey: queryKeys.usersList(realmId) })
       toast.success(m['users.user_deleted']())
     },
-    onError: (error: Error) => {
-      toast.error(error.message ?? m['users.delete_failed']())
+    onError: (error: unknown) => {
+      toast.error(getErrorMessage(error) ?? m['users.delete_failed']())
     },
   })
 
@@ -91,8 +92,8 @@ export function UsersPage() {
       resetPasswordDialog.close()
       setResetPasswordResult(data.newPassword)
     },
-    onError: (error: Error) => {
-      toast.error(error.message ?? m['users.reset_password_failed']())
+    onError: (error: unknown) => {
+      toast.error(getErrorMessage(error) ?? m['users.reset_password_failed']())
     },
   })
 

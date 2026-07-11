@@ -8,12 +8,13 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { m } from '@/paraglide/messages'
+import { getErrorMessage } from '@/lib/error-utils'
 
 export interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[]
   data: TData[]
   isLoading?: boolean
-  error?: Error
+  error?: unknown
   loadingMessage?: string
   errorMessage?: string
   emptyMessage?: string
@@ -56,7 +57,7 @@ export function DataTable<TData, TValue>({
   if (error) {
     return (
       <div className="py-8 text-center text-destructive" {...testIdProps}>
-        {errorMessage ?? m['error.error_prefix']({ message: error.message })}
+        {errorMessage ?? m['error.error_prefix']({ message: getErrorMessage(error) })}
       </div>
     )
   }

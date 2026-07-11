@@ -103,19 +103,7 @@ pub fn realm_router() -> Router<AppState> {
         // Custom-domain configuration routes
         .route(
             "/{realmId}/config/custom-domain",
-            axum::routing::get(custom_domain_config::handle_get_custom_domain_config),
-        )
-        .route(
-            "/{realmId}/config/custom-domain/draft",
-            axum::routing::put(custom_domain_config::handle_save_custom_domain_draft)
-                .delete(custom_domain_config::handle_discard_custom_domain_draft),
-        )
-        .route(
-            "/{realmId}/config/custom-domain/publish",
-            axum::routing::post(custom_domain_config::handle_publish_custom_domain_config),
-        )
-        .route(
-            "/{realmId}/config/custom-domain/restore",
-            axum::routing::post(custom_domain_config::handle_restore_custom_domain_config),
+            axum::routing::get(custom_domain_config::handle_get_custom_domain_config)
+                .put(custom_domain_config::handle_update_custom_domain_config),
         )
 }

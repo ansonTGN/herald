@@ -16,11 +16,12 @@ import { Skeleton } from '@/components/ui/skeleton'
 import type { PurchaseHistoryItem } from '@/lib/api-generated'
 import { formatInvoiceAmount, getPaymentStatusBadgeVariant } from '@/lib/invoice-utils'
 import { InvoiceApplyRowButton } from '@/components/billing/invoices/invoice-apply-row-button'
+import { getErrorMessage } from '@/lib/error-utils'
 
 interface PurchaseHistoryListProps {
   purchases: PurchaseHistoryItem[]
   isLoading: boolean
-  error?: Error
+  error?: unknown
   onDetailsClick: (attemptId: string) => void
   /**
    * Render a per-row Invoice button gated by the apply-eligibility API.
@@ -143,7 +144,7 @@ export function PurchaseHistoryList({
       >
         <AlertCircle className="mb-4 h-12 w-12 text-destructive" />
         <h3 className="text-lg font-semibold">{m['points.purchase_history_error_title']()}</h3>
-        <p className="text-sm text-muted-foreground">{error.message}</p>
+        <p className="text-sm text-muted-foreground">{getErrorMessage(error)}</p>
       </div>
     )
   }

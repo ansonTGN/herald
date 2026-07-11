@@ -12,6 +12,7 @@ import {
 } from '@/lib/schemas/invoice-forms'
 import { useApplyInvoice } from '@/data/invoice-mutations'
 import { m } from '@/paraglide/messages'
+import { resolveApiError } from '@/lib/error-utils'
 
 interface ApplyInvoiceFormPageProps {
   realmId: string
@@ -27,13 +28,7 @@ export function ApplyInvoiceFormPage({
   const navigate = useNavigate()
   const applyMutation = useApplyInvoice(realmId)
   const { mutate: apply, isPending: isSubmitting } = applyMutation
-  const isCreemRejection =
-    !!applyMutation.error &&
-    typeof applyMutation.error === 'object' &&
-    'message' in applyMutation.error &&
-    typeof applyMutation.error.message === 'string' &&
-    applyMutation.error.message.includes('Creem') &&
-    applyMutation.error.message.includes('Merchant of Record')
+  const isCreemRejection = resolveApiError(applyMutation.error).code === 'creem_merchant_of_record'
   const defaultValues = useMemo(
     () => getApplyFormDefaults(prefilledReference),
     [prefilledReference]

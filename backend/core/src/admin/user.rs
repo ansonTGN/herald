@@ -117,60 +117,11 @@ pub async fn init_admin_user(pool: &PgPool, app_env: &str) -> anyhow::Result<()>
 
         tx.commit().await?;
 
-        // System-created admin user: record consent to the current effective
-        // agreements so login is not blocked by the legal-consent gate (BE-D08).
-        // Best-effort: if no agreement versions are seeded yet, skip silently.
-        if let Err(e) = record_admin_user_consent(pool, &realm_id, user_id).await {
-            tracing::warn!(
-                user_id = %user_id,
-                realm_id = %realm_id,
-                error = %e,
-                "Failed to record initial consent for system admin user"
-            );
-        }
-
         info!(
             "Successfully created admin user with email: {}",
             admin_email
         );
     }
 
-    Ok(())
-}
-
-async fn record_admin_user_consent(
-    pool: &PgPool,
-    realm_id: &str,
-    user_id: Uuid,
-) -> Result<(), sqlx::Error> {
-    for agreement_type in ["terms_of_service", "privacy_policy"] {
-        let version_id: Option<Uuid> = sqlx::query_scalar(
-            "SELECT id FROM legal_agreement_version
-             WHERE agreement_type = $1
-               AND (realm_id = $2 OR realm_id IS NULL)
-             ORDER BY CASE WHEN realm_id = $2 THEN 0 ELSE 1 END, version_no DESC
-             LIMIT 1",
-        )
-        .bind(agreement_type)
-        .bind(realm_id)
-        .fetch_optional(pool)
-        .await?;
-
-        if let Some(version_id) = version_id {
-            sqlx::query(
-                "INSERT INTO user_agreement_consent (id, user_id, realm_id, agreement_type, consented_version_id)
-                 VALUES ($1, $2, $3, $4, $5)
-                 ON CONFLICT (user_id, agreement_type)
-                 DO UPDATE SET consented_version_id = EXCLUDED.consented_version_id, consented_at = NOW()",
-            )
-            .bind(Uuid::now_v7())
-            .bind(user_id)
-            .bind(realm_id)
-            .bind(agreement_type)
-            .bind(version_id)
-            .execute(pool)
-            .await?;
-        }
-    }
     Ok(())
 }

@@ -19,6 +19,7 @@ import { AgreementLinks } from '@/components/legal/AgreementLinks'
 import { toAuthConsentAgreements } from '@/data/query-options'
 import { formatDate } from '@/lib/date-utils'
 import { m } from '@/paraglide/messages'
+import { getErrorMessage } from '@/lib/error-utils'
 
 const totpCodeSchema = z.object({
   code: z.string().length(6, 'Code must be 6 digits'),
@@ -124,13 +125,7 @@ export function TotpVerificationForm({
     },
     onError: (err: unknown) => {
       setAttempts((prev) => prev + 1)
-      const errorMessage =
-        err && typeof err === 'object' && 'error' in err
-          ? String(err.error)
-          : err && typeof err === 'object' && 'message' in err
-            ? String(err.message)
-            : 'Invalid code. Please try again.'
-      setError(errorMessage)
+      setError(getErrorMessage(err))
     },
   })
 

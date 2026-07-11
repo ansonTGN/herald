@@ -164,7 +164,13 @@ async fn validate_invoice_creation_policy(
         .flatten();
     }
 
-    validate_not_creem_mor(payment_provider.as_deref())?;
+    validate_not_creem_mor(payment_provider.as_deref()).map_err(|error| {
+        ApiError::with_error_code(
+            StatusCode::BAD_REQUEST,
+            "creem_merchant_of_record",
+            error.to_string(),
+        )
+    })?;
 
     let policy_config = get_invoice_policy(state, realm_id).await?;
     validate_invoice_policy_allows_creation(&policy_config)?;

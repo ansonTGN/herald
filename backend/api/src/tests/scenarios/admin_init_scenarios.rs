@@ -75,6 +75,20 @@ mod tests {
             role_client_id, client_app_client_id,
             "Role client_id should match client_app.client_id (string identifier)"
         );
+
+        // A system-created account has not personally accepted any agreement.
+        // Its first login must pass through the consent gate instead of relying
+        // on consent inserted on the user's behalf.
+        let consent_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM user_agreement_consent WHERE user_id = (SELECT id FROM account LIMIT 1)",
+        )
+        .fetch_one(&ctx.app_state.pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            consent_count, 0,
+            "system-created admin must not have consent recorded on its behalf"
+        );
     }
     /// 测试：重复运行不重复创建主管理员
     #[test_context(AdminInitTestContext)]

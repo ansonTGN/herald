@@ -227,7 +227,11 @@ describe('ApplyInvoiceFormPage', () => {
         sellerConfigHandler(),
         http.post(`${BASE_URL}/api/bill/${REALM_ID}/my/invoices`, async () => {
           return HttpResponse.json(
-            { code: 400, message: 'Creem transactions are managed by Creem as Merchant of Record' },
+            {
+              status: 400,
+              code: 'creem_merchant_of_record',
+              message: 'Creem transactions are managed by Creem as Merchant of Record',
+            },
             { status: 400 }
           )
         })

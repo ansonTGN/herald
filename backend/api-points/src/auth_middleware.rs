@@ -65,9 +65,9 @@ async fn try_api_key_auth(
         }
         Err(e) => {
             error!("Redis cache error: {}", e);
-            return Err(ApiError::with_code(
+            return Err(ApiError::with_error_code(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                ErrorCode::InternalError.as_u32(),
+                ErrorCode::InternalError.as_str(),
                 "Redis cache error",
             ));
         }
@@ -80,9 +80,9 @@ async fn try_api_key_auth(
         let status = check_cached_key_status(&cached);
         if status != ApiKeyValidationStatus::Valid {
             warn!("Cached API key is invalid: {:?}", status);
-            return Err(ApiError::with_code(
+            return Err(ApiError::with_error_code(
                 StatusCode::UNAUTHORIZED,
-                status.to_error_code().as_u32(),
+                status.to_error_code().as_str(),
                 status.to_error_code().to_string(),
             ));
         }
@@ -92,9 +92,9 @@ async fn try_api_key_auth(
             Ok(entity) => entity,
             Err(e) => {
                 error!("Failed to convert cached value: {}", e);
-                return Err(ApiError::with_code(
+                return Err(ApiError::with_error_code(
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    ErrorCode::InternalError.as_u32(),
+                    ErrorCode::InternalError.as_str(),
                     "Failed to convert cached value",
                 ));
             }
@@ -126,17 +126,17 @@ async fn try_api_key_auth(
         Ok(Some(record)) => record,
         Ok(None) => {
             warn!("No valid API key found for hash: {}", api_key_hash);
-            return Err(ApiError::with_code(
+            return Err(ApiError::with_error_code(
                 StatusCode::UNAUTHORIZED,
-                ErrorCode::InvalidApiKey.as_u32(),
+                ErrorCode::InvalidApiKey.as_str(),
                 ErrorCode::InvalidApiKey.to_string(),
             ));
         }
         Err(e) => {
             error!("Database error finding API key: {}", e);
-            return Err(ApiError::with_code(
+            return Err(ApiError::with_error_code(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                ErrorCode::InternalError.as_u32(),
+                ErrorCode::InternalError.as_str(),
                 "Database error finding API key",
             ));
         }
@@ -149,9 +149,9 @@ async fn try_api_key_auth(
             "API key is invalid (disabled or expired): {}, status: {:?}",
             api_key_record.id, status
         );
-        return Err(ApiError::with_code(
+        return Err(ApiError::with_error_code(
             StatusCode::UNAUTHORIZED,
-            status.to_error_code().as_u32(),
+            status.to_error_code().as_str(),
             status.to_error_code().to_string(),
         ));
     }
@@ -238,9 +238,9 @@ pub async fn flexible_auth_middleware(
             let user_id = match uuid::Uuid::parse_str(session_user_id) {
                 Ok(id) => id,
                 Err(_) => {
-                    return ApiError::with_code(
+                    return ApiError::with_error_code(
                         StatusCode::UNAUTHORIZED,
-                        ErrorCode::Unauthorized.as_u32(),
+                        ErrorCode::Unauthorized.as_str(),
                         "Invalid user ID in session",
                     )
                     .into_response();
@@ -259,17 +259,17 @@ pub async fn flexible_auth_middleware(
                             parsed_user_id = %user_id,
                             "User not found in database"
                         );
-                        return ApiError::with_code(
+                        return ApiError::with_error_code(
                             StatusCode::UNAUTHORIZED,
-                            ErrorCode::Unauthorized.as_u32(),
+                            ErrorCode::Unauthorized.as_str(),
                             "User not found",
                         )
                         .into_response();
                     }
                     _ => {
-                        return ApiError::with_code(
+                        return ApiError::with_error_code(
                             StatusCode::INTERNAL_SERVER_ERROR,
-                            ErrorCode::InternalError.as_u32(),
+                            ErrorCode::InternalError.as_str(),
                             "Internal server error",
                         )
                         .into_response();
@@ -285,9 +285,9 @@ pub async fn flexible_auth_middleware(
                     loaded_user_id = %loaded_user_id,
                     "User ID mismatch: session user_id doesn't match loaded user ID"
                 );
-                return ApiError::with_code(
+                return ApiError::with_error_code(
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    ErrorCode::InternalError.as_u32(),
+                    ErrorCode::InternalError.as_str(),
                     "Internal server error",
                 )
                 .into_response();
@@ -309,9 +309,9 @@ pub async fn flexible_auth_middleware(
         }
         Err(_) => {
             // Both authentication methods failed
-            ApiError::with_code(
+            ApiError::with_error_code(
                 StatusCode::UNAUTHORIZED,
-                ErrorCode::Unauthorized.as_u32(),
+                ErrorCode::Unauthorized.as_str(),
                 "Authentication required (API key or session cookie)",
             )
             .into_response()

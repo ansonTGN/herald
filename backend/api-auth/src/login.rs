@@ -418,8 +418,8 @@ pub async fn login(
     // re-consent and re-submits login with request `agreements`; this handler
     // records Reconsent once credentials/TOTP have passed.
     //
-    // Current → record_consent(source=Login) idempotently (refreshes
-    // consented_at) and fall through to the existing OAuth/session issuance.
+    // Current → fall through to the existing OAuth/session issuance without
+    // recording another consent event.
     {
         if let Some(summaries) = crate::consent_gate::evaluate_login_consent_gate(
             &state,

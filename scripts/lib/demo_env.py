@@ -314,6 +314,8 @@ def start_environment(
         backend_env["ADMIN_REALM_ID"] = "admin"
         backend_env["INTERNAL_API_KEY"] = "demo-internal-api-key"
         backend_env["TEST_API_TOKEN"] = "test-token-123"
+        backend_env["RP_ID"] = "localhost"
+        backend_env["RP_ORIGIN"] = "http://localhost:3000"
 
         from .proc import spawn_background
 

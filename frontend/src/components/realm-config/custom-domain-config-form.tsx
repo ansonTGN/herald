@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { useStore } from '@tanstack/react-form'
 import { useAppForm, AppForm } from '@/components/ui/tanstack-form'
 import {
@@ -9,16 +9,6 @@ import type { CustomDomainStatus } from '@/lib/api-generated'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
 import { TextField } from '@/components/shared/form-fields/text-field'
 import { formatDateTimeShort } from '@/lib/date-utils'
 import { m } from '@/paraglide/messages'
@@ -28,82 +18,55 @@ export interface CustomDomainConfigFormProps {
   realmId: string
   /** Initial form values. Use `emptyCustomDomainConfig()` when nothing is configured yet. */
   initialConfig: CustomDomainConfigFormValues
-  /** Whether an unpublished draft exists on the backend (shows the draft notice). */
-  hasDraft?: boolean
-  /** Whether a previous version can be restored. Gates the restore button. */
-  hasPrevious?: boolean
   /** Disables all inputs + action buttons (e.g. missing `settings.manage`). */
   disabled?: boolean
 
   /** Herald-owned hostname tenants CNAME their custom login domain to (GET response field). */
   cnameTarget: string
-  /** Live CNAME/TLS status of the published hostname (GET response field, may be null). */
+  /** Live CNAME/TLS status of the configured hostname (GET response field, may be null). */
   status: CustomDomainStatus | null
 
   /**
-   * Persist the current form values as a draft. Receives the already-normalized
-   * PUT `/draft` request body so FE-D03 can pass it straight to the generated
-   * client. Returns a promise so the form can track in-flight state; rejections
-   * surface as the save error (e.g. 409 conflict) via the parent mutation.
+   * Persist the current form values (writes the host→realm mapping + settings
+   * in one step). Receives the already-normalized PUT request body. Returns a
+   * promise so the form can track in-flight state; rejections surface as the
+   * save error (e.g. 409 conflict) via the parent mutation.
    */
-  onSaveDraft: (config: CustomDomainConfigFormValues) => void | Promise<void>
-  /** Publish the current form values (writes `settings`). */
-  onPublish: (config: CustomDomainConfigFormValues) => void | Promise<void>
-  /** Discard the saved draft and reset the editor to the published config. */
-  onDiscardDraft: () => void | Promise<void>
-  /** Restore the previous published config. Requires `hasPrevious`. */
-  onRestore: () => void | Promise<void>
+  onSave: (config: CustomDomainConfigFormValues) => void | Promise<void>
 
-  /** Manually re-fetch the CNAME/TLS status of the published hostname. */
+  /** Manually re-fetch the CNAME/TLS status of the configured hostname. */
   onRefreshStatus?: () => void
 
   /** In-flight flags driven by the parent's mutations. */
-  isSavingDraft?: boolean
-  isPublishing?: boolean
-  isDiscarding?: boolean
-  isRestoring?: boolean
+  isSaving?: boolean
   isRefreshing?: boolean
 }
 
 export function CustomDomainConfigForm({
   realmId: _realmId,
   initialConfig,
-  hasDraft = false,
-  hasPrevious = false,
   disabled = false,
   cnameTarget,
   status,
-  onSaveDraft,
-  onPublish,
-  onDiscardDraft,
-  onRestore,
+  onSave,
   onRefreshStatus,
-  isSavingDraft = false,
-  isPublishing = false,
-  isDiscarding = false,
-  isRestoring = false,
+  isSaving = false,
   isRefreshing = false,
 }: CustomDomainConfigFormProps) {
-  const [restoreDialogOpen, setRestoreDialogOpen] = useState(false)
-
   const form = useAppForm({
     schema: customDomainConfigSchema,
     defaultValues: initialConfig,
     onSubmit: async ({ value }) => {
-      // The primary submit target is "save draft". Publish/discard/restore are
-      // explicit buttons with their own handlers; keeping a single default
-      // submit matches the existing config-form pattern (Enter submits draft).
-      await onSaveDraft(value)
+      await onSave(value)
     },
   })
 
-  // Keep the form in sync with the persisted source. `initialConfig` is derived
-  // upstream from `draft ?? published`, so it only changes value when the
-  // backend state changes externally (e.g. after discard the draft is gone and
-  // the source flips back to `published`, or after restore/publish). We compare
-  // by value (not reference) because the parent rebuilds the object on every
-  // render, and only reseed the form when the source value actually differs
-  // from the last one we applied — so in-flight edits are never wiped.
+  // Keep the form in sync with the persisted source. `initialConfig` is the
+  // published config from the backend, so it only changes value when the
+  // backend state changes externally (e.g. after save). We compare by value
+  // (not reference) because the parent rebuilds the object on every render,
+  // and only reseed the form when the source value actually differs from the
+  // last one we applied — so in-flight edits are never wiped.
   const sourceKey = JSON.stringify(initialConfig)
   const lastSyncedSourceRef = useRef(sourceKey)
   useEffect(() => {
@@ -113,37 +76,11 @@ export function CustomDomainConfigForm({
     }
   }, [sourceKey, initialConfig, form])
 
-  // Subscribe to the live form values + dirty flag so the draft notice updates
-  // as the user types without re-rendering on unrelated state changes.
+  // Subscribe to the live form values so the CNAME guidance updates as the
+  // user types without re-rendering on unrelated state changes.
   const values = useStore(form.store, (state) => state.values)
-  const isDirty = useStore(form.store, (state) => state.isDirty)
 
-  const showDraftNotice = hasDraft || isDirty
   const effectiveHostname = values.hostname?.trim() || null
-
-  // --- Action handlers ---------------------------------------------------------
-  // Each action reads the *current* form values (not stale closure values) via
-  // form.store so the parent always receives the latest edit. Validation is
-  // delegated to the schema; on invalid values the action is skipped.
-  const handlePublish = () => {
-    if (disabled) return
-    void onPublish(values)
-  }
-
-  const handleDiscardDraft = () => {
-    if (disabled) return
-    void onDiscardDraft()
-  }
-
-  const handleRestoreConfirm = () => {
-    setRestoreDialogOpen(false)
-    void onRestore()
-  }
-
-  const handleRefreshStatus = () => {
-    if (disabled || isRefreshing) return
-    onRefreshStatus?.()
-  }
 
   const cnameVerified = status?.cnameVerified ?? false
   const tlsReady = status?.tlsReady ?? false
@@ -217,7 +154,7 @@ export function CustomDomainConfigForm({
                     variant="outline"
                     size="sm"
                     disabled={disabled || isRefreshing}
-                    onClick={handleRefreshStatus}
+                    onClick={onRefreshStatus}
                     data-testid="custom-domain-refresh-status"
                   >
                     {isRefreshing
@@ -234,89 +171,22 @@ export function CustomDomainConfigForm({
                 )}
               </div>
 
-              {showDraftNotice && (
-                <p className="text-sm text-amber-600" data-testid="custom-domain-draft-notice">
-                  {m['settings.custom_domain.draft_notice']()}
-                </p>
-              )}
-
               {/* Action buttons */}
               <div className="flex flex-wrap gap-2 pt-2">
                 <Button
                   type="submit"
-                  disabled={disabled || isSavingDraft}
-                  data-testid="custom-domain-save-draft"
+                  disabled={disabled || isSaving}
+                  data-testid="custom-domain-save"
                 >
-                  {isSavingDraft
+                  {isSaving
                     ? m['settings.custom_domain.saving']()
-                    : m['settings.custom_domain.save_draft']()}
-                </Button>
-                <Button
-                  type="button"
-                  disabled={disabled || isPublishing}
-                  data-testid="custom-domain-publish"
-                  onClick={handlePublish}
-                >
-                  {isPublishing
-                    ? m['settings.custom_domain.publishing']()
-                    : m['settings.custom_domain.publish']()}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={disabled || isDiscarding || !hasDraft}
-                  data-testid="custom-domain-discard-draft"
-                  onClick={handleDiscardDraft}
-                >
-                  {isDiscarding
-                    ? m['settings.custom_domain.discarding']()
-                    : m['settings.custom_domain.discard_draft']()}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={disabled || isRestoring || !hasPrevious}
-                  data-testid="custom-domain-restore"
-                  onClick={() => setRestoreDialogOpen(true)}
-                >
-                  {isRestoring
-                    ? m['settings.custom_domain.restoring']()
-                    : m['settings.custom_domain.restore']()}
+                    : m['settings.custom_domain.save']()}
                 </Button>
               </div>
             </form>
           </AppForm>
         </CardContent>
       </Card>
-
-      {/* ============ Restore confirmation dialog ============ */}
-      <AlertDialog open={restoreDialogOpen} onOpenChange={setRestoreDialogOpen}>
-        <AlertDialogContent data-testid="custom-domain-restore-dialog">
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {m['settings.custom_domain.restore_dialog_title']()}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {m['settings.custom_domain.restore_dialog_description']()}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isRestoring}>{m['common.cancel']()}</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={isRestoring}
-              onClick={(e) => {
-                e.preventDefault()
-                handleRestoreConfirm()
-              }}
-              data-testid="custom-domain-restore-confirm"
-            >
-              {isRestoring
-                ? m['settings.custom_domain.restoring']()
-                : m['settings.custom_domain.restore']()}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   )
 }

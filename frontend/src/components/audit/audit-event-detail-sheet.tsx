@@ -12,6 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { auditDetailQueryOptions } from '@/data/query-options'
 import { formatDateTimeShort } from '@/lib/date-utils'
 import { m } from '@/paraglide/messages'
+import { getErrorMessage } from '@/lib/error-utils'
 
 interface AuditEventDetailSheetProps {
   eventId: string | null
@@ -68,7 +69,7 @@ export function AuditEventDetailSheet({ eventId, realmId, onClose }: AuditEventD
 
           {error && (
             <div className="py-8 text-center text-destructive" data-testid="audit-detail-error">
-              {m['audit.detail_failed_to_load']({ message: error.message })}
+              {m['audit.detail_failed_to_load']({ message: getErrorMessage(error) })}
             </div>
           )}
 

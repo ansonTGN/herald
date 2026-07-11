@@ -18,6 +18,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/hooks/use-auth'
 import { useRealmId } from '@/stores/auth-store'
 import { PERMISSION } from '@/lib/constants/auth-constants'
+import { BRAND_NAME } from '@/lib/constants'
 import { realmQueryOptions, featureAvailabilityQueryOptions } from '@/data/query-options'
 import { filterByPermission } from '@/lib/utils/filter-by-permission'
 import { m } from '@/paraglide/messages'
@@ -359,7 +360,7 @@ export function Sidebar() {
       data-testid="admin-sidebar"
     >
       <div className="shrink-0 px-5 pt-6 pb-4">
-        <h1 className="text-lg font-bold tracking-tight text-sidebar-foreground">Herald</h1>
+        <h1 className="text-lg font-bold tracking-tight text-sidebar-foreground">{BRAND_NAME}</h1>
         <p className="mt-0.5 text-xs font-medium text-sidebar-foreground/40">
           {realm?.name ?? realmId}
         </p>

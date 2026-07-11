@@ -10,6 +10,7 @@ import type { HistoryFilters } from '@/types/billing'
 import { PageHeader, ListPagination } from '@/components/shared'
 import { m } from '@/paraglide/messages'
 import { useResolvedRealmId } from '@/lib/realm-routing'
+import { getErrorMessage } from '@/lib/error-utils'
 
 export const Route = createFileRoute('/$realmId/manage/subscription-history')({
   beforeLoad: ({ context, params }) =>
@@ -75,7 +76,7 @@ export function SubscriptionHistoryRoute() {
           <CardContent className="p-6">
             <p className="text-destructive">
               {m['billing.subscription_history_failed_load']({
-                error: error instanceof Error ? error.message : 'Unknown error',
+                error: getErrorMessage(error),
               })}
             </p>
             <Button variant="outline" className="mt-4" onClick={() => window.location.reload()}>

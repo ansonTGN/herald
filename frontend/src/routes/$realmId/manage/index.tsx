@@ -8,6 +8,7 @@ import { QuickNav } from '@/components/dashboard/quick-nav'
 import { Skeleton } from '@/components/ui/skeleton'
 import { m } from '@/paraglide/messages'
 import { resolvedRealmFromPath } from '@/lib/realm-routing'
+import { getErrorMessage } from '@/lib/error-utils'
 
 export const Route = createFileRoute('/$realmId/manage/')({
   component: ManageDashboard,
@@ -39,7 +40,7 @@ export function ManageDashboard() {
           data-testid="dashboard-error"
         >
           <p className="text-destructive mb-3">
-            {error instanceof Error ? error.message : m['dashboard.failed_to_load']()}
+            {getErrorMessage(error) || m['dashboard.failed_to_load']()}
           </p>
           <button
             onClick={() => refetch()}

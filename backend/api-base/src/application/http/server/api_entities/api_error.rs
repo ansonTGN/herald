@@ -8,9 +8,12 @@ use utoipa::ToSchema;
 
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct ErrorResponse {
-    pub code: u32,
+    pub status: u16,
+    pub code: String,
     pub message: String,
     pub details: Option<serde_json::Value>,
+    #[serde(rename = "requestId")]
+    pub request_id: Option<String>,
 }
 
 impl Serialize for ErrorResponse {
@@ -21,11 +24,13 @@ impl Serialize for ErrorResponse {
         S: serde::Serializer,
     {
         use serde::ser::SerializeStruct;
-        let mut state = serializer.serialize_struct("ErrorResponse", 4)?;
+        let mut state = serializer.serialize_struct("ErrorResponse", 6)?;
+        state.serialize_field("status", &self.status)?;
         state.serialize_field("code", &self.code)?;
         state.serialize_field("message", &self.message)?;
         state.serialize_field("error", &self.message)?;
         state.serialize_field("details", &self.details)?;
+        state.serialize_field("requestId", &self.request_id)?;
         state.end()
     }
 }
@@ -54,36 +59,73 @@ impl std::fmt::Display for ApiError {
 impl std::error::Error for ApiError {}
 
 impl ApiError {
-    pub fn new(status: StatusCode, message: impl Into<String>) -> Self {
-        Self {
-            status,
-            body: ErrorBody::Standard(ErrorResponse {
-                code: status.as_u16() as u32,
-                message: message.into(),
-                details: None,
-            }),
+    fn status_error_code(status: StatusCode) -> &'static str {
+        match status {
+            StatusCode::BAD_REQUEST => "bad_request",
+            StatusCode::UNAUTHORIZED => "unauthorized",
+            StatusCode::FORBIDDEN => "forbidden",
+            StatusCode::NOT_FOUND => "not_found",
+            StatusCode::CONFLICT => "conflict",
+            StatusCode::UNPROCESSABLE_ENTITY => "validation_error",
+            StatusCode::TOO_MANY_REQUESTS => "rate_limit_exceeded",
+            StatusCode::BAD_GATEWAY => "upstream_error",
+            StatusCode::SERVICE_UNAVAILABLE => "service_unavailable",
+            _ if status.is_server_error() => "internal_error",
+            _ => "request_failed",
         }
     }
 
-    pub fn with_code(status: StatusCode, code: u32, message: impl Into<String>) -> Self {
+    pub fn new(status: StatusCode, message: impl Into<String>) -> Self {
+        Self::with_error_code(status, Self::status_error_code(status), message)
+    }
+
+    pub fn with_error_code(
+        status: StatusCode,
+        code: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
+        let mut message = message.into();
+        if status.is_server_error() {
+            tracing::error!(%status, error = %message, "API request failed");
+            message =
+                if status == StatusCode::BAD_GATEWAY || status == StatusCode::SERVICE_UNAVAILABLE {
+                    "Upstream service unavailable".to_string()
+                } else {
+                    "Internal server error".to_string()
+                };
+        }
         Self {
             status,
             body: ErrorBody::Standard(ErrorResponse {
-                code,
-                message: message.into(),
+                status: status.as_u16(),
+                code: code.into(),
+                message,
                 details: None,
+                request_id: crate::application::http::request_context::current_request_id(),
             }),
         }
     }
 
     pub fn with_json<T: Serialize>(status: StatusCode, body: T) -> Self {
-        let json_body = serde_json::to_value(&body).unwrap_or_else(|_| {
+        let mut json_body = serde_json::to_value(&body).unwrap_or_else(|_| {
             tracing::warn!(
                 status = %status,
                 "Failed to serialize error body to JSON, using empty object"
             );
             serde_json::Value::Object(Default::default())
         });
+        if let serde_json::Value::Object(fields) = &mut json_body {
+            fields
+                .entry("status")
+                .or_insert_with(|| serde_json::json!(status.as_u16()));
+            if let Some(request_id) =
+                crate::application::http::request_context::current_request_id()
+            {
+                fields
+                    .entry("requestId")
+                    .or_insert_with(|| serde_json::Value::String(request_id));
+            }
+        }
         Self {
             status,
             body: ErrorBody::Custom(json_body),
@@ -151,16 +193,33 @@ impl From<herald_core::domain::common::entities::app_errors::CoreError> for ApiE
         match err {
             CoreError::NotFound => Self::not_found("Resource not found"),
             CoreError::InvalidRealm(msg) => Self::bad_request(msg),
-            CoreError::InternalServerError(msg) => Self::internal(msg),
+            CoreError::InternalServerError(msg) => {
+                tracing::error!(error = %msg, "Internal server error");
+                Self::internal("Internal server error")
+            }
             CoreError::Forbidden(msg) => Self::forbidden(msg),
             CoreError::Unauthorized => Self::unauthorized("Unauthorized"),
             CoreError::BadRequest(msg) => Self::bad_request(msg),
             CoreError::Conflict(msg) => Self::conflict(msg),
-            CoreError::DatabaseError(msg) => Self::internal(msg),
+            CoreError::DatabaseError(msg) => {
+                tracing::error!(error = %msg, "Database operation failed");
+                Self::internal("Internal server error")
+            }
             CoreError::RateLimitExceeded => Self::too_many_requests("Rate limit exceeded"),
-            CoreError::EmailVerificationFailed => Self::bad_request("Email verification failed"),
-            CoreError::PasswordResetFailed => Self::bad_request("Password reset failed"),
-            CoreError::BillingError(msg) => Self::internal(msg),
+            CoreError::EmailVerificationFailed => Self::with_error_code(
+                StatusCode::BAD_REQUEST,
+                "email_verification_failed",
+                "Email verification failed",
+            ),
+            CoreError::PasswordResetFailed => Self::with_error_code(
+                StatusCode::BAD_REQUEST,
+                "password_reset_failed",
+                "Password reset failed",
+            ),
+            CoreError::BillingError(msg) => {
+                tracing::error!(error = %msg, "Billing operation failed");
+                Self::internal("Internal server error")
+            }
             CoreError::SubscriptionNotFound(msg) => {
                 Self::not_found(format!("Subscription not found: {msg}"))
             }
@@ -168,35 +227,45 @@ impl From<herald_core::domain::common::entities::app_errors::CoreError> for ApiE
                 Self::bad_request(format!("Invalid subscription status: {msg}"))
             }
             CoreError::CreemApiError(msg) => {
-                Self::new(StatusCode::BAD_GATEWAY, format!("Creem API error: {msg}"))
+                tracing::error!(error = %msg, "Creem API request failed");
+                Self::new(StatusCode::BAD_GATEWAY, "Upstream service unavailable")
             }
             CoreError::InvalidWebhookSignature => Self::unauthorized("Invalid webhook signature"),
             CoreError::WebhookTimestampExpired => Self::unauthorized("Webhook timestamp expired"),
             CoreError::InvalidWebhookPayload => Self::bad_request("Invalid webhook payload"),
-            CoreError::InvalidWebhookSecret => Self::internal("Invalid webhook secret"),
+            CoreError::InvalidWebhookSecret => {
+                tracing::error!("Invalid webhook secret configuration");
+                Self::internal("Internal server error")
+            }
             CoreError::DuplicateWebhookEvent(msg) => {
                 Self::conflict(format!("Duplicate webhook event: {msg}"))
             }
             CoreError::SerializationError(msg) => {
-                Self::internal(format!("Serialization error: {msg}"))
+                tracing::error!(error = %msg, "Serialization failed");
+                Self::internal("Internal server error")
             }
-            CoreError::EntitlementMappingNotFound => {
-                Self::not_found("Entitlement mapping not found".to_string())
-            }
+            CoreError::EntitlementMappingNotFound => Self::with_error_code(
+                StatusCode::NOT_FOUND,
+                "entitlement_mapping_not_found",
+                "Entitlement mapping not found",
+            ),
             // Credit-bucket routing errors.
             // These surface from consume / grant / fulfillment write paths.
             CoreError::EntitlementMappingNotAttachedToBucket { mapping_id } => Self::bad_request(
                 format!("Entitlement mapping {mapping_id} is not attached to a credit bucket"),
             ),
-            CoreError::SubscriptionBucketNotResolved { subscription_id } => Self::internal(
-                format!("Subscription {subscription_id} is not bound to a credit bucket"),
-            ),
+            CoreError::SubscriptionBucketNotResolved { subscription_id } => {
+                tracing::error!(%subscription_id, "Subscription bucket was not resolved");
+                Self::internal("Internal server error")
+            }
             CoreError::NoCoveredPointsPool { client_app_id } => Self::conflict(format!(
                 "Client app {client_app_id} does not cover any available credit bucket"
             )),
-            CoreError::GrantBucketRequired => {
-                Self::bad_request("Points grant requires an explicit target bucket".to_string())
-            }
+            CoreError::GrantBucketRequired => Self::with_error_code(
+                StatusCode::BAD_REQUEST,
+                "grant_bucket_required",
+                "Points grant requires an explicit target bucket",
+            ),
         }
     }
 }
@@ -223,5 +292,53 @@ impl From<crate::application::http::auth::error::AuthError> for ApiError {
                 Self::internal("Internal server error")
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::to_bytes;
+    use herald_core::domain::common::entities::app_errors::CoreError;
+
+    #[tokio::test]
+    async fn internal_errors_hide_the_original_cause() {
+        let response =
+            ApiError::from(CoreError::DatabaseError("password=secret".into())).into_response();
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(json["status"], 500);
+        assert_eq!(json["code"], "internal_error");
+        assert_eq!(json["message"], "Internal server error");
+        assert!(!String::from_utf8_lossy(&body).contains("secret"));
+    }
+
+    #[tokio::test]
+    async fn business_error_body_has_stable_code_and_public_message() {
+        let response = ApiError::with_error_code(
+            StatusCode::CONFLICT,
+            "email_already_exists",
+            "Email already registered",
+        )
+        .into_response();
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(json["status"], 409);
+        assert_eq!(json["code"], "email_already_exists");
+        assert_eq!(json["message"], "Email already registered");
+    }
+
+    #[tokio::test]
+    async fn error_body_contains_the_scoped_request_id() {
+        crate::application::http::request_context::REQUEST_ID
+            .scope("req-error-test".to_owned(), async {
+                let response = ApiError::bad_request("Invalid input").into_response();
+                let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+                let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+                assert_eq!(json["requestId"], "req-error-test");
+            })
+            .await;
     }
 }

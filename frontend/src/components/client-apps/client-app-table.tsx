@@ -12,11 +12,12 @@ import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { m } from '@/paraglide/messages'
+import { getErrorMessage } from '@/lib/error-utils'
 
 interface ClientAppTableProps {
   data?: ClientAppItem[]
   isLoading?: boolean
-  error?: Error | null
+  error?: unknown
   onEdit?: (clientApp: ClientAppItem) => void
   onDelete?: (clientApp: ClientAppItem) => void
   onToggleEnabled?: (clientApp: ClientAppItem) => void
@@ -173,7 +174,7 @@ export function ClientAppTable({
     return (
       <div className="rounded-md border p-8">
         <div className="flex items-center justify-center text-red-500">
-          {m['client_apps.error_loading']({ message: error.message })}
+          {m['client_apps.error_loading']({ message: getErrorMessage(error) })}
         </div>
       </div>
     )

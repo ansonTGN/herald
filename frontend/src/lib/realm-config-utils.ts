@@ -305,7 +305,7 @@ export function emptyCustomDomainConfig(): CustomDomainConfigForm {
  * Safely parses an unknown value (e.g. a backend `CustomDomainConfig` object or
  * raw JSON) into a `CustomDomainConfigForm`. Invalid or missing fields fall back
  * to `emptyCustomDomainConfig()`, so a malformed stored config never crashes the
- * admin form. Used by the settings tab to normalize `draft ?? published`.
+ * admin form. Used by the settings tab to normalize `published`.
  */
 export function normalizeCustomDomainConfig(value: unknown): CustomDomainConfigForm {
   const parsed = customDomainConfigSchema.safeParse(value)
@@ -316,7 +316,7 @@ export function normalizeCustomDomainConfig(value: unknown): CustomDomainConfigF
 }
 
 /**
- * Converts form values into the backend PUT /draft request body. The hostname is
+ * Converts form values into the backend PUT request body. The hostname is
  * trimmed and empty strings are normalized to `null`. The returned shape matches
  * the generated `UpdateCustomDomainConfigRequest` (`{ hostname: string | null }`).
  */

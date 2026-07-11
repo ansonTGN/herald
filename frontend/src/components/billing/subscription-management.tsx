@@ -15,6 +15,7 @@ import {
 import { formatDate } from '@/lib/date-utils'
 import { ConfirmDialog, PageHeader } from '@/components/shared'
 import { m } from '@/paraglide/messages'
+import { getErrorMessage } from '@/lib/error-utils'
 
 interface SubscriptionManagementProps {
   realmId: string
@@ -41,8 +42,8 @@ export function SubscriptionManagement({ realmId, clientAppId }: SubscriptionMan
       setCancelConfirmOpen(false)
       queryClient.invalidateQueries({ queryKey: queryKeys.subscription(realmId, clientAppId) })
     },
-    onError: (error: Error) => {
-      toast.error(m['billing.subscription_cancel_failed']({ message: error.message }))
+    onError: (error: unknown) => {
+      toast.error(m['billing.subscription_cancel_failed']({ message: getErrorMessage(error) }))
     },
   })
 

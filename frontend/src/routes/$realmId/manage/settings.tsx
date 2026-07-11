@@ -9,10 +9,7 @@ import {
   handlePublishWhiteLabelConfig,
   handleDiscardWhiteLabelDraft,
   handleRestoreWhiteLabelConfig,
-  handleSaveCustomDomainDraft,
-  handlePublishCustomDomainConfig,
-  handleDiscardCustomDomainDraft,
-  handleRestoreCustomDomainConfig,
+  handleUpdateCustomDomainConfig,
 } from '@/lib/api-generated'
 import type { UpsertRealmConfigRequest } from '@/lib/api-generated/types.gen'
 import { TOTPConfigForm as TOTPConfigFormComponent } from '@/components/realm-config/totp-config-form'
@@ -71,6 +68,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { TextField } from '@/components/shared/form-fields/text-field'
 import { TextareaField } from '@/components/shared/form-fields/textarea-field'
 import { m } from '@/paraglide/messages'
+import { getErrorMessage, resolveApiError } from '@/lib/error-utils'
 import { useOptionalRouteParams, useResolvedRealmId } from '@/lib/realm-routing'
 
 export const Route = createFileRoute('/$realmId/manage/settings')({
@@ -171,12 +169,7 @@ function GeneralTab({ realmId }: { realmId: string }) {
  * supplied default so a toast always shows something actionable.
  */
 function resolveErrorMessage(error: unknown, fallback: string): string {
-  if (error instanceof Error) return error.message
-  if (error && typeof error === 'object' && 'message' in error) {
-    const message = (error as { message?: unknown }).message
-    if (typeof message === 'string' && message.trim() !== '') return message
-  }
-  return fallback
+  return resolveApiError(error).message ? getErrorMessage(error) : fallback
 }
 
 export function SettingsPage() {
@@ -227,8 +220,8 @@ export function SettingsPage() {
     enabled: !!realmId && canViewConfig,
   })
 
-  // Custom-domain management state (published / draft / hasPrevious / status)
-  // via GET /api/realms/{realmId}/config/custom-domain. Requires `settings.view`.
+  // Custom-domain management state (published / status) via
+  // GET /api/realms/{realmId}/config/custom-domain. Requires `settings.view`.
   const {
     data: customDomainConfigData,
     isLoading: isCustomDomainLoading,
@@ -253,26 +246,13 @@ export function SettingsPage() {
     onError: (error: unknown) => {
       console.error('Failed to save config:', error)
 
-      let errorMessage: string = m['settings.config_save_failed']()
-
-      if (error instanceof Error) {
-        errorMessage = error.message
-      } else if (typeof error === 'object' && error !== null) {
-        const err = error as {
-          response?: { status?: number; data?: { message?: string } }
-        }
-        const statusCode = err.response?.status
-
-        if (statusCode === 401) {
-          errorMessage = m['settings.config_save_unauthorized']()
-        } else if (statusCode === 403) {
-          errorMessage = m['settings.config_save_forbidden']()
-        } else if (statusCode === 500) {
-          errorMessage = m['settings.config_save_server_error']()
-        } else if (err.response?.data?.message) {
-          errorMessage = err.response.data.message
-        }
-      }
+      const status = resolveApiError(error).status
+      const errorMessage =
+        status === 401
+          ? m['settings.config_save_unauthorized']()
+          : status === 403
+            ? m['settings.config_save_forbidden']()
+            : resolveErrorMessage(error, m['settings.config_save_failed']())
 
       toast.error(errorMessage)
     },
@@ -302,30 +282,13 @@ export function SettingsPage() {
     onError: (error: unknown) => {
       console.error('Failed to save passkey config:', error)
 
-      let errorMessage: string = m['settings.config_save_failed']()
-
-      if (error instanceof Error) {
-        errorMessage = error.message
-      } else if (typeof error === 'object' && error !== null) {
-        const err = error as {
-          status?: number
-          message?: string
-          detail?: string
-        }
-        const statusCode = err.status
-
-        if (statusCode === 401) {
-          errorMessage = m['settings.config_save_unauthorized']()
-        } else if (statusCode === 403) {
-          errorMessage = m['settings.config_save_forbidden']()
-        } else if (statusCode === 500) {
-          errorMessage = m['settings.config_save_server_error']()
-        } else if (err.message) {
-          errorMessage = err.message
-        } else if (err.detail) {
-          errorMessage = err.detail
-        }
-      }
+      const status = resolveApiError(error).status
+      const errorMessage =
+        status === 401
+          ? m['settings.config_save_unauthorized']()
+          : status === 403
+            ? m['settings.config_save_forbidden']()
+            : resolveErrorMessage(error, m['settings.config_save_failed']())
 
       toast.error(errorMessage)
     },
@@ -410,23 +373,17 @@ export function SettingsPage() {
   })
 
   // --- Custom-domain mutations -------------------------------------------------
-  // Invalidate boundary (design §4.4.2): save-draft / discard-draft touch only
-  // the admin draft state, so they invalidate `customDomainRealmConfig` only.
-  // publish / restore change the published config, so they additionally
-  // invalidate `publicConfig(realmId)` — otherwise the terminal-user auth pages
-  // keep serving the stale published domain. The `.then((response) => { if
-  // (response.error) throw response.error; return response.data })` rethrow is
-  // mandatory: without it HTTP errors (incl. 409 hostname conflicts) resolve
-  // "successfully" and the onError toast never fires.
-  //
-  // For save-draft the rethrow carries the HTTP `status` onto the thrown body
+  // A single update writes the published config + host→realm mapping in one
+  // step, so it always changes what terminal-user auth pages serve and must
+  // invalidate `publicConfig(realmId)` as well as `customDomainRealmConfig`.
+  // The rethrow carries the HTTP `status` onto the thrown body
   // (`{ ...body, status }`): `onError` needs it to route 409 to the dedicated
-  // localized `domain_in_use` message (design §4.3). The raw `response.error`
-  // is the parsed JSON body (e.g. `{ message }`) and does NOT carry `.status`,
-  // so `onError` cannot distinguish a 409 from a 400/500 without it.
-  const saveCustomDomainDraftMutation = useMutation({
+  // localized `domain_in_use` message. The raw `response.error` is the parsed
+  // JSON body and does NOT carry `.status`, so `onError` cannot distinguish a
+  // 409 from a 400/500 without it.
+  const updateCustomDomainMutation = useMutation({
     mutationFn: (config: CustomDomainConfigFormValues) =>
-      handleSaveCustomDomainDraft({
+      handleUpdateCustomDomainConfig({
         path: { realmId },
         body: toUpdateCustomDomainConfigRequest(config),
       }).then((response) => {
@@ -438,72 +395,19 @@ export function SettingsPage() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.customDomainRealmConfig(realmId) })
-      toast.success(m['settings.custom_domain.save_draft_success']())
+      queryClient.invalidateQueries({ queryKey: queryKeys.publicConfig(realmId) })
+      toast.success(m['settings.custom_domain.save_success']())
     },
     onError: (error: unknown) => {
-      console.error('Failed to save custom-domain draft:', error)
-      // 409 "hostname already in use" (design §4.3) has a dedicated localized
-      // message; other errors fall back to the generic save_failed string.
+      console.error('Failed to update custom-domain config:', error)
+      // 409 "hostname already in use" has a dedicated localized message; other
+      // errors fall back to the generic save_failed string.
       const status = (error as { status?: number })?.status
       if (status === 409) {
         toast.error(m['settings.custom_domain.domain_in_use']())
       } else {
         toast.error(resolveErrorMessage(error, m['settings.custom_domain.save_failed']()))
       }
-    },
-  })
-
-  const publishCustomDomainMutation = useMutation({
-    // The publish endpoint publishes the already-saved draft (design §4.2.2);
-    // unlike white-label, the generated client takes no request body
-    // (`body?: never`), so the `config` argument is accepted to match the
-    // form's `onPublish` signature but intentionally not sent.
-    mutationFn: (_config: CustomDomainConfigFormValues) =>
-      handlePublishCustomDomainConfig({ path: { realmId } }).then((response) => {
-        if (response.error) throw response.error
-        return response.data
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.customDomainRealmConfig(realmId) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.publicConfig(realmId) })
-      toast.success(m['settings.custom_domain.publish_success']())
-    },
-    onError: (error: unknown) => {
-      console.error('Failed to publish custom-domain config:', error)
-      toast.error(resolveErrorMessage(error, m['settings.custom_domain.publish_failed']()))
-    },
-  })
-
-  const discardCustomDomainDraftMutation = useMutation({
-    mutationFn: () =>
-      handleDiscardCustomDomainDraft({ path: { realmId } }).then((response) => {
-        if (response.error) throw response.error
-        return response.data
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.customDomainRealmConfig(realmId) })
-      toast.success(m['settings.custom_domain.discard_draft_success']())
-    },
-    onError: (error: unknown) => {
-      console.error('Failed to discard custom-domain draft:', error)
-      toast.error(resolveErrorMessage(error, m['settings.custom_domain.discard_failed']()))
-    },
-  })
-
-  const restoreCustomDomainMutation = useMutation({
-    mutationFn: () =>
-      handleRestoreCustomDomainConfig({ path: { realmId } }).then((response) => {
-        if (response.error) throw response.error
-        return response.data
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.customDomainRealmConfig(realmId) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.publicConfig(realmId) })
-      toast.success(m['settings.custom_domain.restore_success']())
-    },
-    onError: (error: unknown) => {
-      console.error('Failed to restore custom-domain config:', error)
-      toast.error(resolveErrorMessage(error, m['settings.custom_domain.restore_failed']()))
     },
   })
 
@@ -517,7 +421,7 @@ export function SettingsPage() {
   }
 
   if (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    const errorMessage = getErrorMessage(error)
     toast.error(m['settings.config_failed_to_load']({ message: errorMessage }))
     return <div>{m['settings.config_error_loading']()}</div>
   }
@@ -636,42 +540,15 @@ export function SettingsPage() {
   }
 
   // --- Custom-domain action wrappers ------------------------------------------
-  // Each wrapper guards `settings.manage` and swallows the rejected promise —
-  // the mutation's `onError` already surfaces the toast.
-  async function saveCustomDomainDraft(config: CustomDomainConfigFormValues) {
+  // Guards `settings.manage` and swallows the rejected promise — the mutation's
+  // `onError` already surfaces the toast.
+  async function updateCustomDomain(config: CustomDomainConfigFormValues) {
     if (!canUpdateConfig) {
       toast.error(m['settings.config_modify_denied']())
       return
     }
 
-    await saveCustomDomainDraftMutation.mutateAsync(config).catch(() => {})
-  }
-
-  async function publishCustomDomain(config: CustomDomainConfigFormValues) {
-    if (!canUpdateConfig) {
-      toast.error(m['settings.config_modify_denied']())
-      return
-    }
-
-    await publishCustomDomainMutation.mutateAsync(config).catch(() => {})
-  }
-
-  async function discardCustomDomainDraft() {
-    if (!canUpdateConfig) {
-      toast.error(m['settings.config_modify_denied']())
-      return
-    }
-
-    await discardCustomDomainDraftMutation.mutateAsync().catch(() => {})
-  }
-
-  async function restoreCustomDomain() {
-    if (!canUpdateConfig) {
-      toast.error(m['settings.config_modify_denied']())
-      return
-    }
-
-    await restoreCustomDomainMutation.mutateAsync().catch(() => {})
+    await updateCustomDomainMutation.mutateAsync(config).catch(() => {})
   }
 
   return (
@@ -817,13 +694,12 @@ export function SettingsPage() {
 
         <TabsContent value="custom-domain">
           {(() => {
-            // The form edits `draft ?? published`. When the query is still
-            // loading (or returned nothing), fall back to an empty config so the
-            // tab renders immediately; once data arrives the query re-renders.
+            // The form edits the published config directly (single-state model).
+            // When the query is still loading (or returned nothing), fall back to
+            // an empty config so the tab renders immediately; once data arrives
+            // the query re-renders.
             const cdState = customDomainConfigData
-            const initialConfig = normalizeCustomDomainConfig(cdState?.draft ?? cdState?.published)
-            const hasDraft = !!cdState?.draft
-            const hasPrevious = !!cdState?.hasPrevious
+            const initialConfig = normalizeCustomDomainConfig(cdState?.published)
             const cnameTarget = cdState?.cnameTarget ?? ''
             const status = cdState?.status ?? null
 
@@ -835,8 +711,6 @@ export function SettingsPage() {
               <CustomDomainConfigFormComponent
                 realmId={realmId}
                 initialConfig={initialConfig}
-                hasDraft={hasDraft}
-                hasPrevious={hasPrevious}
                 disabled={!canUpdateConfig}
                 cnameTarget={cnameTarget}
                 status={status}
@@ -844,14 +718,8 @@ export function SettingsPage() {
                   void refetchCustomDomainStatus()
                 }}
                 isRefreshing={isCustomDomainRefreshing}
-                onSaveDraft={saveCustomDomainDraft}
-                onPublish={publishCustomDomain}
-                onDiscardDraft={discardCustomDomainDraft}
-                onRestore={restoreCustomDomain}
-                isSavingDraft={saveCustomDomainDraftMutation.isPending}
-                isPublishing={publishCustomDomainMutation.isPending}
-                isDiscarding={discardCustomDomainDraftMutation.isPending}
-                isRestoring={restoreCustomDomainMutation.isPending}
+                onSave={updateCustomDomain}
+                isSaving={updateCustomDomainMutation.isPending}
               />
             )
           })()}

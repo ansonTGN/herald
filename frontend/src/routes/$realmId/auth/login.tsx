@@ -24,6 +24,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { BRAND_NAME } from '@/lib/constants'
 import { AuthPageWrapper } from '@/components/auth/auth-page-wrapper'
 import { TotpVerificationForm } from '@/components/auth/totp-verification-form'
 import { PasskeyLoginForm } from '@/components/auth/passkey-login-form'
@@ -435,7 +436,7 @@ export function LoginPage() {
       <Card className="w-full max-w-md" data-testid="login-card">
         <CardHeader className="text-center">
           <CardTitle data-testid="login-title" className="text-2xl">
-            {whiteLabel?.loginTitle ?? publicConfig?.realmName ?? 'Herald'}
+            {whiteLabel?.loginTitle ?? publicConfig?.realmName ?? BRAND_NAME}
           </CardTitle>
           <p className="text-sm text-muted-foreground">
             {whiteLabel?.loginSubtitle ??

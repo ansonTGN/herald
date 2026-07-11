@@ -64,6 +64,7 @@ import {
   adminGetVersion,
 } from '@/lib/api-generated'
 import { handleApiResponse } from '@/lib/api-utils'
+import { ApiResponseError, resolveApiError } from '@/lib/error-utils'
 import type {
   OAuthConfigResponse,
   PaymentAttemptStatusResponse,
@@ -106,55 +107,7 @@ import type { InvoiceEligibilitySummary } from '@/lib/api-generated'
  * Provides user-friendly error messages based on HTTP status codes
  */
 function handleApiErrorWithStatus(error: unknown): never {
-  if (error && typeof error === 'object') {
-    // Handle generated API client errors
-    if ('error' in error && typeof error.error === 'object') {
-      const apiError = error.error as {
-        status?: number
-        statusCode?: number
-        message?: string
-        detail?: string
-      }
-
-      // Extract status code if available
-      const status = apiError.status || apiError.statusCode
-
-      // Extract error message
-      const message = apiError.message || apiError.detail || 'An error occurred'
-
-      // Handle specific HTTP status codes
-      switch (status) {
-        case 400:
-          throw new Error(`Bad request: ${message}`)
-        case 401:
-          throw new Error('Unauthorized, please log in again')
-        case 403:
-          throw new Error('Insufficient permissions')
-        case 404:
-          throw new Error('Requested resource not found')
-        case 409:
-          throw new Error(`Conflict: ${message}`)
-        case 422:
-          throw new Error(`Validation failed: ${message}`)
-        case 429:
-          throw new Error('Too many requests, please try later')
-        case 500:
-          throw new Error('Server error, please try later')
-        case 503:
-          throw new Error('Service temporarily unavailable')
-        default:
-          throw new Error(message)
-      }
-    }
-
-    // Handle standard Error objects
-    if (error instanceof Error) {
-      throw error
-    }
-  }
-
-  // Handle unknown errors
-  throw new Error('An unknown error occurred')
+  throw error instanceof ApiResponseError ? error : new ApiResponseError(error)
 }
 
 const GC_TIME_5_MIN = TIME_CONSTANTS.FIVE_MINUTES
@@ -164,15 +117,8 @@ const STALE_TIME_2_MIN = TIME_CONSTANTS.TWO_MINUTES
 const STALE_TIME_5_MIN = TIME_CONSTANTS.FIVE_MINUTES
 
 const isClientError = (error: unknown): boolean => {
-  if (error && typeof error === 'object' && 'message' in error) {
-    const message = String(error.message)
-    return (
-      message.includes('Unauthorized') ||
-      message.includes('Insufficient permissions') ||
-      message.includes('Bad request')
-    )
-  }
-  return false
+  const status = resolveApiError(error).status
+  return status !== undefined && status >= 400 && status < 500
 }
 
 const clientErrorRetry = (failureCount: number, error: unknown): boolean => {
@@ -705,7 +651,7 @@ export const subscriptionQueryOptions = (realmId: string, clientAppId: string) =
     queryFn: async () => {
       const response = await getSubscriptionForClientApp({ path: { realmId, clientAppId } })
       if (response.error) {
-        if (response.error.code === 404) return null
+        if (response.error.status === 404) return null
         throw response.error
       }
       return response.data

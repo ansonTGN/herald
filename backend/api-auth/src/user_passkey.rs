@@ -1,6 +1,7 @@
 use axum::{
     Json,
     extract::{Extension, Path, State},
+    http::HeaderMap,
 };
 use axum_valid::Valid;
 use redis::AsyncCommands;
@@ -28,6 +29,8 @@ use herald_core::infrastructure::user::repositories::PostgresUserRepository;
 use herald_core::infrastructure::user_passkey::{
     PostgresPasskeyRealmConfigReader, PostgresUserPasskeyRepository, RedisPasskeyChallengeStore,
 };
+
+use crate::passkey_rp::resolve_passkey_rp;
 
 const PASSKEY_USER_RATE_LIMIT: (i64, usize) = (5, 60);
 const PASSKEY_CHALLENGE_TTL_SECONDS: u64 = 300;
@@ -126,6 +129,7 @@ pub struct RenamePasskeyRequest {
 pub async fn handle_begin_passkey_registration(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
+    headers: HeaderMap,
     Valid(Json(req)): Valid<Json<BeginRegistrationRequest>>,
 ) -> Result<ApiResult<BeginRegistrationResponse>, ApiError> {
     let user_id = identity_user_id(&identity)?;
@@ -151,8 +155,9 @@ pub async fn handle_begin_passkey_registration(
         .map(|credential| credential.credential_id.clone())
         .collect::<Vec<_>>();
     let service = passkey_service(&state, repo)?;
+    let relying_party = resolve_passkey_rp(&state, &user.realm_id, &headers).await?;
     let (options, reg_token) = service
-        .begin_registration(&user.realm_id, &user, &exclude)
+        .begin_registration(&user.realm_id, &user, &exclude, relying_party)
         .await
         .map_err(map_registration_begin_error)?;
     store_registration_nickname(&state, &reg_token, req.nickname.as_deref()).await?;
@@ -485,15 +490,10 @@ fn passkey_service(
     >,
     ApiError,
 > {
-    let rp_id =
-        std::env::var("RP_ID").map_err(|_| ApiError::internal("RP_ID is not configured"))?;
-    let rp_origin = std::env::var("RP_ORIGIN")
-        .map_err(|_| ApiError::internal("RP_ORIGIN is not configured"))?;
     let challenge_store = Arc::new(RedisPasskeyChallengeStore::new(state.redis_manager.clone()));
     let config_reader = Arc::new(PostgresPasskeyRealmConfigReader::new(state.pool.clone()));
 
-    UserPasskeyService::new(&rp_id, &rp_origin, repo, challenge_store, config_reader)
-        .map_err(map_passkey_error)
+    UserPasskeyService::new(repo, challenge_store, config_reader).map_err(map_passkey_error)
 }
 
 fn map_registration_begin_error(err: PasskeyError) -> ApiError {

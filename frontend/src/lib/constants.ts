@@ -3,6 +3,13 @@
  */
 
 /**
+ * Default product/brand name shown as a last-resort fallback when a realm has
+ * no white-label logo, title, or realm name configured. Kept in one place so a
+ * rename only touches this constant.
+ */
+export const BRAND_NAME = 'Herald'
+
+/**
  * Default page size for paginated lists
  */
 export const DEFAULT_PAGE_SIZE = 20
