@@ -245,3 +245,14 @@
   - [docs/prd/auth/totp.md](/docs/prd/auth/totp.md)
   - [docs/prd/billing/subscription.md](/docs/prd/billing/subscription.md)
   - [docs/prd/billing/points.md](/docs/prd/billing/points.md)
+
+---
+
+## 10. 协议外部链接承载模式（2026-07 增量）
+
+- Realm Admin 可分别为用户协议与隐私政策选择“站内全文”或“外部链接”，允许两份协议混合使用不同模式。
+- 外部链接模式仅保存合法的 HTTP(S) URL，不抓取、缓存或本地化外部正文；链接最长 2048 字符，内容及可达性由 Realm Admin 负责。
+- 模式和 URL 先保存为草稿，保存草稿不影响当前生效协议。发布草稿生成新的不可变版本，并沿用版本同意、重新同意和审计机制。
+- 注册、登录、重新同意及个人中心入口在外部链接模式下于新标签页打开配置 URL；站内全文模式保持原有协议页。
+- 全文与链接模式之间的切换属于版本变更并触发重新同意。仅修改链接草稿但不发布，不触发重新同意。
+- 未配置租户链接时继续回退到平台默认全文协议。

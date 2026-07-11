@@ -50,11 +50,25 @@ const publishSchema = z
       error: () => m['settings.legal.version_label_max_length'](),
     }),
     contentEn: z.string(),
+    mode: z.enum(['full_text', 'link']),
+    externalUrl: z.string().max(2048),
   })
-  .refine((value) => value.contentEn.trim().length > 0, {
+  .refine((value) => value.mode !== 'full_text' || value.contentEn.trim().length > 0, {
     error: () => m['settings.legal.content_required'](),
     path: ['contentEn'],
   })
+  .refine(
+    (value) => {
+      if (value.mode !== 'link') return true
+      try {
+        const url = new URL(value.externalUrl)
+        return ['http:', 'https:'].includes(url.protocol)
+      } catch {
+        return false
+      }
+    },
+    { error: () => m['settings.legal.external_url_required'](), path: ['externalUrl'] }
+  )
 
 const SUPPORTED_LOCALES = ['en'] as const
 
@@ -174,7 +188,12 @@ function AgreementCard({
 
   // Save draft (upsert). Invalidating the draft key refreshes the seeded form.
   const saveDraft = useFormMutation({
-    mutationFn: (data: { contentEn: string; versionLabel: string }) => {
+    mutationFn: (data: {
+      contentEn: string
+      versionLabel: string
+      mode: 'full_text' | 'link'
+      externalUrl: string
+    }) => {
       const content: Record<string, string> = {}
       if (data.contentEn.trim()) {
         content[SUPPORTED_LOCALES[0]] = data.contentEn.trim()
@@ -182,6 +201,8 @@ function AgreementCard({
       return saveDraftMutation(realmId, agreementType, {
         content,
         version_label: data.versionLabel.trim() || null,
+        mode: data.mode,
+        external_url: data.mode === 'link' ? data.externalUrl.trim() : null,
       })
     },
     getSuccessMessage: () => m['settings.legal.draft_saved_success'](),
@@ -203,7 +224,7 @@ function AgreementCard({
       queryKeys.legalDraft(realmId, agreementType),
     ],
     onSuccess: () => {
-      form.reset({ versionLabel: '', contentEn: '' })
+      form.reset({ versionLabel: '', contentEn: '', mode: 'full_text', externalUrl: '' })
     },
   })
 
@@ -224,7 +245,7 @@ function AgreementCard({
     invalidateQueries: [queryKeys.legalDraft(realmId, agreementType)],
     onSuccess: () => {
       setDiscardOpen(false)
-      form.reset({ versionLabel: '', contentEn: '' })
+      form.reset({ versionLabel: '', contentEn: '', mode: 'full_text', externalUrl: '' })
     },
   })
 
@@ -233,6 +254,8 @@ function AgreementCard({
     defaultValues: {
       versionLabel: '',
       contentEn: '',
+      mode: 'full_text' as const,
+      externalUrl: '',
     },
     onSubmit: async () => {
       // The form has no direct submit button: Publish/Save Draft each call
@@ -250,6 +273,8 @@ function AgreementCard({
       form.reset({
         versionLabel: draft?.version_label ?? '',
         contentEn: draftContentEn,
+        mode: draft?.mode ?? view.current_version.mode ?? 'full_text',
+        externalUrl: draft?.external_url ?? '',
       })
     }
     // draftContentEn derives from `draft`; form is stable across renders.
@@ -260,16 +285,16 @@ function AgreementCard({
   async function handlePublish() {
     await form.handleSubmit()
     if (!form.state.isValid) return
-    const { contentEn, versionLabel } = form.state.values
-    await saveDraft.mutate({ contentEn, versionLabel })
+    const { contentEn, versionLabel, mode, externalUrl } = form.state.values
+    await saveDraft.mutate({ contentEn, versionLabel, mode, externalUrl })
     await publish.mutate(versionLabel.trim() || null)
   }
 
   async function handleSaveDraft() {
     await form.handleSubmit()
     if (!form.state.isValid) return
-    const { contentEn, versionLabel } = form.state.values
-    await saveDraft.mutate({ contentEn, versionLabel })
+    const { contentEn, versionLabel, mode, externalUrl } = form.state.values
+    await saveDraft.mutate({ contentEn, versionLabel, mode, externalUrl })
   }
 
   async function handleRevert() {
@@ -285,7 +310,17 @@ function AgreementCard({
       <CardHeader>
         <div className="flex items-center justify-between gap-4">
           <CardTitle data-testid={`legal-agreement-title-${agreementType}`}>{title}</CardTitle>
-          <SourceBadge source={view.source} />
+          <div className="flex gap-2">
+            <Badge
+              variant="outline"
+              data-testid={`mode-badge-${view.current_version.mode ?? 'full_text'}`}
+            >
+              {view.current_version.mode === 'link'
+                ? m['settings.legal.mode_link']()
+                : m['settings.legal.mode_full_text']()}
+            </Badge>
+            <SourceBadge source={view.source} />
+          </div>
         </div>
         <CardDescription data-testid={`legal-agreement-meta-${agreementType}`}>
           {m['settings.legal.version_no_label']()}: {view.current_version.version_no} •{' '}
@@ -314,15 +349,50 @@ function AgreementCard({
                 disabled={saveDraft.isSubmitting || publish.isSubmitting}
                 placeholder={m['settings.legal.version_label_placeholder']()}
               />
-              <TextareaField
-                form={form}
-                name="contentEn"
-                label={m['settings.legal.content_en_label']()}
-                inputId={`legal-content-en-${agreementType}`}
-                dataTestId={`legal-content-en-input-${agreementType}`}
-                disabled={saveDraft.isSubmitting || publish.isSubmitting}
-                rows={6}
-                helpText={m['settings.legal.content_help']()}
+              <form.Field name="mode">
+                {(field) => (
+                  <label className="grid gap-2 text-sm font-medium">
+                    {m['settings.legal.mode_label']()}
+                    <select
+                      value={field.state.value}
+                      onChange={(event) =>
+                        field.handleChange(event.target.value as 'full_text' | 'link')
+                      }
+                      className="h-9 rounded-md border bg-background px-3"
+                      data-testid={`legal-mode-select-${agreementType}`}
+                    >
+                      <option value="full_text">{m['settings.legal.mode_full_text']()}</option>
+                      <option value="link">{m['settings.legal.mode_link']()}</option>
+                    </select>
+                  </label>
+                )}
+              </form.Field>
+              <form.Subscribe
+                selector={(state) => state.values.mode}
+                children={(mode) =>
+                  mode === 'link' ? (
+                    <TextField
+                      form={form}
+                      name="externalUrl"
+                      label={m['settings.legal.external_url_label']()}
+                      inputId={`legal-external-url-${agreementType}`}
+                      dataTestId={`legal-external-url-input-${agreementType}`}
+                      disabled={saveDraft.isSubmitting || publish.isSubmitting}
+                      placeholder={m['settings.legal.external_url_placeholder']()}
+                    />
+                  ) : (
+                    <TextareaField
+                      form={form}
+                      name="contentEn"
+                      label={m['settings.legal.content_en_label']()}
+                      inputId={`legal-content-en-${agreementType}`}
+                      dataTestId={`legal-content-en-input-${agreementType}`}
+                      disabled={saveDraft.isSubmitting || publish.isSubmitting}
+                      rows={6}
+                      helpText={m['settings.legal.content_help']()}
+                    />
+                  )
+                }
               />
               <div className="flex flex-wrap gap-2">
                 <Button
@@ -336,13 +406,16 @@ function AgreementCard({
                     : m['settings.legal.save_draft_button']()}
                 </Button>
                 <form.Subscribe
-                  selector={(state) => state.values.contentEn}
-                  children={(contentEn) => (
+                  selector={(state) => ({
+                    contentEn: state.values.contentEn,
+                    mode: state.values.mode,
+                  })}
+                  children={({ contentEn, mode }) => (
                     <Button
                       type="button"
                       variant="outline"
                       onClick={() => setPreviewOpen(true)}
-                      disabled={publish.isSubmitting || !contentEn?.trim()}
+                      disabled={publish.isSubmitting || mode === 'link' || !contentEn?.trim()}
                       data-testid={`legal-preview-button-${agreementType}`}
                     >
                       {m['settings.legal.preview_button']()}

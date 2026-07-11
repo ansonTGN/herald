@@ -9,7 +9,7 @@ use uuid::Uuid;
 use herald_domain::common::entities::app_errors::CoreError;
 use herald_domain::legal::UserAgreementConsent;
 use herald_domain::legal::entities::{
-    AgreementSource, AgreementType, LegalAgreementDraft, LegalAgreementVersion,
+    AgreementMode, AgreementSource, AgreementType, LegalAgreementDraft, LegalAgreementVersion,
 };
 use herald_domain::legal::error::LegalError;
 use herald_domain::legal::ports::{LegalAgreementRepository, UserConsentRepository};
@@ -47,6 +47,8 @@ impl PostgresLegalAgreementRepository {
             version_label: model.version_label,
             content: model.content,
             source: AgreementSource::from(model.source.as_str()),
+            mode: AgreementMode::from(model.mode.as_str()),
+            external_url: model.external_url,
             published_at: chrono::DateTime::<chrono::Utc>::from(model.published_at),
             published_by: model.published_by,
         })
@@ -65,6 +67,8 @@ impl PostgresLegalAgreementRepository {
                 .map_err(CoreError::InternalServerError)?,
             content: model.content,
             version_label: model.version_label,
+            mode: AgreementMode::from(model.mode.as_str()),
+            external_url: model.external_url,
             updated_at: chrono::DateTime::<chrono::Utc>::from(model.updated_at),
             updated_by: model.updated_by,
         })
@@ -213,6 +217,8 @@ impl LegalAgreementRepository for PostgresLegalAgreementRepository {
         agreement_type: AgreementType,
         content: serde_json::Value,
         version_label: Option<String>,
+        mode: AgreementMode,
+        external_url: Option<String>,
         updated_by: &str,
     ) -> Result<LegalAgreementDraft, CoreError> {
         // Pre-extract owned/copied captures so the insert closure borrows no
@@ -236,6 +242,8 @@ impl LegalAgreementRepository for PostgresLegalAgreementRepository {
             let mut active: legal_agreement_draft::ActiveModel = model.into_active_model();
             active.content = Set(content);
             active.version_label = Set(version_label);
+            active.mode = Set(mode.as_str().to_string());
+            active.external_url = Set(external_url);
             active.updated_at = Set(chrono::Utc::now().into());
             active.updated_by = Set(Some(by_owned));
             let updated = active.update(db).await?;
@@ -248,6 +256,8 @@ impl LegalAgreementRepository for PostgresLegalAgreementRepository {
             agreement_type: Set(type_str.to_string()),
             content: Set(content.clone()),
             version_label: Set(version_label.clone()),
+            mode: Set(mode.as_str().to_string()),
+            external_url: Set(external_url.clone()),
             updated_at: NotSet,
             updated_by: Set(Some(by_owned.clone())),
         };
@@ -269,6 +279,8 @@ impl LegalAgreementRepository for PostgresLegalAgreementRepository {
                 let mut active: legal_agreement_draft::ActiveModel = existing.into_active_model();
                 active.content = Set(content);
                 active.version_label = Set(version_label);
+                active.mode = Set(mode.as_str().to_string());
+                active.external_url = Set(external_url);
                 active.updated_at = Set(chrono::Utc::now().into());
                 active.updated_by = Set(Some(by_owned));
                 Self::to_draft_domain(active.update(db).await?)
@@ -325,6 +337,8 @@ impl LegalAgreementRepository for PostgresLegalAgreementRepository {
                 version_label: Set(label.clone()),
                 content: Set(content.clone()),
                 source: Set("custom".to_string()),
+                mode: Set("full_text".to_string()),
+                external_url: Set(None),
                 published_at: NotSet,
                 published_by: Set(Some(by_owned.clone())),
             };
@@ -363,6 +377,57 @@ impl LegalAgreementRepository for PostgresLegalAgreementRepository {
                 }
             }
             Err(other) => Err(CoreError::from(other)),
+        }
+    }
+
+    async fn publish_link_version(
+        &self,
+        realm_id: &str,
+        agreement_type: AgreementType,
+        external_url: String,
+        label: Option<String>,
+        published_by: &str,
+    ) -> Result<LegalAgreementVersion, CoreError> {
+        let type_str = agreement_type.as_str();
+        let realm_owned = realm_id.to_string();
+        let by_owned = published_by.to_string();
+        let db = &self.db;
+        let attempt = |version_no: i32| {
+            legal_agreement_version::ActiveModel {
+                id: NotSet,
+                realm_id: Set(Some(realm_owned.clone())),
+                agreement_type: Set(type_str.to_string()),
+                version_no: Set(version_no),
+                version_label: Set(label.clone()),
+                content: Set(serde_json::json!({})),
+                source: Set("custom".to_string()),
+                mode: Set("link".to_string()),
+                external_url: Set(Some(external_url.clone())),
+                published_at: NotSet,
+                published_by: Set(Some(by_owned.clone())),
+            }
+            .insert(db)
+        };
+        let version_no = self
+            .next_custom_version_no(realm_id, &agreement_type)
+            .await?;
+        match attempt(version_no).await {
+            Ok(model) => Self::to_domain(model),
+            Err(error)
+                if is_unique_violation(
+                    &error,
+                    "legal_agreement_version_scope_type_version_unique",
+                ) =>
+            {
+                let next = self
+                    .next_custom_version_no(realm_id, &agreement_type)
+                    .await?;
+                attempt(next)
+                    .await
+                    .map_err(CoreError::from)
+                    .and_then(Self::to_domain)
+            }
+            Err(error) => Err(CoreError::from(error)),
         }
     }
 }

@@ -73,6 +73,21 @@ function setupAgreementHandler(response: object, status = 200) {
 }
 
 describe('LegalAgreementPage', () => {
+  it('shows an external-link action instead of rendering an empty body in link mode', async () => {
+    setupAgreementHandler({
+      agreement_type: 'terms_of_service',
+      version_id: 'v1',
+      version_no: 2,
+      effective_at: new Date().toISOString(),
+      content: {},
+      mode: 'link',
+      external_url: 'https://example.com/terms',
+    })
+    renderAgreementPage()
+    const card = await screen.findByTestId('agreement-external-link')
+    expect(card.querySelector('a')).toHaveAttribute('href', 'https://example.com/terms')
+    expect(card.querySelector('a')).toHaveAttribute('target', '_blank')
+  })
   beforeEach(() => {
     vi.clearAllMocks()
   })

@@ -6,7 +6,8 @@ use crate::audit::{ActorType, AuditAction, AuditCategory, AuditResult, AuditTarg
 use crate::audit::{AuditEventRepository, NewAuditEvent};
 use crate::common::entities::app_errors::CoreError;
 use crate::legal::entities::{
-    AgreementType, ConsentSource, ConsentStatusItem, LegalAgreementDraft, LegalAgreementVersion,
+    AgreementMode, AgreementType, ConsentSource, ConsentStatusItem, LegalAgreementDraft,
+    LegalAgreementVersion,
 };
 use crate::legal::error::LegalError;
 use crate::legal::ports::{LegalAgreementRepository, UserConsentRepository};
@@ -374,13 +375,48 @@ where
         version_label: Option<String>,
         updated_by: &str,
     ) -> Result<LegalAgreementDraft, CoreError> {
-        if !content.is_object() || content.as_object().is_none_or(|m| m.is_empty()) {
+        self.save_draft_with_mode(
+            realm_id,
+            agreement_type,
+            content,
+            version_label,
+            AgreementMode::FullText,
+            None,
+            updated_by,
+        )
+        .await
+    }
+
+    pub async fn save_draft_with_mode(
+        &self,
+        realm_id: &str,
+        agreement_type: AgreementType,
+        content: serde_json::Value,
+        version_label: Option<String>,
+        mode: AgreementMode,
+        external_url: Option<String>,
+        updated_by: &str,
+    ) -> Result<LegalAgreementDraft, CoreError> {
+        if mode == AgreementMode::Link {
+            validate_external_url(external_url.as_deref())?;
+        }
+        if (!content.is_object() || content.as_object().is_none_or(|m| m.is_empty()))
+            && mode == AgreementMode::FullText
+        {
             return Err(CoreError::BadRequest(
                 "agreement content must be a non-empty locale map".to_string(),
             ));
         }
         self.legal_repo
-            .upsert_draft(realm_id, agreement_type, content, version_label, updated_by)
+            .upsert_draft(
+                realm_id,
+                agreement_type,
+                content,
+                version_label,
+                mode,
+                external_url,
+                updated_by,
+            )
             .await
     }
 
@@ -426,16 +462,63 @@ where
             .ok_or(LegalError::DraftNotFound)?;
 
         let label = version_label_override.or(draft.version_label);
-        let new_version = self
-            .publish_custom(
-                realm_id,
-                agreement_type.clone(),
-                draft.content,
-                label,
-                published_by,
-                actor,
-            )
-            .await?;
+        let new_version = match draft.mode {
+            AgreementMode::FullText => {
+                self.publish_custom(
+                    realm_id,
+                    agreement_type.clone(),
+                    draft.content,
+                    label,
+                    published_by,
+                    actor,
+                )
+                .await?
+            }
+            AgreementMode::Link => {
+                let external_url = draft.external_url.ok_or(LegalError::InvalidExternalUrl)?;
+                validate_external_url(Some(&external_url))?;
+                let version = self
+                    .legal_repo
+                    .publish_link_version(
+                        realm_id,
+                        agreement_type.clone(),
+                        external_url.clone(),
+                        label,
+                        published_by,
+                    )
+                    .await?;
+                let details = serde_json::json!({
+                    "agreement_type": agreement_type.as_ref(),
+                    "version_id": version.id,
+                    "version_no": version.version_no,
+                    "mode": "link",
+                    "external_url": external_url,
+                });
+                if let Err(error) = self
+                    .audit_repo
+                    .create(NewAuditEvent {
+                        realm_id: realm_id.to_string(),
+                        category: AuditCategory::Compliance,
+                        action: AuditAction::AgreementPublished,
+                        actor_id: actor.actor_id,
+                        actor_type: Some(actor.actor_type),
+                        actor_name: actor.actor_name,
+                        target_type: AuditTargetType::Realm,
+                        target_id: realm_id.to_string(),
+                        target_name: None,
+                        result: AuditResult::Success,
+                        details: Some(details),
+                        ip_address: actor.ip_address,
+                        user_agent: actor.user_agent,
+                        trace_id: actor.trace_id,
+                    })
+                    .await
+                {
+                    tracing::warn!(error = %error, "Failed to record link agreement publish audit");
+                }
+                version
+            }
+        };
 
         // Best-effort draft cleanup; a failure here does not unwind the publish
         // (the version is already effective). The leftover draft is overwritten
@@ -452,11 +535,22 @@ where
     }
 }
 
+fn validate_external_url(value: Option<&str>) -> Result<(), CoreError> {
+    let raw = value
+        .filter(|value| value.len() <= 2048)
+        .ok_or(LegalError::InvalidExternalUrl)?;
+    let parsed = url::Url::parse(raw).map_err(|_| LegalError::InvalidExternalUrl)?;
+    if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
+        return Err(LegalError::InvalidExternalUrl.into());
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::audit::{AuditEvent, AuditEventFilters, PaginatedAuditEvents};
-    use crate::legal::entities::{AgreementSource, UserAgreementConsent};
+    use crate::legal::entities::{AgreementMode, AgreementSource, UserAgreementConsent};
     use chrono::Utc;
     use std::sync::Mutex;
 
@@ -537,6 +631,35 @@ mod tests {
                     version_label: label,
                     content,
                     source: AgreementSource::Custom,
+                    mode: AgreementMode::FullText,
+                    external_url: None,
+                    published_at: Utc::now(),
+                    published_by: None,
+                };
+                published.lock().unwrap().push(version.clone());
+                Ok(version)
+            }
+        }
+        fn publish_link_version(
+            &self,
+            _realm_id: &str,
+            agreement_type: AgreementType,
+            external_url: String,
+            label: Option<String>,
+            _published_by: &str,
+        ) -> impl Future<Output = Result<LegalAgreementVersion, CoreError>> + Send {
+            let published = self.published.clone();
+            async move {
+                let version = LegalAgreementVersion {
+                    id: Uuid::now_v7(),
+                    realm_id: Some("r".to_string()),
+                    agreement_type,
+                    version_no: published.lock().unwrap().len() as i32 + 100,
+                    version_label: label,
+                    content: serde_json::json!({}),
+                    source: AgreementSource::Custom,
+                    mode: AgreementMode::Link,
+                    external_url: Some(external_url),
                     published_at: Utc::now(),
                     published_by: None,
                 };
@@ -569,6 +692,8 @@ mod tests {
             agreement_type: AgreementType,
             content: serde_json::Value,
             version_label: Option<String>,
+            mode: AgreementMode,
+            external_url: Option<String>,
             updated_by: &str,
         ) -> impl Future<Output = Result<LegalAgreementDraft, CoreError>> + Send {
             let drafts = self.drafts.clone();
@@ -580,6 +705,8 @@ mod tests {
                     agreement_type,
                     content,
                     version_label,
+                    mode,
+                    external_url,
                     updated_at: Utc::now(),
                     updated_by: Some(updated_by.to_string()),
                 };
@@ -718,6 +845,8 @@ mod tests {
             version_label: None,
             content: serde_json::json!({"en": "body"}),
             source: AgreementSource::Custom,
+            mode: AgreementMode::FullText,
+            external_url: None,
             published_at: Utc::now(),
             published_by: None,
         }
@@ -729,6 +858,61 @@ mod tests {
         audit: MockAuditRepo,
     ) -> LegalService<MockLegalRepo, MockConsentRepo, MockAuditRepo> {
         LegalService::new(Arc::new(legal), Arc::new(consent), Arc::new(audit))
+    }
+
+    #[tokio::test]
+    async fn link_draft_rejects_non_http_url_because_user_links_must_be_safe() {
+        let svc = make_service(
+            MockLegalRepo::default(),
+            MockConsentRepo::default(),
+            MockAuditRepo::default(),
+        );
+        let error = svc
+            .save_draft_with_mode(
+                "r",
+                AgreementType::TermsOfService,
+                serde_json::json!({}),
+                None,
+                AgreementMode::Link,
+                Some("javascript:alert(1)".to_string()),
+                "admin",
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(error, CoreError::BadRequest(_)), "got {error:?}");
+    }
+
+    #[tokio::test]
+    async fn publishing_link_draft_creates_link_version_and_audit() {
+        let legal = MockLegalRepo::default();
+        let audit = MockAuditRepo::default();
+        let svc = make_service(legal.clone(), MockConsentRepo::default(), audit.clone());
+        svc.save_draft_with_mode(
+            "r",
+            AgreementType::PrivacyPolicy,
+            serde_json::json!({}),
+            Some("2026-07".into()),
+            AgreementMode::Link,
+            Some("https://example.com/privacy".into()),
+            "admin",
+        )
+        .await
+        .unwrap();
+        let version = svc
+            .publish_from_draft("r", AgreementType::PrivacyPolicy, None, "admin", actor())
+            .await
+            .unwrap();
+        assert_eq!(version.mode, AgreementMode::Link);
+        assert_eq!(
+            version.external_url.as_deref(),
+            Some("https://example.com/privacy")
+        );
+        let events = audit.events.lock().unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0].details.as_ref().and_then(|d| d["mode"].as_str()),
+            Some("link")
+        );
     }
 
     #[tokio::test]
@@ -855,6 +1039,8 @@ mod tests {
                 version_label: Some("default".to_string()),
                 content: serde_json::json!({"en": "default body"}),
                 source: AgreementSource::Default,
+                mode: AgreementMode::FullText,
+                external_url: None,
                 published_at: Utc::now(),
                 published_by: None,
             },

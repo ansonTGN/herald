@@ -308,6 +308,7 @@ export function PasskeyLoginForm({
             <div className="font-medium">
               <AgreementLinks
                 realmId={realmId}
+                agreements={[agreement]}
                 agreementType={agreement.agreement_type as 'terms_of_service' | 'privacy_policy'}
               />
             </div>

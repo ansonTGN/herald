@@ -77,7 +77,9 @@
     "invalid_type_description": "The requested agreement type is not supported.",
     "error_title": "Failed to Load Agreement",
     "not_found_title": "Agreement Not Found",
-    "not_found_description": "No effective agreement is deployed for this realm."
+    "not_found_description": "No effective agreement is deployed for this realm.",
+    "external_link_description": "This agreement is hosted on an external website.",
+    "external_link_button": "Open agreement"
   },
   "reconsent": {
     "title": "Updated Agreements",
@@ -804,6 +806,12 @@
       "content_en_label": "English content",
       "content_help": "Rendered as Markdown. Supports headings, lists, links, and tables.",
       "content_required": "English content is required",
+      "mode_label": "Hosting mode",
+      "mode_full_text": "Herald full text",
+      "mode_link": "External link",
+      "external_url_label": "External URL",
+      "external_url_placeholder": "https://example.com/legal",
+      "external_url_required": "Enter a valid HTTP(S) URL",
       "save_draft_button": "Save draft",
       "saving_draft_button": "Saving...",
       "draft_saved_success": "Draft saved",

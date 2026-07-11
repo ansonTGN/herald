@@ -14,7 +14,8 @@ use herald_core::domain::audit::ActorType;
 use herald_core::domain::authentication::Identity;
 use herald_core::domain::legal::ConsentSource;
 use herald_core::domain::legal::entities::{
-    AgreementSource, AgreementType, ConsentStatusItem, LegalAgreementSummary, LegalAgreementVersion,
+    AgreementMode, AgreementSource, AgreementType, ConsentStatusItem, LegalAgreementSummary,
+    LegalAgreementVersion,
 };
 use herald_core::domain::legal::service::AuditActorMeta;
 
@@ -46,6 +47,8 @@ pub struct LegalAgreementDetail {
     pub summary: Option<String>,
     pub content: serde_json::Value,
     pub version_label: Option<String>,
+    pub mode: AgreementMode,
+    pub external_url: Option<String>,
 }
 
 /// GET /agreements response.
@@ -82,6 +85,8 @@ fn to_summary(v: &LegalAgreementVersion) -> LegalAgreementSummary {
         effective_at: v.published_at,
         title: None,
         summary: None,
+        mode: v.mode,
+        external_url: v.external_url.clone(),
     }
 }
 
@@ -95,6 +100,8 @@ fn to_detail(v: &LegalAgreementVersion, locale: Option<&str>) -> LegalAgreementD
         summary: None,
         content: pick_locale(&v.content, locale),
         version_label: v.version_label.clone(),
+        mode: v.mode,
+        external_url: v.external_url.clone(),
     }
 }
 
@@ -329,6 +336,8 @@ pub struct LegalAgreementVersionSummary {
     pub effective_at: chrono::DateTime<chrono::Utc>,
     pub source: AgreementSource,
     pub version_label: Option<String>,
+    pub mode: AgreementMode,
+    pub external_url: Option<String>,
 }
 
 /// Single version detail (admin GET by version id). Carries the full localized
@@ -342,6 +351,8 @@ pub struct LegalAgreementVersionDetailResponse {
     pub version_label: Option<String>,
     pub content: serde_json::Value,
     pub effective_at: chrono::DateTime<chrono::Utc>,
+    pub mode: AgreementMode,
+    pub external_url: Option<String>,
 }
 
 /// Admin agreement view. `source` reflects whether a realm has any custom
@@ -368,6 +379,8 @@ pub struct AdminAgreementsResponse {
 pub struct PublishCustomRequest {
     pub content: serde_json::Value,
     pub version_label: Option<String>,
+    pub mode: Option<AgreementMode>,
+    pub external_url: Option<String>,
 }
 
 /// PUT publish / DELETE revert response: the newly published version's stable
@@ -378,6 +391,8 @@ pub struct PublishVersionResponse {
     pub version_id: Uuid,
     pub version_no: i32,
     pub effective_at: chrono::DateTime<chrono::Utc>,
+    pub mode: AgreementMode,
+    pub external_url: Option<String>,
 }
 
 /// GET/PUT draft response: the staged draft's stable fields plus the localized
@@ -389,6 +404,9 @@ pub struct LegalAgreementDraftResponse {
     pub content: serde_json::Value,
     pub version_label: Option<String>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
+    pub mode: AgreementMode,
+    pub external_url: Option<String>,
+    pub pending_version_no: i32,
 }
 
 /// PUT draft request body. `content` is a locale → body map and must contain at
@@ -397,6 +415,8 @@ pub struct LegalAgreementDraftResponse {
 pub struct SaveDraftRequest {
     pub content: serde_json::Value,
     pub version_label: Option<String>,
+    pub mode: Option<AgreementMode>,
+    pub external_url: Option<String>,
 }
 
 /// POST publish-from-draft request body. The entire body is optional — when
@@ -421,6 +441,8 @@ fn to_version_summary(v: &LegalAgreementVersion) -> LegalAgreementVersionSummary
         effective_at: v.published_at,
         source: v.source.clone(),
         version_label: v.version_label.clone(),
+        mode: v.mode,
+        external_url: v.external_url.clone(),
     }
 }
 
@@ -581,6 +603,8 @@ pub async fn admin_get_version(
         version_label: version.version_label,
         content: version.content,
         effective_at: version.published_at,
+        mode: version.mode,
+        external_url: version.external_url,
     }))
 }
 
@@ -633,12 +657,14 @@ pub async fn admin_publish_custom(
     let agreement_type =
         AgreementType::try_from(agreement_type.as_str()).map_err(ApiError::bad_request)?;
 
-    if !payload.content.is_object()
-        || payload
-            .content
-            .as_object()
-            .map(|m| m.is_empty())
-            .unwrap_or(true)
+    let mode = payload.mode.unwrap_or(AgreementMode::FullText);
+    if mode == AgreementMode::FullText
+        && (!payload.content.is_object()
+            || payload
+                .content
+                .as_object()
+                .map(|m| m.is_empty())
+                .unwrap_or(true))
     {
         return Err(ApiError::bad_request(
             "content must be a non-empty locale map",
@@ -651,22 +677,49 @@ pub async fn admin_publish_custom(
         .map(|s| s.to_string());
     let actor = admin_actor(&identity, Some(ip), user_agent);
 
-    let new_version = state
-        .legal_service
-        .publish_custom(
-            &realm_id,
-            agreement_type,
-            payload.content,
-            payload.version_label,
-            &identity.user_id(),
-            actor,
-        )
-        .await?;
+    let new_version = if mode == AgreementMode::Link {
+        state
+            .legal_service
+            .save_draft_with_mode(
+                &realm_id,
+                agreement_type.clone(),
+                serde_json::json!({}),
+                payload.version_label.clone(),
+                mode,
+                payload.external_url,
+                &identity.user_id(),
+            )
+            .await?;
+        state
+            .legal_service
+            .publish_from_draft(
+                &realm_id,
+                agreement_type,
+                payload.version_label,
+                &identity.user_id(),
+                actor,
+            )
+            .await?
+    } else {
+        state
+            .legal_service
+            .publish_custom(
+                &realm_id,
+                agreement_type,
+                payload.content,
+                payload.version_label,
+                &identity.user_id(),
+                actor,
+            )
+            .await?
+    };
 
     Ok(Json(PublishVersionResponse {
         version_id: new_version.id,
         version_no: new_version.version_no,
         effective_at: new_version.published_at,
+        mode: new_version.mode,
+        external_url: new_version.external_url,
     }))
 }
 
@@ -733,6 +786,8 @@ pub async fn admin_revert_to_default(
         version_id: new_version.id,
         version_no: new_version.version_no,
         effective_at: new_version.published_at,
+        mode: new_version.mode,
+        external_url: new_version.external_url,
     }))
 }
 
@@ -790,12 +845,20 @@ pub async fn admin_get_draft(
         .get_draft(&realm_id, agreement_type.clone())
         .await?
         .ok_or_else(|| ApiError::not_found("No draft saved for this agreement type"))?;
+    let pending_version_no = state
+        .legal_service
+        .current_effective(&realm_id, agreement_type)
+        .await?
+        .map_or(1, |version| version.version_no + 1);
 
     Ok(Json(LegalAgreementDraftResponse {
         agreement_type: draft.agreement_type,
         content: draft.content,
         version_label: draft.version_label,
         updated_at: draft.updated_at,
+        mode: draft.mode,
+        external_url: draft.external_url,
+        pending_version_no,
     }))
 }
 
@@ -845,12 +908,14 @@ pub async fn admin_save_draft(
     let agreement_type =
         AgreementType::try_from(agreement_type.as_str()).map_err(ApiError::bad_request)?;
 
-    if !payload.content.is_object()
-        || payload
-            .content
-            .as_object()
-            .map(|m| m.is_empty())
-            .unwrap_or(true)
+    let mode = payload.mode.unwrap_or(AgreementMode::FullText);
+    if mode == AgreementMode::FullText
+        && (!payload.content.is_object()
+            || payload
+                .content
+                .as_object()
+                .map(|m| m.is_empty())
+                .unwrap_or(true))
     {
         return Err(ApiError::bad_request(
             "content must be a non-empty locale map",
@@ -859,20 +924,30 @@ pub async fn admin_save_draft(
 
     let draft = state
         .legal_service
-        .save_draft(
+        .save_draft_with_mode(
             &realm_id,
             agreement_type.clone(),
             payload.content,
             payload.version_label,
+            mode,
+            payload.external_url,
             &identity.user_id(),
         )
         .await?;
 
+    let pending_version_no = state
+        .legal_service
+        .current_effective(&realm_id, agreement_type)
+        .await?
+        .map_or(1, |version| version.version_no + 1);
     Ok(Json(LegalAgreementDraftResponse {
         agreement_type: draft.agreement_type,
         content: draft.content,
         version_label: draft.version_label,
         updated_at: draft.updated_at,
+        mode: draft.mode,
+        external_url: draft.external_url,
+        pending_version_no,
     }))
 }
 
@@ -952,6 +1027,8 @@ pub async fn admin_publish_from_draft(
         version_id: new_version.id,
         version_no: new_version.version_no,
         effective_at: new_version.published_at,
+        mode: new_version.mode,
+        external_url: new_version.external_url,
     }))
 }
 

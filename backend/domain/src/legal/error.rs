@@ -14,6 +14,8 @@ pub enum LegalError {
     Forbidden,
     #[error("no draft saved for this agreement type")]
     DraftNotFound,
+    #[error("外部协议链接不合法")]
+    InvalidExternalUrl,
 }
 
 impl From<LegalError> for CoreError {
@@ -28,6 +30,7 @@ impl From<LegalError> for CoreError {
             // draft first). Discarding a missing draft is idempotent and does
             // not surface this error.
             LegalError::DraftNotFound => CoreError::NotFound,
+            LegalError::InvalidExternalUrl => CoreError::BadRequest(err.to_string()),
         }
     }
 }

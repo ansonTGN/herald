@@ -12,6 +12,8 @@ pub struct Model {
     pub version_label: Option<String>,
     pub content: Json,
     pub source: String,
+    pub mode: String,
+    pub external_url: Option<String>,
     pub published_at: DateTimeWithTimeZone,
     pub published_by: Option<String>,
 }

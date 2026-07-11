@@ -71,6 +71,31 @@ impl From<&str> for AgreementSource {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AgreementMode {
+    FullText,
+    Link,
+}
+
+impl AgreementMode {
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::FullText => "full_text",
+            Self::Link => "link",
+        }
+    }
+}
+
+impl From<&str> for AgreementMode {
+    fn from(value: &str) -> Self {
+        match value {
+            "link" => Self::Link,
+            _ => Self::FullText,
+        }
+    }
+}
+
 /// Domain entity for an immutable, append-only legal agreement version.
 ///
 /// Maps 1:1 to `herald_entity::LegalAgreementVersionEntity`. Repository
@@ -88,6 +113,8 @@ pub struct LegalAgreementVersion {
     /// locale → body map (e.g. `{ "en": "...", "zh-CN": "..." }`).
     pub content: serde_json::Value,
     pub source: AgreementSource,
+    pub mode: AgreementMode,
+    pub external_url: Option<String>,
     pub published_at: DateTime<Utc>,
     pub published_by: Option<String>,
 }
@@ -156,6 +183,8 @@ pub struct LegalAgreementSummary {
     pub effective_at: DateTime<Utc>,
     pub title: Option<String>,
     pub summary: Option<String>,
+    pub mode: AgreementMode,
+    pub external_url: Option<String>,
 }
 
 /// Per-realm draft of a custom legal agreement, staged before publish.
@@ -174,6 +203,8 @@ pub struct LegalAgreementDraft {
     /// version's `content`.
     pub content: serde_json::Value,
     pub version_label: Option<String>,
+    pub mode: AgreementMode,
+    pub external_url: Option<String>,
     pub updated_at: DateTime<Utc>,
     pub updated_by: Option<String>,
 }

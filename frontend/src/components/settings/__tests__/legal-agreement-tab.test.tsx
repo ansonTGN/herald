@@ -242,6 +242,8 @@ describe('LegalAgreementTab', () => {
       expect(saveDraftBody).toEqual({
         content: { en: 'Updated terms' },
         version_label: 'Summer update',
+        mode: 'full_text',
+        external_url: null,
       })
     })
     await waitFor(() => {
@@ -309,6 +311,8 @@ describe('LegalAgreementTab', () => {
     expect(saveDraftBody).toEqual({
       content: { en: 'work in progress' },
       version_label: 'wip',
+      mode: 'full_text',
+      external_url: null,
     })
     // Saving a draft must NOT publish.
     expect(publishCalls).toBe(0)

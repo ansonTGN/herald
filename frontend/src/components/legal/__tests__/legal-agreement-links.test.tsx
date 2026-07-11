@@ -36,7 +36,7 @@ describe('AgreementLinks', () => {
   const realmId = 'test-realm'
 
   it('GIVEN a realmId WHEN rendering THEN shows ToS and Privacy Policy links with correct hrefs', async () => {
-    render(<AgreementLinks realmId={realmId} beforeText="I agree to " />)
+    renderLinks(<AgreementLinks realmId={realmId} beforeText="I agree to " />)
 
     const termsLink = screen.getByTestId('terms-of-service-link')
     const privacyLink = screen.getByTestId('privacy-policy-link')
@@ -48,8 +48,34 @@ describe('AgreementLinks', () => {
   })
 
   it('GIVEN custom classes WHEN rendering THEN applies them to the container', async () => {
-    const { container } = render(<AgreementLinks realmId={realmId} className="custom-class" />)
+    const { container } = renderLinks(<AgreementLinks realmId={realmId} className="custom-class" />)
 
     expect(container.firstChild).toHaveClass('custom-class')
   })
+
+  it('opens a configured external agreement safely in a new tab', async () => {
+    renderLinks(
+      <AgreementLinks
+        realmId={realmId}
+        agreementType="terms_of_service"
+        agreements={[
+          {
+            agreement_type: 'terms_of_service',
+            version_id: 'v1',
+            version_no: 1,
+            effective_at: new Date().toISOString(),
+            mode: 'link',
+            external_url: 'https://example.com/terms',
+          },
+        ]}
+      />
+    )
+    const link = await screen.findByTestId('terms-of-service-link')
+    expect(link).toHaveAttribute('href', 'https://example.com/terms')
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+  })
 })
+function renderLinks(node: React.ReactNode) {
+  return render(node)
+}

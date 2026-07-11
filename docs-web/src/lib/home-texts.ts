@@ -120,6 +120,15 @@ export const en: HomeTexts = {
         "Points & credits system",
       ],
     },
+    {
+      title: "Consent & Compliance",
+      desc: "Version Terms and Privacy Policies per Realm, hosted as Herald content or your own external pages.",
+      bullets: [
+        "Independent hosting mode per agreement",
+        "Version-bound consent and re-consent",
+        "Auditable publishing and account deletion",
+      ],
+    },
   ],
   stepsSectionTitle: "From zero to production in three steps",
   stepsSectionDesc:
@@ -293,6 +302,15 @@ export const zh: HomeTexts = {
         "订阅计划与定价层级",
         "Stripe 与微信支付集成",
         "积分与信用点系统",
+      ],
+    },
+    {
+      title: "知情同意与合规",
+      desc: "按 Realm 对用户协议和隐私政策独立版本化，可由 Herald 承载全文，也可链接到你自己的外部页面。",
+      bullets: [
+        "每份协议独立选择承载模式",
+        "绑定版本的同意与重新同意",
+        "可审计的发布和账户注销",
       ],
     },
   ],

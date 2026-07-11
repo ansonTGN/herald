@@ -10,6 +10,8 @@ pub struct Model {
     pub agreement_type: String,
     pub content: Json,
     pub version_label: Option<String>,
+    pub mode: String,
+    pub external_url: Option<String>,
     pub updated_at: DateTimeWithTimeZone,
     pub updated_by: Option<String>,
 }

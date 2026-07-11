@@ -100,6 +100,26 @@ export class AdminLegalHelper extends BasePage {
     ).toBeVisible({ timeout: 15000 })
   }
 
+  async publishLinkAgreement(
+    agreementType: AgreementType,
+    externalUrl: string,
+    versionLabel?: string
+  ): Promise<void> {
+    const card = this.agreementCard(agreementType)
+    await card.locator(SELECTORS.legalConsent.legalModeSelect(agreementType)).selectOption('link')
+    if (versionLabel !== undefined) {
+      await this.fillField(card.locator(SELECTORS.legalConsent.legalVersionLabelInput(agreementType)), versionLabel)
+    }
+    await this.fillField(card.locator(SELECTORS.legalConsent.legalExternalUrlInput(agreementType)), externalUrl)
+    const save = this.page.waitForResponse(response => response.url().includes(`/agreements/${agreementType}/draft`) && response.request().method() === 'PUT')
+    await this.smartClick(card.locator(SELECTORS.legalConsent.legalSaveDraftButton(agreementType)))
+    expect((await save).ok()).toBe(true)
+    const publish = this.page.waitForResponse(response => response.url().includes(`/agreements/${agreementType}/publish`) && response.request().method() === 'POST')
+    await this.smartClick(card.locator(SELECTORS.legalConsent.legalPublishButton(agreementType)))
+    expect((await publish).ok()).toBe(true)
+    await expect(card.locator(SELECTORS.legalConsent.legalModeBadge('link'))).toBeVisible()
+  }
+
   /**
    * Save the form as a draft WITHOUT publishing, and assert the published
    * version is unchanged. This is the "draft does not affect the live

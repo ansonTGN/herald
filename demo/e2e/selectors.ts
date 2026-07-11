@@ -1047,6 +1047,10 @@ export const SELECTORS = {
       `[data-testid="legal-version-label-input-${type}"]`,
     legalContentEnInput: (type: string) =>
       `[data-testid="legal-content-en-input-${type}"]`,
+    legalModeSelect: (type: string) => `[data-testid="legal-mode-select-${type}"]`,
+    legalModeBadge: (mode: string) => `[data-testid="mode-badge-${mode}"]`,
+    legalExternalUrlInput: (type: string) =>
+      `[data-testid="legal-external-url-input-${type}"]`,
     legalPublishButton: (type: string) => `[data-testid="legal-publish-button-${type}"]`,
     legalSaveDraftButton: (type: string) => `[data-testid="legal-save-draft-button-${type}"]`,
     legalPreviewButton: (type: string) => `[data-testid="legal-preview-button-${type}"]`,

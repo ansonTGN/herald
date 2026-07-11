@@ -117,6 +117,21 @@ export function LegalAgreementPage() {
     )
   }
 
+  if (data.mode === 'link' && data.external_url) {
+    return (
+      <Card className="w-full max-w-2xl" data-testid="agreement-external-link">
+        <CardContent className="space-y-4 pt-6">
+          <p className="text-muted-foreground">{m['legal.external_link_description']()}</p>
+          <Button asChild>
+            <a href={data.external_url} target="_blank" rel="noopener noreferrer">
+              {m['legal.external_link_button']()}
+            </a>
+          </Button>
+        </CardContent>
+      </Card>
+    )
+  }
+
   return (
     <Card className="w-full max-w-3xl" data-testid="agreement-card">
       <CardContent className="pt-6">{renderBody(data.content)}</CardContent>

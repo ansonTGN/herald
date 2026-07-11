@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use crate::common::entities::app_errors::CoreError;
 use crate::legal::entities::{
-    AgreementType, LegalAgreementDraft, LegalAgreementVersion, UserAgreementConsent,
+    AgreementMode, AgreementType, LegalAgreementDraft, LegalAgreementVersion, UserAgreementConsent,
 };
 
 /// Repository for legal agreement versions.
@@ -57,6 +57,15 @@ pub trait LegalAgreementRepository: Send + Sync {
         published_by: &str,
     ) -> impl Future<Output = Result<LegalAgreementVersion, CoreError>> + Send;
 
+    fn publish_link_version(
+        &self,
+        realm_id: &str,
+        agreement_type: AgreementType,
+        external_url: String,
+        label: Option<String>,
+        published_by: &str,
+    ) -> impl Future<Output = Result<LegalAgreementVersion, CoreError>> + Send;
+
     /// Whether the realm has any custom (non-default) version published for the
     /// given type. Drives the "default vs custom" indicator in the admin view.
     fn has_custom(
@@ -83,6 +92,8 @@ pub trait LegalAgreementRepository: Send + Sync {
         agreement_type: AgreementType,
         content: serde_json::Value,
         version_label: Option<String>,
+        mode: AgreementMode,
+        external_url: Option<String>,
         updated_by: &str,
     ) -> impl Future<Output = Result<LegalAgreementDraft, CoreError>> + Send;
 

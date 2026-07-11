@@ -61,6 +61,8 @@ pub async fn evaluate_login_consent_gate(
                     effective_at: version.published_at,
                     title: None,
                     summary: None,
+                    mode: version.mode,
+                    external_url: version.external_url,
                 });
             }
         }
