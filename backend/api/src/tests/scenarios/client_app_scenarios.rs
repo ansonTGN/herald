@@ -106,7 +106,8 @@ mod tests {
         assert_eq!(response.status(), 400);
 
         let json: serde_json::Value = response_json(response).await;
-        assert_eq!(json["code"], 400);
+        assert_eq!(json["status"], 400);
+        assert_eq!(json["code"], "bad_request");
         assert!(json["message"].as_str().is_some());
     }
 
