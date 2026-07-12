@@ -1787,7 +1787,7 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
 name = "herald-api"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -1851,7 +1851,7 @@ dependencies = [
 
 [[package]]
 name = "herald-api-admin"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "axum",
  "axum-valid",
@@ -1870,7 +1870,7 @@ dependencies = [
 
 [[package]]
 name = "herald-api-auth"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "axum",
  "axum-valid",
@@ -1890,7 +1890,7 @@ dependencies = [
 
 [[package]]
 name = "herald-api-base"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "axum",
@@ -1911,7 +1911,7 @@ dependencies = [
 
 [[package]]
 name = "herald-api-billing"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -1938,7 +1938,7 @@ dependencies = [
 
 [[package]]
 name = "herald-api-ext"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "axum",
  "chrono",
@@ -1957,7 +1957,7 @@ dependencies = [
 
 [[package]]
 name = "herald-api-oauth"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -1979,7 +1979,7 @@ dependencies = [
 
 [[package]]
 name = "herald-api-points"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "axum",
  "chrono",
@@ -1996,7 +1996,7 @@ dependencies = [
 
 [[package]]
 name = "herald-app"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2011,7 +2011,7 @@ dependencies = [
 
 [[package]]
 name = "herald-core"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "bcrypt",
@@ -2035,7 +2035,7 @@ dependencies = [
 
 [[package]]
 name = "herald-domain"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "aes-gcm",
  "axum",
@@ -2069,7 +2069,7 @@ dependencies = [
 
 [[package]]
 name = "herald-entity"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "sea-orm",
  "serde",
@@ -2079,7 +2079,7 @@ dependencies = [
 
 [[package]]
 name = "herald-infra"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -2110,7 +2110,7 @@ dependencies = [
 
 [[package]]
 name = "herald-infra-creem"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "herald-domain",
  "reqwest",
@@ -2123,7 +2123,7 @@ dependencies = [
 
 [[package]]
 name = "herald-infra-shopify"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -2139,7 +2139,7 @@ dependencies = [
 
 [[package]]
 name = "herald-infra-stripe"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "chrono",
  "herald-domain",
@@ -2158,7 +2158,7 @@ dependencies = [
 
 [[package]]
 name = "herald-integration-tests"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "axum",
  "herald-core",
@@ -2174,7 +2174,7 @@ dependencies = [
 
 [[package]]
 name = "herald-sdk"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "dashmap",
  "futures",
@@ -2191,7 +2191,7 @@ dependencies = [
 
 [[package]]
 name = "herald-test-db"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "sea-orm",
  "sqlx",
@@ -2202,7 +2202,7 @@ dependencies = [
 
 [[package]]
 name = "herald-test-support"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "axum",
  "chrono",
@@ -2225,7 +2225,7 @@ dependencies = [
 
 [[package]]
 name = "herald-worker"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "chrono",
