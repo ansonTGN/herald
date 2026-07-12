@@ -4,12 +4,14 @@ import { whiteLabelConfigSchema, whiteLabelBackgroundSchema } from '../realm-con
 /**
  * Factory: an all-null white-label config, i.e. the shape a brand-new unconfigured
  * realm's form holds. Every field is nullable but *required*, so a valid config is
- * the full 8-key object with every value set to `null`. Overrides merge on top so
+ * the full object with every value set to `null`. Overrides merge on top so
  * individual tests can focus on one field without re-declaring the whole shape.
  */
 function makeWhiteLabelConfig(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
+    brandName: null,
     logoUrl: null,
+    faviconUrl: null,
     accentColor: null,
     background: null,
     footerText: null,
@@ -23,7 +25,9 @@ function makeWhiteLabelConfig(overrides: Record<string, unknown> = {}): Record<s
 
 /** All top-level string-typed fields (background is an object, tested separately). */
 const STRING_FIELDS = [
+  'brandName',
   'logoUrl',
+  'faviconUrl',
   'accentColor',
   'footerText',
   'loginTitle',
@@ -34,7 +38,9 @@ const STRING_FIELDS = [
 
 /** Every top-level field — used to prove each is required even though nullable. */
 const ALL_FIELDS = [
+  'brandName',
   'logoUrl',
+  'faviconUrl',
   'accentColor',
   'background',
   'footerText',
@@ -52,7 +58,9 @@ describe('whiteLabelConfigSchema', () => {
       expect(result.success).toBe(true)
       if (result.success) {
         expect(result.data).toEqual({
+          brandName: null,
           logoUrl: null,
+          faviconUrl: null,
           accentColor: null,
           background: null,
           footerText: null,
@@ -217,7 +225,9 @@ describe('whiteLabelConfigSchema', () => {
   describe('full valid config with all fields populated', () => {
     it('accepts a complete config including a background', () => {
       const full = makeWhiteLabelConfig({
+        brandName: 'Example',
         logoUrl: 'https://cdn.example.com/logo.svg',
+        faviconUrl: 'https://cdn.example.com/favicon.ico',
         accentColor: '#2563eb',
         background: { type: 'gradient', value: 'linear-gradient(135deg, #1e3a8a, #2563eb)' },
         footerText: 'Example Inc.',

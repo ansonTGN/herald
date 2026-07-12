@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { userEvent } from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { http, HttpResponse } from 'msw'
@@ -103,7 +103,9 @@ const PUBLISHED_FOOTER = '© Published Inc.'
 function publishedState(hasPrevious = false) {
   return {
     published: {
+      brandName: 'Published Brand',
       logoUrl: PUBLISHED_LOGO,
+      faviconUrl: 'https://cdn.example.com/published.ico',
       accentColor: '#2563eb',
       background: null,
       footerText: PUBLISHED_FOOTER,
@@ -124,7 +126,9 @@ function publishedWithDraftState(hasPrevious = false) {
   return {
     published: publishedState(hasPrevious).published,
     draft: {
+      brandName: 'Draft Brand',
       logoUrl: 'https://cdn.example.com/draft-logo.svg',
+      faviconUrl: 'https://cdn.example.com/draft.ico',
       accentColor: '#2563eb',
       background: null,
       footerText: '© Draft Inc.',
@@ -276,11 +280,18 @@ describe('Settings white-label tab lifecycle (FE-T03)', () => {
       renderSettingsPage(queryClient)
       await openWhiteLabelTab(user)
 
-      // Edit one field. The form initial value is the published logo; clearing
-      // it and typing a new value makes the form dirty and changes the payload.
-      const logoInput = screen.getByTestId('white-label-logo-url') as HTMLInputElement
-      await user.clear(logoInput)
-      await user.type(logoInput, 'https://cdn.example.com/new-logo.svg')
+      // Edit the three new fields. Setting values directly (instead of typing
+      // each character) keeps this round-trip payload test fast under parallel
+      // CI load; the asserted behavior is the forwarded PUT body, not typing.
+      fireEvent.change(screen.getByTestId('white-label-logo-url'), {
+        target: { value: 'https://cdn.example.com/new-logo.svg' },
+      })
+      fireEvent.change(screen.getByTestId('white-label-brand-name'), {
+        target: { value: 'New Brand' },
+      })
+      fireEvent.change(screen.getByTestId('white-label-favicon-url'), {
+        target: { value: 'https://cdn.example.com/new.ico' },
+      })
 
       await user.click(screen.getByTestId('white-label-save-draft'))
 
@@ -291,6 +302,8 @@ describe('Settings white-label tab lifecycle (FE-T03)', () => {
       expect(calls.putDraft).toHaveBeenCalledWith(
         expect.objectContaining({
           logoUrl: 'https://cdn.example.com/new-logo.svg',
+          brandName: 'New Brand',
+          faviconUrl: 'https://cdn.example.com/new.ico',
         })
       )
       // The published footer is untouched and still forwarded (trimmed/non-empty).

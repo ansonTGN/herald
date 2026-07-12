@@ -58,7 +58,9 @@ export const whiteLabelBackgroundSchema = z.object({
 //    （均为 camelCase 线传输）。表单允许 `null` 或空字符串，保存时空字符串
 //    normalize 为 `null`（见 realm-config-utils 的 toUpdateWhiteLabelConfigRequest）。
 export const whiteLabelConfigSchema = z.object({
+  brandName: z.string().nullable(),
   logoUrl: z.string().nullable(),
+  faviconUrl: z.string().nullable(),
   accentColor: z.string().nullable(),
   background: whiteLabelBackgroundSchema.nullable(),
   footerText: z.string().nullable(),

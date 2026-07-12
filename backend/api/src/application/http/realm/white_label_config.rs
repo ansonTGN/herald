@@ -40,7 +40,9 @@ pub enum WhiteLabelBackgroundType {
 #[derive(Debug, Clone, Default, Deserialize, Serialize, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct WhiteLabelConfig {
+    pub brand_name: Option<String>,
     pub logo_url: Option<String>,
+    pub favicon_url: Option<String>,
     pub accent_color: Option<String>,
     pub background: Option<WhiteLabelBackground>,
     pub footer_text: Option<String>,
@@ -53,7 +55,9 @@ pub struct WhiteLabelConfig {
 #[derive(Debug, Clone, Default, Deserialize, Serialize, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateWhiteLabelConfigRequest {
+    pub brand_name: Option<String>,
     pub logo_url: Option<String>,
+    pub favicon_url: Option<String>,
     pub accent_color: Option<String>,
     pub background: Option<WhiteLabelBackground>,
     pub footer_text: Option<String>,
@@ -69,9 +73,15 @@ impl UpdateWhiteLabelConfigRequest {
         if let Some(url) = logo_url.as_deref() {
             validate_http_url(url, "logoUrl")?;
         }
+        let favicon_url = normalize_optional_string(self.favicon_url);
+        if let Some(url) = favicon_url.as_deref() {
+            validate_http_url(url, "faviconUrl")?;
+        }
 
         Ok(WhiteLabelConfig {
+            brand_name: normalize_optional_string(self.brand_name),
             logo_url,
+            favicon_url,
             accent_color: normalize_optional_string(self.accent_color),
             background: normalize_background(self.background)?,
             footer_text: normalize_optional_string(self.footer_text),

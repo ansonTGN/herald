@@ -107,6 +107,24 @@ describe('AuthPageWrapper', () => {
       expect(screen.queryByTestId('auth-brand-logo')).not.toBeInTheDocument()
     })
 
+    it('GIVEN no logo and a configured brand name WHEN rendering THEN uses the shared brand fallback', () => {
+      render(
+        <AuthPageWrapper whiteLabel={{ brandName: 'Acme Identity' }} realmName="Realm Name">
+          <div>child</div>
+        </AuthPageWrapper>
+      )
+      expect(screen.getByTestId('auth-brand-text')).toHaveTextContent('Acme Identity')
+    })
+
+    it('GIVEN no configured brand name WHEN rendering THEN falls back to the realm name', () => {
+      render(
+        <AuthPageWrapper whiteLabel={{}} realmName="Realm Name">
+          <div>child</div>
+        </AuthPageWrapper>
+      )
+      expect(screen.getByTestId('auth-brand-text')).toHaveTextContent('Realm Name')
+    })
+
     it('GIVEN logo fails to load WHEN onError fires THEN switches to the Herald text fallback', async () => {
       const whiteLabel: PublicWhiteLabelConfig = { logoUrl: 'https://broken.example.com/x.png' }
       const screen = render(
@@ -121,6 +139,60 @@ describe('AuthPageWrapper', () => {
       const text = screen.getByTestId('auth-brand-text')
       expect(text).toBeInTheDocument()
       expect(text).toHaveTextContent('Herald')
+    })
+  })
+
+  describe('document branding', () => {
+    it('GIVEN a brand and favicon WHEN mounted and unmounted THEN applies and restores the document head', () => {
+      document.title = 'Herald Admin'
+      const originalIcon = document.createElement('link')
+      originalIcon.rel = 'icon'
+      originalIcon.href = '/default.ico'
+      document.head.appendChild(originalIcon)
+
+      const view = render(
+        <AuthPageWrapper
+          whiteLabel={{ brandName: 'Acme', faviconUrl: 'https://cdn.example.com/acme.ico' }}
+        >
+          <div>child</div>
+        </AuthPageWrapper>
+      )
+
+      expect(document.title).toBe('Acme')
+      expect(originalIcon.href).toBe('https://cdn.example.com/acme.ico')
+
+      view.unmount()
+      expect(document.title).toBe('Herald Admin')
+      expect(originalIcon.href).toContain('/default.ico')
+      originalIcon.remove()
+    })
+
+    it('GIVEN no existing favicon WHEN unmounted THEN removes the route-scoped icon', () => {
+      document.querySelectorAll('link[rel~="icon"]').forEach((link) => link.remove())
+      const view = render(
+        <AuthPageWrapper whiteLabel={{ faviconUrl: 'https://cdn.example.com/acme.ico' }}>
+          <div>child</div>
+        </AuthPageWrapper>
+      )
+      expect(document.querySelector('link[rel~="icon"]')).not.toBeNull()
+      view.unmount()
+      expect(document.querySelector('link[rel~="icon"]')).toBeNull()
+    })
+
+    it('GIVEN a configured favicon fails to load THEN restores the previous favicon', () => {
+      const originalIcon = document.createElement('link')
+      originalIcon.rel = 'icon'
+      originalIcon.href = '/default.ico'
+      document.head.appendChild(originalIcon)
+      render(
+        <AuthPageWrapper whiteLabel={{ faviconUrl: 'https://broken.example.com/icon.ico' }}>
+          <div>child</div>
+        </AuthPageWrapper>
+      )
+
+      fireEvent.error(originalIcon)
+      expect(originalIcon.href).toContain('/default.ico')
+      originalIcon.remove()
     })
   })
 

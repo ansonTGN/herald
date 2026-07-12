@@ -19,7 +19,7 @@ use herald_core::domain::security_constants::{
     CHANGE_EMAIL_CONFIRM_IP_RATE_LIMIT, CHANGE_EMAIL_REQUEST_EMAIL_RATE_LIMIT,
     CHANGE_EMAIL_REQUEST_IP_RATE_LIMIT,
 };
-use herald_core::third::email::EmailService;
+use herald_core::third::email::{EmailService, EmailTemplateKind};
 
 #[derive(Serialize, Deserialize, ToSchema, Validate)]
 #[serde(rename_all = "camelCase")]
@@ -135,14 +135,13 @@ async fn send_confirmation_email(
 ) -> Result<(), ApiError> {
     let (public_base, _) = realm_public_url_parts(state, realm_id).await?;
     let link = format!("{public_base}/api/auth/{realm_id}/change_email/confirm/{code}");
-    let html =
-        format!("<p>Please click to confirm change email:</p><p><a href=\"{link}\">{link}</a></p>");
-    EmailService::send_html_email(
+    EmailService::send_templated_email(
         &state.pool,
         realm_id,
         new_email,
-        "Confirm your new email",
-        &html,
+        EmailTemplateKind::ChangeEmail,
+        &link,
+        None,
     )
     .await
     .map_err(|e| {

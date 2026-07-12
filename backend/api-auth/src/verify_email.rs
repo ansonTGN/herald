@@ -19,7 +19,7 @@ use herald_core::domain::security_constants::{
     VERIFY_EMAIL_TRIGGER_IP_RATE_LIMIT,
 };
 use herald_core::domain::user::ports::UserService;
-use herald_core::third::email::EmailService;
+use herald_core::third::email::{EmailService, EmailTemplateKind};
 
 #[derive(Serialize, Deserialize, ToSchema, Validate)]
 #[serde(rename_all = "camelCase")]
@@ -101,14 +101,19 @@ pub async fn trigger(
 
     let (public_base, _) = realm_public_url_parts(&state, &realm_id).await?;
     let link = format!("{public_base}/api/auth/{realm_id}/verify_email/confirm/{code}");
-    let html =
-        format!("<p>Please click to verify your email:</p><p><a href=\"{link}\">{link}</a></p>");
-    EmailService::send_html_email(&state.pool, &realm_id, &email, "Verify your email", &html)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to send verification email: {e}");
-            ApiError::internal("Failed to send verification email".to_string())
-        })?;
+    EmailService::send_templated_email(
+        &state.pool,
+        &realm_id,
+        &email,
+        EmailTemplateKind::VerifyEmail,
+        &link,
+        None,
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to send verification email: {e}");
+        ApiError::internal("Failed to send verification email".to_string())
+    })?;
 
     Ok(ApiResult::ok(VerifyEmailTriggerResponse {
         message: "ok".to_string(),

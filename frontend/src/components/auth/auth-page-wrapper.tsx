@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { PublicWhiteLabelConfig } from '@/lib/api-generated/types.gen'
-import { BRAND_NAME } from '@/lib/constants'
+import { resolveBrandName } from '@/lib/white-label-brand'
 
 interface AuthPageWrapperProps {
   children: React.ReactNode
+  realmName?: string | null
   /**
    * Public white-label configuration read from `GET /api/public-config/{realmId}`.
    * The wrapper is a pure component: it never issues its own query, callers
@@ -79,13 +80,50 @@ function preloadImage(url: string): { promise: Promise<boolean>; cancel: () => v
   return { promise, cancel }
 }
 
-export function AuthPageWrapper({ children, whiteLabel }: AuthPageWrapperProps) {
+export function AuthPageWrapper({ children, realmName, whiteLabel }: AuthPageWrapperProps) {
+  const brandName = resolveBrandName(whiteLabel, realmName)
   const logoUrl = whiteLabel?.logoUrl?.trim() || null
+  const faviconUrl = whiteLabel?.faviconUrl?.trim() || null
   const accentColor = whiteLabel?.accentColor?.trim() || null
   const background = whiteLabel?.background ?? null
   const footerText = whiteLabel?.footerText?.trim() || null
 
   const [logoFailed, setLogoFailed] = useState(false)
+
+  useEffect(() => {
+    const previousTitle = document.title
+    document.title = brandName
+
+    const existing = document.querySelector<HTMLLinkElement>('link[rel~="icon"]')
+    const icon = existing ?? document.createElement('link')
+    const previousRel = icon.getAttribute('rel')
+    const previousHref = icon.getAttribute('href')
+    const created = existing === null
+    const restoreIcon = () => {
+      if (created) {
+        icon.remove()
+      } else {
+        if (previousRel === null) icon.removeAttribute('rel')
+        else icon.setAttribute('rel', previousRel)
+        if (previousHref === null) icon.removeAttribute('href')
+        else icon.setAttribute('href', previousHref)
+      }
+    }
+
+    if (faviconUrl) {
+      icon.rel = 'icon'
+      icon.href = faviconUrl
+      icon.addEventListener('error', restoreIcon, { once: true })
+      if (created) document.head.appendChild(icon)
+    }
+
+    return () => {
+      document.title = previousTitle
+      if (!faviconUrl) return
+      icon.removeEventListener('error', restoreIcon)
+      restoreIcon()
+    }
+  }, [brandName, faviconUrl])
 
   // Background image: preload before painting so a broken URL silently keeps
   // the default gradient.
@@ -145,7 +183,7 @@ export function AuthPageWrapper({ children, whiteLabel }: AuthPageWrapperProps) 
         />
       ) : (
         <div data-testid="auth-brand-text" className="mb-8 text-2xl font-semibold">
-          {BRAND_NAME}
+          {brandName}
         </div>
       )}
       {children}

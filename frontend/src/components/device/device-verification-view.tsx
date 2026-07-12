@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { deviceVerify, deviceConfirm } from '@/lib/api-generated'
 import type { DeviceVerifyResponse } from '@/lib/api-generated'
 import { AuthPageWrapper } from '@/components/auth/auth-page-wrapper'
@@ -9,6 +9,7 @@ import { AuthorizeConfirm } from '@/components/device/authorize-confirm'
 import { getErrorMessage } from '@/lib/error-utils'
 import { filterAndFormat, toBackendCode } from './device-code-utils'
 import { m } from '@/paraglide/messages'
+import { publicConfigQueryOptions } from '@/data/query-options'
 
 type PageState = 'input' | 'verifying' | 'confirmed' | 'result'
 
@@ -18,6 +19,7 @@ interface DeviceVerificationViewProps {
 }
 
 export function DeviceVerificationView({ realmId, initialCode }: DeviceVerificationViewProps) {
+  const { data: publicConfig } = useQuery(publicConfigQueryOptions(realmId))
   const [pageState, setPageState] = useState<PageState>(initialCode ? 'verifying' : 'input')
   const [error, setError] = useState<string | null>(null)
   const [verifyResponse, setVerifyResponse] = useState<DeviceVerifyResponse | null>(null)
@@ -85,7 +87,7 @@ export function DeviceVerificationView({ realmId, initialCode }: DeviceVerificat
   }
 
   return (
-    <AuthPageWrapper>
+    <AuthPageWrapper whiteLabel={publicConfig?.whiteLabel} realmName={publicConfig?.realmName}>
       <Card className="w-full max-w-md" data-testid="device-verification-card">
         <CardHeader>
           <CardTitle data-testid="device-verification-title">{m['device.title']()}</CardTitle>

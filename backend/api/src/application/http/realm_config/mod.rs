@@ -726,11 +726,12 @@ pub async fn email_test(
         ));
     }
 
-    match EmailService::send_html_email(
+    match EmailService::send_email(
         &state.pool,
         &realm_id,
         &payload.recipient,
         "Test Email from Herald",
+        "Test Email\n\nThis is a test email from your Herald instance.",
         "<h1>Test Email</h1><p>This is a test email from your Herald instance.</p>",
     )
     .await

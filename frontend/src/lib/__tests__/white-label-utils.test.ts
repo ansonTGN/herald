@@ -11,7 +11,9 @@ import {
  */
 function makeFullWhiteLabelConfig(overrides: Record<string, unknown> = {}) {
   return {
+    brandName: 'Example',
     logoUrl: 'https://cdn.example.com/logo.svg',
+    faviconUrl: 'https://cdn.example.com/favicon.ico',
     accentColor: '#2563eb',
     background: { type: 'gradient' as const, value: 'linear-gradient(135deg, #1e3a8a, #2563eb)' },
     footerText: 'Example Inc.',
@@ -25,7 +27,9 @@ function makeFullWhiteLabelConfig(overrides: Record<string, unknown> = {}) {
 
 /** The canonical all-null empty form, asserted in one place for reuse below. */
 const EMPTY_FORM = {
+  brandName: null,
   logoUrl: null,
+  faviconUrl: null,
   accentColor: null,
   background: null,
   footerText: null,
@@ -170,7 +174,9 @@ describe('toUpdateWhiteLabelConfigRequest', () => {
 
     it('normalizes every string field from empty strings', () => {
       const form = {
+        brandName: '',
         logoUrl: '',
+        faviconUrl: '',
         accentColor: '',
         background: null,
         footerText: '',
@@ -181,7 +187,9 @@ describe('toUpdateWhiteLabelConfigRequest', () => {
       }
 
       expect(toUpdateWhiteLabelConfigRequest(form)).toEqual({
+        brandName: null,
         logoUrl: null,
+        faviconUrl: null,
         accentColor: null,
         background: null,
         footerText: null,
@@ -206,7 +214,9 @@ describe('toUpdateWhiteLabelConfigRequest', () => {
       const result = toUpdateWhiteLabelConfigRequest(makeFullWhiteLabelConfig())
 
       expect(result).toEqual({
+        brandName: 'Example',
         logoUrl: 'https://cdn.example.com/logo.svg',
+        faviconUrl: 'https://cdn.example.com/favicon.ico',
         accentColor: '#2563eb',
         background: { type: 'gradient', value: 'linear-gradient(135deg, #1e3a8a, #2563eb)' },
         footerText: 'Example Inc.',
@@ -272,7 +282,9 @@ describe('toUpdateWhiteLabelConfigRequest', () => {
 
       expect(Object.keys(result).sort()).toEqual(
         [
+          'brandName',
           'logoUrl',
+          'faviconUrl',
           'accentColor',
           'background',
           'footerText',

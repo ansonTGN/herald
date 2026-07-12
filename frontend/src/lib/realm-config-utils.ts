@@ -221,7 +221,9 @@ export function buildEmailConfigRequest(config: EmailConfigForm) {
  */
 export function emptyWhiteLabelConfig(): WhiteLabelConfigForm {
   return {
+    brandName: null,
     logoUrl: null,
+    faviconUrl: null,
     accentColor: null,
     background: null,
     footerText: null,
@@ -238,7 +240,11 @@ export function emptyWhiteLabelConfig(): WhiteLabelConfigForm {
  * to `null`, so a malformed stored config never crashes the admin form.
  */
 export function normalizeWhiteLabelConfig(value: unknown): WhiteLabelConfigForm {
-  const parsed = whiteLabelConfigSchema.safeParse(value)
+  const candidate =
+    typeof value === 'object' && value !== null
+      ? { brandName: null, faviconUrl: null, ...value }
+      : value
+  const parsed = whiteLabelConfigSchema.safeParse(candidate)
   if (!parsed.success) {
     return emptyWhiteLabelConfig()
   }
@@ -278,7 +284,9 @@ export function toUpdateWhiteLabelConfigRequest(
   config: WhiteLabelConfigForm
 ): UpdateWhiteLabelConfigRequest {
   return {
+    brandName: normalizeOptionalString(config.brandName),
     logoUrl: normalizeOptionalString(config.logoUrl),
+    faviconUrl: normalizeOptionalString(config.faviconUrl),
     accentColor: normalizeOptionalString(config.accentColor),
     background: normalizeBackground(config.background),
     footerText: normalizeOptionalString(config.footerText),

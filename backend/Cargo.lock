@@ -2019,6 +2019,7 @@ dependencies = [
  "herald-domain",
  "herald-entity",
  "herald-infra",
+ "herald-test-db",
  "lettre",
  "redis",
  "reqwest",

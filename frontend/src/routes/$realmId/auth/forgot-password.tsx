@@ -60,7 +60,7 @@ export function ForgotPasswordPage() {
   }
 
   return (
-    <AuthPageWrapper whiteLabel={whiteLabel}>
+    <AuthPageWrapper whiteLabel={whiteLabel} realmName={publicConfig?.realmName}>
       <Card className="w-full max-w-md" data-testid="forgot-password-card">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl" data-testid="forgot-password-title">

@@ -62,7 +62,7 @@ export function RegisterPage() {
 
   if (state.isLoading) {
     return (
-      <AuthPageWrapper whiteLabel={whiteLabel}>
+      <AuthPageWrapper whiteLabel={whiteLabel} realmName={publicConfig?.realmName}>
         <div className="text-gray-600">{m['common.loading']()}</div>
       </AuthPageWrapper>
     )
@@ -70,7 +70,7 @@ export function RegisterPage() {
 
   if (state.error) {
     return (
-      <AuthPageWrapper whiteLabel={whiteLabel}>
+      <AuthPageWrapper whiteLabel={whiteLabel} realmName={publicConfig?.realmName}>
         <div className="text-red-600">{m['auth.register.error_loading']()}</div>
       </AuthPageWrapper>
     )
@@ -78,7 +78,7 @@ export function RegisterPage() {
 
   if (!state.registrationAllowed) {
     return (
-      <AuthPageWrapper whiteLabel={whiteLabel}>
+      <AuthPageWrapper whiteLabel={whiteLabel} realmName={publicConfig?.realmName}>
         <Card className="max-w-md w-full">
           <CardHeader>
             <CardTitle data-testid="registration-disabled-title">
@@ -100,7 +100,7 @@ export function RegisterPage() {
   }
 
   return (
-    <AuthPageWrapper whiteLabel={whiteLabel}>
+    <AuthPageWrapper whiteLabel={whiteLabel} realmName={publicConfig?.realmName}>
       <Card className="max-w-md w-full" data-testid="register-card">
         <CardHeader>
           <CardTitle data-testid="register-title">

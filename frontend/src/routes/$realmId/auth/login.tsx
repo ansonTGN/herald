@@ -24,8 +24,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { BRAND_NAME } from '@/lib/constants'
 import { AuthPageWrapper } from '@/components/auth/auth-page-wrapper'
+import { resolveBrandName } from '@/lib/white-label-brand'
 import { TotpVerificationForm } from '@/components/auth/totp-verification-form'
 import { PasskeyLoginForm } from '@/components/auth/passkey-login-form'
 import { Passkey2FaForm } from '@/components/auth/passkey-2fa-form'
@@ -334,7 +334,7 @@ export function LoginPage() {
 
   if (consentStep) {
     return (
-      <AuthPageWrapper whiteLabel={whiteLabel}>
+      <AuthPageWrapper whiteLabel={whiteLabel} realmName={publicConfig?.realmName}>
         <Card className="w-full max-w-md" data-testid="login-reconsent-view">
           <CardHeader className="text-center">
             <CardTitle data-testid="login-reconsent-title">
@@ -397,7 +397,7 @@ export function LoginPage() {
 
   if (totpStep) {
     return (
-      <AuthPageWrapper whiteLabel={whiteLabel}>
+      <AuthPageWrapper whiteLabel={whiteLabel} realmName={publicConfig?.realmName}>
         <TotpVerificationForm
           realmId={realmId}
           tempToken={totpStep.tempToken}
@@ -410,7 +410,7 @@ export function LoginPage() {
 
   if (passkeySecondFactor) {
     return (
-      <AuthPageWrapper whiteLabel={whiteLabel}>
+      <AuthPageWrapper whiteLabel={whiteLabel} realmName={publicConfig?.realmName}>
         <Passkey2FaForm
           realmId={realmId}
           tempToken={passkeySecondFactor.tempToken}
@@ -432,11 +432,11 @@ export function LoginPage() {
   }
 
   return (
-    <AuthPageWrapper whiteLabel={whiteLabel}>
+    <AuthPageWrapper whiteLabel={whiteLabel} realmName={publicConfig?.realmName}>
       <Card className="w-full max-w-md" data-testid="login-card">
         <CardHeader className="text-center">
           <CardTitle data-testid="login-title" className="text-2xl">
-            {whiteLabel?.loginTitle ?? publicConfig?.realmName ?? BRAND_NAME}
+            {whiteLabel?.loginTitle ?? resolveBrandName(whiteLabel, publicConfig?.realmName)}
           </CardTitle>
           <p className="text-sm text-muted-foreground">
             {whiteLabel?.loginSubtitle ??

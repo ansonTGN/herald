@@ -69,7 +69,7 @@ export function ResetPasswordPage() {
   const showMismatchError = confirmPassword.length > 0 && newPassword !== confirmPassword
 
   return (
-    <AuthPageWrapper whiteLabel={whiteLabel}>
+    <AuthPageWrapper whiteLabel={whiteLabel} realmName={publicConfig?.realmName}>
       <Card className="w-full max-w-md" data-testid="reset-password-card">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl" data-testid="reset-password-title">

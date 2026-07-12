@@ -8,7 +8,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { TurnstileWidget } from '@/components/auth/turnstile-widget'
-import { turnstileStatusQueryOptions } from '@/data/query-options'
+import { AuthPageWrapper } from '@/components/auth/auth-page-wrapper'
+import { publicConfigQueryOptions, turnstileStatusQueryOptions } from '@/data/query-options'
 import { toast } from 'sonner'
 import { m } from '@/paraglide/messages'
 import { realmPath, resolvedRealmFromPath } from '@/lib/realm-routing'
@@ -43,6 +44,7 @@ export function VerifyEmailPage() {
   const { data: turnstileStatus, isLoading: loadingTurnstile } = useQuery(
     turnstileStatusQueryOptions(realmId)
   )
+  const { data: publicConfig } = useQuery(publicConfigQueryOptions(realmId))
 
   async function handleVerify(e: React.FormEvent) {
     e.preventDefault()
@@ -101,7 +103,7 @@ export function VerifyEmailPage() {
   }, [countdown])
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+    <AuthPageWrapper whiteLabel={publicConfig?.whiteLabel} realmName={publicConfig?.realmName}>
       <Card className="max-w-md w-full">
         <CardHeader>
           <CardTitle data-testid="verify-email-title">{m['auth.verify_email.title']()}</CardTitle>
@@ -180,6 +182,6 @@ export function VerifyEmailPage() {
           </form>
         </CardContent>
       </Card>
-    </div>
+    </AuthPageWrapper>
   )
 }

@@ -19,7 +19,7 @@ use herald_core::domain::security_constants::{
     RESET_PASSWORD_REQUEST_IP_RATE_LIMIT,
 };
 use herald_core::domain::user::ports::UserService;
-use herald_core::third::email::EmailService;
+use herald_core::third::email::{EmailService, EmailTemplateKind};
 
 #[derive(Serialize, Deserialize, ToSchema, Validate)]
 #[serde(rename_all = "camelCase")]
@@ -107,11 +107,15 @@ pub async fn request(
         &format!("auth/reset-password?code={code}"),
     )
     .await?;
-    let html =
-        format!("<p>Please click to reset your password:</p><p><a href=\"{link}\">{link}</a></p>");
-    if let Err(e) =
-        EmailService::send_html_email(&state.pool, &realm_id, &email, "Reset your password", &html)
-            .await
+    if let Err(e) = EmailService::send_templated_email(
+        &state.pool,
+        &realm_id,
+        &email,
+        EmailTemplateKind::ResetPassword,
+        &link,
+        None,
+    )
+    .await
     {
         tracing::error!("Failed to send reset password email: {e}");
     }

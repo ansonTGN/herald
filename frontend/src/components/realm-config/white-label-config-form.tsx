@@ -90,7 +90,9 @@ export interface WhiteLabelConfigFormProps {
  */
 function toPublicWhiteLabel(formValues: WhiteLabelConfigFormValues): PublicWhiteLabelConfig {
   return {
+    brandName: formValues.brandName,
     logoUrl: formValues.logoUrl,
+    faviconUrl: formValues.faviconUrl,
     accentColor: formValues.accentColor,
     background: formValues.background,
     footerText: formValues.footerText,
@@ -241,6 +243,17 @@ export function WhiteLabelConfigForm({
             >
               <TextField
                 form={form}
+                name="brandName"
+                label={m['settings.white_label.brand_name_label']()}
+                inputId="white-label-brand-name"
+                dataTestId="white-label-brand-name"
+                placeholder="Acme"
+                disabled={disabled}
+                helpText={m['settings.white_label.brand_name_help']()}
+              />
+
+              <TextField
+                form={form}
                 name="logoUrl"
                 label={m['settings.white_label.logo_url_label']()}
                 inputId="white-label-logo-url"
@@ -249,6 +262,18 @@ export function WhiteLabelConfigForm({
                 placeholder="https://cdn.example.com/logo.svg"
                 disabled={disabled}
                 helpText={m['settings.white_label.logo_url_help']()}
+              />
+
+              <TextField
+                form={form}
+                name="faviconUrl"
+                label={m['settings.white_label.favicon_url_label']()}
+                inputId="white-label-favicon-url"
+                dataTestId="white-label-favicon-url"
+                type="url"
+                placeholder="https://cdn.example.com/favicon.ico"
+                disabled={disabled}
+                helpText={m['settings.white_label.favicon_url_help']()}
               />
 
               {/* Accent color: color picker + hex input */}

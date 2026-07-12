@@ -35,7 +35,9 @@ pub struct OAuthProviderInfo {
 #[derive(Debug, Default, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PublicWhiteLabelConfig {
+    pub brand_name: Option<String>,
     pub logo_url: Option<String>,
+    pub favicon_url: Option<String>,
     pub accent_color: Option<String>,
     pub background: Option<WhiteLabelBackground>,
     pub footer_text: Option<String>,
@@ -48,7 +50,9 @@ pub struct PublicWhiteLabelConfig {
 impl From<WhiteLabelConfig> for PublicWhiteLabelConfig {
     fn from(config: WhiteLabelConfig) -> Self {
         Self {
+            brand_name: config.brand_name,
             logo_url: config.logo_url,
+            favicon_url: config.favicon_url,
             accent_color: config.accent_color,
             background: config.background,
             footer_text: config.footer_text,

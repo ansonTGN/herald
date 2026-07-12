@@ -64,7 +64,9 @@ async fn fetch_white_label_config(ctx: &TestContext, config_key: &str) -> Option
 
 fn white_label_config_value(overrides: &[(&str, Value)]) -> Value {
     let mut value = json!({
+        "brandName": null,
         "logoUrl": null,
+        "faviconUrl": null,
         "accentColor": null,
         "background": null,
         "footerText": null,
@@ -126,7 +128,9 @@ async fn white_label_draft_requires_manage_and_does_not_publish(ctx: &mut TestCo
     let (plain_token, _plain_user_id) =
         create_admin_session_with_user(ctx, "white-label-draft-plain@test.com", 1800).await;
     let draft = json!({
+        "brandName": "Example",
         "logoUrl": "https://cdn.example.com/logo.svg",
+        "faviconUrl": "https://cdn.example.com/favicon.ico",
         "accentColor": "#2563eb",
         "footerText": "Example Inc."
     });
@@ -156,6 +160,11 @@ async fn white_label_draft_requires_manage_and_does_not_publish(ctx: &mut TestCo
     let body: Value = crate::tests::response_json(resp).await;
     assert_eq!(body["message"], "White-label draft saved");
     assert_eq!(body["draft"]["logoUrl"], "https://cdn.example.com/logo.svg");
+    assert_eq!(body["draft"]["brandName"], "Example");
+    assert_eq!(
+        body["draft"]["faviconUrl"],
+        "https://cdn.example.com/favicon.ico"
+    );
     assert!(fetch_white_label_config(ctx, "draft").await.is_some());
     assert!(
         fetch_white_label_config(ctx, "settings").await.is_none(),
@@ -381,6 +390,15 @@ async fn white_label_rejects_invalid_asset_url_and_gradient(ctx: &mut TestContex
     );
     let invalid_url_resp = app.clone().oneshot(invalid_url_req).await.unwrap();
     assert_eq!(invalid_url_resp.status(), StatusCode::BAD_REQUEST);
+
+    let invalid_favicon_req = authed_request(
+        "PUT",
+        white_label_uri(&ctx._realm_id, "/draft"),
+        &token,
+        Some(json!({"faviconUrl": "data:image/svg+xml,unsafe"})),
+    );
+    let invalid_favicon_resp = app.clone().oneshot(invalid_favicon_req).await.unwrap();
+    assert_eq!(invalid_favicon_resp.status(), StatusCode::BAD_REQUEST);
 
     let invalid_gradient_req = authed_request(
         "PUT",

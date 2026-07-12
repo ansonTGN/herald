@@ -14,7 +14,7 @@ use herald_api_base::application::http::state::AppState;
 use herald_core::domain::security_constants::{REGISTER_EMAIL_RATE_LIMIT, REGISTER_IP_RATE_LIMIT};
 use herald_core::domain::user::ports::UserService;
 use herald_core::domain::user::value_objects::RegisterRequest as DomainRegisterRequest;
-use herald_core::third::email::EmailService;
+use herald_core::third::email::{EmailService, EmailTemplateKind};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use validator::Validate;
@@ -193,14 +193,19 @@ pub async fn register(
         // Send email (best effort only when configured)
         let (public_base, _) = realm_public_url_parts(&state, &realm_id).await?;
         let link = format!("{public_base}/api/auth/{realm_id}/verify_email/confirm/{code}");
-        let html =
-            format!("<p>Please click to verify email:</p><p><a href=\"{link}\">{link}</a></p>");
-        EmailService::send_html_email(&state.pool, &realm_id, &email, "Verify your email", &html)
-            .await
-            .map_err(|e| {
-                tracing::error!("Failed to send verification email: {e}");
-                ApiError::internal("Failed to send verification email".to_string())
-            })?;
+        EmailService::send_templated_email(
+            &state.pool,
+            &realm_id,
+            &email,
+            EmailTemplateKind::VerifyEmail,
+            &link,
+            None,
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to send verification email: {e}");
+            ApiError::internal("Failed to send verification email".to_string())
+        })?;
     }
 
     tracing::info!(
