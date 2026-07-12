@@ -29,30 +29,20 @@
  *   （`realmId` / `realm_id`）—— 证书滥用门禁不得泄漏 realm 信息
  *   （`custom_domain_config.rs:478-484`）。
  *
- * Setup 策略（publish-to-authorize）：
+ * Setup 策略（save-to-authorize）：
  * authorize 门禁读取 `custom_domain_mapping` 表过滤 `enabled = true` 的行。要得到
- * 一个「已授权」行，必须先 **发布** 一个 custom-domain config（publish 写入
- * `enabled=true, cname_verified=false, tls_ready=false` 的 mapping 行）。所以
- * setup 通过 API 在 realm `admin` 上发布一个专用 hostname
- * （PUT draft → POST publish，因为 publish 发布的是已保存的草稿，不是请求体），
+ * 一个「已授权」行，必须先 **保存** 一个 custom-domain config（PUT
+ * /config/custom-domain 写入 `enabled=true, cname_verified=false, tls_ready=false`
+ * 的 mapping 行）。所以 setup 通过 API 在 realm `admin` 上保存一个专用 hostname，
  * 跑完门禁断言后再清理。
- *
- * ⚠️ LOAD-BEARING（来自 DE-D01 findings）：custom-domain publish 发布的是 **已保存
- * 的草稿**，不是请求体值。后端 `handle_publish` 从 `DRAFT_KEY` 读取，无草稿则
- * 返回 400。所以 setup 必须：
- *   1. PUT `/api/realms/admin/config/custom-domain/draft` 携带
- *      `{"hostname":"ask-gate-authorize.demo.test"}`
- *   2. POST `/api/realms/admin/config/custom-domain/publish`（无 body）
- * custom-domain 不能「发布空」（400），所以 teardown 必须 restore（恢复上一版），
- * 而非 publish-empty。
  *
  * Setup 认证：config 端点需要 `settings.manage`（realm admin）。本测试通过
  * `loginAsAdmin` 在浏览器上下文中 seed admin session cookie，再用 `page.request`
  * 调用需要 admin 认证的 config 端点（`page.request` 共享浏览器上下文的 cookie）。
  *
- * Teardown 策略（restore-balanced）：
- * 在 afterEach 中尽力 restore 专用 hostname 的发布（publish-empty 是 400，所以
- * 用 restore 端点回滚到上一版 baseline）。best-effort、有日志，不会硬失败测试运行。
+ * Teardown 策略：
+ * 在 afterEach 中清空专用 hostname（PUT `{ hostname: null }` 移除 mapping 行）。
+ * best-effort、有日志，不会硬失败测试运行。
  *
  * @see .ai/user-stories/core/realm-custom-domain.md （DRAFT 来源，路径保持原样）
  * @see backend/api/src/application/http/realm/custom_domain_config.rs （authorize handler 478-553）
@@ -110,11 +100,9 @@ test.describe('[Realm Admin] Custom-domain authorize (ask) 门禁演示测试', 
   let testStartTime: number
 
   test.afterEach(async ({ page }) => {
-    // Restore-balance the dedicated published hostname. publish-empty is a 400
-    // (handle_publish rejects a draft without a hostname), so we use the
-    // SettingsPage.resetCustomDomainConfig() helper (discards any dangling
-    // draft) + a best-effort restore. All failures are caught + logged so
-    // teardown never hard-fails the run.
+    // Clear the dedicated saved hostname. resetCustomDomainConfig saves an
+    // empty hostname (PUT { hostname: null }) which removes the mapping row.
+    // All failures are caught + logged so teardown never hard-fails the run.
     try {
       await loginAsAdmin(page, { realmId: 'admin', forceRelogin: true })
       const realmSettings = new SettingsPage(page, undefined, 'admin')
@@ -198,40 +186,29 @@ test.describe('[Realm Admin] Custom-domain authorize (ask) 门禁演示测试', 
     })
 
     // ----------------------------------------------------------------------
-    // Setup: 通过 API 在 realm admin 发布专用 hostname（PUT draft → POST publish）
-    // publish 发布的是已保存的草稿，所以必须先 PUT draft。
+    // Setup: 通过 API 在 realm admin 保存专用 hostname（单次 PUT）
     // ----------------------------------------------------------------------
-    await test.step('Setup: loginAsAdmin + PUT draft + POST publish 专用 hostname', async () => {
+    await test.step('Setup: loginAsAdmin + PUT 专用 hostname', async () => {
       // loginAsAdmin seeds the admin session cookie into the browser context;
       // page.request.* shares that cookie so the config endpoints authenticate.
       await loginAsAdmin(page, { realmId: 'admin' })
 
-      // 1) PUT draft —— 必须先存草稿，publish 才有内容可发布。
-      const draftResp = await page.request.put(
-        `${FRONTEND_BASE_URL}/api/realms/admin/config/custom-domain/draft`,
+      // PUT saves the hostname + writes the enabled=true mapping row in one step.
+      const saveResp = await page.request.put(
+        `${FRONTEND_BASE_URL}/api/realms/admin/config/custom-domain`,
         { data: { hostname: DEDICATED_HOSTNAME } },
       )
       expect(
-        draftResp.status(),
-        `PUT draft for "${DEDICATED_HOSTNAME}" must succeed (got ${draftResp.status()})`,
+        saveResp.status(),
+        `PUT for "${DEDICATED_HOSTNAME}" must succeed (got ${saveResp.status()})`,
       ).toBe(200)
-      demoLogger.testCode.log(`Setup: PUT draft "${DEDICATED_HOSTNAME}" → ${draftResp.status()}`)
-
-      // 2) POST publish —— 发布已保存的草稿，写入 enabled=true 的 mapping 行。
-      const publishResp = await page.request.post(
-        `${FRONTEND_BASE_URL}/api/realms/admin/config/custom-domain/publish`,
-      )
-      expect(
-        publishResp.status(),
-        `POST publish for "${DEDICATED_HOSTNAME}" must succeed (got ${publishResp.status()})`,
-      ).toBe(200)
-      demoLogger.testCode.log(`Setup: POST publish "${DEDICATED_HOSTNAME}" → ${publishResp.status()}`)
+      demoLogger.testCode.log(`Setup: PUT "${DEDICATED_HOSTNAME}" → ${saveResp.status()}`)
     })
 
     // ----------------------------------------------------------------------
-    // Assertion: 用正确 ask key 查询刚发布的 host → 200 {"authorized":true}
+    // Assertion: 用正确 ask key 查询刚保存的 host → 200 {"authorized":true}
     // ----------------------------------------------------------------------
-    await test.step('GET authorize 已发布 host + 正确 key → 200 {"authorized":true}', async () => {
+    await test.step('GET authorize 已保存 host + 正确 key → 200 {"authorized":true}', async () => {
       const resp = await page.request.get(
         `${API_BASE}/api/internal/custom-domain/authorize`,
         {

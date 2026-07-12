@@ -17,13 +17,13 @@
 
 > 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
-**场景 1：成功配置并保存自定义域名草稿**
+**场景 1：成功配置并保存自定义域名**
 ```gherkin
 Given 我是 realm-1 的 Realm Admin
 And 我已进入管理后台 Settings 页面的自定义域名配置入口
 When 我填入一个尚未被其他 Realm 占用的自定义域名
 And 我保存配置
-Then 配置保存成功并显示成功反馈
+Then 配置保存成功并立即生效
 And 配置仅关联到 realm-1，不影响其他 Realm
 ```
 
@@ -52,43 +52,43 @@ And 我看不到该配置入口
 
 ---
 
-### 故事 2：自定义域名配置的草稿与发布 [US-CD-003]
+### 故事 2：自定义域名配置保存即生效 [US-CD-003]
 
 **优先级**: P1
 
 **【用户故事】**
 **作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
-**我希望**：自定义域名配置遵循草稿/发布/恢复生命周期，未发布前不影响当前已生效的自定义域名配置
-**从而**：避免配置错误（如填错域名）立即影响已生效的自定义域名，并能在出错后快速回退
+**我希望**：自定义域名配置保存后立即生效（写入域名注册映射，授权签发证书），无需单独的发布步骤
+**从而**：以最简流程完成自定义域名配置；填错域名时直接重新保存正确域名即可覆盖
 
 **【验收标准】**
 
 > 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
-**场景 1：未发布草稿不影响当前已生效的配置**
+**场景 1：保存后域名注册映射更新**
 ```gherkin
-Given realm-1 当前已发布生效自定义域名 login.acme.com
-And 我在管理后台编辑了一份新的自定义域名草稿（如 login2.acme.com）但尚未发布
-When 我查看当前已生效的自定义域名配置
-Then 当前生效的配置仍为 login.acme.com
-And 不会因为存在草稿而改变已生效的自定义域名
-```
-
-**场景 2：发布后域名注册映射更新**
-```gherkin
-Given realm-1 已保存一份自定义域名草稿 login2.acme.com
-When 我发布该草稿
+Given 我是 realm-1 的 Realm Admin
+And 我已进入管理后台的自定义域名配置入口
+When 我填入自定义域名 login2.acme.com 并保存
 Then 系统将 login2.acme.com 置为当前生效的自定义域名
 And 该域名被注册到 Herald 的域名注册映射中
 And 证书授权门控据此开始为 login2.acme.com 授权
 ```
 
-**场景 3：恢复上一版自定义域名配置**
+**场景 2：切换域名覆盖当前配置**
 ```gherkin
-Given realm-1 刚刚发布了一个错误的自定义域名配置
-When 我执行恢复上一版操作
-Then 系统将已生效的自定义域名配置恢复到上一版
-And 域名注册映射同步回滚到上一版
+Given realm-1 当前生效自定义域名为 login.acme.com
+When 我填入新的域名 login2.acme.com 并保存
+Then 系统将 login2.acme.com 置为当前生效的自定义域名
+And 域名注册映射更新为 login2.acme.com
+```
+
+**场景 3：清空域名移除映射**
+```gherkin
+Given realm-1 当前生效自定义域名为 login.acme.com
+When 我清空域名并保存
+Then 该 Realm 不再有任何生效的自定义域名
+And 域名注册映射中不再包含该 Realm 的条目
 ```
 
 ---
@@ -115,7 +115,7 @@ Then Herald 不授权为 evil.com 签发证书
 
 **场景 2：已注册并生效的域名被授权签发证书**
 ```gherkin
-Given login.acme.com 已在 realm-1 注册并发布生效
+Given login.acme.com 已在 realm-1 注册并保存生效
 When 证书签发流程向 Herald 查询 login.acme.com 是否可签发
 Then Herald 授权为 login.acme.com 签发证书
 ```

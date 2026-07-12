@@ -1,9 +1,9 @@
 ---
 title: Custom Domain
-description: "A Realm Admin can register a branded login domain (like login.acme.com) for their Realm, get CNAME guidance, and watch the CNAME/TLS status go live. The domain is globally unique and follows a draft/publish/restore lifecycle. Herald only authorizes the reverse proxy to issue TLS certificates for domains a Realm Admin has registered — unregistered domains are refused, which is the certificate-abuse gate. Serving auth flows on the custom domain itself is a planned, not-yet-shipped capability."
+description: "A Realm Admin can register a branded login domain (like login.acme.com) for their Realm, get CNAME guidance, and watch the CNAME/TLS status go live. The domain is globally unique and saving applies immediately — no separate publish step. Herald only authorizes the reverse proxy to issue TLS certificates for domains a Realm Admin has registered — unregistered domains are refused, which is the certificate-abuse gate. Serving auth flows on the custom domain itself is a planned, not-yet-shipped capability."
 ---
 
-A Realm Admin can register a branded login domain (like `login.acme.com`) for their Realm, get CNAME guidance, and watch the CNAME/TLS status go live. The domain is globally unique and follows a draft/publish/restore lifecycle. Herald only authorizes the reverse proxy to issue TLS certificates for domains a Realm Admin has registered — unregistered domains are refused, which is the certificate-abuse gate.
+A Realm Admin can register a branded login domain (like `login.acme.com`) for their Realm, get CNAME guidance, and watch the CNAME/TLS status go live. The domain is globally unique and saving applies immediately — no separate publish step. Herald only authorizes the reverse proxy to issue TLS certificates for domains a Realm Admin has registered — unregistered domains are refused, which is the certificate-abuse gate.
 
 This is a "bring your own domain" setup with no separate DNS-TXT ownership step. CNAME'ing the domain to the Herald-owned hostname proves DNS control, and the ACME challenge the reverse proxy runs proves the DNS actually points at Herald — together they are the ownership verification. There is no wildcard support (`*.acme.com`) and no Herald-owned `*.herald.com` subdomain.
 
@@ -11,7 +11,7 @@ This is a "bring your own domain" setup with no separate DNS-TXT ownership step.
 
 Two things are easy to conflate, so they are stated up front:
 
-- **Shipped**: per-Realm custom-domain *configuration* (register a domain, see CNAME guidance, see live CNAME/TLS status) with a draft/publish/restore lifecycle, plus the certificate *authorization* gate that lets the reverse proxy issue TLS only for registered domains.
+- **Shipped**: per-Realm custom-domain *configuration* (register a domain, see CNAME guidance, see live CNAME/TLS status) with a single save that applies immediately, plus the certificate *authorization* gate that lets the reverse proxy issue TLS only for registered domains.
 - **Not shipped (planned)**: serving the actual auth flow *on* the custom domain. A request to `login.acme.com` does not yet resolve to the Realm's auth pages without a path prefix. Realm routing is still driven by the `{realmId}` path segment, exactly as before. Email links, OAuth callbacks, and passkey credentials are therefore not yet custom-domain-aware.
 
 The planned piece depends on a host→realm request-resolution mechanism that was reverted (the web framework applies its routing match before a rewrite layer can patch the path). The configuration and authorization gate that *did* ship are the foundation for it.
@@ -32,30 +32,31 @@ Before that payoff lands, the plumbing has to exist: the tenant has to be able t
 
 ### Registering a domain
 
-The Realm Admin opens *Settings → Custom Domain*, types an exact hostname (e.g. `login.acme.com`), and saves a draft. The form shows the CNAME target — the Herald-owned hostname they must point their domain at — and a status panel that reflects whether the CNAME is correct and whether TLS is ready.
+The Realm Admin opens *Settings → Custom Domain*, types an exact hostname (e.g. `login.acme.com`), and saves. The form shows the CNAME target — the Herald-owned hostname they must point their domain at — and a status panel that reflects whether the CNAME is correct and whether TLS is ready.
 
 The hostname is normalized server-side: lowercased, trailing dot stripped, and any value carrying a scheme, port, path, or wildcard is rejected. This stops `login.acme.com.` or uppercase variants from bypassing the global-unique constraint.
 
-The domain is globally unique across Realms — both drafts and published configs hold the slot, so two Realms can't draft the same hostname and then collide on publish.
+The domain is globally unique across Realms — two Realms can't register the same hostname.
 
-### Draft, publish, restore
+### Save (single-step, applies immediately)
 
-The lifecycle mirrors white-label exactly:
+Unlike white-label (which uses a draft/publish/restore lifecycle), custom-domain is a single save that applies immediately. There is no draft, no publish, no restore:
 
-1. **Save draft.** Writes the in-progress hostname to a draft slot. The currently live config is untouched.
-2. **Publish.** Promotes the draft to the live config and writes the hostname into the domain-registration mapping. The previously live config is copied to a previous slot for one-step undo. The draft is cleared.
-3. **Discard draft.** Throws away the draft and resets the form to the live config.
-4. **Restore previous.** Swaps the previous slot back into the live config and rolls the mapping back accordingly. Gated behind a confirm dialog.
+- **Save.** Validates the hostname, checks global uniqueness, writes it into the domain-registration mapping, and persists the config — all in one step. The domain is live the moment the save succeeds.
+- **Switch domain.** Saving a different hostname overwrites the previous one; the mapping is updated to the new hostname and the old one is removed.
+- **Clear domain.** Saving an empty hostname removes the Realm's mapping rows entirely — the Realm no longer has a custom domain.
 
-Only the published config counts as "registered" for the authorization gate.
+This is simpler than white-label because custom domain is an infrequent, low-risk configuration: a typo can't break anything (the hostname must pass CNAME/TLS verification before it actually serves traffic), and switching back is just typing the correct hostname and saving again.
+
+The saved config counts as "registered" for the authorization gate.
 
 ### The certificate-abuse gate
 
 When the reverse proxy (Caddy) is asked to issue a TLS certificate for a hostname via on-demand TLS, it first asks Herald: "is this hostname registered and live?" Herald answers with a single boolean — `authorized: true` or `404`. No Realm identity or other detail is leaked.
 
-- A published, enabled hostname → `authorized: true` → the proxy proceeds with the ACME challenge.
+- A configured, enabled hostname → `authorized: true` → the proxy proceeds with the ACME challenge.
 - An unregistered hostname → `404` → the proxy declines to issue. A phishing domain pointed at Herald gets no certificate.
-- The authorization gate checks only "published and enabled." CNAME-verified and TLS-ready are *display* fields for the admin panel, not part of the authorization decision — otherwise authorization and issuance would form a circular dependency (`tls_ready=false` → refuse to issue → `tls_ready` never becomes `true`).
+- The authorization gate checks only "configured and enabled." CNAME-verified and TLS-ready are *display* fields for the admin panel, not part of the authorization decision — otherwise authorization and issuance would form a circular dependency (`tls_ready=false` → refuse to issue → `tls_ready` never becomes `true`).
 
 The shared secret between Herald and the proxy is `[custom_domain].ask_key` in the config; the proxy passes it in the `X-Herald-Ask-Key` header. See [Configuration](/docs/configuration#custom-domain).
 
@@ -64,11 +65,11 @@ The shared secret between Herald and the proxy is `[custom_domain].ask_key` in t
 ```mermaid
 flowchart LR
     subgraph Admin[Realm Admin]
-        UI[Settings form<br/>draft / publish / restore]
+        UI[Settings form<br/>save]
     end
 
     subgraph Herald
-        CFG[(Realm config<br/>settings / draft / previous)]
+        CFG[(Realm config<br/>settings)]
         MAP[(Domain mapping<br/>hostname -> realm, enabled)]
         ASK[Authorize endpoint<br/>authorized?: bool]
     end
@@ -77,14 +78,14 @@ flowchart LR
         TLS[On-Demand TLS<br/>asks before issuing]
     end
 
-    UI -->|save / publish / restore| CFG
-    CFG -->|publish writes hostname| MAP
+    UI -->|save writes hostname + config| CFG
+    UI -->|save writes hostname| MAP
     MAP --> ASK
     TLS -->|ask_key header| ASK
     ASK -->|authorized / 404| TLS
 ```
 
-The admin mutates config through the management endpoints. Publishing a domain writes its hostname into the registration mapping. The reverse proxy consults the authorize endpoint before issuing any certificate; only mapped, enabled hostnames are authorized.
+The admin saves a hostname through the management endpoint, which writes both the config row and the domain-registration mapping. The reverse proxy consults the authorize endpoint before issuing any certificate; only mapped, enabled hostnames are authorized.
 
 ## Configuration
 
@@ -113,6 +114,6 @@ See [Configuration → custom-domain](/docs/configuration#custom-domain) for the
 
 - [Custom-domain PRD](https://github.com/timzaak/cas-2/blob/main/docs/prd/core/realm-custom-domain.md) — product scope, business rules, acceptance goals
 - [Custom-domain user stories](https://github.com/timzaak/cas-2/blob/main/docs/user-stories/core/realm-custom-domain.md) — US-CD-001 / US-CD-003 / US-CD-005 acceptance scenarios
-- [White-label](/docs/ui-custom) — brands the page; custom domain brands the URL. The lifecycle is the same shape.
+- [White-label](/docs/ui-custom) — brands the page; custom domain brands the URL. White-label uses a draft/publish lifecycle; custom domain is a single save (simpler, because it's a low-frequency config gated by CNAME/TLS verification).
 - [Configuration](/docs/configuration#custom-domain) — the `[custom_domain]` config section
 - [Deployment](/docs/deployment) — reverse-proxy / on-demand TLS setup

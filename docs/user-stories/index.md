@@ -222,7 +222,7 @@ docs/user-stories/
 | US-WL-003 | 主色对比度安全提示 | Realm Admin | P1 | [core/white-label](core/white-label.md#故事-3主色对比度安全提示-us-wl-003) |
 | US-WL-004 | 资产 URL 引用与租户自备图床 | Realm Admin | P1 | [core/white-label](core/white-label.md#故事-4资产-url-引用与租户自备图床-us-wl-004) |
 | US-CD-001 | 为本 Realm 配置自定义登录域名 | Realm Admin | P0 | [core/realm-custom-domain](core/realm-custom-domain.md#故事-1为本-realm-配置自定义登录域名-us-cd-001) |
-| US-CD-003 | 自定义域名配置的草稿与发布 | Realm Admin | P1 | [core/realm-custom-domain](core/realm-custom-domain.md#故事-2自定义域名配置的草稿与发布-us-cd-003) |
+| US-CD-003 | 自定义域名配置保存即生效 | Realm Admin | P1 | [core/realm-custom-domain](core/realm-custom-domain.md#故事-2自定义域名配置保存即生效-us-cd-003) |
 | US-CD-005 | 未授权域名访问的拒绝 | Regular User | P1 | [core/realm-custom-domain](core/realm-custom-domain.md#故事-3未授权域名访问的拒绝-us-cd-005) |
 
 ---
