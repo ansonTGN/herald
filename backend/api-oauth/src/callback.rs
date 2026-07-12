@@ -105,7 +105,7 @@ async fn oauth_callback_inner(
         .map_err(|e| ApiError::bad_request(format!("Validation error: {}", e)))?;
 
     // Handle OAuth callback
-    let (user_id, jwt_token, client_id) = handle_oauth_callback(
+    let callback = handle_oauth_callback(
         &state,
         realm_id.clone(),
         provider_type,
@@ -113,6 +113,14 @@ async fn oauth_callback_inner(
         query.state,
     )
     .await?;
+
+    if let Some(redirect_uri) = callback.downstream_redirect_uri {
+        return Ok(Redirect::temporary(&redirect_uri).into_response());
+    }
+
+    let user_id = callback.user_id;
+    let jwt_token = callback.jwt_token;
+    let client_id = callback.client_id;
 
     let session_token = Uuid::now_v7().to_string();
     let session_config = load_client_session_config(&state, &realm_id, &client_id).await?;

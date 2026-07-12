@@ -19,6 +19,7 @@ use herald_core::infrastructure::redis::RedisConnectionManager;
 use jsonwebtoken::{EncodingKey, Header, encode};
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
+use url::Url;
 use uuid::Uuid;
 
 /// OAuth state data stored in Redis
@@ -28,7 +29,24 @@ struct OAuthStateData {
     client_id: String,
     provider_type: String,
     redirect_uri: Option<String>,
+    #[serde(default)]
+    downstream_state: Option<String>,
     created_at: i64,
+}
+
+#[derive(Debug, Deserialize)]
+struct DownstreamAuthorizationState {
+    client_id: String,
+    realm_id: String,
+    redirect_uri: String,
+    code_challenge: String,
+}
+
+pub struct OAuthCallbackResult {
+    pub user_id: Uuid,
+    pub jwt_token: String,
+    pub client_id: String,
+    pub downstream_redirect_uri: Option<String>,
 }
 
 async fn realm_public_origin_for_oauth(
@@ -138,6 +156,7 @@ pub async fn generate_oauth_auth_url(
     provider_type: String,
     client_id: String,
     redirect_uri: Option<String>,
+    downstream_state: Option<String>,
 ) -> Result<(String, String), AuthError> {
     // Get provider config from database
     let config = state
@@ -154,6 +173,10 @@ pub async fn generate_oauth_auth_url(
             AuthError::NotFound("OAuth Provider not configured or disabled".to_string())
         })?;
 
+    if let Some(ref downstream_state) = downstream_state {
+        validate_downstream_state_reference(state, &realm_id, downstream_state).await?;
+    }
+
     // Generate state token (UUID v7)
     let state_token = Uuid::now_v7().to_string();
 
@@ -163,6 +186,7 @@ pub async fn generate_oauth_auth_url(
         client_id,
         provider_type: provider_type.clone(),
         redirect_uri: redirect_uri.clone(),
+        downstream_state,
         created_at: chrono::Utc::now().timestamp(),
     };
 
@@ -209,6 +233,44 @@ pub async fn generate_oauth_auth_url(
     let auth_url = provider.get_auth_url(&state_token, &oauth_config)?;
 
     Ok((auth_url, state_token))
+}
+
+async fn validate_downstream_state_reference(
+    state: &AppState,
+    realm_id: &str,
+    downstream_state: &str,
+) -> Result<(), AuthError> {
+    let mut redis_conn: redis::aio::ConnectionManager = state
+        .redis_manager
+        .get()
+        .await
+        .map_err(|e| AuthError::InternalServerError(format!("Redis connection error: {e}")))?;
+    let state_json: Option<String> = redis_conn
+        .get(format!("oauth:state:{downstream_state}"))
+        .await
+        .map_err(|e| {
+            AuthError::InternalServerError(format!("Failed to read downstream state: {e}"))
+        })?;
+    let state_json = state_json
+        .ok_or_else(|| AuthError::BadRequest("Invalid or expired downstream state".to_string()))?;
+    let downstream: DownstreamAuthorizationState = serde_json::from_str(&state_json)
+        .map_err(|_| AuthError::BadRequest("Invalid downstream authorization state".to_string()))?;
+
+    if downstream.realm_id != realm_id {
+        return Err(AuthError::BadRequest(
+            "Downstream state realm mismatch".to_string(),
+        ));
+    }
+    if downstream.client_id.is_empty()
+        || downstream.redirect_uri.is_empty()
+        || downstream.code_challenge.is_empty()
+    {
+        return Err(AuthError::BadRequest(
+            "Incomplete downstream authorization state".to_string(),
+        ));
+    }
+
+    Ok(())
 }
 
 /// Validate state token from Redis
@@ -589,7 +651,7 @@ pub async fn handle_oauth_callback(
     provider_type: String,
     code: String,
     state_token: String,
-) -> Result<(Uuid, String, String), AuthError> {
+) -> Result<OAuthCallbackResult, AuthError> {
     // Validate state token
     let state_data = validate_state_token(&state.redis_manager, &state_token).await?;
 
@@ -645,5 +707,132 @@ pub async fn handle_oauth_callback(
     let jwt_secret_val = jwt_secret(state)?;
     let jwt_token = generate_jwt_token(&user_id.to_string(), &realm_id, jwt_secret_val)?;
 
-    Ok((user_id, jwt_token, state_data.client_id))
+    let downstream_redirect_uri = match state_data.downstream_state {
+        Some(downstream_state) => Some(
+            issue_downstream_authorization_code(state, &realm_id, user_id, &downstream_state)
+                .await?,
+        ),
+        None => None,
+    };
+
+    Ok(OAuthCallbackResult {
+        user_id,
+        jwt_token,
+        client_id: state_data.client_id,
+        downstream_redirect_uri,
+    })
+}
+
+async fn issue_downstream_authorization_code(
+    state: &AppState,
+    realm_id: &str,
+    user_id: Uuid,
+    downstream_state: &str,
+) -> Result<String, AuthError> {
+    let mut redis_conn: redis::aio::ConnectionManager = state
+        .redis_manager
+        .get()
+        .await
+        .map_err(|e| AuthError::InternalServerError(format!("Redis connection error: {e}")))?;
+    let state_json: Option<String> = redis_conn
+        .get_del(format!("oauth:state:{downstream_state}"))
+        .await
+        .map_err(|e| {
+            AuthError::InternalServerError(format!("Failed to consume downstream state: {e}"))
+        })?;
+    let state_json = state_json.ok_or_else(|| {
+        AuthError::BadRequest(
+            "Downstream state not found or already used; restart authorization".to_string(),
+        )
+    })?;
+    let downstream: DownstreamAuthorizationState = serde_json::from_str(&state_json)
+        .map_err(|_| AuthError::BadRequest("Invalid downstream authorization state".to_string()))?;
+
+    if downstream.realm_id != realm_id {
+        return Err(AuthError::BadRequest(
+            "Downstream state realm mismatch".to_string(),
+        ));
+    }
+    if downstream.client_id.is_empty()
+        || downstream.redirect_uri.is_empty()
+        || downstream.code_challenge.is_empty()
+    {
+        return Err(AuthError::BadRequest(
+            "Incomplete downstream authorization state".to_string(),
+        ));
+    }
+
+    let auth_code = format!("ac_{}", Uuid::now_v7());
+    let code_value = serde_json::json!({
+        "code_challenge": downstream.code_challenge,
+        "client_id": downstream.client_id,
+        "redirect_uri": downstream.redirect_uri,
+        "user_id": user_id.to_string(),
+        "realm_id": downstream.realm_id,
+    })
+    .to_string();
+    redis_conn
+        .set_ex::<String, String, ()>(
+            format!("oauth:code:{auth_code}"),
+            code_value,
+            OAUTH_STATE_TTL_SECONDS,
+        )
+        .await
+        .map_err(|e| {
+            AuthError::InternalServerError(format!("Failed to store authorization code: {e}"))
+        })?;
+
+    build_downstream_redirect_uri(&downstream.redirect_uri, &auth_code, downstream_state)
+}
+
+fn build_downstream_redirect_uri(
+    redirect_uri: &str,
+    auth_code: &str,
+    downstream_state: &str,
+) -> Result<String, AuthError> {
+    let mut redirect_url = Url::parse(redirect_uri)
+        .map_err(|_| AuthError::BadRequest("Invalid downstream redirect URI".to_string()))?;
+    redirect_url
+        .query_pairs_mut()
+        .append_pair("code", auth_code)
+        .append_pair("state", downstream_state);
+    Ok(redirect_url.into())
+}
+
+#[cfg(test)]
+mod downstream_redirect_tests {
+    use super::*;
+
+    #[test]
+    fn preserves_existing_query_and_encodes_state_when_returning_to_client() {
+        // WHY: downstream redirect URIs may already contain application query
+        // parameters, and state is opaque client data that must survive exactly.
+        let redirect = build_downstream_redirect_uri(
+            "https://client.example/callback?source=herald",
+            "ac_test",
+            "opaque state&value",
+        )
+        .expect("valid redirect URI");
+        let parsed = Url::parse(&redirect).expect("generated redirect URI");
+        let pairs: std::collections::HashMap<_, _> = parsed.query_pairs().into_owned().collect();
+
+        assert_eq!(pairs.get("source").map(String::as_str), Some("herald"));
+        assert_eq!(pairs.get("code").map(String::as_str), Some("ac_test"));
+        assert_eq!(
+            pairs.get("state").map(String::as_str),
+            Some("opaque state&value")
+        );
+    }
+
+    #[test]
+    fn legacy_broker_state_without_downstream_reference_remains_readable() {
+        // WHY: broker states created just before deployment must still complete
+        // as direct Herald logins after the optional field is introduced.
+        let state: OAuthStateData = serde_json::from_str(
+            r#"{"realm_id":"realm","client_id":"console","provider_type":"google","redirect_uri":null,"created_at":1}"#,
+        )
+        .expect("legacy state should deserialize");
+
+        assert_eq!(state.downstream_state, None);
+    }
 }

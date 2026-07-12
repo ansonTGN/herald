@@ -64,6 +64,7 @@ pub async fn wechat_login(
             .client_id
             .unwrap_or_else(|| "admin-web-console".to_string()),
         query.redirect_uri,
+        None,
     )
     .await?;
 
@@ -118,7 +119,7 @@ pub async fn wechat_callback(
 
     // Handle OAuth callback using the helper function
     let realm_id_clone = realm_id.clone();
-    let (user_id, jwt_token, _client_id) = handle_oauth_callback(
+    let callback = handle_oauth_callback(
         &state,
         realm_id_clone,
         "wechat".to_string(),
@@ -126,6 +127,13 @@ pub async fn wechat_callback(
         state_token,
     )
     .await?;
+
+    if let Some(redirect_uri) = callback.downstream_redirect_uri {
+        return Ok(Redirect::temporary(&redirect_uri).into_response());
+    }
+
+    let user_id = callback.user_id;
+    let jwt_token = callback.jwt_token;
 
     tracing::info!(
         realm_id = %realm_id,

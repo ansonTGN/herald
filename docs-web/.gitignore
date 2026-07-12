@@ -23,3 +23,8 @@ src/routeTree.gen.ts
 openapi.json
 
 .source
+
+# Local env (chat widget API URL etc.)
+.env
+.env.local
+.env.*.local

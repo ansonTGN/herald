@@ -138,7 +138,7 @@ fn to_response(config: RealmConfig) -> RealmConfigResponse {
     }
 }
 
-/// 获取指定 realm 的所有配置
+/// Get all configs for a given realm
 #[utoipa::path(
     get,
     path = "/api/configs/{realmId}",
@@ -187,7 +187,7 @@ pub async fn list_realm_configs(
     Ok(Json(responses))
 }
 
-/// 获取指定类型的所有配置
+/// Get all configs of a given type
 #[utoipa::path(
     get,
     path = "/api/configs/{realmId}/{configType}",
@@ -237,7 +237,7 @@ pub async fn list_realm_configs_by_type(
     Ok(Json(responses))
 }
 
-/// 获取单个配置
+/// Get a single config
 #[utoipa::path(
     get,
     path = "/api/configs/{realmId}/{configType}/{configKey}",
@@ -292,7 +292,7 @@ pub async fn get_realm_config(
     Ok(Json(to_response(config)))
 }
 
-/// 创建或更新配置（Upsert）
+/// Create or update a config (upsert)
 #[utoipa::path(
     put,
     path = "/api/configs/{realmId}",
@@ -391,7 +391,7 @@ pub async fn upsert_realm_config(
     Ok(Json(to_response(config)))
 }
 
-/// 批量创建或更新配置
+/// Batch create or update configs
 #[utoipa::path(
     post,
     path = "/api/configs/{realmId}/batch",
@@ -564,7 +564,7 @@ pub async fn batch_upsert_realm_configs(
     Ok(Json(responses))
 }
 
-/// 删除配置
+/// Delete a config
 #[utoipa::path(
     delete,
     path = "/api/configs/{realmId}/{configType}/{configKey}",

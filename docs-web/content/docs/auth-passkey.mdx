@@ -11,9 +11,7 @@ Developers and Realm Admins who need to understand or turn on Passkey in a Realm
 
 ## What problem it solves
 
-Passwords are phishable and reused. TOTP improves on that but still asks the user to type a code, and the code can be relayed in a real-time phishing attack. Passkey is a public-key credential that stays on the user's device: the private key never leaves it, the assertion is bound to the origin (RP_ID), and the browser mediates the ceremony — so a phishing page on a look-alike domain cannot produce a valid assertion.
-
-Herald layers Passkey on top of the same building blocks TOTP already uses: Realm-level `enabled` / `force_enabled` config, the temp-session / session-issuance flow, audit, and rate limiting. Passkey does not replace TOTP — it is an additional option, and TOTP remains one of the fallbacks.
+Passkey is a public-key credential that stays on the user's device. The private key never leaves it, and the assertion is bound to the origin (RP_ID), so a phishing page on a look-alike domain cannot produce a valid assertion. Passkey is an additional option alongside TOTP — it does not replace it, and both remain available as fallbacks.
 
 ## Two login modes
 
@@ -96,14 +94,6 @@ flowchart LR
 ```
 
 Both the first-factor and the second-factor path reuse the same RP, challenge store, and credential store; they differ only in whether the ceremony runs before or after password verification, and which temp-session key the challenge is anchored to.
-
-## What is intentionally out of scope
-
-- Cross-Realm Passkey sharing (credentials are Realm-isolated).
-- Enterprise attestation verification and FIDO MDS lookups.
-- An admin remotely deleting or locking a single user's Passkey (reset the user's auth methods instead).
-- A "passwordless-only" mode that disables password / TOTP.
-- A Passkey-specific recovery code (TOTP backup codes remain the shared recovery mechanism).
 
 ## Related docs
 

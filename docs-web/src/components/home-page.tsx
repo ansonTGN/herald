@@ -37,7 +37,7 @@ export function HomePage({
   docsLink: { to: string; params: Record<string, string> };
 }) {
   return (
-    <HomeLayout {...baseOptions()}>
+    <HomeLayout {...baseOptions(docsLink.params.lang)}>
       <div className="relative overflow-hidden selection:bg-amber-200 selection:text-amber-900 dark:selection:bg-amber-800 dark:selection:text-amber-100">
         {/* Dot grid background */}
         <div

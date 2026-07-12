@@ -61,10 +61,9 @@ export interface HomeTexts {
 
 export const en: HomeTexts = {
   badge: "Open Source · Self-Hosted",
-  heroTitle:
-    "Herald ships a complete multi-tenant platform — auth, billing, payments, user management — so small teams skip infrastructure entirely.",
+  heroTitle: "Auth, billing, and payments",
   heroDesc:
-    "AI-assisted customization means you tailor it to your needs without touching boilerplate.",
+    "A self-hosted multi-tenant platform for small teams. Customize it with AI and skip the infrastructure.",
   getStarted: "Get Started",
   liveDemo: "Live Demo",
   viewFeatures: "View Features",
@@ -81,7 +80,7 @@ export const en: HomeTexts = {
       { text: "→ Starting PostgreSQL + Redis ...", status: "info" },
       { text: "✓ Database migrated", status: "ok" },
       { text: "✓ Multi-tenant auth  (RBAC, OAuth, TOTP)", status: "ok" },
-      { text: "✓ Subscription billing (Stripe, WeChat Pay)", status: "ok" },
+      { text: "✓ Subscription billing (Stripe, Creem)", status: "ok" },
       { text: "✓ Admin console @ http://localhost:3000", status: "ok" },
       {
         text: "→ Your auth & billing infrastructure is ready. Focus on your product.",
@@ -116,7 +115,7 @@ export const en: HomeTexts = {
       desc: "Create subscription plans, map them to payment providers, and assign plans to Client Apps. Includes points/credits and invoice management.",
       bullets: [
         "Subscription plans & pricing tiers",
-        "Stripe & WeChat Pay integration",
+        "Stripe & Creem integration",
         "Points & credits system",
       ],
     },
@@ -222,7 +221,7 @@ export const en: HomeTexts = {
     {
       question: "What payment providers does Herald support?",
       answer:
-        "Herald supports Stripe and WeChat Pay for subscription payments. You can create subscription plans with different pricing tiers, map plans to specific payment providers, and assign plans to Client Apps.",
+        "Herald supports Stripe and Creem for subscription payments. You can create subscription plans with different pricing tiers, map plans to specific payment providers, and assign plans to Client Apps.",
     },
     {
       question: "What tech stack does Herald use?",
@@ -249,9 +248,9 @@ export const en: HomeTexts = {
 
 export const zh: HomeTexts = {
   badge: "开源 · 自托管",
-  heroTitle:
-    "Herald 提供完整的 multi-tenant 平台 —— 认证、计费、支付、用户管理一应俱全，让小团队跳过基础设施搭建。",
-  heroDesc: "AI 辅助定制意味着你可以按需调整，而无需编写样板代码。",
+  heroTitle: "认证、计费、支付",
+  heroDesc:
+    "面向小团队的多租户自托管平台。AI 辅助定制，跳过基础设施搭建。",
   getStarted: "快速开始",
   liveDemo: "在线演示",
   viewFeatures: "查看功能",
@@ -268,7 +267,7 @@ export const zh: HomeTexts = {
       { text: "→ 正在启动 PostgreSQL + Redis ...", status: "info" },
       { text: "✓ 数据库迁移完成", status: "ok" },
       { text: "✓ Multi-tenant 认证 (RBAC, OAuth, TOTP)", status: "ok" },
-      { text: "✓ 订阅计费 (Stripe, 微信支付)", status: "ok" },
+      { text: "✓ 订阅计费 (Stripe, Creem)", status: "ok" },
       { text: "✓ 管理后台 @ http://localhost:3000", status: "ok" },
       { text: "→ 认证与计费基础设施已就绪，专注于你的产品。", status: "info" },
     ],
@@ -300,7 +299,7 @@ export const zh: HomeTexts = {
       desc: "创建订阅计划，映射到支付提供商，并分配给客户端应用。内置积分/信用点与发票管理。",
       bullets: [
         "订阅计划与定价层级",
-        "Stripe 与微信支付集成",
+        "Stripe 与 Creem 集成",
         "积分与信用点系统",
       ],
     },
@@ -405,7 +404,7 @@ export const zh: HomeTexts = {
     {
       question: "Herald 支持哪些支付提供商？",
       answer:
-        "Herald 支持 Stripe 和微信支付用于订阅付款。你可以创建不同定价层级的订阅计划，将其映射到特定支付提供商，并分配给客户端应用。",
+        "Herald 支持 Stripe 和 Creem 用于订阅付款。你可以创建不同定价层级的订阅计划，将其映射到特定支付提供商，并分配给客户端应用。",
     },
     {
       question: "Herald 使用什么技术栈？",

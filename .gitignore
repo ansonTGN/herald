@@ -29,5 +29,8 @@ skill-eval-workspace/
 backend/config/*-local.toml
 .claude
 
+# Deployment scripts (contain server IPs + secrets)
+scripts/deploy/
+
 # ZCode workspace artifacts
 .zcode/

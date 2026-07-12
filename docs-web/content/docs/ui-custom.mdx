@@ -15,9 +15,7 @@ End users (Regular Users) never see the configuration surface. They only consume
 
 ## What problem it solves
 
-Every Realm in Herald ships with the same default auth page: the "Herald" wordmark, a fixed gradient background, and Herald's button color. For a tenant running Herald as their identity provider, that default breaks brand continuity at exactly the moment trust matters most — when a user is typing a password or consenting to OAuth scopes.
-
-White-label hands that surface to the Realm Admin. They point at a logo URL, pick an accent color, paste a background, and publish. From then on every auth-flow page under that Realm carries the tenant's brand. They keep final say on the accent color even if it fails a contrast check.
+Every Realm in Herald ships with the same default auth page: the "Herald" wordmark, a fixed gradient background, and Herald's button color. White-label lets the Realm Admin point at a logo URL, pick an accent color, paste a background, and publish, so every auth-flow page under that Realm carries the tenant's brand instead.
 
 ## What you can brand
 
@@ -85,7 +83,7 @@ Each auth route derives a single `whiteLabel` value from the public config and t
 
 Forgot-password and reset-password apply only logo, accent, background, and footer — they do not consume the login/register copy fields, since those pages have their own wording.
 
-Pages outside the auth flow are not branded. The legal pages, the user center, and the admin console itself keep the Herald chrome even where they share styling infrastructure. That is a scope decision, not a technical limitation — see the PRD's out-of-scope section for the rationale.
+Pages outside the auth flow are not branded. The legal pages, the user center, and the admin console itself keep the Herald chrome even where they share styling infrastructure.
 
 ## How the data flows
 
@@ -110,16 +108,6 @@ flowchart LR
 ```
 
 The admin mutates config through the management endpoints (draft / publish / restore). The public endpoint reads only the published `settings` slot, never draft or previous. End-user auth pages read the public endpoint and hand the result to the wrapper. Drafts and undo history stay server-side and admin-only end to end.
-
-## What is intentionally out of scope
-
-- Custom HTML or CSS templates (Full Custom). Too large an XSS / CSP surface for a Standard tier.
-- Custom subdomain / custom domain. That is a separate feature, covered in the [Custom Domain](/docs/realm-custom-domain) guide.
-- Asset upload and storage. Logos and backgrounds are URL references this release; upload is a possible expansion if tenants without a CDN turn out to be common.
-- An asset / content safety review pipeline. External URLs are the tenant's responsibility.
-- Multi-locale brand copy. i18n is a separate concern covered by its own PRD.
-- Dark mode branding values. This release brands light theme only.
-- Branding on non-auth pages (legal, user center, admin console).
 
 ## Related docs
 

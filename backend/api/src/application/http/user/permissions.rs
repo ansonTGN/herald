@@ -15,12 +15,14 @@ pub struct UserPermissionsResponse {
     pub has_all: bool,            // 兼容旧字段；当前用户接口不表达后台全量权限
 }
 
-/// 获取用户权限列表
+/// Get the current user's permission list
 ///
-/// 返回当前用户拥有的所有权限名称列表，用于前端菜单权限控制。
+/// Returns the list of all permission names the current user has, used for
+/// frontend menu permission control.
 ///
-/// **has_all 字段说明**：
-/// 兼容旧响应字段，当前用户接口不再展开 realm 全量权限定义，固定为 false。
+/// **has_all field**:
+/// Legacy response field kept for compatibility. The user endpoint no longer
+/// expands the full set of realm permission definitions and always returns false.
 #[utoipa::path(
     get,
     path = "/api/user/permissions",

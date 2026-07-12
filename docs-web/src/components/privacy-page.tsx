@@ -97,7 +97,7 @@ const textsMap: Record<string, PrivacyTexts> = { en, zh };
 export function PrivacyPage({ lang }: { lang: string }) {
   const t = textsMap[lang] ?? en;
   return (
-    <HomeLayout {...baseOptions()}>
+    <HomeLayout {...baseOptions(lang)}>
       <div className="relative z-10 py-20 px-4 min-h-[60vh]">
         <div className="max-w-3xl mx-auto">
           <h1 className="text-4xl md:text-5xl font-serif font-bold text-stone-900 dark:text-stone-100 mb-2 tracking-tight">

@@ -49,6 +49,12 @@ import {
   useResolvedRealmContext,
 } from '@/lib/realm-routing'
 
+// react-hooks/immutability forbids assigning window.location.href inside
+// callbacks passed to hooks; route it through a module-level helper.
+function navigateExternally(url: string): void {
+  window.location.href = url
+}
+
 interface TotpStep {
   tempToken: string
 }
@@ -194,7 +200,7 @@ export function LoginPage() {
       }
 
       if (response.redirectTo) {
-        window.location.href = response.redirectTo
+        navigateExternally(response.redirectTo)
         return
       }
 
@@ -211,7 +217,7 @@ export function LoginPage() {
       }
 
       if (redirectPath.startsWith('http://') || redirectPath.startsWith('https://')) {
-        window.location.href = redirectPath
+        navigateExternally(redirectPath)
         return
       }
 
@@ -276,7 +282,7 @@ export function LoginPage() {
     const { redirectPath, redirectTo } = await completeLoginAfterTotp(realmId, verifyResponse)
 
     if (redirectTo) {
-      window.location.href = redirectTo
+      navigateExternally(redirectTo)
       return
     }
 
@@ -288,7 +294,7 @@ export function LoginPage() {
     }
 
     if (safeRedirectPath.startsWith('http://') || safeRedirectPath.startsWith('https://')) {
-      window.location.href = safeRedirectPath
+      navigateExternally(safeRedirectPath)
       return
     }
 
@@ -310,7 +316,7 @@ export function LoginPage() {
     const { redirectPath, redirectTo } = await completeLoginAfterPasskey(realmId, verifyResponse)
 
     if (redirectTo) {
-      window.location.href = redirectTo
+      navigateExternally(redirectTo)
       return
     }
 
@@ -322,7 +328,7 @@ export function LoginPage() {
     }
 
     if (safeRedirectPath.startsWith('http://') || safeRedirectPath.startsWith('https://')) {
-      window.location.href = safeRedirectPath
+      navigateExternally(safeRedirectPath)
       return
     }
 
@@ -603,7 +609,7 @@ export function LoginPage() {
                   <Button
                     key={provider.name}
                     variant="outline"
-                    onClick={() => initiateOAuthLogin(realmId, provider.name)}
+                    onClick={() => initiateOAuthLogin(realmId, provider.name, oauthParams?.state)}
                     disabled={loginMutation.isPending}
                     data-testid={`oauth-login-button-${provider.name}`}
                   >

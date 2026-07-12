@@ -138,56 +138,6 @@ A voided Credit Note row gets a strikethrough, but the `Voided` badge stays read
 
 Regular users see only the refund summary (e.g. "Refunded 30/100") in their invoice list and detail; they do not see the Credit Note list, internal IDs, or operator info. Invoices with `provider = creem` show no refund dimension at all.
 
-## Local verification
-
-### Backend tests
-
-Run the Credit-Note-related scenarios directly:
-
-```bash
-cd backend
-uv run scripts/backend-test.py -- credit_note_voided
-uv run scripts/backend-test.py -- void_invoice
-```
-
-Coverage:
-
-- `credit_note.voided` rolls back the amount
-- duplicate `credit_note.voided` is idempotent
-- a voided event arriving before the created event triggers re-delivery
-- void is rejected with 409 when an active Credit Note exists
-- void succeeds when only voided Credit Notes exist
-
-### Frontend tests
-
-```bash
-cd frontend
-npm run type-check
-npm test -- invoice-detail-dialog.test.tsx invoice-admin-page.test.tsx invoice-user-page.test.tsx record-refund-dialog.test.tsx
-```
-
-Coverage:
-
-- refund summary render gating (stripe/manual shown, creem not)
-- dual-track Credit Note list
-- strikethrough on voided rows
-- Record Refund button gating
-- user-role trimming
-
-### Demo
-
-Demo scripts live in `demo/e2e/`:
-
-```bash
-cd demo
-npm run type-check
-uv run scripts/demo-test-runner.py billing-admin/credit-note-manual-refund-demo.e2e.ts
-uv run scripts/demo-test-runner.py billing-admin/credit-note-stripe-void-rollback-demo.e2e.ts
-uv run scripts/demo-test-runner.py regular-user/credit-note-user-visibility-demo.e2e.ts
-```
-
-Before running, start the demo environment and make sure the `STRIPE_WEBHOOK_SECRET` in `demo/.env.demo` matches the webhook secret in the realm seed.
-
 ## Common edge cases
 
 | Scenario | Handling |

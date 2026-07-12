@@ -174,7 +174,7 @@ pub async fn create_permission(
     Ok(ApiResult::created(()))
 }
 
-/// 权限列表（按 ClientId 分页）
+/// Permission list (paginated by client ID)
 ///
 #[utoipa::path(
   get,
@@ -243,9 +243,9 @@ pub async fn list_permission(
     Ok(ApiResult::ok(data))
 }
 
-/// 删除权限
+/// Delete a permission
 ///
-/// 对应规范：post /api/permission/:id
+/// Corresponds to spec: post /api/permission/:id
 #[utoipa::path(
   post,
   path = "/api/permission/{realmId}/permissions/delete",

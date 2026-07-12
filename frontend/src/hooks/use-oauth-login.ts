@@ -3,9 +3,16 @@ import { oauthLogin } from '@/lib/api-generated'
 import { getErrorMessage } from '@/lib/error-utils'
 
 export function useOAuthLogin() {
-  async function initiateOAuthLogin(realmId: string, provider: string): Promise<void> {
+  async function initiateOAuthLogin(
+    realmId: string,
+    provider: string,
+    downstreamState?: string
+  ): Promise<void> {
     try {
-      const response = await oauthLogin({ path: { realmId, provider } })
+      const response = await oauthLogin({
+        path: { realmId, provider },
+        query: downstreamState ? { downstream_state: downstreamState } : undefined,
+      })
 
       if (response.error) {
         throw response.error

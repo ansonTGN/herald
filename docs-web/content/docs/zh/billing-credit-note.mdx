@@ -138,56 +138,6 @@ voided 的 Credit Note 整行带删除线，但 `Voided` Badge 保持可读。
 
 普通用户在自己的发票列表和详情中只能看到退款摘要（如 "Refunded 30/100"），看不到 Credit Note 列表、内部编号和操作者信息。`provider = creem` 的发票不展示任何退款维度。
 
-## 本地验证
-
-### 后端测试
-
-定向运行 Credit Note 相关场景：
-
-```bash
-cd backend
-uv run scripts/backend-test.py -- credit_note_voided
-uv run scripts/backend-test.py -- void_invoice
-```
-
-覆盖：
-
-- `credit_note.voided` 回滚金额
-- 重复 `credit_note.voided` 幂等
-- voided 事件先于 created 事件到达时触发重投递
-- 存在 active Credit Note 时 void 被 409 拒绝
-- 仅有 voided Credit Note 时 void 成功
-
-### 前端测试
-
-```bash
-cd frontend
-npm run type-check
-npm test -- invoice-detail-dialog.test.tsx invoice-admin-page.test.tsx invoice-user-page.test.tsx record-refund-dialog.test.tsx
-```
-
-覆盖：
-
-- 退款摘要渲染门控（stripe/manual 展示，creem 不展示）
-- 双轨 Credit Note 列表
-- voided 行删除线
-- Record Refund 按钮门控
-- 用户角色裁剪
-
-### Demo
-
-Demo 脚本位于 `demo/e2e/`：
-
-```bash
-cd demo
-npm run type-check
-uv run scripts/demo-test-runner.py billing-admin/credit-note-manual-refund-demo.e2e.ts
-uv run scripts/demo-test-runner.py billing-admin/credit-note-stripe-void-rollback-demo.e2e.ts
-uv run scripts/demo-test-runner.py regular-user/credit-note-user-visibility-demo.e2e.ts
-```
-
-运行前需要启动 demo 环境，并确保 `demo/.env.demo` 中的 `STRIPE_WEBHOOK_SECRET` 与 realm seed 中的 webhook secret 一致。
-
 ## 常见边界
 
 | 场景 | 处理方式 |

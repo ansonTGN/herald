@@ -17,10 +17,11 @@ pub struct UserProfileRolesResponse {
     pub permissions: Vec<String>,
 }
 
-/// 获取当前用户角色信息和权限
+/// Get the current user's roles and permissions
 ///
-/// 返回当前登录用户的所有角色（role names）和权限（permission names）。
-/// 返回当前用户实际拥有的角色和权限，不展开 realm 全量权限定义。
+/// Returns all roles (role names) and permissions (permission names) of the
+/// currently logged-in user. Returns the roles and permissions the user
+/// actually holds, without expanding the full set of realm permission definitions.
 #[utoipa::path(
     get,
     path = "/api/user/roles",

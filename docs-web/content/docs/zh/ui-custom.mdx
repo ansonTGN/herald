@@ -15,9 +15,7 @@ Herald 允许 Realm 管理员对托管的 auth 页面做品牌化——logo、�
 
 ## 解决什么问题
 
-Herald 里每个 Realm 默认都用同一套 auth 页面：「Herald」文字 logo、固定渐变背景、Herald 的按钮主色。对把 Herald 当作身份提供方的租户来说，这个默认外观在最重要的信任时刻——用户输入密码或确认 OAuth 授权——破坏了品牌连续性。
-
-White-label 把这个界面交给 Realm 管理员。指向一个 logo URL、选一个主色、贴一段背景、发布，之后该 Realm 下所有 auth 流页面都带上租户品牌。即使主色对比度不达标，最终决定权也在管理员手上。
+Herald 里每个 Realm 默认都用同一套 auth 页面：「Herald」文字 logo、固定渐变背景、Herald 的按钮主色。White-label 让 Realm 管理员指向一个 logo URL、选一个主色、贴一段背景、发布，之后该 Realm 下所有 auth 流页面都带上租户品牌。
 
 ## 可以品牌化哪些内容
 
@@ -85,7 +83,7 @@ Realm 管理员在 *Settings → White-label* 配置品牌化。这个 Tab 和�
 
 忘记密码和重置密码只应用 logo、主色、背景、页脚——它们不消费登录/注册文案字段，因为这些页面有自己的措辞。
 
-auth 流之外的页面不做品牌化。legal 页、用户中心、管理后台本身保留 Herald 外观，即使技术上共享部分样式基础设施。这是范围决策，不是技术限制——理由见 PRD 的 out-of-scope 章节。
+auth 流之外的页面不做品牌化。legal 页、用户中心、管理后台本身保留 Herald 外观，即使技术上共享部分样式基础设施。
 
 ## 数据怎么流转
 
@@ -110,16 +108,6 @@ flowchart LR
 ```
 
 管理员通过管理端端点修改配置（草稿 / 发布 / 恢复）。公开端点只读已发布的 `settings` 槽，绝不读 draft 或 previous。终端用户 auth 页面读公开端点，把结果交给 wrapper。草稿和撤销历史全程留在服务端，仅管理员可见。
-
-## 有意不做的范围
-
-- 自定义 HTML 或 CSS 模板（Full Custom）。对 Standard 级别而言 XSS / CSP 面太大。
-- 自定义子域 / 自定义域名。这是独立功能，见 [自定义域名](/docs/zh/realm-custom-domain) 指南。
-- 资产上传与存储。本期 logo 和背景都是 URL 引用；如果普遍缺图床的租户变多，上传是可能的扩展。
-- 资产 / 内容安全审核流水线。外部 URL 由租户负责。
-- 多语言品牌文案。i18n 是独立关注点，另有 PRD 覆盖。
-- 暗色模式的品牌值。本期只对 light 主题做品牌化。
-- 非 auth 页面（legal、用户中心、管理后台）的品牌化。
 
 ## 相关文档
 

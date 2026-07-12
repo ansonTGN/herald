@@ -14,7 +14,7 @@
     "auth-passkey",
     "ui-custom",
     "realm-custom-domain",
-    "points-grant-redesign",
+    "points-quota",
     "openapi"
   ]
 }

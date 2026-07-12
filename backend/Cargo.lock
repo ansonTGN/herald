@@ -1971,6 +1971,7 @@ dependencies = [
  "sha2",
  "sqlx",
  "tracing",
+ "url",
  "urlencoding",
  "utoipa",
  "uuid",

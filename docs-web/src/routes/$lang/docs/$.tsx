@@ -136,7 +136,7 @@ function Page() {
       : { copyright: "Apache 2.0", privacy: "Privacy", terms: "Terms" };
 
   return (
-    <DocsLayout {...baseOptions()} tree={data.pageTree}>
+    <DocsLayout {...baseOptions(data.locale)} tree={data.pageTree}>
       {data.type === "docs" && <Link to={data.markdownUrl} hidden />}
       <Suspense>{content}</Suspense>
       <SiteFooter lang={data.locale} labels={footerLabels} />

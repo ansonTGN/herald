@@ -9,14 +9,6 @@ Herald 的计费系统不维护本地商品目录。Stripe、Creem 这些支付�
 
 需要理解 Herald 计费模块设计的开发者。不涉及具体支付方的对接操作，对接指南见各支付方的单独文档。
 
-## 旧模型和新模型
-
-旧模型有三层本地目录：Product → SubscriptionPlan → Subscription。管理员在 Herald 后台创建产品和套餐，配置支付映射，再分配给 Client App。问题是 Stripe/Creem 自己也有 Product/Price/Subscription，两边的目录要手动保持同步，时间一长就漂移。
-
-新模型把商业目录交给支付方，Herald 不再提供 Product 和 SubscriptionPlan 的 CRUD。取而代之的是一个映射表（Entitlement Mapping），记录"支付方的哪个商品对应 Herald 的哪个 entitlement"。
-
-积分侧也改了。旧的积分账本是"一个用户一个总账"，所有积分混在一起。新模型用积分账户把积分拆成多个互相隔离的池，按应用群结算和消费。积分账户是下面几个概念共同的归属点：映射挂在积分账户上，订阅绑定积分账户，积分发到积分账户的池里。
-
 ## 核心概念
 
 ### 积分账户
@@ -101,7 +93,7 @@ Entitlement Mapping 是一张映射表，把支付方的外部商品 ID 映射�
 
 Subscription 是支付方订阅状态的本地只读副本，不是 Herald 拥有的订阅。SDK 和授权查询读取这个投影，不依赖实时支付方 API。
 
-投影字段包括 `realm_id`、`user_id`、`entitlement_key`、`bucket_id`、`status`、`current_period_start/end`、`provider_metadata` 等。订阅在建立时就绑定到购买时那个 Entitlement Mapping 所属的积分账户，之后续费、升降级、取消、退款的积分发放和回收都回到同一个池，不会串到别的积分账户。旧的 `plan_id`、`tier`、`billing_period` 字段已移除，需要这些信息时从 `entitlement_key` 或 `provider_metadata` 派生。
+投影字段包括 `realm_id`、`user_id`、`entitlement_key`、`bucket_id`、`status`、`current_period_start/end`、`provider_metadata` 等。订阅在建立时就绑定到购买时那个 Entitlement Mapping 所属的积分账户，之后续费、升降级、取消、退款的积分发放和回收都回到同一个池，不会串到别的积分账户。需要计费周期或档位信息时，从 `entitlement_key` 或 `provider_metadata` 派生。
 
 订阅状态：Active、Trialing、PastDue、Canceled、Expired、Paused、Disputed、ScheduledCancel、Incomplete。
 
@@ -195,19 +187,6 @@ flowchart LR
 | Creem | Product API | Checkout | Checkout | Checkout metadata，webhook 返回 |
 
 Stripe、Creem 是发起式平台，通过 PaymentAttempt 统一管理支付过程。
-
-## 已移除的功能
-
-以下功能在 2026 年 6 月的重构中移除，不再存在：
-
-- 本地 Product CRUD（管理页面和 API）
-- 本地 SubscriptionPlan CRUD（管理页面和 API）
-- Plan → Payment Provider Mapping 配置
-- Plan → Client App 分配
-- 关联表：`subscription_plan_payment_provider`、`client_app_subscription_plan`、`points_plan_configs`
-- "未归属映射 → 不可购"的中间态：`bucket_id` 在映射、订阅、支付尝试上都是 NOT NULL，一个商品要么属于某个积分账户，要么不可购，没有悬空状态
-
-如果你在代码或文档中看到 "plan_id"、"Product 管理"、"Subscription Plan" 相关的描述，它们已经过时。
 
 ## 相关文档
 

@@ -19,6 +19,9 @@ pub struct OAuthLoginRequest {
     pub client_id: Option<String>,
     #[serde(alias = "redirect_uri")]
     pub redirect_uri: Option<String>,
+    #[serde(alias = "downstream_state")]
+    #[validate(length(min = 1, max = 512))]
+    pub downstream_state: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
@@ -36,7 +39,8 @@ pub struct OAuthLoginResponse {
     params(
         ("realmId" = String, Path, description = "Realm ID"),
         ("provider" = String, Path, description = "OAuth provider type (google, github, facebook, apple, wechat, wechat_miniprogram)"),
-        ("redirect_uri" = Option<String>, Query, description = "Redirect URI after successful login")
+        ("redirect_uri" = Option<String>, Query, description = "Provider callback URI override"),
+        ("downstream_state" = Option<String>, Query, description = "Existing downstream authorization transaction state")
     ),
     responses(
         (status = 200, description = "OAuth login initiated", body = OAuthLoginResponse),
@@ -50,6 +54,10 @@ pub async fn oauth_login(
     Path((realm_id, provider)): Path<(String, String)>,
     Query(query): Query<OAuthLoginRequest>,
 ) -> Result<Json<OAuthLoginResponse>, ApiError> {
+    query
+        .validate()
+        .map_err(|e| ApiError::bad_request(format!("Validation error: {e}")))?;
+
     // Validate provider
     let provider_type = provider.to_lowercase();
     if !matches!(
@@ -72,6 +80,7 @@ pub async fn oauth_login(
         provider_type,
         client_id,
         query.redirect_uri,
+        query.downstream_state,
     )
     .await?;
 

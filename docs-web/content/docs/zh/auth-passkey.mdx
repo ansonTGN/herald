@@ -11,9 +11,7 @@ Herald 的 Passkey 基于 WebAuthn / FIDO2。同一个凭证既能作为无密�
 
 ## 解决什么问题
 
-密码可被钓鱼、且常被复用。TOTP 好一些，但仍然要用户手输验证码，验证码在实时钓鱼攻击里会被中继转发。Passkey 是留在用户设备上的公钥凭证：私钥不离开设备，断言绑定到 origin（RP_ID），ceremony 由浏览器中介——所以一个长得像的钓鱼域名页面无法产出有效断言。
-
-Herald 把 Passkey 叠加在 TOTP 已经用的同一套积木上：Realm 级的 `enabled` / `force_enabled` 配置、临时会话 / 会话发放流程、审计、速率限制。Passkey 不替换 TOTP，它是一个额外选项，TOTP 仍然是回退方式之一。
+Passkey 是留在用户设备上的公钥凭证：私钥不离开设备，断言绑定到 origin（RP_ID），所以一个长得像的钓鱼域名页面无法产出有效断言。Passkey 是 TOTP 之外的额外选项——不替换 TOTP，两者都保留为回退方式。
 
 ## 两种登录模式
 
@@ -96,14 +94,6 @@ flowchart LR
 ```
 
 第一因素和第二因素两条路径复用同一个 RP、challenge 存储和凭证存储；区别只在于 ceremony 跑在密码验证之前还是之后，以及 challenge 锚定到哪个临时会话键。
-
-## 有意不做的范围
-
-- 跨 Realm 共享 Passkey（凭证按 Realm 隔离）。
-- 企业级 attestation 验证和 FIDO MDS 查询。
-- 管理员远程删除或锁定单个用户的 Passkey（改为重置该用户的认证方式）。
-- 禁用密码 / TOTP 的"纯无密码"模式。
-- Passkey 专属恢复码（TOTP 备份恢复码作为通用恢复机制保留）。
 
 ## 相关文档
 

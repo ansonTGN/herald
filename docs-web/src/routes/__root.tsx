@@ -7,6 +7,7 @@ import {
 } from "@tanstack/react-router";
 import { defineI18nUI } from "fumadocs-ui/i18n";
 import { RootProvider } from "fumadocs-ui/provider/tanstack";
+import RWikiChatWidget from "@/components/rwiki-chat-widget";
 import SearchDialog from "@/components/search";
 import { i18n } from "@/lib/i18n";
 import appCss from "@/styles/app.css?url";
@@ -43,7 +44,7 @@ export const Route = createRootRoute({
         content: "width=device-width, initial-scale=1",
       },
       {
-        title: "Herald Documentation",
+        title: "Herald",
       },
       // Google Search Console verification — replace content with your actual token
       // {
@@ -81,6 +82,7 @@ function RootComponent() {
           <Outlet />
         </RootProvider>
         <Scripts />
+        <RWikiChatWidget locale={locale} />
       </body>
     </html>
   );
