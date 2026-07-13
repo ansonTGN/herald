@@ -4,7 +4,7 @@
 
 An out-of-the-box SaaS foundation: multi-tenant account system, Stripe/Creem payment integration, and a built-in credits system. Single-process deployment, Docker in production.
 
-This project practices AI-assisted programming using Claude Code + GLM model and Codex hybrid development.
+This project practices AI-assisted programming using Claude Code + GLM model and Codex hybrid development. The AI dev kit is built on [web-dev-skills](https://github.com/timzaak/web-dev-skills).
 
 ## Features
 

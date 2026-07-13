@@ -88,6 +88,12 @@ def ensure_demo_seed_data(logger: "Logger | None" = None) -> bool:
     """Ensure the reusable demo environment contains deterministic demo seed data."""
     try:
         _info(logger, "Ensuring demo seed data for realm-001...")
+        # Pre-establish admin@cas.com legal consent BEFORE logging in. When the
+        # admin realm has global legal-agreement versions, login returns
+        # consentRequired=true and never sets the X-Auth cookie, so the seed
+        # _login below fails (chicken-and-egg). This is pure SQL — the admin
+        # account is created by backend migration, so it already exists here.
+        _ensure_current_legal_consent(ADMIN_REALM, ADMIN_EMAIL, logger)
         admin_opener = _login(ADMIN_REALM, ADMIN_EMAIL, ADMIN_PASSWORD)
         _ensure_points_realm(admin_opener, logger)
         _ensure_current_legal_consent(POINTS_REALM_ID, POINTS_REALM_ADMIN_EMAIL, logger)

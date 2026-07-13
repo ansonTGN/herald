@@ -4,7 +4,7 @@
 
 开箱即用的 SaaS 底座：多租户账户体系、对接 Stripe / Creem 支付、自带积分系统。单体部署，Docker 上线。
 
-本项目用于实践 AI 编程，使用 Claude Code + GLM 模型以及 Codex 混合开发。
+本项目用于实践 AI 编程，使用 Claude Code + GLM 模型以及 Codex 混合开发。AI 开发套件均基于 [web-dev-skills](https://github.com/timzaak/web-dev-skills) 构建。
 
 ## 核心特性
 
@@ -32,7 +32,7 @@ uv run scripts/demo-start.py
 ## 链接
 
 - **官网**：https://www.fornetcode.com
-- **在线演示**：https://auth.fornetcode.com（admin@fornetcode.com / Herald@2026Admin）
+- **在线演示**：https://auth.fornetcode.com （admin@fornetcode.com / Herald@2026Admin）
 
 ## 许可证
 
