@@ -276,7 +276,7 @@ Herald 当前付费履约硬绑积分：one-time 购买不配积分时履约直�
 - 用户故事：[docs/user-stories/billing/support-paywall.md](/docs/user-stories/billing/support-paywall.md)
 - 相关 PRD：[docs/prd/billing/subscription.md](/docs/prd/billing/subscription.md)（订阅计费、Entitlement 映射、Webhook 处理）
 - 相关 PRD：[docs/prd/billing/points.md](/docs/prd/billing/points.md)（积分系统、退款积分回收）
-- 相关 PRD：[docs/prd/billing/support-multiple-price.md](/docs/prd/billing/support-multiple-price.md)（多价格映射）
-- 相关 PRD：[docs/prd/billing/webhook-compensation.md](/docs/prd/billing/webhook-compensation.md)（webhook 补偿框架）
+- 相关 PRD：[docs/prd/billing/subscription.md](/docs/prd/billing/subscription.md)（含多价格映射）
+- 相关 PRD：[docs/prd/billing/subscription.md](/docs/prd/billing/subscription.md)（webhook 处理与补偿规则）
 - 相关 PRD：[docs/prd/auth/permissions.md](/docs/prd/auth/permissions.md)（RBAC 权限管理）
 - 角色定义：[docs/user-stories/_roles.md](/docs/user-stories/_roles.md)

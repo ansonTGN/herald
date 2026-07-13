@@ -2,6 +2,22 @@
 
 本文档索引列出所有 Herald 系统的产品需求文档（PRD）。
 
+## 按能力包阅读（推荐）
+
+PRD 文件保留独立主题，便于评审和追踪；规划、排期和端到端评审时，按下列能力包合并理解，避免把同一用户旅程拆散。
+
+| 能力包 | 目标 | 应合并阅读的 PRD |
+|-------|------|------------------|
+| 租户与运营 | 创建、配置和运营 Realm | [Realm](core/realm.md)、[Realm Settings](core/realm-settings.md)、[Dashboard](core/dashboard.md)、[Audit](core/audit.md) |
+| 用户生命周期与合规 | 用户从注册、资料维护到协议确认和注销 | [Users](core/users.md)、[合规适配](core/legal-consent-account-deletion.md) |
+| 登录体验与品牌 | 提供统一、可品牌化且可本地化的认证入口 | [OAuth](auth/oauth.md)、[微信 OAuth](auth/wechat-oauth.md)、[White-label](core/ui-custom.md)、[自定义域名](core/realm-custom-domain.md)、[i18n](core/i18n.md) |
+| 强认证 | 配置并完成多因素或无密码认证 | [TOTP](auth/totp.md)、[Passkey](auth/passkey.md)、[Device Code](auth/device-code.md) |
+| 授权与应用接入 | 管理 RBAC、Client App、API Key 与 SDK 接入 | [权限管理](auth/permissions.md)、[Client App](integration/client-app.md)、[API Key 角色](integration/api-key-roles.md)、[SDK](integration/sdk.md) |
+| 商品、支付与权益履约 | 从商品同步、购买到订阅/权益生效和异常补偿 | [Subscription（含多价格、产品同步与 Webhook 补偿）](billing/subscription.md)、[Stripe 支付](billing/stripe-payment.md)、[Paywall](billing/support-paywall.md) |
+| 余额与财务凭证 | 管理积分账户，以及支付对应的发票和贷记凭证 | [积分](billing/points.md)、[积分账户](billing/credit-bucket.md)、[发票（含支付归属与 Credit Note）](billing/invoice.md) |
+
+能力包是导航和评审边界，不是新增需求，也不取代各 PRD。只有当两个文件描述同一业务对象、同一生命周期且不能独立交付时，才应进一步物理合并。
+
 ## 文档组织结构
 
 ```
@@ -52,13 +68,11 @@ docs/
 | PRD 文档 | 标题 | 相关角色 |
 |---------|------|---------|
 | [subscription.md](billing/subscription.md) | 订阅计费、Entitlement 映射、Webhook 处理（含 One-time 购买） | Realm Admin, Regular User, Third-Party App, System |
-| [support-multiple-price.md](billing/support-multiple-price.md) | 多价格 Entitlement 映射（Product→Price 对齐、按价格配置/解析/购买） | Realm Admin, Regular User, System |
 | [support-paywall.md](billing/support-paywall.md) | 支付驱动权益门控（role 授予横切维度、支付成功自动授权、订阅过期自动撤销、一人一次防重复） | Realm Admin, Regular User, Third-Party App, System |
 | [points.md](billing/points.md) | 积分系统（含发放、免费用户积分、发放时序与可用性） | Realm Admin, Regular User, Third-Party App |
+| [credit-bucket.md](billing/credit-bucket.md) | 积分账户（余额池与 Client App 覆盖范围） | Realm Admin, Regular User, Third-Party App |
 | [stripe-payment.md](billing/stripe-payment.md) | Stripe 支付集成 | Realm Admin |
 | [invoice.md](billing/invoice.md) | Invoice 发票管理（含 Provider 发票同步和自研 Fallback） | Realm Admin, Regular User |
-| [payment-invoice-mapping.md](billing/payment-invoice-mapping.md) | 支付-发票强制映射（订阅续费支付记录、外部发票本地归属、归属异常可观测） | Realm Admin, System |
-| [sync-payment.md](billing/sync-payment.md) | 支付产品同步增强（产品名主标签 / 价格单位修正 / Stripe metadata 同步 / 计费周期只读） | Admin Realm |
 
 ### Integration 集成与扩展
 

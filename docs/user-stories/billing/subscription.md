@@ -4,8 +4,6 @@
 
 ## 用户故事
 
-> [US-BI-001 ~ US-BI-005]（创建/编辑/删除订阅套餐、配置支付平台映射、分配套餐到 Client App）已由 Entitlement Mapping 替代，见 [entitlement-mapping.md](entitlement-mapping.md)。
-
 ### 故事 6：查看订阅列表 [US-BI-006]
 
 **优先级**: P0
@@ -309,5 +307,5 @@ And 我无法查看其他用户的订阅历史记录
 ## 相关文档
 
 - **PRD**: [docs/prd/billing/subscription.md](/docs/prd/billing/subscription.md) - Billing 订阅计费产品需求文档（含 Entitlement 映射、Metadata 契约）
-- **用户故事**: [docs/user-stories/billing/entitlement-mapping.md](/docs/user-stories/billing/entitlement-mapping.md) - Entitlement Mapping 用户故事（替代 US-BI-001 ~ US-BI-005）
+- **用户故事**: [docs/user-stories/billing/entitlement-mapping.md](/docs/user-stories/billing/entitlement-mapping.md) - Entitlement Mapping 用户故事
 - **用户故事**: [docs/user-stories/billing/points-admin.md](/docs/user-stories/billing/points-admin.md) - 积分管理用户故事

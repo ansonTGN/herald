@@ -200,6 +200,6 @@ And 可在运维侧查看
 
 ## 相关文档
 
-- **PRD 草稿**: `.ai/prd/billing/payment-invoice-mapping.md` - 支付-发票强制映射 PRD 草稿
+- **PRD**: `docs/prd/billing/invoice.md` - Invoice PRD（含支付-发票归属与补偿）
 - **相关用户故事**: `billing/invoice-fallback.md`（US-IF-002 Stripe 发票同步、US-IF-003 Creem 税务同步）、`billing/payment-attempt.md`（US-PA-003 支付履约）
 - **相关 PRD**: `docs/prd/billing/invoice.md`、`docs/prd/billing/subscription.md`

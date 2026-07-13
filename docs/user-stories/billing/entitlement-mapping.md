@@ -608,13 +608,13 @@ And 若该 Creem 产品响应不含 billing_period 字段，则按空（"—"）
 3. **覆盖场景**：首次订阅发放、续费发放、取消回收、退款回收、升级/降级处理
 4. **管理员编辑**：管理员可在 Herald 中查看和修改积分策略；修改的是 Herald 业务规则，不回写 provider
 
-### 废弃规则
-1. **Product CRUD**：本地 Product 管理页面和接口废弃并移除
-2. **Plan CRUD**：本地 SubscriptionPlan 管理页面和接口废弃并移除
-3. **关联表**：subscription_plan_payment_provider、client_app_subscription_plan、points_plan_configs 废弃并移除
-4. **plan_id 外键**：全链路从 plan_id 迁移到 entitlement_key 后移除
+### 编目边界
+1. Herald 不提供本地 Product CRUD
+2. Herald 不提供本地 SubscriptionPlan CRUD
+3. 支付平台商品通过 Entitlement Mapping 关联权益、积分策略和 Client App
+4. 业务链路使用 `entitlement_key`，不使用本地 `plan_id`
 
-### 多价格规则（support-multiple-price）
+### 多价格规则
 1. **Price 一等概念**：Herald 的 provider 模型引入 Price 维度，对齐 Stripe 的 Product→Price；一个产品可拥有多个价格，每个价格是独立可购与可配置单元
 2. **按价格配置**：entitlement_key、计费类型、计费周期与积分策略均按价格配置；同一产品的多个价格可共享 entitlement_key（月付/年付同属 pro-plan）或映射到不同 entitlement
 3. **单价格产品**：只有一个价格的产品（含 Creem 等无 price 概念的支付方）自然只有一行映射
@@ -622,7 +622,7 @@ And 若该 Creem 产品响应不含 billing_period 字段，则按空（"—"）
 5. **Price-aware 解析**：webhook 解析优先使用 metadata 的 herald_entitlement_key，回退时按 (支付方, 产品, 价格) 命中映射；无法唯一确定时 fail loud
 6. **Price-aware 购买**：checkout 引用真实 provider 价格（对有 price 概念的支付方），不再为每次购买重建临时价格
 
-### 产品同步展示规则（sync-payment）
+### 产品同步展示规则
 1. **产品名主标签**：列表/分组的主标签优先取同步产品名，缺失时回退外部产品 id，二者皆不可用时给可识别占位；不显示空标签
 2. **价格按 provider 区分单位**：Stripe 取最小货币单位整数换算为主货币单位；Creem 按原值展示；单位换算由 provider 来源驱动，不跨 provider 共享换算分支
 3. **计费周期以 Stripe 为准且只读**：计费周期取 Stripe `Price.recurring.interval`（Creem 取其产品响应 `billing_period`，缺失按"—"），前端只读，保存/更新不得以人工值覆盖同步值；重新同步以 provider 当前值为准
@@ -639,7 +639,5 @@ And 若该 Creem 产品响应不含 billing_period 字段，则按空（"—"）
 
 - **PRD**: [docs/prd/billing/subscription.md](/docs/prd/billing/subscription.md) - 订阅计费 PRD（含 Entitlement 映射、Metadata 契约）
 - **PRD**: [docs/prd/billing/points.md](/docs/prd/billing/points.md) - 积分系统 PRD
-- **PRD**: [docs/prd/billing/support-multiple-price.md](/docs/prd/billing/support-multiple-price.md) - 多价格 Entitlement 映射 PRD
-- **PRD**: [docs/prd/billing/sync-payment.md](/docs/prd/billing/sync-payment.md) - 支付产品同步增强 PRD（产品名/价格单位/metadata/计费周期）
-- **技术研究**: [.ai/tech-research/product_reduce.md](/.ai/tech-research/product_reduce.md) - 技术预研报告
+- **PRD**: [docs/prd/billing/subscription.md](/docs/prd/billing/subscription.md) - 订阅计费 PRD（含多价格、产品同步、产品名/价格单位/metadata/计费周期）
 - **需求来源**: Product and Subscription Local Model Reduction — 移除本地 Product/Plan 商业目录，将目录和订阅生命周期交给支付方

@@ -2,47 +2,34 @@
 
 本文档索引列出所有 Herald 系统的用户故事。
 
-## 用户故事目录结构
+## 按用户旅程阅读（推荐）
 
-```
-docs/user-stories/
-├── index.md              # 本文件
-├── _README.md            # 编写指南
-├── _roles.md             # 角色定义
-├── core/                 # 核心功能
-│   ├── admin-realm.md    # Admin Realm 管理
-│   ├── realm-admin.md    # Realm Admin 管理
-│   ├── builtin-protection.md # 内置保护
-│   ├── regular-user.md   # 普通用户
-│   ├── i18n.md           # 国际化
-│   ├── audit.md          # 审计日志
-│   └── legal-consent-account-deletion.md # 合规适配（用户协议 / 隐私政策 / 账户注销）
-├── auth/                 # 认证授权
-│   ├── third-party-app.md # 第三方应用
-│   ├── client-app-settings.md # Client App 设置
-│   ├── totp.md           # TOTP 二次认证
-│   ├── passkey.md        # Passkey 认证
-│   ├── oauth-extension.md # OAuth Provider 扩展
-│   ├── wechat-oauth.md   # 微信 OAuth
-│   └── device-code.md    # Device Code
-├── billing/              # 计费相关
-│   ├── subscription.md   # 订阅套餐
-│   ├── points-admin.md   # 积分管理
-│   ├── points-user.md    # 积分查询
-│   ├── points-free-user.md # 免费用户积分
-│   ├── points-package-purchase.md # 积分包购买
-│   ├── payment-provider.md # 支付平台配置
-│   ├── payment-attempt.md # 支付尝试
-│   ├── invoice.md        # 发票
-│   ├── invoice-fallback.md # 发票 Fallback
-│   ├── payment-invoice-mapping.md # 支付-发票强制映射
-│   ├── entitlement-mapping.md # Entitlement 映射
-│   └── credit-bucket.md # 积分账户
-└── integration/          # 集成扩展
-    └── sdk.md            # SDK 资源管理
-```
+下面按完整用户旅程组织阅读入口；后面的 US-ID 表用于定位具体可验收目标。
 
-## 用户故事 ID 索引
+| 能力包 | 连续旅程 | 用户故事文件 |
+|-------|----------|--------------|
+| 租户与运营 | 创建 Realm → 配置 → Dashboard 运营 → 审计 | [Admin Realm](core/admin-realm.md)、[Realm Admin](core/realm-admin.md)、[审计](core/audit.md)、[内置保护](core/builtin-protection.md) |
+| 用户生命周期与合规 | 注册/登录 → 资料维护 → 协议确认 → 账户注销 | [普通用户](core/regular-user.md)、[合规适配](core/legal-consent-account-deletion.md) |
+| 登录体验与品牌 | 第三方登录 → 品牌页面 → 自定义域名 → 多语言 | [OAuth 应用](auth/third-party-app.md)、[OAuth 扩展](auth/oauth-extension.md)、[微信 OAuth](auth/wechat-oauth.md)、[White-label](core/white-label.md)、[自定义域名](core/realm-custom-domain.md)、[i18n](core/i18n.md) |
+| 强认证 | 管理员配置 → 用户绑定 → 登录/恢复 | [TOTP](auth/totp.md)、[Passkey](auth/passkey.md)、[Device Code](auth/device-code.md) |
+| 授权与应用接入 | RBAC 配置 → Client App/API Key → SDK 调用 | [Realm Admin](core/realm-admin.md)、[Client App 设置](auth/client-app-settings.md)、[SDK](integration/sdk.md) |
+| 商品、支付与权益履约 | Provider 配置/同步 → 下单 → 支付 → 订阅或权益生效 → 补偿 | [支付平台](billing/payment-provider.md)、[Entitlement Mapping](billing/entitlement-mapping.md)、[支付尝试](billing/payment-attempt.md)、[订阅](billing/subscription.md)、[Paywall](billing/support-paywall.md)、[Webhook 补偿](billing/webhook-compensation.md) |
+| 积分与余额 | 策略配置 → 免费/付费发放 → 分账户持有和消费 → 查询历史 | [积分管理](billing/points-admin.md)、[免费积分](billing/points-free-user.md)、[积分包购买](billing/points-package-purchase.md)、[用户积分](billing/points-user.md)、[异步支付积分](billing/async-payment-points.md)、[积分账户](billing/credit-bucket.md) |
+| 发票与退款凭证 | 支付归属 → 发票同步/开具 → 退款和 Credit Note | [发票与 Provider Fallback](billing/invoice.md)、[支付-发票归属](billing/payment-invoice-mapping.md) |
+
+### 故事边界
+
+- 一个故事只表达一个可验收目标。
+- 同一旅程中的配置、终端操作和系统履约可以放在同一能力包，但保留各自角色。
+- Provider 差异优先写成同一故事的场景；只有用户目标或生命周期不同才拆故事。
+
+## 文档层级
+
+- 上面的能力包用于产品评审、端到端验收和排期，是默认阅读入口。
+- 下方 US-ID 索引用于定位单个可验收目标，不作为产品目录重复维护。
+- 物理目录 `core / auth / billing / integration` 只表示代码与文档归属，不再逐文件展开成第二套导航。
+
+## 用户故事 ID 索引（追踪视图）
 
 | US-ID | 标题 | 角色 | 优先级 | 文件 |
 |-------|------|------|--------|------|
@@ -119,11 +106,6 @@ docs/user-stories/
 | US-PK-009 | 用户删除 Passkey | Regular User | P0 | [auth/passkey](auth/passkey.md#故事-9用户删除-passkey-us-pk-009) |
 | US-PK-010 | Realm 管理员查看 Passkey 使用情况统计 | Realm Admin | P2 | [auth/passkey](auth/passkey.md#故事-10realm-管理员查看-passkey-使用情况统计-us-pk-010) |
 | US-OE-001 | OAuth Provider 配置管理 | Realm Admin | P0 | [auth/oauth-extension](auth/oauth-extension.md#故事-1oauth-provider-配置管理-us-oe-001) |
-| US-BI-001 | 创建订阅套餐 | Billing User | P0 | [billing/subscription](billing/subscription.md#故事-1创建订阅套餐-us-bi-001) |
-| US-BI-002 | 编辑订阅套餐 | Billing User | P0 | [billing/subscription](billing/subscription.md#故事-2编辑订阅套餐-us-bi-002) |
-| US-BI-003 | 配置 Plan 的支付平台映射 | Billing User | P0 | [billing/subscription](billing/subscription.md#故事-3配置-plan-的支付平台映射-us-bi-003) |
-| US-BI-004 | 删除订阅套餐 | Billing User | P0 | [billing/subscription](billing/subscription.md#故事-4删除订阅套餐-us-bi-004) |
-| US-BI-005 | 分配套餐到 Client App | Billing User | P0 | [billing/subscription](billing/subscription.md#故事-5分配套餐到-client-app-us-bi-005) |
 | US-BI-006 | 查看订阅列表 | Billing User | P0 | [billing/subscription](billing/subscription.md#故事-6查看订阅列表-us-bi-006) |
 | US-BI-007 | 第三方应用查询套餐状态（SDK 集成） | Billing User | P0 | [billing/subscription](billing/subscription.md#故事-7第三方应用查询套餐状态sdk-集成-us-bi-007) |
 | US-BI-008 | 查看订阅变更历史 | Billing User | P1 | [billing/subscription](billing/subscription.md#故事-8查看订阅变更历史-us-bi-008) |
@@ -264,7 +246,7 @@ docs/user-stories/
 | Payment Attempt | [billing/payment-attempt.md](billing/payment-attempt.md) | [Subscription PRD](/docs/prd/billing/subscription.md) |
 | Invoice | [billing/invoice.md](billing/invoice.md) | [Invoice PRD](/docs/prd/billing/invoice.md) |
 | Invoice Fallback | [billing/invoice-fallback.md](billing/invoice-fallback.md) | [Invoice PRD](/docs/prd/billing/invoice.md) |
-| Payment Invoice Mapping | [billing/payment-invoice-mapping.md](billing/payment-invoice-mapping.md) | [支付-发票强制映射 PRD](/docs/prd/billing/payment-invoice-mapping.md) |
+| Payment Invoice Mapping | [billing/payment-invoice-mapping.md](billing/payment-invoice-mapping.md) | [Invoice PRD](/docs/prd/billing/invoice.md) |
 | Entitlement Mapping | [billing/entitlement-mapping.md](billing/entitlement-mapping.md) | [Subscription PRD](/docs/prd/billing/subscription.md) |
 | 积分账户 | [billing/credit-bucket.md](billing/credit-bucket.md) | [Points PRD](/docs/prd/billing/points.md) |
 

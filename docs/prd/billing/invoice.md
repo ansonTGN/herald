@@ -105,6 +105,10 @@
   - 角色：Herald 系统
   - 摘要：通过 Stripe `credit_note.voided` webhook 同步作废状态，恢复关联发票的剩余应付
 
+**支付与发票归属**: `docs/user-stories/billing/payment-invoice-mapping.md`
+
+- `[US-PM-001～004]` 续费支付记录、Creem 续费发票、外部发票归属与补偿可观测性
+
 ### 1.2 优先级汇总表
 
 | 优先级 | 数量 | 关键故事 |
@@ -243,6 +247,23 @@
 
 ### 4.2 关键状态与异常
 
+**支付与发票归属**：
+
+- 每次成功的 Stripe/Creem 托管支付产生一条支付尝试记录并映射且仅映射一张发票；扣款失败和零元周期不产生成功记录或发票。
+- 一次性外部发票归属支付尝试，订阅发票归属订阅，续费发票同时归属本次支付尝试和订阅。
+- Creem 每个成功续费周期同步一张只读发票；Herald 不为 Creem 主动开具或退款发票。
+- 暂时无法归属时标记为待归属并由补偿流程回填；重复 webhook 或补偿不得创建重复支付记录、发票或归属。
+- 管理员可发现并筛选“成功支付无发票”和“外部发票无归属”；普通用户不得看到内部支付尝试标识。
+- 强制归属只适用于新同步的第三方托管支付；历史空归属不回填，Manual 发票允许不关联支付。
+
+**Credit Note 与退款凭证**：
+
+- Credit Note 叠加退款维度，不改变发票 `paid` 主状态；Stripe Credit Note 作废时回滚累计退款金额和剩余应付。
+- Stripe Credit Note ID 唯一，重复 created/voided 事件保持幂等；关联发票缺失时等待补偿，不创建孤儿记录。
+- 仅 `provider=manual` 且 `status=paid` 的发票允许管理员记录 Manual Credit Note；金额为正且累计不得超过发票总额，创建后不可编辑、删除或撤销。
+- Stripe/Creem 发票拒绝 Manual Credit Note；provider 不匹配或退款金额越界必须明确拒绝或记录诊断。
+- 积分回收只由支付退款事件处理；Credit Note 同步和 Manual Credit Note 创建不重复触发积分回收。
+
 - **发票状态机**：draft → issued → paid / void / overdue
 - **逾期标记**：系统定时检查到期日已过的 issued 发票，自动标记为 overdue
 - **审计追踪**：所有状态变更操作需记录审计事件（actor、timestamp、changes）
@@ -257,6 +278,14 @@
 ## 5. 功能需求
 
 ### 5.1 核心需求
+
+**支付归属与退款凭证**：
+
+- Stripe/Creem 订阅续费成功时创建支付尝试记录；Creem 同步每期续费发票。
+- 外部发票写入时建立支付尝试/订阅归属；失败时进入可补偿状态。
+- 管理员可筛选“成功支付无发票”和“外部发票无归属”，普通用户不暴露内部支付尝试标识。
+- Stripe `credit_note.created` / `credit_note.voided` 同步为只读凭证并更新退款汇总，重复事件保持幂等。
+- 管理员可为已付款的 Manual 发票记录线下退款凭证；Stripe/Creem 发票拒绝 Manual Credit Note。
 
 - **销售方信息配置**：Realm Admin 在 Billing 设置中配置本 Realm 的销售方信息，用户申请发票时自动填充
 - **用户申请发票（主流程）**：Regular User 为已付款的订单或订阅申请发票，填写开票抬头信息，系统创建草稿发票
@@ -296,6 +325,10 @@
 - 自研发票功能在 manual_only 和 fallback 场景下完全保持不变
 - Creem MoR 交易无法创建 Herald manual 发票
 - 发票列表能按 provider 筛选，能区分显示不同来源的发票
+- 每次非零第三方支付均可定位到唯一发票，外部发票可直接定位到支付尝试或订阅
+- 归属依赖暂时未就绪时，补偿后能够恢复且不产生重复记录
+- Stripe Credit Note 创建、部分退款和作废后，累计退款与剩余应付正确且发票主状态不变
+- 管理员可记录 Manual 发票线下退款；金额越界和 provider 不匹配被明确拒绝
 - PDF 下载正确区分自研（IronPress）和外部（URL 重定向）
 
 ---
@@ -345,6 +378,10 @@
 
 ### 8.1 已确认决策
 
+- 第三方托管支付采用“每次成功支付一条支付尝试、一张映射发票”，零元周期除外
+- 新同步的外部发票必须建立显式归属；既有历史空归属不回填
+- Credit Note 是退款凭证维度，不新增或改变发票主状态，也不重复触发积分回收
+
 - 主流程为用户申请 + 管理员审核开具，保留管理员手动创建辅助路径
 - 不新增 Invoice 细粒度权限，管理端使用 `billing.view` / `billing.manage` 权限控制，用户端复用登录用户身份判断
 - 发票可关联 Subscription 和 Payment Attempt 但不自动生成
@@ -363,7 +400,7 @@
 ## 9. 参考资料
 
 - 用户故事：`docs/user-stories/billing/invoice.md`
-- 用户故事：`docs/user-stories/billing/invoice-fallback.md`
+- 用户故事：`docs/user-stories/billing/invoice-fallback.md`、`docs/user-stories/billing/payment-invoice-mapping.md`
 - 技术预研：`.ai/tech-research/invoice_fallback.md`
 - 相关 PRD：`docs/prd/billing/subscription.md`
 - 相关 PRD：`docs/prd/billing/stripe-payment.md`
