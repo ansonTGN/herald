@@ -562,7 +562,7 @@ pub async fn consume_points_ext(
     // wallet_id/bucket_id/balance_after.
     let transactions = match state
         .points_service
-        .consume_points(identity, &realm_id, input)
+        .consume_points(identity.clone(), &realm_id, input)
         .await
     {
         Ok(transactions) => transactions,
@@ -637,6 +637,20 @@ pub async fn consume_points_ext(
         amount = request.amount,
         bucket_count = response.transactions.len(),
         "Points consumed successfully (per-bucket transactions)"
+    );
+
+    // Audit trail: distinguish the API key that performed the deduction
+    // (actor) from the user whose points were spent (subject). Enables
+    // post-incident attribution and key-scoped revocation.
+    tracing::info!(
+        target: "herald.audit.points_consume",
+        actor_api_key_id = %identity.id(),
+        actor_client_app_id = %client_app_id,
+        subject_user_id = %user_id,
+        amount = request.amount,
+        correlation_id = %response.correlation_id,
+        realm_id = %realm_id,
+        "points consumed"
     );
 
     // 8. Save idempotency result if key was provided — cache the primary

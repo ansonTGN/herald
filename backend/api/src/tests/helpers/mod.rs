@@ -5,22 +5,16 @@
 // 提供跨模块共享的测试辅助函数，减少重复代码。
 //
 // **Module Organization**:
-// - assertions: Test assertion helpers
 // - auth_helpers: Authentication and session management
 // - billing_helpers: Billing-specific test helpers (plans, subscriptions)
 // - client_helpers: Client app helpers
 // - rbac_helpers: RBAC/permission helpers
 // - test_setup_helpers: Common test setup helpers (authentication, requests, validation)
 // - user_helpers: User management helpers
-// - test_commons: Unified test fixtures (points, user, billing) - Import explicitly
 // - test_constants: Common test constants
-//
-// **Note**: test_commons is not glob-re-exported to avoid name conflicts.
-// Tests should import explicitly from test_commons when needed.
 //
 // =============================================================================
 
-pub mod assertions;
 pub mod async_payment_helpers;
 pub mod auth_helpers;
 pub mod billing_helpers;
@@ -41,7 +35,6 @@ pub mod points_grant_helpers;
 pub mod points_helpers;
 pub mod rbac_helpers;
 pub mod subscription_test_helpers;
-pub mod test_commons;
 #[cfg(test)]
 pub mod test_setup_helpers;
 pub mod user_helpers;
@@ -53,5 +46,3 @@ pub use billing_helpers::*;
 pub use client_helpers::*;
 pub use rbac_helpers::*;
 pub use user_helpers::*;
-
-// 测试设置辅助函数导出（用于测试场景）

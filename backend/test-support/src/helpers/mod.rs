@@ -6,7 +6,6 @@
 //
 // =============================================================================
 
-pub mod assertions;
 pub mod auth_helpers;
 pub mod billing_helpers;
 pub mod client_helpers;

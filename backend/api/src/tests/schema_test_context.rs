@@ -259,11 +259,6 @@ impl AsyncTestContext for SchemaTestContext {
             audit_event_repository.clone(),
         ));
 
-        let purchase_repository = Arc::new(
-            herald_core::infrastructure::purchase::PostgresPurchaseRepository::new(Arc::new(
-                pool_with_schema.clone(),
-            )),
-        );
         let fulfillment_service = Arc::new(
             herald_core::infrastructure::purchase::PostgresFulfillmentService::new(
                 Arc::new(
@@ -433,7 +428,6 @@ impl AsyncTestContext for SchemaTestContext {
             user_permission_service,
             permission_management_service,
             fulfillment_service,
-            purchase_repository,
             payment_attempt_service,
             payment_attempt_repository,
             purchase_service,

@@ -14,7 +14,7 @@ use sha2::{Digest, Sha256};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use herald_api_base::application::http::auth::util::{SessionData, store_session};
+use herald_api_base::application::http::auth::util::{ClientIp, SessionData, store_session};
 use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
 use herald_api_base::application::http::state::AppState;
 
@@ -87,11 +87,29 @@ fn verify_pkce(code_verifier: &str, code_challenge: &str) -> bool {
 pub async fn oauth_token(
     Path(realm_id): Path<String>,
     State(state): State<AppState>,
+    client_ip: ClientIp,
     Json(req): Json<TokenRequest>,
 ) -> Result<Json<TokenResponse>, ApiError> {
     if req.grant_type != "authorization_code" {
         return Err(ApiError::bad_request(
             "grant_type must be 'authorization_code'",
+        ));
+    }
+
+    // Fail loud: a verifiable source IP is required for session binding.
+    // Checked BEFORE the one-time authorization code is consumed (GETDEL below),
+    // so a missing IP does not force the client to re-run the full OAuth flow.
+    // The three-level `ClientIp` fallback (X-Real-IP → X-Forwarded-For →
+    // direct socket) returns "" only when the proxy chain is misconfigured.
+    if client_ip.0.trim().is_empty() {
+        tracing::error!(
+            realm_id = %realm_id,
+            client_id = %req.client_id,
+            "OAuth token issuance refused: client IP unavailable \
+             (proxy headers misconfigured?)"
+        );
+        return Err(ApiError::bad_request(
+            "Unable to determine client IP; token issuance requires a verifiable source IP",
         ));
     }
 
@@ -152,7 +170,7 @@ pub async fn oauth_token(
         realm_id: realm_id.clone(),
         client_id: req.client_id,
         user_id: stored_user_id.to_string(),
-        client_ip: String::new(), // No client IP available from third-party backend
+        client_ip: client_ip.0,
         renewal_ttl_seconds: session_config.renewal_ttl_seconds,
     };
 

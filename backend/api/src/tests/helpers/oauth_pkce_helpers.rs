@@ -109,6 +109,9 @@ pub async fn oauth_token_exchange(
         .method("POST")
         .uri(format!("/api/oauth/{}/token", realm_id))
         .header("content-type", "application/json")
+        // token issuance now requires a verifiable client IP (fail-loud);
+        // mirror the proxy header the production ingress sets.
+        .header("x-forwarded-for", "3.3.3.3")
         .body(Body::from(payload.to_string()))
         .unwrap();
 

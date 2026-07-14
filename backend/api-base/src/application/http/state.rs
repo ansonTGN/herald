@@ -27,10 +27,8 @@ use herald_core::infrastructure::legal::{
 };
 use herald_core::infrastructure::payment_attempt::PostgresPaymentAttemptRepository;
 use herald_core::infrastructure::points::PostgresPointsRepository;
+use herald_core::infrastructure::purchase::PostgresFulfillmentService;
 use herald_core::infrastructure::purchase::PurchaseService;
-use herald_core::infrastructure::purchase::{
-    PostgresFulfillmentService, PostgresPurchaseRepository,
-};
 use herald_core::infrastructure::realm_config::PostgresRealmConfigRepository;
 use herald_core::infrastructure::redis::RedisConnectionManager;
 use herald_core::infrastructure::user::{
@@ -234,9 +232,6 @@ pub struct AppState {
             RedisPermissionChecker,
         >,
     >,
-
-    /// Purchase repository (retained for API compatibility)
-    pub purchase_repository: Arc<PostgresPurchaseRepository>,
 
     /// Purchase service (routes attempts into fulfillment)
     pub purchase_service: Arc<PurchaseServiceImpl>,

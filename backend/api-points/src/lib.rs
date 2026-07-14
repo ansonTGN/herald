@@ -4,7 +4,6 @@
 pub mod auth_middleware;
 pub mod grant;
 pub mod internal_quota;
-pub mod plan_configs;
 pub mod realm_configs;
 pub mod routes;
 pub mod transactions;

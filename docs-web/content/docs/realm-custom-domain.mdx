@@ -56,44 +56,6 @@ The admin console shows a status panel that tracks:
 
 These update as the reverse proxy runs the ACME challenge. Allow time for DNS propagation after you create the CNAME record.
 
-## How the certificate-abuse gate works
-
-When the reverse proxy (Caddy) is asked to issue a TLS certificate for a hostname via on-demand TLS, it first asks Herald: "is this hostname registered and live?" Herald answers with a single boolean — `authorized: true` or `404`. No Realm identity or other detail is leaked.
-
-- A configured, enabled hostname → `authorized: true` → the proxy proceeds with the ACME challenge.
-- An unregistered hostname → `404` → the proxy declines to issue. A phishing domain pointed at Herald gets no certificate.
-
-The authorization gate checks only "configured and enabled." CNAME-verified and TLS-ready are display fields for the admin panel, not part of the authorization decision — otherwise authorization and issuance would form a circular dependency (`tls_ready=false` → refuse to issue → `tls_ready` never becomes `true`).
-
-The shared secret between Herald and the proxy is `[custom_domain].ask_key`; the proxy passes it in the `X-Herald-Ask-Key` header. See [Deployment](/docs/deployment) for reverse-proxy / on-demand TLS setup.
-
-## Data flow
-
-```mermaid
-flowchart LR
-    subgraph Admin[Realm Admin]
-        UI[Settings form<br/>save]
-    end
-
-    subgraph Herald
-        CFG[(Realm config<br/>settings)]
-        MAP[(Domain mapping<br/>hostname -> realm, enabled)]
-        ASK[Authorize endpoint<br/>authorized?: bool]
-    end
-
-    subgraph Proxy[Reverse proxy / Caddy]
-        TLS[On-Demand TLS<br/>asks before issuing]
-    end
-
-    UI -->|save writes hostname + config| CFG
-    UI -->|save writes hostname| MAP
-    MAP --> ASK
-    TLS -->|ask_key header| ASK
-    ASK -->|authorized / 404| TLS
-```
-
-The admin saves a hostname through the management endpoint, which writes both the config row and the domain-registration mapping. The reverse proxy consults the authorize endpoint before issuing any certificate; only mapped, enabled hostnames are authorized.
-
 ## Routing today
 
 Realm routing is still driven by the `{realmId}` path segment, exactly as before. The custom-domain configuration and the certificate-authorization gate are the foundation for host-based routing; follow later releases for serving the full auth flow directly on the custom domain.

@@ -304,13 +304,6 @@ impl AsyncTestContext for SchemaTestContext {
             ),
         );
 
-        // Create purchase repository
-        let purchase_repository = Arc::new(
-            herald_core::infrastructure::purchase::PostgresPurchaseRepository::new(Arc::new(
-                pool_with_schema.clone(),
-            )),
-        );
-
         // Create fulfillment service
         let fulfillment_service = Arc::new(
             herald_core::infrastructure::purchase::PostgresFulfillmentService::new(
@@ -381,7 +374,6 @@ impl AsyncTestContext for SchemaTestContext {
             permission_management_service,
             payment_attempt_service,
             payment_attempt_repository,
-            purchase_repository,
             fulfillment_service,
             purchase_service,
             jwt_secret: crate::TEST_JWT_SECRET.to_string(),

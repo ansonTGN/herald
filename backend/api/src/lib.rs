@@ -67,9 +67,7 @@ use herald_core::infrastructure::legal::{
 use herald_core::infrastructure::payment_attempt::PostgresPaymentAttemptRepository;
 use herald_core::infrastructure::points::PostgresPointsRepository;
 use herald_core::infrastructure::points::init_idempotency_function;
-use herald_core::infrastructure::purchase::{
-    PostgresFulfillmentService, PostgresPurchaseRepository, PurchaseService,
-};
+use herald_core::infrastructure::purchase::{PostgresFulfillmentService, PurchaseService};
 use herald_core::infrastructure::realm_config::PostgresRealmConfigRepository;
 use herald_core::infrastructure::redis::{ManagerConfig, RedisConnectionManager};
 use herald_core::infrastructure::user::repositories::PostgresUserRepository;
@@ -411,10 +409,6 @@ pub async fn build_app_state_with_migrations(
     ));
     info!("Payment attempt service initialized");
 
-    // Create purchase repository
-    let purchase_repository = Arc::new(PostgresPurchaseRepository::new(Arc::new(pg_pool.clone())));
-    info!("Purchase repository initialized");
-
     // Create fulfillment service
     let fulfillment_service = Arc::new(PostgresFulfillmentService::new(
         points_repository.clone(),
@@ -524,7 +518,6 @@ pub async fn build_app_state_with_migrations(
         payment_attempt_service,
         payment_attempt_repository,
         fulfillment_service,
-        purchase_repository,
         purchase_service,
         jwt_secret,
         user_role_repository,

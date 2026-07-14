@@ -201,13 +201,57 @@ pub struct ApiDoc;
 
 /// Build the complete OpenAPI spec by merging local paths with sub-crate specs
 pub fn build_openapi_spec() -> utoipa::openapi::OpenApi {
-    ApiDoc::openapi()
+    let mut spec = ApiDoc::openapi()
         .merge_from(herald_api_auth::ApiDoc::openapi())
         .merge_from(herald_api_admin::ApiDoc::openapi())
         .merge_from(herald_api_billing::ApiDoc::openapi())
         .merge_from(herald_api_oauth::ApiDoc::openapi())
         .merge_from(herald_api_points::ApiDoc::openapi())
-        .merge_from(herald_api_ext::ApiDoc::openapi())
+        .merge_from(herald_api_ext::ApiDoc::openapi());
+
+    // Operations annotate themselves with `security(("bearer_auth"|"session_token"|"api_key" = []))`,
+    // but utoipa's `#[openapi(components(...))]` only registers schemas/responses — not security
+    // schemes. Without matching `components.securitySchemes`, the generated spec references scheme
+    // ids that never resolve, and consumers like the fumadocs-openapi playground crash reading
+    // `.deprecated` on the undefined scheme. Register them here, against the real mechanisms:
+    // `bearer_auth`/`session_token` both read the `X-Auth` session cookie via inject_identity;
+    // `api_key` reads the `X-API-Key` header via api_key_auth.
+    let components = spec.components.get_or_insert_with(Default::default);
+    components.security_schemes.insert(
+        "bearer_auth".to_string(),
+        utoipa::openapi::security::SecurityScheme::ApiKey(
+            utoipa::openapi::security::ApiKey::Header(
+                utoipa::openapi::security::ApiKeyValue::with_description(
+                    "X-Auth",
+                    "Session token from the `X-Auth` cookie set on login.",
+                ),
+            ),
+        ),
+    );
+    components.security_schemes.insert(
+        "session_token".to_string(),
+        utoipa::openapi::security::SecurityScheme::ApiKey(
+            utoipa::openapi::security::ApiKey::Header(
+                utoipa::openapi::security::ApiKeyValue::with_description(
+                    "X-Auth",
+                    "Session token from the `X-Auth` cookie set on login.",
+                ),
+            ),
+        ),
+    );
+    components.security_schemes.insert(
+        "api_key".to_string(),
+        utoipa::openapi::security::SecurityScheme::ApiKey(
+            utoipa::openapi::security::ApiKey::Header(
+                utoipa::openapi::security::ApiKeyValue::with_description(
+                    "X-API-Key",
+                    "Client-app API key (third-party external API).",
+                ),
+            ),
+        ),
+    );
+
+    spec
 }
 
 pub fn create_router(

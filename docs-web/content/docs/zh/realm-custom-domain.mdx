@@ -56,44 +56,6 @@ login.acme.com  CNAME  custom.herald.com
 
 这些会随反代层跑 ACME 挑战而更新。创建 CNAME 记录后给 DNS 传播留点时间。
 
-## 证书滥用防护门控怎么工作
-
-当反代层（Caddy）被要求通过 on-demand TLS 为某个 hostname 签发证书时，它会先问 Herald：「这个 hostname 注册并上线了吗？」Herald 用一个布尔值回答——`authorized: true` 或 `404`，不泄露任何 Realm 身份或其他细节。
-
-- 已配置且启用的 hostname → `authorized: true` → 反代继续 ACME 挑战。
-- 未注册的 hostname → `404` → 反代拒绝签发。指向 Herald 的钓鱼域名拿不到证书。
-
-授权门控只检查「已配置且启用」。CNAME 校验通过和 TLS 就绪是管理面板的展示字段，不参与授权决策——否则授权和签发会形成循环依赖（`tls_ready=false` → 拒绝签发 → `tls_ready` 永远不会变 `true`）。
-
-Herald 和反代之间的共享密钥是 `[custom_domain].ask_key`；反代通过 `X-Herald-Ask-Key` 头传入。反代 / on-demand TLS 的接法见 [部署](/docs/deployment)。
-
-## 数据怎么流转
-
-```mermaid
-flowchart LR
-    subgraph Admin[Realm 管理员]
-        UI[Settings 表单<br/>保存]
-    end
-
-    subgraph Herald
-        CFG[(Realm config<br/>settings)]
-        MAP[(域名映射<br/>hostname -> realm, enabled)]
-        ASK[授权端点<br/>authorized?: bool]
-    end
-
-    subgraph Proxy[反代 / Caddy]
-        TLS[On-Demand TLS<br/>签发前先问]
-    end
-
-    UI -->|保存写入 hostname + config| CFG
-    UI -->|保存写入 hostname| MAP
-    MAP --> ASK
-    TLS -->|ask_key 头| ASK
-    ASK -->|authorized / 404| TLS
-```
-
-管理员通过管理端点保存 hostname，同时写入配置行和域名注册映射。反代在签发任何证书前先问授权端点；只有已映射、已启用的 hostname 才会被授权。
-
 ## 当前路由方式
 
 Realm 路由目前仍由 `{realmId}` 路径段决定，和以前一样。自定义域名配置和证书授权门控是 host 路由的基础；直接在自定义域名上承载完整 auth 流的能力见后续版本。

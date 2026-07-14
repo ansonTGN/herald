@@ -17,6 +17,7 @@ pub use crate::application::http::rate_limit::rate_limit_hit;
 /// 3. ConnectInfo<SocketAddr> (direct connection)
 ///
 /// Usage in handlers: `client_ip: ClientIp` then `client_ip.0` for the IP string.
+#[derive(Debug)]
 pub struct ClientIp(pub String);
 
 impl<S: Send + Sync> FromRequestParts<S> for ClientIp {
