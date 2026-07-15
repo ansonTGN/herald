@@ -8,7 +8,7 @@ import {
 import { Toaster } from '@/components/ui/sonner'
 import { useQuery, useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { initializeAuth, checkAdminPermission, logoutFlow } from '@/lib/auth-utils'
-import { useIsAuthenticated } from '@/stores/auth-store'
+import { useIsAuthenticated, useRealmId } from '@/stores/auth-store'
 import { ReconsentDialog } from '@/components/legal/ReconsentDialog'
 import {
   consentStatusQueryOptions,
@@ -137,7 +137,10 @@ function RootComponent() {
   const pathname = router.state.location.pathname
 
   const realmContext = resolvedRealmFromPath(pathname)
-  const realmId = realmContext.realmId
+  const sessionRealmId = useRealmId()
+  const realmId = /^\/(manage|user|subscription)(?:\/|$)/.test(pathname)
+    ? sessionRealmId
+    : realmContext.realmId
 
   const isRootPath = pathname === '/'
   const routePath = realmContext.isCustomDomain

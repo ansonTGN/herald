@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::types::{
     BalancesByType, ListWalletsByBucketResponse, ListWalletsQuery, PointsWalletResponse,
-    QuotaWindowViewResponse, WalletByBucketResponse,
+    QuotaWindowViewResponse, UserWalletsQuery, WalletByBucketResponse,
 };
 use herald_api_base::application::http::common::auth_utils::require_authenticated_user_in_realm;
 use herald_api_base::application::http::common::error_codes::POINTS_UNIT;
@@ -289,7 +289,7 @@ async fn group_wallets_by_bucket(
         (status = 404, description = "Not found", body = ErrorResponse),
         (status = 500, description = "Internal server error", body = ErrorResponse)
     ),
-    tag = "Points"
+    tag = "points"
 )]
 pub async fn list_wallets(
     State(state): State<AppState>,
@@ -298,6 +298,11 @@ pub async fn list_wallets(
     Query(query): Query<ListWalletsQuery>,
 ) -> Result<ApiResult<ListWalletsByBucketResponse>, ApiError> {
     let _user_id = require_authenticated_user_in_realm(&identity, &realm_id, "points wallets")?;
+    state
+        .points_service
+        .ensure_can_manage_points(identity.clone())
+        .await
+        .map_err(ApiError::from)?;
 
     // Optional bucket filter parsed up front so malformed input surfaces as 400.
     let bucket_filter = match query.bucket_id.as_deref().map(str::trim) {
@@ -345,6 +350,56 @@ pub async fn list_wallets(
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/user/wallets",
+    params(UserWalletsQuery),
+    responses(
+        (status = 200, description = "Current user's wallets grouped by Credit Bucket", body = ListWalletsByBucketResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse)
+    ),
+    tag = "user",
+    security(("bearer_auth" = []))
+)]
+pub async fn list_user_wallets(
+    State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
+    Query(query): Query<UserWalletsQuery>,
+) -> Result<ApiResult<ListWalletsByBucketResponse>, ApiError> {
+    let realm_id = identity.realm_id();
+    let user_id = identity
+        .user_id()
+        .parse::<Uuid>()
+        .map_err(|_| ApiError::unauthorized("User session required"))?;
+    let bucket_id = match query.bucket_id.as_deref().map(str::trim) {
+        Some(s) if !s.is_empty() => Some(
+            s.parse::<Uuid>()
+                .map_err(|_| ApiError::bad_request("Invalid bucketId format"))?,
+        ),
+        _ => None,
+    };
+    let filters = WalletFilters {
+        user_id: Some(user_id),
+        bucket_id,
+        status: query.status,
+        search: None,
+        page: query.page,
+        page_size: query.page_size,
+    };
+    let paginated = state
+        .points_service
+        .list_wallets(identity, &realm_id, filters)
+        .await
+        .map_err(ApiError::from)?;
+    let bucket_dir = load_bucket_dir(&state, &realm_id).await;
+    let (items, cross_bucket_total) =
+        group_wallets_by_bucket(&state, &realm_id, paginated.data, &bucket_dir).await?;
+    Ok(ApiResult::ok(ListWalletsByBucketResponse {
+        items,
+        cross_bucket_total,
+    }))
+}
+
 /// Get points wallet for a specific user
 #[utoipa::path(
     get,
@@ -361,7 +416,7 @@ pub async fn list_wallets(
         (status = 404, description = "Not found", body = ErrorResponse),
         (status = 500, description = "Internal server error", body = ErrorResponse)
     ),
-    tag = "Points"
+    tag = "points"
 )]
 pub async fn get_wallet(
     State(state): State<AppState>,

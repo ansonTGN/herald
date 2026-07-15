@@ -884,7 +884,6 @@ export const purchaseHistoryQueryOptions = (
       if (filters.endDate !== undefined) query.end_date = filters.endDate
 
       const response = await getPurchaseHistory({
-        path: { realmId },
         query: query as {
           page?: number | null
           page_size?: number | null

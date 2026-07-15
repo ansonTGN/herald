@@ -43,7 +43,7 @@ function eligibilityHandler(
   route: 'manual_fallback' | 'disabled' | 'external_provider',
   overrides: Record<string, unknown> = {}
 ) {
-  return http.get(`${BASE_URL}/api/bill/${REALM_ID}/my/invoices/apply-eligibility`, () => {
+  return http.get(`${BASE_URL}/api/user/bill/invoices/apply-eligibility`, () => {
     return HttpResponse.json({
       referenceType: 'payment_attempt',
       referenceId: ATTEMPT_ID,

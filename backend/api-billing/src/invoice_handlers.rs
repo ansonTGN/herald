@@ -1070,11 +1070,8 @@ pub async fn create_credit_note(
 
 #[utoipa::path(
     post,
-    path = "/api/bill/{realmId}/my/invoices",
+    path = "/api/user/bill/invoices",
     tag = "billing-invoice",
-    params(
-        ("realmId" = String, Path, description = "Realm ID")
-    ),
     request_body = ApplyInvoiceRequest,
     responses(
         (status = 201, description = "Invoice application created", body = InvoiceDetailResponse),
@@ -1088,9 +1085,9 @@ pub async fn create_credit_note(
 pub async fn apply_invoice(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
-    Path(realm_id): Path<String>,
     Json(request): Json<ApplyInvoiceRequest>,
 ) -> Result<(StatusCode, Json<InvoiceDetailResponse>), ApiError> {
+    let realm_id = identity.realm_id();
     tracing::info!("User applying for invoice in realm: {}", realm_id);
     let applicant_user_id =
         require_authenticated_user_in_realm(&identity, &realm_id, "apply invoices")?;
@@ -1193,11 +1190,10 @@ pub async fn apply_invoice(
 
 #[utoipa::path(
     get,
-    path = "/api/bill/{realmId}/my/invoices/apply-eligibility",
+    path = "/api/user/bill/invoices/apply-eligibility",
     tag = "billing-invoice",
     operation_id = "get_invoice_apply_eligibility",
     params(
-        ("realmId" = String, Path, description = "Realm ID"),
         InvoiceApplyEligibilityQuery
     ),
     responses(
@@ -1220,9 +1216,9 @@ pub async fn apply_invoice(
 pub async fn get_invoice_apply_eligibility(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
-    Path(realm_id): Path<String>,
     Query(query): Query<InvoiceApplyEligibilityQuery>,
 ) -> Result<Json<InvoiceApplyEligibilityResponse>, ApiError> {
+    let realm_id = identity.realm_id();
     tracing::info!(
         "User checking invoice apply-eligibility for realm: {} reference_type: {} reference_id: {}",
         realm_id,
@@ -1347,10 +1343,9 @@ pub async fn get_invoice_apply_eligibility(
 
 #[utoipa::path(
     get,
-    path = "/api/bill/{realmId}/my/invoices",
+    path = "/api/user/bill/invoices",
     tag = "billing-invoice",
     params(
-        ("realmId" = String, Path, description = "Realm ID"),
         InvoiceListQuery
     ),
     responses(
@@ -1364,9 +1359,9 @@ pub async fn get_invoice_apply_eligibility(
 pub async fn list_my_invoices(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
-    Path(realm_id): Path<String>,
     Query(query): Query<InvoiceListQuery>,
 ) -> Result<Json<InvoiceListResponse>, ApiError> {
+    let realm_id = identity.realm_id();
     tracing::info!("Listing my invoices for realm: {}", realm_id);
     let user_id = require_authenticated_user_in_realm(&identity, &realm_id, "view invoices")?;
 
@@ -1387,10 +1382,9 @@ pub async fn list_my_invoices(
 
 #[utoipa::path(
     get,
-    path = "/api/bill/{realmId}/my/invoices/{invoiceId}",
+    path = "/api/user/bill/invoices/{invoiceId}",
     tag = "billing-invoice",
     params(
-        ("realmId" = String, Path, description = "Realm ID"),
         ("invoiceId" = Uuid, Path, description = "Invoice ID")
     ),
     responses(
@@ -1405,8 +1399,9 @@ pub async fn list_my_invoices(
 pub async fn get_my_invoice(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
-    Path((realm_id, invoice_id)): Path<(String, Uuid)>,
+    Path(invoice_id): Path<Uuid>,
 ) -> Result<Json<InvoiceDetailResponse>, ApiError> {
+    let realm_id = identity.realm_id();
     tracing::info!("Getting my invoice {} for realm: {}", invoice_id, realm_id);
     let current_user_id =
         require_authenticated_user_in_realm(&identity, &realm_id, "view invoices")?;
@@ -1570,10 +1565,9 @@ pub async fn download_invoice_pdf(
 
 #[utoipa::path(
     get,
-    path = "/api/bill/{realmId}/my/invoices/{invoiceId}/pdf",
+    path = "/api/user/bill/invoices/{invoiceId}/pdf",
     tag = "billing-invoice",
     params(
-        ("realmId" = String, Path, description = "Realm ID"),
         ("invoiceId" = Uuid, Path, description = "Invoice ID")
     ),
     responses(
@@ -1589,8 +1583,9 @@ pub async fn download_invoice_pdf(
 pub async fn download_my_invoice_pdf(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
-    Path((realm_id, invoice_id)): Path<(String, Uuid)>,
+    Path(invoice_id): Path<Uuid>,
 ) -> Result<Response, ApiError> {
+    let realm_id = identity.realm_id();
     tracing::info!(
         "Downloading my invoice PDF {} for realm: {}",
         invoice_id,

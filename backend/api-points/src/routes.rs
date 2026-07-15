@@ -11,9 +11,9 @@ use super::{
     realm_configs::{
         create_realm_default_config, get_realm_default_config, update_realm_default_config,
     },
-    transactions::list_transactions,
+    transactions::{list_transactions, list_user_transactions},
     user_configs::get_user_points_config,
-    wallets::{get_wallet, list_wallets},
+    wallets::{get_wallet, list_user_wallets, list_wallets},
 };
 
 /// Points router with flexible authentication (session or API key)
@@ -48,6 +48,12 @@ pub fn points_router() -> Router<AppState> {
             routing::get(get_user_points_config),
         )
         .route("/grant", routing::post(grant_points))
+}
+
+pub fn user_points_router() -> Router<AppState> {
+    Router::new()
+        .route("/wallets", routing::get(list_user_wallets))
+        .route("/transactions", routing::get(list_user_transactions))
 }
 
 /// Internal (demo/test-only) points routes.

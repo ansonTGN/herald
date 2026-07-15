@@ -595,7 +595,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri(format!("/api/bill/{}/my/invoices", realm_id))
+                    .uri("/api/user/bill/invoices")
                     .header("content-type", "application/json")
                     .header("cookie", format!("X-Auth={}", user_token))
                     .body(Body::from(apply_payload.to_string()))
@@ -761,7 +761,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri(format!("/api/bill/{}/my/invoices", realm_id))
+                    .uri("/api/user/bill/invoices")
                     .header("content-type", "application/json")
                     .header("cookie", format!("X-Auth={}", user_token))
                     .body(Body::from(apply_payload.to_string()))
@@ -1554,7 +1554,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri(format!("/api/bill/{}/my/invoices", realm_id))
+                    .uri("/api/user/bill/invoices")
                     .header("cookie", format!("X-Auth={}", user_token))
                     .body(Body::empty())
                     .unwrap(),
@@ -1699,10 +1699,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri(format!(
-                        "/api/bill/{}/my/invoices/{}",
-                        realm_id, stripe_inv_id
-                    ))
+                    .uri(format!("/api/user/bill/invoices/{}", stripe_inv_id))
                     .header("cookie", format!("X-Auth={}", user_token))
                     .body(Body::empty())
                     .unwrap(),

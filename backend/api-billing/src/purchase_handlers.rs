@@ -257,6 +257,7 @@ fn fulfillment_result_to_response(result: FulfillmentResult) -> FulfillPaymentRe
 #[utoipa::path(
     post,
     path = "/api/bill/{realmId}/purchase/payment-attempts",
+    tag = "billing",
     params(
         ("realmId" = String, Path, description = "Realm ID")
     ),
@@ -317,6 +318,7 @@ pub async fn create_payment_attempt(
 #[utoipa::path(
     get,
     path = "/api/bill/{realmId}/purchase/payment-attempts/{attemptId}",
+    tag = "billing",
     params(
         ("realmId" = String, Path, description = "Realm ID"),
         ("attemptId" = Uuid, Path, description = "Payment Attempt ID")
@@ -363,6 +365,7 @@ pub async fn get_payment_attempt_status(
 #[utoipa::path(
     post,
     path = "/api/bill/{realmId}/purchase/payment-attempts/{attemptId}/cancel",
+    tag = "billing",
     params(
         ("realmId" = String, Path, description = "Realm ID"),
         ("attemptId" = Uuid, Path, description = "Payment Attempt ID")
@@ -410,6 +413,7 @@ pub async fn cancel_payment_attempt(
 #[utoipa::path(
     post,
     path = "/api/internal/bill/purchase/payment-attempts/{attemptId}/fulfill",
+    tag = "billing",
     params(
         ("attemptId" = Uuid, Path, description = "Payment Attempt ID")
     ),
@@ -448,9 +452,9 @@ pub async fn fulfill_payment(
 
 #[utoipa::path(
     get,
-    path = "/api/bill/{realmId}/purchase/history",
+    path = "/api/user/bill/purchase/history",
+    tag = "billing",
     params(
-        ("realmId" = String, Path, description = "Realm ID"),
         PurchaseHistoryQuery
     ),
     responses(
@@ -462,10 +466,10 @@ pub async fn fulfill_payment(
 )]
 pub async fn get_purchase_history(
     State(state): State<AppState>,
-    Path(realm_id): Path<String>,
     Extension(identity): Extension<Identity>,
     Query(filters): Query<PurchaseHistoryQuery>,
 ) -> Result<Json<PurchaseHistoryResponse>, ApiError> {
+    let realm_id = identity.realm_id();
     let user_id = require_authenticated_user_in_realm(&identity, &realm_id, "purchase history")?;
 
     let page = filters.page.unwrap_or(1).max(1);

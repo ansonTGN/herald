@@ -228,7 +228,7 @@ mod tests {
     async fn fetch_apply_eligibility(
         app: &axum::Router,
         token: &str,
-        realm_id: &str,
+        _realm_id: &str,
         reference_type: &str,
         reference_id: Uuid,
     ) -> axum::response::Response {
@@ -237,8 +237,8 @@ mod tests {
                 Request::builder()
                     .method("GET")
                     .uri(format!(
-                        "/api/bill/{}/my/invoices/apply-eligibility?referenceType={}&referenceId={}",
-                        realm_id, reference_type, reference_id
+                        "/api/user/bill/invoices/apply-eligibility?referenceType={}&referenceId={}",
+                        reference_type, reference_id
                     ))
                     .header("cookie", format!("X-Auth={}", token))
                     .body(Body::empty())

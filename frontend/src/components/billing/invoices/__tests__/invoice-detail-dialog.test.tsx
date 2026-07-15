@@ -222,7 +222,7 @@ function setupDetailDialog(
   const variant = props.variant ?? 'admin'
   const endpoint =
     variant === 'user'
-      ? `${BASE_URL}/api/bill/${REALM_ID}/my/invoices/${invoice.id}`
+      ? `${BASE_URL}/api/user/bill/invoices/${invoice.id}`
       : `${BASE_URL}/api/bill/${REALM_ID}/invoices/${invoice.id}`
 
   server.use(

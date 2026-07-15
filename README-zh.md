@@ -2,38 +2,81 @@
 
 中文 | [English](README.md)
 
-开箱即用的 SaaS 底座：多租户账户体系、对接 Stripe / Creem 支付、自带积分系统。单体部署，Docker 上线。
+**面向 AI 产品的开源、自托管基础设施。**
 
-本项目用于实践 AI 编程，使用 Claude Code + GLM 模型以及 Codex 混合开发。AI 开发套件均基于 [web-dev-skills](https://github.com/timzaak/web-dev-skills) 构建。
+从已经打通的多租户认证、计费、支付、积分和管理后台开始，借助 AI 辅助开发持续改造开放代码，把每一次迭代都用在客户真正愿意付费的产品逻辑上。
 
-## 核心特性
+[官网](https://www.fornetcode.com/zh) · [在线演示](https://auth.fornetcode.com) · [快速开始](https://www.fornetcode.com/zh/docs/getting-started) · [Star on GitHub](https://github.com/timzaak/herald)
 
-- **开箱即用的 SaaS 底座** — 多租户账户、认证、计费与后台，全部就绪
-- **灵活的认证** — 邮箱密码、社交登录（Google / GitHub / Apple / Facebook / 微信）、Passkey、二步验证、人机验证
-- **订阅与一次性付费** — 对接 Stripe、Creem，付款到账自动发放权益
-- **支付驱动的付费墙** — 购买即开通，退款或流失即收回
-- **自带积分钱包** — 预付积分，支持充值、过期、退款、用户账本，适配 AI 与计量计价
-- **跨应用单点登录** — 一次 Herald 登录打通所有产品，含设备授权与微信小程序
-- **自定义域名与白标** — 你的域名、品牌名、Logo 与交易邮件
-- **内置合规** — 版本化协议、同意记录、完整审计轨迹
-- **一体化后台** — 用户、角色、计费、积分、应用、各租户设置一站管理
-- **开放易集成** — 自动生成 API 文档与 SDK，快速接入现有后端
+> [!IMPORTANT]
+> Herald 仍处于早期开发阶段，正在寻找首批真实用户。用于生产关键业务前，请自行评估安全、运维和升级要求。
+
+## 为什么选择 Herald
+
+AI 创业团队需要快速验证和持续迭代，但一个能够收费的产品仍然需要账号、租户隔离、权限、订阅、用量积分和运营工具。从零开发这些系统，或者拼接多个服务，都会挤占真正用于产品差异化的时间。
+
+Herald 不只是认证服务。它在同一套代码中把身份、支付、权益和产品用量连接起来：
+
+- 用户购买后可以自动获得访问权和积分；
+- 退款或取消订阅后可以自动收回权益；
+- 每个租户都可以拥有独立的用户、角色、应用、品牌和计费配置；
+- 整套基础设施都可以自托管并按业务需要修改。
+
+## 开箱即用的能力
+
+| 领域 | 已包含的能力 |
+|------|--------------|
+| **多租户身份** | 相互隔离的 Realm、邮箱密码、Google、GitHub、Apple、Facebook 和微信登录、Passkey、TOTP 双因素认证、人机验证 |
+| **授权与应用** | Realm 级 RBAC、客户端应用、API Key、OAuth 2.0、设备授权、跨应用单点登录 |
+| **计费与支付** | Stripe 与 Creem、订阅、一次性购买、发票、支付到权益的映射 |
+| **积分与用量** | 预付余额、充值、退款、过期、用户账本、积分发放、多时间窗滚动配额 |
+| **后台与运营** | 用户、角色、计费、积分、应用、租户设置、审计轨迹和账号生命周期管理 |
+| **产品定制** | 自定义域名、白标品牌、交易邮件、版本化用户协议、API 文档和 SDK |
+
+这套底座尤其适合提供免费额度、付费套餐、按量使用或积分计价的 AI 产品。
+
+## 为 AI 辅助迭代而设计
+
+Herald 为 AI 编程工具提供一套完整、可运行的产品底座，而不是一个空仓库或一组彼此割裂的 API。你可以在统一的身份、计费和用量模型之上，继续调整流程、角色、集成、品牌和业务规则。
+
+Herald 本身也采用 Claude Code、GLM 和 Codex 混合协作的 AI 辅助开发流程，开发工具基于 [web-dev-skills](https://github.com/timzaak/web-dev-skills) 构建。
 
 ## 快速开始
 
-需要 Python 3.12+（[uv](https://github.com/astral-sh/uv)）、Docker、Cargo、npm。
+你需要 Python 3.12+、[uv](https://github.com/astral-sh/uv)、Docker、Cargo 和 npm。
 
 ```bash
+git clone https://github.com/timzaak/herald.git
+cd herald
 uv run scripts/demo-start.py
 ```
 
-启动完成后前端在 http://localhost:3000 ，后端 API 在 http://localhost:8080 。
+启动完成后：
 
-## 链接
+- 前端：http://localhost:3000
+- 后端 API：http://localhost:8080
 
-- **官网**：https://www.fornetcode.com
-- **在线演示**：https://auth.fornetcode.com （admin@fornetcode.com / Herald@2026Admin）
+手动安装和后续配置请参阅[快速开始文档](https://www.fornetcode.com/zh/docs/getting-started)。
+
+## 体验在线演示
+
+打开 [auth.fornetcode.com](https://auth.fornetcode.com)，使用以下账号登录：
+
+```text
+邮箱：admin@fornetcode.com
+密码：Herald@2026Admin
+```
+
+无需本地运行 Herald，即可先体验管理后台。
+
+## 寻找早期用户
+
+Herald 正在寻找构建 AI 产品的创业团队。当前阶段希望了解哪些工作流最重要，以及团队是否需要托管版、定制开发或付费技术支持。
+
+- **认可这个方向？** [为仓库点一个 Star](https://github.com/timzaak/herald)。
+- **准备开始试用？** 运行快速开始，或者先体验在线演示。
+- **正在用 Herald 构建产品？** [提交 Issue](https://github.com/timzaak/herald/issues)，告诉我们你的需求。
 
 ## 许可证
 
-[Apache-2.0](LICENSE)
+Herald 采用 [Apache-2.0](LICENSE) 许可证。你可以在商业产品中自由使用、修改和分发，开源项目不收取按用户计算的许可证费用。

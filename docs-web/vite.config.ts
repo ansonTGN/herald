@@ -10,28 +10,37 @@ import { defineConfig } from "vite";
 // The prerender crawler can't discover them from virtual pages, so we list them
 // explicitly — one per operationId, in both locales. Generated from openapi.json
 // so it stays in sync when the backend adds/removes endpoints.
-function openapiSlugs(): string[] {
+//
+// `groupBy: "tag"` (src/lib/source.ts) nests each page under its tag folder,
+// so the path is `/openapi/<tag>/<operationId>`. fumadocs-openapi slugifies the
+// tag with `(s) => s.replace(/\s+/g, "-").toLowerCase()` — since our tags have
+// no spaces, the lowercase tag is the folder segment verbatim.
+function openapiPages() {
   try {
     const spec = JSON.parse(readFileSync("./openapi.json", "utf-8")) as {
-      paths?: Record<string, Record<string, { operationId?: string }>>;
+      paths?: Record<
+        string,
+        Record<string, { operationId?: string; tags?: string[] }>
+      >;
     };
-    const ids = new Set<string>();
+    const seen = new Set<string>();
+    const pages: { path: string }[] = [];
     for (const ops of Object.values(spec.paths ?? {})) {
       for (const op of Object.values(ops)) {
-        if (op.operationId) ids.add(op.operationId);
+        if (!op.operationId || !op.tags?.[0]) continue;
+        const tag = op.tags[0].toLowerCase();
+        const id = op.operationId;
+        const key = `${tag}/${id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        pages.push({ path: `/en/docs/openapi/${tag}/${id}` });
+        pages.push({ path: `/zh/docs/openapi/${tag}/${id}` });
       }
     }
-    return [...ids].sort();
+    return pages.sort((a, b) => a.path.localeCompare(b.path));
   } catch {
     return [];
   }
-}
-
-function openapiPages() {
-  return openapiSlugs().flatMap((slug) => [
-    { path: `/en/docs/openapi/${slug}` },
-    { path: `/zh/docs/openapi/${slug}` },
-  ]);
 }
 
 export default defineConfig({
@@ -48,6 +57,17 @@ export default defineConfig({
           enabled: true,
           crawlLinks: true,
         },
+      },
+
+      // Prerender tuning for ~200 virtual OpenAPI pages.
+      // Defaults: concurrency = os.cpus().length (too high — overwhelms the
+      // localhost prerender server → ETIMEDOUT) and retryCount = 0 (a single
+      // timeout drops the page silently). Lower concurrency to ease the server
+      // and retry transient timeouts so no page is silently lost.
+      prerender: {
+        concurrency: 3,
+        retryCount: 3,
+        retryDelay: 1000,
       },
 
       pages: [
@@ -82,25 +102,6 @@ export default defineConfig({
         },
         // OpenAPI tag pages — virtual, must be listed explicitly (crawler can't render them)
         ...openapiPages(),
-        // Nested folder pages (sidebar-only links aren't auto-discovered by the crawler)
-        {
-          path: "/en/docs/points-grant-redesign",
-        },
-        {
-          path: "/en/docs/points-grant-redesign/getting-started",
-        },
-        {
-          path: "/en/docs/points-grant-redesign/architecture",
-        },
-        {
-          path: "/zh/docs/points-grant-redesign",
-        },
-        {
-          path: "/zh/docs/points-grant-redesign/getting-started",
-        },
-        {
-          path: "/zh/docs/points-grant-redesign/architecture",
-        },
         {
           path: "/api/search",
         },

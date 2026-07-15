@@ -90,7 +90,7 @@ export async function initializeAuth(
   store.setIsLoading(true)
 
   try {
-    const { authStatus, userPermissions, userProfile } = await fetchAuthData(realmId)
+    const { authStatus, userPermissions, userProfile } = await fetchAuthData()
 
     // Update store with fetched data
     store.setAuthStatus(authStatus.authenticated, authStatus.realmId || realmId)
@@ -159,7 +159,7 @@ export async function loginFlow(
     const userRealmId = loginResponse.realmId || realmId
     store.login(userRealmId)
 
-    const { authStatus, userPermissions, userProfile } = await fetchAuthData(userRealmId)
+    const { authStatus, userPermissions, userProfile } = await fetchAuthData()
     store.setAuthStatus(authStatus.authenticated, authStatus.realmId || userRealmId)
     store.setUserPermissions(userPermissions.permissions, userPermissions.roles)
     store.setUserProfile(userProfile)
@@ -190,7 +190,7 @@ export async function logoutFlow(realmId: string): Promise<void> {
 
   try {
     // Perform logout API call - this will clear the session cookie
-    await performLogout(realmId)
+    await performLogout()
   } catch (error) {
     // Log the error but continue with state cleanup
     console.error('Logout API call failed:', error)
@@ -273,7 +273,7 @@ export async function completeLoginAfterTotp(
   const store = useAuthStore.getState()
 
   try {
-    const { authStatus, userPermissions, userProfile } = await fetchAuthData(realmId)
+    const { authStatus, userPermissions, userProfile } = await fetchAuthData()
     store.setAuthStatus(authStatus.authenticated, authStatus.realmId || realmId)
     store.setUserPermissions(userPermissions.permissions, userPermissions.roles)
     store.setUserProfile(userProfile)
@@ -315,7 +315,7 @@ export async function completeLoginAfterPasskey(
   const store = useAuthStore.getState()
 
   try {
-    const { authStatus, userPermissions, userProfile } = await fetchAuthData(realmId)
+    const { authStatus, userPermissions, userProfile } = await fetchAuthData()
     store.setAuthStatus(authStatus.authenticated, authStatus.realmId || realmId)
     store.setUserPermissions(userPermissions.permissions, userPermissions.roles)
     store.setUserProfile(userProfile)

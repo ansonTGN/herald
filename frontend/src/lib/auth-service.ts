@@ -31,11 +31,10 @@ export interface ExtendedStatusResponse extends StatusResponse {
 /**
  * Fetch authentication status from the API
  *
- * @param realmId - The realm ID to check auth status for
  * @returns The authentication status
  */
-export async function fetchAuthStatus(realmId: string): Promise<StatusResponse> {
-  const { data, error } = await status({ path: { realmId } })
+export async function fetchAuthStatus(): Promise<StatusResponse> {
+  const { data, error } = await status()
   if (error) throw error
   return data
 }
@@ -101,10 +100,9 @@ export async function performLogin(
 /**
  * Perform logout
  *
- * @param realmId - The realm ID to logout from
  */
-export async function performLogout(realmId: string): Promise<void> {
-  const { error } = await logout({ path: { realmId } })
+export async function performLogout(): Promise<void> {
+  const { error } = await logout()
   if (error) throw error
 }
 
@@ -112,16 +110,15 @@ export async function performLogout(realmId: string): Promise<void> {
  * Fetch auth data based on authentication status.
  * First checks auth status, then conditionally fetches user data in parallel.
  *
- * @param realmId - The realm ID to fetch auth data for
  * @returns Object containing auth status, user permissions, and profile
  */
-export async function fetchAuthData(realmId: string): Promise<{
+export async function fetchAuthData(): Promise<{
   authStatus: StatusResponse
   userPermissions: { permissions: string[]; roles: string[] }
   userProfile: UserProfile | null
 }> {
   // First, check authentication status
-  const authStatus = await fetchAuthStatus(realmId)
+  const authStatus = await fetchAuthStatus()
 
   // Fetch user data in parallel since they have no dependency on each other
   const [userPermissions, userProfile] = authStatus.authenticated

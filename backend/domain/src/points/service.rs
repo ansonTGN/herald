@@ -36,6 +36,14 @@ where
         Self { repository, policy }
     }
 
+    /// Require realm-wide points management permission.
+    pub async fn ensure_can_manage_points(&self, identity: Identity) -> Result<(), CoreError> {
+        ensure_policy(
+            self.policy.can_manage_points(identity).await,
+            "Insufficient permissions to manage points",
+        )
+    }
+
     /// Get points wallet for a user
     pub async fn get_wallet(
         &self,

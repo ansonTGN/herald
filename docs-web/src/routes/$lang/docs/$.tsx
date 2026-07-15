@@ -52,6 +52,15 @@ const loader = createServerFn({
   .inputValidator((input: { locale: string; slugs: string[] }) => input)
   .middleware([staticFunctionMiddleware])
   .handler(async ({ data: { locale, slugs } }) => {
+    // `/docs/openapi` has no index page (fumadocs-openapi generates one page
+    // per operation under `<tag>/<operationId>`). MDX links point here as the
+    // "OpenAPI reference" entry point, so redirect to the first real page.
+    // Uses the loader's emitted order, so it stays valid as the spec changes.
+    if (slugs.length === 1 && slugs[0] === "openapi") {
+      const first = source.getPages(locale).find((p) => p.data.type === "openapi");
+      if (first?.url) throw redirect({ href: first.url });
+    }
+
     const page = source.getPage(slugs, locale);
     if (!page) throw notFound();
 

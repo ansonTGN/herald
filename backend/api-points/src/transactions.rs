@@ -3,7 +3,7 @@
 use axum::extract::{Extension, Path, Query, State};
 use uuid::Uuid;
 
-use crate::types::{ListTransactionsQuery, PointsTransactionResponse};
+use crate::types::{ListTransactionsQuery, PointsTransactionResponse, UserTransactionsQuery};
 use herald_api_base::application::http::auth::util::check_permission_with_timeout;
 use herald_api_base::application::http::common::auth_utils::require_authenticated_user_in_realm;
 use herald_api_base::application::http::server::api_entities::{
@@ -35,7 +35,7 @@ use herald_core::domain::points::ports::TransactionFilters;
         (status = 403, description = "Forbidden", body = ErrorResponse),
         (status = 500, description = "Internal server error", body = ErrorResponse)
     ),
-    tag = "Points"
+    tag = "points"
 )]
 #[tracing::instrument(
     skip_all,
@@ -48,6 +48,11 @@ pub async fn list_transactions(
     Query(query): Query<ListTransactionsQuery>,
 ) -> Result<ApiResult<PageResponse<PointsTransactionResponse>>, ApiError> {
     let user_id = require_authenticated_user_in_realm(&identity, &realm_id, "points transactions")?;
+    state
+        .points_service
+        .ensure_can_manage_points(identity.clone())
+        .await
+        .map_err(ApiError::from)?;
     // Authenticated caller id, captured before the filter `user_id` (Option<Uuid>)
     // shadows the outer binding below. Used for the `points.manage` probe that
     // gates `effective_at` visibility.
@@ -175,4 +180,94 @@ pub async fn list_transactions(
             _ => ApiError::internal("Internal server error"),
         }),
     }
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/user/transactions",
+    params(UserTransactionsQuery),
+    responses(
+        (status = 200, description = "Current user's transactions", body = PageResponse<PointsTransactionResponse>),
+        (status = 401, description = "Unauthorized", body = ErrorResponse)
+    ),
+    tag = "user",
+    security(("bearer_auth" = []))
+)]
+pub async fn list_user_transactions(
+    State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
+    Query(query): Query<UserTransactionsQuery>,
+) -> Result<ApiResult<PageResponse<PointsTransactionResponse>>, ApiError> {
+    let realm_id = identity.realm_id();
+    let user_id = identity
+        .user_id()
+        .parse::<Uuid>()
+        .map_err(|_| ApiError::unauthorized("User session required"))?;
+    let parse_uuid = |value: Option<String>, name: &str| -> Result<Option<Uuid>, ApiError> {
+        value
+            .map(|s| {
+                s.parse::<Uuid>()
+                    .map_err(|_| ApiError::bad_request(format!("Invalid {name} format")))
+            })
+            .transpose()
+    };
+    let transaction_type = query
+        .transaction_type
+        .map(|s| {
+            s.parse()
+                .map_err(|_| ApiError::bad_request(format!("Invalid transaction_type: {s}")))
+        })
+        .transpose()?;
+    let parse_time = |value: Option<String>, name: &str| {
+        value
+            .map(|s| {
+                chrono::DateTime::parse_from_rfc3339(&s)
+                    .map(|dt| dt.with_timezone(&chrono::Utc))
+                    .map_err(|_| ApiError::bad_request(format!("Invalid {name}: {s}")))
+            })
+            .transpose()
+    };
+    let filters = TransactionFilters {
+        user_id: Some(user_id),
+        bucket_id: parse_uuid(query.bucket_id, "bucketId")?,
+        transaction_type,
+        client_app_id: parse_uuid(query.client_app_id, "clientAppId")?,
+        subscription_id: parse_uuid(query.subscription_id, "subscriptionId")?,
+        external_ref_id: query.external_ref_id.unwrap_or_default(),
+        start_time: parse_time(query.start_time, "startTime")?,
+        end_time: parse_time(query.end_time, "endTime")?,
+        page: query.page,
+        page_size: query.page_size,
+    };
+    let paginated = state
+        .points_service
+        .list_transactions(identity, &realm_id, filters)
+        .await
+        .map_err(ApiError::from)?;
+    let items = paginated
+        .data
+        .into_iter()
+        .map(|transaction| PointsTransactionResponse {
+            id: transaction.id,
+            wallet_id: transaction.wallet_id,
+            user_id: transaction.user_id,
+            realm_id: transaction.realm_id,
+            bucket_id: Some(transaction.bucket_id),
+            transaction_type: transaction.transaction_type.as_str().to_string(),
+            amount: transaction.amount,
+            balance_after: transaction.balance_after,
+            description: transaction.description,
+            client_app_id: transaction.client_app_id,
+            subscription_id: transaction.subscription_id,
+            external_ref_id: transaction.external_ref_id,
+            created_at: transaction.created_at.to_rfc3339(),
+            effective_at: None,
+        })
+        .collect();
+    Ok(ApiResult::ok(PageResponse {
+        items,
+        total: paginated.total as i64,
+        page: paginated.page as i64,
+        page_size: paginated.page_size as i64,
+    }))
 }

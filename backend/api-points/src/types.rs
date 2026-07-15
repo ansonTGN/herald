@@ -302,6 +302,21 @@ pub struct ListTransactionsQuery {
     pub page_size: Option<u64>,
 }
 
+/// Filters available to the current-user transaction endpoint.
+#[derive(Debug, Clone, Deserialize, utoipa::IntoParams, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UserTransactionsQuery {
+    pub transaction_type: Option<String>,
+    pub client_app_id: Option<String>,
+    pub subscription_id: Option<String>,
+    pub external_ref_id: Option<String>,
+    pub bucket_id: Option<String>,
+    pub start_time: Option<String>,
+    pub end_time: Option<String>,
+    pub page: Option<u64>,
+    pub page_size: Option<u64>,
+}
+
 /// Query parameters for listing accounts
 #[derive(Debug, Clone, Deserialize, utoipa::IntoParams, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -310,6 +325,16 @@ pub struct ListWalletsQuery {
     pub search: Option<String>,
     /// Filter by Credit Bucket. Applied at the handler because
     /// `WalletFilters` does not yet carry `bucket_id`.
+    pub bucket_id: Option<String>,
+    pub page: Option<u64>,
+    pub page_size: Option<u64>,
+}
+
+/// Filters available to the current-user wallet endpoint.
+#[derive(Debug, Clone, Deserialize, utoipa::IntoParams, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UserWalletsQuery {
+    pub status: Option<String>,
     pub bucket_id: Option<String>,
     pub page: Option<u64>,
     pub page_size: Option<u64>,

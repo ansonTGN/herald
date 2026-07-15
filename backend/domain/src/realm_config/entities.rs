@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use crate::common::entities::app_errors::CoreError;
 
-/// Realm 泛化配置实体
+/// Realm generalized configuration entity
 #[derive(Debug, Clone, Deserialize, Serialize, ToSchema, PartialEq)]
 pub struct RealmConfig {
     /// Configuration entry UUID
@@ -36,11 +36,11 @@ pub struct RealmConfig {
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
-/// 配置类型枚举
+/// Configuration type enum
 #[derive(Debug, Clone, Deserialize, Serialize, ToSchema, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum ConfigType {
-    /// TOTP 二次认证配置
+    /// TOTP two-factor authentication configuration
     ///
     /// Configuration is stored as a JSON object in config_value with the following structure:
     /// - config_key: `settings` (fixed key for TOTP configuration)
@@ -73,7 +73,7 @@ pub enum ConfigType {
     /// - metadata: null (not used for Passkey)
     Passkey,
 
-    /// Turnstile 验证码配置
+    /// Turnstile captcha configuration
     ///
     /// Valid config_key values:
     /// - `site_key`: Cloudflare Turnstile site key (public, non-secret)
@@ -102,7 +102,7 @@ pub enum ConfigType {
     /// ```
     Turnstile,
 
-    /// 用户注册配置
+    /// User registration configuration
     ///
     /// Valid config_key values:
     /// - `enabled`: Enable user registration for the realm ("true" or "false")
@@ -183,7 +183,7 @@ pub enum ConfigType {
     /// ```
     CustomDomain,
 
-    /// Realm TOTP 加密密钥配置
+    /// Realm TOTP encryption key configuration
     ///
     /// This config type stores the realm-level AES-256 key used to encrypt user TOTP secrets.
     ///
@@ -213,7 +213,7 @@ pub enum ConfigType {
     /// ```
     TotpKey,
 
-    /// Creem 支付提供商配置
+    /// Creem payment provider configuration
     ///
     /// Valid config_key values:
     /// - `api_key`: Creem API key (secret, mark is_secret=true)
@@ -242,7 +242,7 @@ pub enum ConfigType {
     /// ```
     Creem,
 
-    /// Stripe 支付提供商配置
+    /// Stripe payment provider configuration
     ///
     /// Valid config_key values:
     /// - `api_key`: Stripe API key (secret, mark is_secret=true)
@@ -423,7 +423,7 @@ impl AsRef<str> for ConfigType {
     }
 }
 
-/// 创建/更新配置请求
+/// Create or update configuration request
 #[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
 pub struct UpsertRealmConfigRequest {
     /// Configuration type (totp, turnstile, registration, white_label)
@@ -540,7 +540,7 @@ impl RealmConfig {
     }
 }
 
-/// 批量更新配置请求
+/// Batch update configuration request
 #[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
 pub struct BatchUpsertRealmConfigRequest {
     /// List of configuration entries to create or update

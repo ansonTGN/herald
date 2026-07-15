@@ -225,8 +225,8 @@ pub async fn handle_update_custom_domain_config(
 // It filters on the unified effectiveness predicate `enabled = true`
 // (design §5.1「生效判定」); `cname_verified`/`tls_ready` are display-only.
 //
-// (The public host→realmId resolve endpoint was removed: realm routing now
-// always relies on the {realmId} path segment.)
+// The public host→realmId resolve endpoint is deliberately separate: it is
+// needed by the SPA before login, while this endpoint must never disclose it.
 // ---------------------------------------------------------------------------
 
 /// Query parameters for the internal custom-domain ask endpoint.

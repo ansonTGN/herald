@@ -118,7 +118,7 @@ describe('loginFlow consent required handling', () => {
     await loginFlow('realm-1', { clientId: 'client-1', password: 'secret' })
 
     expect(mockLogin).toHaveBeenCalledWith('realm-1')
-    expect(mockFetchAuthData).toHaveBeenCalledWith('realm-1')
+    expect(mockFetchAuthData).toHaveBeenCalledWith()
   })
 })
 
@@ -170,7 +170,7 @@ describe('completeLoginAfterTotp consent required handling', () => {
 
     await completeLoginAfterTotp('realm-1', response)
 
-    expect(mockFetchAuthData).toHaveBeenCalledWith('realm-1')
+    expect(mockFetchAuthData).toHaveBeenCalledWith()
     expect(mockSetAuthStatus).toHaveBeenCalled()
   })
 })

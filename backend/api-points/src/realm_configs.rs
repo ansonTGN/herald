@@ -106,7 +106,7 @@ fn materialize_quota_windows(
         (status = 404, description = "Not found", body = ErrorResponse),
         (status = 500, description = "Internal server error", body = ErrorResponse)
     ),
-    tag = "Points"
+    tag = "points"
 )]
 pub async fn get_realm_default_config(
     State(state): State<AppState>,
@@ -141,7 +141,7 @@ pub async fn get_realm_default_config(
         (status = 403, description = "Forbidden", body = ErrorResponse),
         (status = 500, description = "Internal server error", body = ErrorResponse)
     ),
-    tag = "Points"
+    tag = "points"
 )]
 pub async fn create_realm_default_config(
     State(state): State<AppState>,
@@ -195,7 +195,7 @@ pub async fn create_realm_default_config(
         (status = 404, description = "Not found", body = ErrorResponse),
         (status = 500, description = "Internal server error", body = ErrorResponse)
     ),
-    tag = "Points"
+    tag = "points"
 )]
 pub async fn update_realm_default_config(
     State(state): State<AppState>,

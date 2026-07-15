@@ -47,7 +47,7 @@ fn grant_bucket_required_error() -> ApiError {
         (status = 404, description = "User not found", body = ErrorResponse),
         (status = 500, description = "Internal server error", body = ErrorResponse)
     ),
-    tag = "Points"
+    tag = "points"
 )]
 #[tracing::instrument(
     // Governance: identity carries user_id/realm_id; request

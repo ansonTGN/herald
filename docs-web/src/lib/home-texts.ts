@@ -2,9 +2,8 @@ export interface HomeTexts {
   badge: string;
   heroTitle: string;
   heroDesc: string;
-  getStarted: string;
+  earlyAccess: string;
   liveDemo: string;
-  viewFeatures: string;
   terminal: {
     label: string;
     lines: {
@@ -51,7 +50,6 @@ export interface HomeTexts {
   ctaTitle: string;
   ctaDesc: string;
   starGithub: string;
-  readDocs: string;
   footer: {
     copyright: string;
     privacy: string;
@@ -60,13 +58,12 @@ export interface HomeTexts {
 }
 
 export const en: HomeTexts = {
-  badge: "Open Source · Self-Hosted",
-  heroTitle: "Auth, billing, and payments",
+  badge: "Open Source · AI-Customizable · Self-Hosted",
+  heroTitle: "The open-source foundation for AI products",
   heroDesc:
-    "A self-hosted multi-tenant platform for small teams. Customize it with AI and skip the infrastructure.",
-  getStarted: "Get Started",
+    "Start with multi-tenant auth, billing, payments, credits, and an admin console. Use AI to shape the rest around your product—not your infrastructure.",
+  earlyAccess: "Join Early Access",
   liveDemo: "Live Demo",
-  viewFeatures: "View Features",
   terminal: {
     label: "terminal",
     lines: [
@@ -76,21 +73,21 @@ export const en: HomeTexts = {
         status: "command",
       },
       { prefix: "$", text: "cd herald", status: "command" },
-      { prefix: "$", text: "uv run scripts/dev-start.py", status: "command" },
+      { prefix: "$", text: "uv run scripts/demo-start.py", status: "command" },
       { text: "→ Starting PostgreSQL + Redis ...", status: "info" },
       { text: "✓ Database migrated", status: "ok" },
       { text: "✓ Multi-tenant auth  (RBAC, OAuth, TOTP)", status: "ok" },
       { text: "✓ Subscription billing (Stripe, Creem)", status: "ok" },
       { text: "✓ Admin console @ http://localhost:3000", status: "ok" },
       {
-        text: "→ Your auth & billing infrastructure is ready. Focus on your product.",
+        text: "→ Your AI product infrastructure is ready. Build what makes it unique.",
         status: "info",
       },
     ],
   },
-  featureSectionTitle: "Everything except your core product",
+  featureSectionTitle: "The infrastructure around your AI product",
   featureSectionDesc:
-    "Auth, billing, payments, user management — the stuff every SaaS needs but nobody wants to build. It's all here, AI-customizable, ready to deploy.",
+    "Herald handles the shared product foundation so your team can spend its AI iterations on the logic customers actually pay for.",
   features: [
     {
       title: "Multi-Tenant Auth",
@@ -129,9 +126,9 @@ export const en: HomeTexts = {
       ],
     },
   ],
-  stepsSectionTitle: "From zero to production in three steps",
+  stepsSectionTitle: "From repository to AI product in three steps",
   stepsSectionDesc:
-    "Deploy the platform. Let AI customize it. Ship your product.",
+    "Deploy the foundation. Shape it with AI. Build your product logic.",
   steps: [
     {
       num: "01",
@@ -140,18 +137,18 @@ export const en: HomeTexts = {
     },
     {
       num: "02",
-      title: "Customize with AI",
-      desc: "Create Realms, set up OAuth providers (Google, GitHub, WeChat), configure RBAC roles. Use AI-assisted tools to tailor the platform without hand-writing infrastructure code.",
+      title: "Shape It with AI",
+      desc: "Use AI-assisted development to adapt the open codebase, product flows, branding, roles, and integrations to your market.",
     },
     {
       num: "03",
-      title: "Connect Your Apps",
-      desc: "Your applications authenticate users through Herald's OAuth 2.0 endpoints. Users sign in with email/password or social logins. Herald handles sessions, tokens, and user management.",
+      title: "Build Your Product Logic",
+      desc: "Connect your application through Herald's APIs and OAuth 2.0 endpoints. Keep iterating on the experience that makes your AI product worth paying for.",
     },
   ],
-  compareSectionTitle: "Why small teams choose Herald",
+  compareSectionTitle: "Why AI startup teams choose Herald",
   compareSectionDesc:
-    "Auth, billing, and payments in one self-hosted system. AI helps you customize. No stitching services together.",
+    "Go beyond authentication with billing, payments, credits, and product infrastructure in one AI-customizable, self-hosted system.",
   compareHeaders: {
     herald: "Herald",
     auth0: "Auth0",
@@ -201,12 +198,17 @@ export const en: HomeTexts = {
     {
       question: "What is Herald?",
       answer:
-        "Herald is an open-source, self-hosted multi-tenant auth, billing, and payments platform. It ships with Realm-based tenant isolation, OAuth 2.0 providers, TOTP two-factor auth, RBAC, Client App management, subscription billing, and a points/credits system.",
+        "Herald is an open-source, self-hosted foundation for AI products. It gives startup teams multi-tenant auth, RBAC, billing, payments, credits, and an admin console in one codebase they can keep adapting with AI.",
     },
     {
-      question: "How is Herald different from Auth0 or Keycloak?",
+      question: "How does Herald help me build an AI product faster?",
       answer:
-        "Herald combines authentication and billing in one self-hosted system with AI-assisted customization. Auth0 is cloud-only and charges per user. Keycloak is self-hosted but has no billing. Herald gives you multi-tenant auth plus subscription management, points/credits, and payment integration.",
+        "Instead of spending early iterations stitching together auth, payment webhooks, entitlements, credits, and admin tools, you start with those systems connected. Your team can use AI-assisted development on the open codebase and focus on product logic.",
+    },
+    {
+      question: "How is Herald different from an auth provider?",
+      answer:
+        "Herald is more than an authentication layer. It connects identity to subscriptions, one-time payments, entitlements, credits, invoices, and tenant administration, so paid access and product usage share one foundation.",
     },
     {
       question: "What does multi-tenant mean in Herald?",
@@ -234,11 +236,10 @@ export const en: HomeTexts = {
         "Yes. Herald is released under the Apache-2.0 license. You can use, modify, and distribute it freely, including for commercial projects. There are no usage limits and no per-user fees.",
     },
   ],
-  ctaTitle: "Stop building infrastructure. Start shipping product.",
+  ctaTitle: "Build the AI product users pay for",
   ctaDesc:
-    "Herald gives you auth, billing, payments, and user management out of the box. AI handles customization. You focus on what makes your software unique.",
+    "Start with the open infrastructure around your product. Use AI to customize it, then focus every iteration on what makes your product unique.",
   starGithub: "Star on GitHub",
-  readDocs: "Read Docs",
   footer: {
     copyright: "Herald · Apache 2.0",
     privacy: "Privacy",
@@ -247,13 +248,12 @@ export const en: HomeTexts = {
 };
 
 export const zh: HomeTexts = {
-  badge: "开源 · 自托管",
-  heroTitle: "认证、计费、支付",
+  badge: "开源 · AI 可定制 · 自托管",
+  heroTitle: "AI 产品的开源基础设施",
   heroDesc:
-    "面向小团队的多租户自托管平台。AI 辅助定制，跳过基础设施搭建。",
-  getStarted: "快速开始",
+    "多租户认证、计费、支付、积分和管理后台开箱即用。用 AI 围绕你的产品持续迭代，而不是反复搭建基础设施。",
+  earlyAccess: "申请早期体验",
   liveDemo: "在线演示",
-  viewFeatures: "查看功能",
   terminal: {
     label: "terminal",
     lines: [
@@ -263,18 +263,21 @@ export const zh: HomeTexts = {
         status: "command",
       },
       { prefix: "$", text: "cd herald", status: "command" },
-      { prefix: "$", text: "uv run scripts/dev-start.py", status: "command" },
+      { prefix: "$", text: "uv run scripts/demo-start.py", status: "command" },
       { text: "→ 正在启动 PostgreSQL + Redis ...", status: "info" },
       { text: "✓ 数据库迁移完成", status: "ok" },
       { text: "✓ Multi-tenant 认证 (RBAC, OAuth, TOTP)", status: "ok" },
       { text: "✓ 订阅计费 (Stripe, Creem)", status: "ok" },
       { text: "✓ 管理后台 @ http://localhost:3000", status: "ok" },
-      { text: "→ 认证与计费基础设施已就绪，专注于你的产品。", status: "info" },
+      {
+        text: "→ AI 产品基础设施已就绪，开始构建你的独特价值。",
+        status: "info",
+      },
     ],
   },
-  featureSectionTitle: "除核心产品外的一切",
+  featureSectionTitle: "AI 产品周围的基础设施",
   featureSectionDesc:
-    "认证、计费、支付、用户管理 —— 每个 SaaS 都需要但没人愿意从零搭建的东西。Herald 已内置，支持 AI 定制，随时部署。",
+    "Herald 处理共性的产品底座，让团队把每一次 AI 迭代都用在客户真正愿意付费的产品逻辑上。",
   features: [
     {
       title: "多租户认证",
@@ -313,8 +316,8 @@ export const zh: HomeTexts = {
       ],
     },
   ],
-  stepsSectionTitle: "三步从零到生产",
-  stepsSectionDesc: "部署平台，让 AI 定制，发布产品。",
+  stepsSectionTitle: "三步从代码仓库到 AI 产品",
+  stepsSectionDesc: "部署底座，用 AI 塑造，构建产品逻辑。",
   steps: [
     {
       num: "01",
@@ -323,18 +326,18 @@ export const zh: HomeTexts = {
     },
     {
       num: "02",
-      title: "AI 定制",
-      desc: "创建 Realm，设置 OAuth 提供商（Google、GitHub、微信），配置 RBAC 角色。借助 AI 辅助工具定制平台，无需手写基础设施代码。",
+      title: "用 AI 塑造产品",
+      desc: "通过 AI 辅助开发调整开放代码、产品流程、品牌、角色和集成方式，使底座适配你的市场。",
     },
     {
       num: "03",
-      title: "接入你的应用",
-      desc: "你的应用通过 Herald 的 OAuth 2.0 端点认证用户。用户可使用邮箱/密码或社交登录。Herald 负责会话、令牌与用户管理。",
+      title: "构建产品逻辑",
+      desc: "通过 Herald 的 API 与 OAuth 2.0 端点接入应用，持续迭代真正让用户愿意付费的 AI 产品体验。",
     },
   ],
-  compareSectionTitle: "小团队为何选择 Herald",
+  compareSectionTitle: "AI 创业团队为何选择 Herald",
   compareSectionDesc:
-    "认证、计费、支付一体化自托管系统。AI 辅助定制，无需拼接多种服务。",
+    "不止于认证：在一个 AI 可定制的自托管系统中获得计费、支付、积分和完整产品基础设施。",
   compareHeaders: {
     herald: "Herald",
     auth0: "Auth0",
@@ -384,12 +387,17 @@ export const zh: HomeTexts = {
     {
       question: "Herald 是什么？",
       answer:
-        "Herald 是一个开源、自托管的多租户认证、计费和支付平台。它内置 Realm 租户隔离、OAuth 2.0 提供商、TOTP 双因素认证、RBAC、客户端应用管理、订阅计费以及积分/信用点系统。",
+        "Herald 是 AI 产品的开源、自托管基础设施。它让创业团队从同一套可持续用 AI 改造的代码出发，直接获得多租户认证、RBAC、计费、支付、积分和管理后台。",
     },
     {
-      question: "Herald 与 Auth0 或 Keycloak 有何不同？",
+      question: "Herald 如何帮助我更快构建 AI 产品？",
       answer:
-        "Herald 将认证与计费整合在一个自托管系统中，并支持 AI 辅助定制。Auth0 仅提供云服务且按用户收费，Keycloak 是自托管的但不支持计费。Herald 在提供多租户认证的同时，还支持订阅管理、积分/信用点和支付集成。",
+        "你不必把早期迭代花在拼接认证、支付 webhook、权益、积分和管理工具上。Herald 已将这些系统连在一起，团队可以用 AI 改造开放代码，把时间用在自己的产品逻辑上。",
+    },
+    {
+      question: "Herald 与单纯的认证服务有何不同？",
+      answer:
+        "Herald 不只是认证层。它把身份与订阅、一次性支付、权益、积分、发票和租户管理连接起来，让付费访问与产品用量共享同一套底座。",
     },
     {
       question: "Herald 中的多租户是什么意思？",
@@ -417,11 +425,10 @@ export const zh: HomeTexts = {
         "是的。Herald 采用 Apache-2.0 许可证发布。你可以自由使用、修改和分发，包括商业项目。没有使用限制，也不按用户收费。",
     },
   ],
-  ctaTitle: "停止搭建基础设施，开始发布产品。",
+  ctaTitle: "构建用户愿意付费的 AI 产品",
   ctaDesc:
-    "Herald 开箱即用地提供认证、计费、支付和用户管理。AI 负责定制，你专注于让软件与众不同的地方。",
+    "从开源产品基础设施开始，用 AI 持续定制，把每一次迭代都用在真正让产品与众不同的地方。",
   starGithub: "Star on GitHub",
-  readDocs: "阅读文档",
   footer: {
     copyright: "Herald · Apache 2.0",
     privacy: "隐私政策",

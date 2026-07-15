@@ -1,7 +1,10 @@
 import type { PublicConfigResponse } from '@/lib/api-generated'
+import { useAuthStore } from '@/stores/auth-store'
 import { useLocation, useRouter } from '@tanstack/react-router'
 
 const CUSTOM_DOMAIN_ROOT_SEGMENTS = new Set(['auth', 'manage', 'user', 'legal', 'device'])
+const SESSION_SCOPED_ROOT_SEGMENTS = new Set(['manage', 'user', 'subscription'])
+const REALM_SCOPED_PUBLIC_ROOT_SEGMENTS = new Set(['auth', 'legal', 'device'])
 
 export interface ResolvedRealmContext {
   realmId: string
@@ -21,7 +24,11 @@ export function isCustomDomainPath(pathname: string): boolean {
 }
 
 export function getLegacyRealmId(pathname: string): string {
-  return firstPathSegment(pathname) || 'admin'
+  const first = firstPathSegment(pathname)
+  if (first && SESSION_SCOPED_ROOT_SEGMENTS.has(first)) {
+    return useAuthStore.getState().realmId || 'admin'
+  }
+  return first || 'admin'
 }
 
 export function getCachedCustomDomainRealm(): ResolvedRealmContext | null {
@@ -49,9 +56,11 @@ export async function resolveRealmContext(pathname: string): Promise<ResolvedRea
     credentials: 'include',
   })
   if (!response.ok) {
-    if (pathname === '/') {
+    // Main-domain session routes have no realm prefix. Their realm is loaded
+    // from /api/auth/status by the root loader, not from custom-domain DNS.
+    if (pathname === '/' || SESSION_SCOPED_ROOT_SEGMENTS.has(firstPathSegment(pathname) ?? '')) {
       return {
-        realmId: 'admin',
+        realmId: getLegacyRealmId(pathname),
         isCustomDomain: false,
       }
     }
@@ -106,7 +115,12 @@ export function useCurrentPathname(): string {
 }
 
 export function useResolvedRealmContext(): ResolvedRealmContext {
-  return resolvedRealmFromPath(useCurrentPathname())
+  const pathname = useCurrentPathname()
+  const sessionRealmId = useAuthStore((state) => state.realmId)
+  const context = resolvedRealmFromPath(pathname)
+  return SESSION_SCOPED_ROOT_SEGMENTS.has(firstPathSegment(pathname) ?? '')
+    ? { ...context, realmId: sessionRealmId || context.realmId }
+    : context
 }
 
 export function useResolvedRealmId(fallback: string = 'admin'): string {
@@ -158,5 +172,8 @@ export function useOptionalRouteParams<TParams extends Record<string, string | u
 export function realmPath(context: ResolvedRealmContext, path: string): string {
   const normalized = path.startsWith('/') ? path : `/${path}`
   if (context.isCustomDomain) return normalized
+  if (!REALM_SCOPED_PUBLIC_ROOT_SEGMENTS.has(firstPathSegment(normalized) ?? '')) {
+    return normalized
+  }
   return `/${context.realmId}${normalized}`
 }

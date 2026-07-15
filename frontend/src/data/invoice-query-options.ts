@@ -123,10 +123,7 @@ export function myInvoiceListQueryOptions(
   return queryOptions({
     queryKey: invoiceKeys.myList(realmId, query),
     queryFn: async () => {
-      const response = await listMyInvoices({
-        path: { realmId },
-        query,
-      })
+      const response = await listMyInvoices({ query })
       if (response.error) throw response.error
       return response.data as InvoiceListResponse
     },
@@ -140,9 +137,7 @@ export function myInvoiceDetailQueryOptions(realmId: string, invoiceId: string) 
   return queryOptions({
     queryKey: invoiceKeys.myDetail(realmId, invoiceId),
     queryFn: async () => {
-      const response = await getMyInvoice({
-        path: { realmId, invoiceId },
-      })
+      const response = await getMyInvoice({ path: { invoiceId } })
       if (response.error) throw response.error
       return response.data as InvoiceDetailResponse
     },
@@ -186,10 +181,7 @@ export function invoiceApplyEligibilityQueryOptions(
   return queryOptions({
     queryKey: invoiceKeys.applyEligibility(realmId, referenceType, referenceId),
     queryFn: async () => {
-      const response = await getInvoiceApplyEligibility({
-        path: { realmId },
-        query: { referenceType, referenceId },
-      })
+      const response = await getInvoiceApplyEligibility({ query: { referenceType, referenceId } })
       if (response.error) throw response.error
       return response.data as InvoiceApplyEligibilityResponse
     },

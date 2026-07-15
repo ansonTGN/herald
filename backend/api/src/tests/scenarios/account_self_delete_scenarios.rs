@@ -1,4 +1,4 @@
-// End-to-end tests for POST /api/user/me/delete-account (BE-D07).
+// End-to-end tests for DELETE /api/user (BE-D07).
 // Covers design §6.1「账户注销」and US-RU-014.
 
 use crate::application::http::auth::util::{SessionData, store_session};
@@ -222,7 +222,7 @@ async fn login_and_get_token(
         .expect("Should extract X-Auth token")
 }
 
-/// Call POST /api/user/me/delete-account with the given session token.
+/// Call DELETE /api/user with the given session token.
 async fn call_delete_account(
     ctx: &TestContext,
     token: &str,
@@ -232,8 +232,8 @@ async fn call_delete_account(
     let payload = json!({ "password": password });
 
     let req = Request::builder()
-        .method("POST")
-        .uri("/api/user/me/delete-account")
+        .method("DELETE")
+        .uri("/api/user")
         .header("content-type", "application/json")
         .header(header::COOKIE, format!("X-Auth={}", token))
         .body(Body::from(payload.to_string()))

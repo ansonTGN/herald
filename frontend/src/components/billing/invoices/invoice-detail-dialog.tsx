@@ -88,8 +88,11 @@ export function InvoiceDetailDialog({
 
   const { data: invoice, isLoading } = variant === 'user' ? userQuery : adminQuery
 
-  const pdfPathSegment = variant === 'user' ? 'my/invoices' : 'invoices'
-  const pdfUrl = invoiceId ? `/api/bill/${realmId}/${pdfPathSegment}/${invoiceId}/pdf` : null
+  const pdfUrl = invoiceId
+    ? variant === 'user'
+      ? `/api/user/bill/invoices/${invoiceId}/pdf`
+      : `/api/bill/${realmId}/invoices/${invoiceId}/pdf`
+    : null
   const provider = invoice?.provider
   const isExternal = invoice ? isExternalInvoice(provider!) : false
   const externalPdfUrl = invoice?.externalPdfUrl ?? null

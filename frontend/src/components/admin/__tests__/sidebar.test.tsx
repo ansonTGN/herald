@@ -9,7 +9,7 @@ import { Sidebar } from '../sidebar'
 import { useAuthStore } from '@/stores/auth-store'
 import { LocaleProvider } from '@/components/shared/locale-provider'
 
-let currentPath = '/admin/manage/billing?page=0&pageSize=20&status=all'
+let currentPath = '/manage/billing?page=0&pageSize=20&status=all'
 
 vi.mock('@tanstack/react-query', () => ({
   useQuery: () => ({ data: { id: 'admin', name: 'Admin' } }),
@@ -75,7 +75,7 @@ describe('Sidebar navigation', () => {
   })
 
   it('highlights entitlement mappings on the entitlement-mappings page', async () => {
-    currentPath = '/admin/manage/billing/entitlement-mappings'
+    currentPath = '/manage/billing/entitlement-mappings'
     const user = userEvent.setup()
     render(
       <LocaleProvider>
@@ -93,7 +93,7 @@ describe('Sidebar navigation', () => {
   })
 
   it('highlights invoices on the invoices page (under Transactions)', async () => {
-    currentPath = '/admin/manage/billing/invoices'
+    currentPath = '/manage/billing/invoices'
     const user = userEvent.setup()
     render(
       <LocaleProvider>
@@ -111,7 +111,7 @@ describe('Sidebar navigation', () => {
   })
 
   it('highlights only payment providers on the payment providers page (under Products & Payments)', async () => {
-    currentPath = '/admin/manage/billing/payment-providers'
+    currentPath = '/manage/billing/payment-providers'
     const user = userEvent.setup()
     render(
       <LocaleProvider>
@@ -129,7 +129,7 @@ describe('Sidebar navigation', () => {
   })
 
   it('keeps sidebar navigation in its own scroll container when group expands', async () => {
-    currentPath = '/admin/manage/billing?page=0&pageSize=20&status=all'
+    currentPath = '/manage/billing?page=0&pageSize=20&status=all'
     const user = userEvent.setup()
     render(
       <LocaleProvider>

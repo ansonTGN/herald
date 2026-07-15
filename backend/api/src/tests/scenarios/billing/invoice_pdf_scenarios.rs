@@ -448,10 +448,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri(format!(
-                        "/api/bill/{}/my/invoices/{}/pdf",
-                        realm_id, invoice_id
-                    ))
+                    .uri(format!("/api/user/bill/invoices/{}/pdf", invoice_id))
                     .header("cookie", format!("X-Auth={}", user_token))
                     .body(Body::empty())
                     .unwrap(),
@@ -509,10 +506,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri(format!(
-                        "/api/bill/{}/my/invoices/{}/pdf",
-                        realm_id, invoice_id
-                    ))
+                    .uri(format!("/api/user/bill/invoices/{}/pdf", invoice_id))
                     .header("cookie", format!("X-Auth={}", user_a_token))
                     .body(Body::empty())
                     .unwrap(),
@@ -590,10 +584,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri(format!(
-                        "/api/bill/{}/my/invoices/{}/pdf",
-                        realm_id, invoice_id
-                    ))
+                    .uri(format!("/api/user/bill/invoices/{}/pdf", invoice_id))
                     .header("cookie", format!("X-Auth={}", user_token))
                     .body(Body::empty())
                     .unwrap(),

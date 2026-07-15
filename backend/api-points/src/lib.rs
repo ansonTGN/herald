@@ -16,8 +16,10 @@ pub mod wallets;
 #[openapi(
     paths(
         crate::wallets::list_wallets,
+        crate::wallets::list_user_wallets,
         crate::wallets::get_wallet,
         crate::transactions::list_transactions,
+        crate::transactions::list_user_transactions,
         crate::realm_configs::get_realm_default_config,
         crate::realm_configs::create_realm_default_config,
         crate::realm_configs::update_realm_default_config,

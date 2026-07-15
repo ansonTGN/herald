@@ -9,7 +9,7 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-/// 分页请求参数
+/// Pagination request parameters
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct PaginationRequest {
     pub page: i64,

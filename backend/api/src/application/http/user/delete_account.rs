@@ -1,6 +1,6 @@
 // Account self-deletion (soft-delete) handler — BE-D07.
 //
-// POST /api/user/me/delete-account, mounted on the existing `/api/user` route
+// DELETE /api/user, mounted on the existing `/api/user` route
 // group (already covered by `inject_identity` in server/mod.rs). The body
 // carries a single `password` field for second-factor confirmation.
 //
@@ -23,7 +23,7 @@ use crate::application::http::server::api_entities::{ApiError, ErrorResponse};
 use crate::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
 
-/// POST /api/user/me/delete-account request body.
+/// DELETE /api/user request body.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct DeleteAccountRequest {
     /// Current password — second-factor confirmation for this irreversible
@@ -39,8 +39,8 @@ pub struct DeleteAccountRequest {
 /// audit event. One-time purchases are NOT refunded. Returns 204 on success —
 /// the caller's token is invalidated by the session wipe.
 #[utoipa::path(
-    post,
-    path = "/api/user/me/delete-account",
+    delete,
+    path = "/api/user",
     tag = "user",
     request_body = DeleteAccountRequest,
     responses(

@@ -323,9 +323,9 @@ pub async fn delete_permission(
     Ok(ApiResult::no_content())
 }
 
-/// 权限校验
+/// Permission check
 ///
-/// 对应规范：POST /api/permission/check
+/// Spec: POST /api/permission/check
 #[utoipa::path(
     post,
     path = "/api/permission/check",

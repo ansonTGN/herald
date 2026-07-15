@@ -1,7 +1,4 @@
-use axum::{
-    extract::{Path, State},
-    http::HeaderMap,
-};
+use axum::{extract::State, http::HeaderMap};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -26,18 +23,14 @@ pub struct StatusResponse {
 /// their user/realm IDs, and their permissions if valid session exists.
 #[utoipa::path(
   get,
-  path = "/api/auth/{realmId}/status",
+  path = "/api/auth/status",
   tag = "auth",
-  params(
-    ("realmId" = String, Path, description = "Realm ID")
-  ),
   responses(
     (status = 200, description = "Session status.", body = StatusResponse),
     (status = 500, description = "Internal server error", body = ErrorResponse)
   )
 )]
 pub async fn status(
-    Path(realm_id): Path<String>,
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<ApiResult<StatusResponse>, ApiError> {
@@ -58,15 +51,6 @@ pub async fn status(
             permissions: None,
         }));
     };
-
-    if sess.realm_id != realm_id {
-        return Ok(ApiResult::ok(StatusResponse {
-            authenticated: false,
-            realm_id: None,
-            user_id: None,
-            permissions: None,
-        }));
-    }
 
     // Get user's effective permissions via PermissionService
     let permissions = Some(

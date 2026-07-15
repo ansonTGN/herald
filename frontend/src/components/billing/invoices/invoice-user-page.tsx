@@ -24,7 +24,6 @@ import {
 import { m } from '@/paraglide/messages'
 
 function createInvoiceColumns(
-  realmId: string,
   page: number,
   pageSize: number,
   onViewInvoice?: (invoice: InvoiceResponse) => void
@@ -173,7 +172,7 @@ function createInvoiceColumns(
                 size="sm"
                 onClick={() =>
                   downloadInvoicePdf(
-                    `/api/bill/${realmId}/my/invoices/${invoice.id}/pdf`,
+                    `/api/user/bill/invoices/${invoice.id}/pdf`,
                     `${invoice.invoiceNumber}.pdf`
                   )
                 }
@@ -219,8 +218,8 @@ export function InvoiceUserPage({
   const total = data?.total ?? 0
 
   const columns = useMemo(
-    () => createInvoiceColumns(realmId, page, INVOICE_PAGE_SIZE, onViewInvoice),
-    [realmId, page, onViewInvoice]
+    () => createInvoiceColumns(page, INVOICE_PAGE_SIZE, onViewInvoice),
+    [page, onViewInvoice]
   )
 
   return (

@@ -48,7 +48,7 @@ fn user_config_to_response(
         (status = 404, description = "Not found", body = ErrorResponse),
         (status = 500, description = "Internal server error", body = ErrorResponse)
     ),
-    tag = "Points"
+    tag = "points"
 )]
 pub async fn get_user_points_config(
     State(state): State<AppState>,

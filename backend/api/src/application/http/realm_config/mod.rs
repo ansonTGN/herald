@@ -147,10 +147,10 @@ fn to_response(config: RealmConfig) -> RealmConfigResponse {
         ("realmId" = String, Path, description = "Realm ID")
     ),
     responses(
-        (status = 200, description = "所有配置列表", body = Vec<RealmConfigResponse>),
-        (status = 401, description = "未授权", body = ErrorResponse),
-        (status = 403, description = "权限不足", body = ErrorResponse),
-        (status = 500, description = "服务器错误", body = ErrorResponse)
+        (status = 200, description = "List of all configs", body = Vec<RealmConfigResponse>),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden - Insufficient permissions", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
     )
 )]
 pub async fn list_realm_configs(
@@ -194,13 +194,13 @@ pub async fn list_realm_configs(
     tag = "realm_config",
     params(
         ("realmId" = String, Path, description = "Realm ID"),
-        ("configType" = String, Path, description = "配置类型 (oauth, turnstile, registration 等)")
+        ("configType" = String, Path, description = "Config type (oauth, turnstile, registration, …)")
     ),
     responses(
-        (status = 200, description = "指定类型的配置列表", body = Vec<RealmConfigResponse>),
-        (status = 401, description = "未授权", body = ErrorResponse),
-        (status = 403, description = "权限不足", body = ErrorResponse),
-        (status = 500, description = "服务器错误", body = ErrorResponse)
+        (status = 200, description = "Configs of the given type", body = Vec<RealmConfigResponse>),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden - Insufficient permissions", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
     )
 )]
 pub async fn list_realm_configs_by_type(
@@ -244,15 +244,15 @@ pub async fn list_realm_configs_by_type(
     tag = "realm_config",
     params(
         ("realmId" = String, Path, description = "Realm ID"),
-        ("configType" = String, Path, description = "配置类型"),
-        ("configKey" = String, Path, description = "配置键")
+        ("configType" = String, Path, description = "Config type"),
+        ("configKey" = String, Path, description = "Config key")
     ),
     responses(
-        (status = 200, description = "配置详情", body = RealmConfigResponse),
-        (status = 401, description = "未授权", body = ErrorResponse),
-        (status = 403, description = "权限不足", body = ErrorResponse),
-        (status = 404, description = "未找到", body = ErrorResponse),
-        (status = 500, description = "服务器错误", body = ErrorResponse)
+        (status = 200, description = "Config details", body = RealmConfigResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden - Insufficient permissions", body = ErrorResponse),
+        (status = 404, description = "Not found", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
     )
 )]
 pub async fn get_realm_config(
@@ -302,11 +302,11 @@ pub async fn get_realm_config(
     ),
     request_body = UpsertRealmConfigValidator,
     responses(
-        (status = 200, description = "配置已创建或更新", body = RealmConfigResponse),
-        (status = 400, description = "请求参数错误", body = ErrorResponse),
-        (status = 401, description = "未授权", body = ErrorResponse),
-        (status = 403, description = "权限不足", body = ErrorResponse),
-        (status = 500, description = "服务器错误", body = ErrorResponse)
+        (status = 200, description = "Config created or updated", body = RealmConfigResponse),
+        (status = 400, description = "Bad request", body = ErrorResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden - Insufficient permissions", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
     )
 )]
 pub async fn upsert_realm_config(
@@ -401,11 +401,11 @@ pub async fn upsert_realm_config(
     ),
     request_body = BatchUpsertRealmConfigRequest,
     responses(
-        (status = 200, description = "批量配置已创建或更新", body = Vec<RealmConfigResponse>),
-        (status = 400, description = "请求参数错误", body = ErrorResponse),
-        (status = 401, description = "未授权", body = ErrorResponse),
-        (status = 403, description = "权限不足", body = ErrorResponse),
-        (status = 500, description = "服务器错误", body = ErrorResponse)
+        (status = 200, description = "Batch configs created or updated", body = Vec<RealmConfigResponse>),
+        (status = 400, description = "Bad request", body = ErrorResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden - Insufficient permissions", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
     )
 )]
 pub async fn batch_upsert_realm_configs(
@@ -571,15 +571,15 @@ pub async fn batch_upsert_realm_configs(
     tag = "realm_config",
     params(
         ("realmId" = String, Path, description = "Realm ID"),
-        ("configType" = String, Path, description = "配置类型"),
-        ("configKey" = String, Path, description = "配置键")
+        ("configType" = String, Path, description = "Config type"),
+        ("configKey" = String, Path, description = "Config key")
     ),
     responses(
-        (status = 204, description = "配置已删除"),
-        (status = 401, description = "未授权", body = ErrorResponse),
-        (status = 403, description = "权限不足", body = ErrorResponse),
-        (status = 404, description = "未找到", body = ErrorResponse),
-        (status = 500, description = "服务器错误", body = ErrorResponse)
+        (status = 204, description = "Config deleted"),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden - Insufficient permissions", body = ErrorResponse),
+        (status = 404, description = "Not found", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
     )
 )]
 pub async fn delete_realm_config(

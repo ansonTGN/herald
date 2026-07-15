@@ -164,8 +164,6 @@ pub fn auth_router() -> Router<AppState> {
             "/login/passkey/2fa/verify",
             post(verify_passkey::handle_passkey_2fa_verify),
         )
-        .route("/logout", get(logout::logout).post(logout::logout))
-        .route("/status", get(status::status))
         .route(
             "/turnstile/status",
             post(turnstile_status::get_turnstile_status),
@@ -189,4 +187,11 @@ pub fn auth_router() -> Router<AppState> {
             "/change_email/confirm/{change_code}",
             get(change_email::confirm),
         )
+}
+
+/// Routes whose realm is derived from the current session rather than the URL.
+pub fn session_router() -> Router<AppState> {
+    Router::new()
+        .route("/logout", get(logout::logout).post(logout::logout))
+        .route("/status", get(status::status))
 }

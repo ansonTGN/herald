@@ -66,7 +66,6 @@ describe('purchaseHistoryQueryOptions', () => {
     await options.queryFn()
 
     expect(getPurchaseHistory).toHaveBeenCalledWith({
-      path: { realmId: 'realm-1' },
       query: {},
     })
   })

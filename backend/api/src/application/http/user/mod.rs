@@ -6,7 +6,7 @@ pub mod roles;
 use crate::application::http::state::AppState;
 use axum::{
     Router,
-    routing::{get, post},
+    routing::{delete, get, post},
 };
 
 // Re-export for utoipa
@@ -27,5 +27,5 @@ pub fn router() -> Router<AppState> {
         // Self-service account deletion (soft-delete) — BE-D07.
         // Mounted on the existing `/api/user` group, which already carries the
         // `inject_identity` layer (server/mod.rs); no extra layer needed.
-        .route("/me/delete-account", post(delete_account::delete_account))
+        .route("/", delete(delete_account::delete_account))
 }

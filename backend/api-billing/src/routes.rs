@@ -12,7 +12,7 @@ use crate::entitlement_mapping_handlers::{
     batch_update_entitlement_mappings, get_entitlement_mapping, list_entitlement_mappings,
     list_one_time_mappings, sync_provider_products, update_entitlement_mapping,
 };
-use crate::feature_availability::get_feature_availability;
+use crate::feature_availability::{get_feature_availability, get_user_feature_availability};
 use crate::handlers::{
     cancel_subscription_for_client_app, get_subscription, get_subscription_for_client_app,
     list_purchase_options, list_subscriptions,
@@ -152,11 +152,6 @@ pub fn billing_routes() -> Router<AppState> {
             "/api/bill/{realmId}/purchase/payment-attempts/{attemptId}/cancel",
             post(cancel_payment_attempt),
         )
-        // ===== Purchase History =====
-        .route(
-            "/api/bill/{realmId}/purchase/history",
-            get(get_purchase_history),
-        )
         // ===== Payment Provider Configuration =====
         .route(
             "/api/third/pay/{realmId}/providers",
@@ -199,21 +194,20 @@ pub fn billing_routes() -> Router<AppState> {
             "/api/bill/{realmId}/invoices/{invoiceId}/credit-notes",
             post(create_credit_note),
         )
-        // ===== User Invoice (My Invoices) =====
+}
+
+pub fn billing_user_routes() -> Router<AppState> {
+    Router::new()
+        .route("/feature-availability", get(get_user_feature_availability))
+        .route("/bill/purchase/history", get(get_purchase_history))
         .route(
-            "/api/bill/{realmId}/my/invoices/apply-eligibility",
+            "/bill/invoices/apply-eligibility",
             get(get_invoice_apply_eligibility),
         )
+        .route("/bill/invoices", get(list_my_invoices).post(apply_invoice))
+        .route("/bill/invoices/{invoiceId}", get(get_my_invoice))
         .route(
-            "/api/bill/{realmId}/my/invoices",
-            get(list_my_invoices).post(apply_invoice),
-        )
-        .route(
-            "/api/bill/{realmId}/my/invoices/{invoiceId}",
-            get(get_my_invoice),
-        )
-        .route(
-            "/api/bill/{realmId}/my/invoices/{invoiceId}/pdf",
+            "/bill/invoices/{invoiceId}/pdf",
             get(download_my_invoice_pdf),
         )
 }

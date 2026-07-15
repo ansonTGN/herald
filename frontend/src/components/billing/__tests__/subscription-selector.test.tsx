@@ -107,7 +107,7 @@ describe('SubscriptionSelector - Selection Logic', () => {
     // P1-4: the Invoice button is now eligibility-gated. Provide realmId +
     // a manual_fallback eligibility verdict so the button is enabled.
     server.use(
-      http.get(`${BASE_URL}/api/bill/${REALM_ID}/my/invoices/apply-eligibility`, () => {
+      http.get(`${BASE_URL}/api/user/bill/invoices/apply-eligibility`, () => {
         return HttpResponse.json({
           referenceType: 'subscription',
           referenceId: SUB_ID,

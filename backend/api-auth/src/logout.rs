@@ -1,6 +1,6 @@
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::State,
     http::{HeaderMap, header::SET_COOKIE},
     response::IntoResponse,
 };
@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use herald_api_base::application::http::auth::util::{
-    ClientIp, build_clear_cookie, delete_session, get_cookie,
+    ClientIp, build_clear_cookie, delete_session, get_cookie, load_session,
 };
 use herald_api_base::application::http::server::api_entities::ApiError;
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
@@ -27,18 +27,14 @@ pub struct LogoutResponse {
 /// Clears the session cookie and invalidates the user's session token.
 #[utoipa::path(
   get,
-  path = "/api/auth/{realmId}/logout",
+  path = "/api/auth/logout",
   tag = "auth",
-  params(
-    ("realmId" = String, Path, description = "Realm ID")
-  ),
   responses(
     (status = 200, description = "Logged out.", body = LogoutResponse),
     (status = 500, description = "Internal server error", body = ErrorResponse)
   )
 )]
 pub async fn logout(
-    Path(_realm_id): Path<String>,
     State(state): State<AppState>,
     ClientIp(ip): ClientIp,
     headers: HeaderMap,
@@ -48,6 +44,10 @@ pub async fn logout(
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
     let token = get_cookie(&headers, "X-Auth");
+    let session = match token.as_deref() {
+        Some(token) => load_session(&state, token).await?,
+        None => None,
+    };
 
     if let Some(ref token_val) = token {
         // best effort
@@ -59,7 +59,10 @@ pub async fn logout(
     if let Err(audit_err) = state
         .audit_event_repository
         .create(NewAuditEvent {
-            realm_id: _realm_id.clone(),
+            realm_id: session
+                .as_ref()
+                .map(|session| session.realm_id.clone())
+                .unwrap_or_else(|| "unknown".to_string()),
             category: AuditCategory::Auth,
             action: AuditAction::AuthLogout,
             actor_id: actor_id.clone(),

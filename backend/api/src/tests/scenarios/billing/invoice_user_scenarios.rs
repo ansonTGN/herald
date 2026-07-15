@@ -258,7 +258,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri(format!("/api/bill/{}/my/invoices", realm_id))
+                    .uri("/api/user/bill/invoices")
                     .header("content-type", "application/json")
                     .header("cookie", format!("X-Auth={}", user_token))
                     .body(Body::from(payload.to_string()))
@@ -335,7 +335,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri(format!("/api/bill/{}/my/invoices", realm_id))
+                    .uri("/api/user/bill/invoices")
                     .header("content-type", "application/json")
                     .header("cookie", format!("X-Auth={}", user_token))
                     .body(Body::from(payload.to_string()))
@@ -389,7 +389,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri(format!("/api/bill/{}/my/invoices", realm_id))
+                    .uri("/api/user/bill/invoices")
                     .header("content-type", "application/json")
                     .header("cookie", format!("X-Auth={}", user_token))
                     .body(Body::from(payload.to_string()))
@@ -417,8 +417,8 @@ mod tests {
     // test_user_apply_invoice_for_other_user_payment_rejected -- 403
     // -------------------------------------------------------------------------
     // Given: A regular user
-    // When: The user tries to apply for an invoice without belonging to the realm
-    // Then: Returns 403
+    // When: The user references a payment attempt outside the session realm
+    // Then: The resource is not visible
 
     #[test_context(InvoiceTestContext)]
     #[tokio::test]
@@ -429,8 +429,6 @@ mod tests {
         // Create regular user
         let (user_token, _user_id) =
             create_regular_user_session(ctx, "invoice-user-wrong-realm@test.com").await;
-
-        let wrong_realm_id = "nonexistent-realm";
 
         let payload = json!({
             "paymentAttemptId": Uuid::now_v7().to_string(),
@@ -446,7 +444,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri(format!("/api/bill/{}/my/invoices", wrong_realm_id))
+                    .uri("/api/user/bill/invoices")
                     .header("content-type", "application/json")
                     .header("cookie", format!("X-Auth={}", user_token))
                     .body(Body::from(payload.to_string()))
@@ -457,8 +455,8 @@ mod tests {
 
         assert_eq!(
             response.status(),
-            StatusCode::FORBIDDEN,
-            "Expected 403 when applying invoice in a different realm"
+            StatusCode::NOT_FOUND,
+            "Cross-realm resources must not be visible through the self-service endpoint"
         );
     }
 
@@ -500,7 +498,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri(format!("/api/bill/{}/my/invoices", realm_id))
+                    .uri("/api/user/bill/invoices")
                     .header("cookie", format!("X-Auth={}", user_a_token))
                     .body(Body::empty())
                     .unwrap(),
@@ -565,7 +563,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri(format!("/api/bill/{}/my/invoices/{}", realm_id, invoice_id))
+                    .uri(format!("/api/user/bill/invoices/{}", invoice_id))
                     .header("cookie", format!("X-Auth={}", user_token))
                     .body(Body::empty())
                     .unwrap(),
@@ -615,7 +613,7 @@ mod tests {
         let err = match get_my_invoice(
             State((*ctx.app_state).clone()),
             Extension(identity),
-            Path((realm_id, Uuid::now_v7())),
+            Path(Uuid::now_v7()),
         )
         .await
         {
@@ -829,7 +827,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri(format!("/api/bill/{}/my/invoices", realm_id))
+                    .uri("/api/user/bill/invoices")
                     .header("content-type", "application/json")
                     .header("cookie", format!("X-Auth={}", user_token))
                     .body(Body::from(payload.to_string()))
@@ -887,7 +885,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri(format!("/api/bill/{}/my/invoices", realm_id))
+                    .uri("/api/user/bill/invoices")
                     .header("content-type", "application/json")
                     .header("cookie", format!("X-Auth={}", user_token))
                     .body(Body::from(payload.to_string()))
@@ -907,7 +905,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri(format!("/api/bill/{}/my/invoices?status=draft", realm_id))
+                    .uri("/api/user/bill/invoices?status=draft")
                     .header("cookie", format!("X-Auth={}", user_token))
                     .body(Body::empty())
                     .unwrap(),
@@ -976,7 +974,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri(format!("/api/bill/{}/my/invoices/{}", realm_id, invoice_id))
+                    .uri(format!("/api/user/bill/invoices/{}", invoice_id))
                     .header("cookie", format!("X-Auth={}", user_token))
                     .body(Body::empty())
                     .unwrap(),
@@ -1038,7 +1036,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri(format!("/api/bill/{}/my/invoices", realm_id))
+                    .uri("/api/user/bill/invoices")
                     .header("content-type", "application/json")
                     .header("cookie", format!("X-Auth={}", user_token))
                     .body(Body::from(payload.to_string()))
@@ -1099,7 +1097,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri(format!("/api/bill/{}/my/invoices", realm_id))
+                    .uri("/api/user/bill/invoices")
                     .header("content-type", "application/json")
                     .header("cookie", format!("X-Auth={}", user_b_token))
                     .body(Body::from(payload.to_string()))
@@ -1153,7 +1151,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri(format!("/api/bill/{}/my/invoices", realm_id))
+                    .uri("/api/user/bill/invoices")
                     .header("content-type", "application/json")
                     .header("cookie", format!("X-Auth={}", user_token))
                     .body(Body::from(payload.to_string()))

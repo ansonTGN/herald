@@ -100,7 +100,7 @@ describe('InvoiceUserPage', () => {
 
   function setupDefaultHandlers() {
     server.use(
-      http.get(`${BASE_URL}/api/bill/${REALM_ID}/my/invoices`, () => {
+      http.get(`${BASE_URL}/api/user/bill/invoices`, () => {
         return HttpResponse.json(makeListResponse(defaultInvoices))
       })
     )
@@ -116,7 +116,7 @@ describe('InvoiceUserPage', () => {
     it('shows PDF download button for issued invoice', async () => {
       const invoice = makeInvoice({ id: 'inv-issued', status: 'issued' })
       server.use(
-        http.get(`${BASE_URL}/api/bill/${REALM_ID}/my/invoices`, () => {
+        http.get(`${BASE_URL}/api/user/bill/invoices`, () => {
           return HttpResponse.json(makeListResponse([invoice]))
         })
       )
@@ -131,7 +131,7 @@ describe('InvoiceUserPage', () => {
     it('shows PDF download button for paid invoice', async () => {
       const invoice = makeInvoice({ id: 'inv-paid', status: 'paid' })
       server.use(
-        http.get(`${BASE_URL}/api/bill/${REALM_ID}/my/invoices`, () => {
+        http.get(`${BASE_URL}/api/user/bill/invoices`, () => {
           return HttpResponse.json(makeListResponse([invoice]))
         })
       )
@@ -146,7 +146,7 @@ describe('InvoiceUserPage', () => {
     it('shows PDF download button for overdue invoice', async () => {
       const invoice = makeInvoice({ id: 'inv-overdue', status: 'overdue' })
       server.use(
-        http.get(`${BASE_URL}/api/bill/${REALM_ID}/my/invoices`, () => {
+        http.get(`${BASE_URL}/api/user/bill/invoices`, () => {
           return HttpResponse.json(makeListResponse([invoice]))
         })
       )
@@ -161,7 +161,7 @@ describe('InvoiceUserPage', () => {
     it('hides PDF download button for draft invoice', async () => {
       const invoice = makeInvoice({ id: 'inv-draft', status: 'draft' })
       server.use(
-        http.get(`${BASE_URL}/api/bill/${REALM_ID}/my/invoices`, () => {
+        http.get(`${BASE_URL}/api/user/bill/invoices`, () => {
           return HttpResponse.json(makeListResponse([invoice]))
         })
       )
@@ -178,7 +178,7 @@ describe('InvoiceUserPage', () => {
     it('hides PDF download button for void invoice', async () => {
       const invoice = makeInvoice({ id: 'inv-void', status: 'void' })
       server.use(
-        http.get(`${BASE_URL}/api/bill/${REALM_ID}/my/invoices`, () => {
+        http.get(`${BASE_URL}/api/user/bill/invoices`, () => {
           return HttpResponse.json(makeListResponse([invoice]))
         })
       )
@@ -213,7 +213,7 @@ describe('InvoiceUserPage', () => {
       let capturedPage: number | null = null
 
       server.use(
-        http.get(`${BASE_URL}/api/bill/${REALM_ID}/my/invoices`, ({ request }) => {
+        http.get(`${BASE_URL}/api/user/bill/invoices`, ({ request }) => {
           const url = new URL(request.url)
           capturedPage = parseInt(url.searchParams.get('page') ?? '0', 10)
 
@@ -275,7 +275,7 @@ describe('InvoiceUserPage', () => {
         status: 'issued',
       })
       server.use(
-        http.get(`${BASE_URL}/api/bill/${REALM_ID}/my/invoices`, () => {
+        http.get(`${BASE_URL}/api/user/bill/invoices`, () => {
           return HttpResponse.json(makeListResponse([invoice]))
         })
       )
@@ -296,7 +296,7 @@ describe('InvoiceUserPage', () => {
         status: 'issued',
       })
       server.use(
-        http.get(`${BASE_URL}/api/bill/${REALM_ID}/my/invoices`, () => {
+        http.get(`${BASE_URL}/api/user/bill/invoices`, () => {
           return HttpResponse.json(makeListResponse([invoice]))
         })
       )
@@ -324,7 +324,7 @@ describe('InvoiceUserPage', () => {
         externalPdfUrl: 'https://stripe.example.com/invoice.pdf',
       })
       server.use(
-        http.get(`${BASE_URL}/api/bill/${REALM_ID}/my/invoices`, () => {
+        http.get(`${BASE_URL}/api/user/bill/invoices`, () => {
           return HttpResponse.json(makeListResponse([invoice]))
         })
       )
@@ -348,7 +348,7 @@ describe('InvoiceUserPage', () => {
         externalHostedUrl: 'https://creem.example.com/hosted',
       })
       server.use(
-        http.get(`${BASE_URL}/api/bill/${REALM_ID}/my/invoices`, () => {
+        http.get(`${BASE_URL}/api/user/bill/invoices`, () => {
           return HttpResponse.json(makeListResponse([invoice]))
         })
       )
@@ -372,7 +372,7 @@ describe('InvoiceUserPage', () => {
         externalHostedUrl: null,
       })
       server.use(
-        http.get(`${BASE_URL}/api/bill/${REALM_ID}/my/invoices`, () => {
+        http.get(`${BASE_URL}/api/user/bill/invoices`, () => {
           return HttpResponse.json(makeListResponse([invoice]))
         })
       )
@@ -394,7 +394,7 @@ describe('InvoiceUserPage', () => {
         status: 'issued',
       })
       server.use(
-        http.get(`${BASE_URL}/api/bill/${REALM_ID}/my/invoices`, () => {
+        http.get(`${BASE_URL}/api/user/bill/invoices`, () => {
           return HttpResponse.json(makeListResponse([invoice]))
         })
       )
@@ -462,7 +462,7 @@ describe('InvoiceUserPage', () => {
       },
     ])('$name', async ({ invoice, expectPill }) => {
       server.use(
-        http.get(`${BASE_URL}/api/bill/${REALM_ID}/my/invoices`, () => {
+        http.get(`${BASE_URL}/api/user/bill/invoices`, () => {
           return HttpResponse.json(makeListResponse([makeInvoice(invoice)]))
         })
       )
@@ -491,7 +491,7 @@ describe('InvoiceUserPage', () => {
         currency: 'CNY',
       })
       server.use(
-        http.get(`${BASE_URL}/api/bill/${REALM_ID}/my/invoices`, () => {
+        http.get(`${BASE_URL}/api/user/bill/invoices`, () => {
           return HttpResponse.json(makeListResponse([invoice]))
         })
       )
@@ -517,7 +517,7 @@ describe('InvoiceUserPage', () => {
         currency: 'CNY',
       })
       server.use(
-        http.get(`${BASE_URL}/api/bill/${REALM_ID}/my/invoices`, () => {
+        http.get(`${BASE_URL}/api/user/bill/invoices`, () => {
           return HttpResponse.json(makeListResponse([invoice]))
         })
       )

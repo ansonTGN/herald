@@ -186,9 +186,16 @@ pub struct HealthCheckResponse {
         (name = "oauth", description = "OAuth provider authentication APIs"),
         (name = "realm_config", description = "Realm configuration management APIs"),
         (name = "realms", description = "Realm management APIs"),
+        (name = "api-keys", description = "Realm API key management APIs"),
+        (name = "client", description = "OAuth client application management APIs"),
+        (name = "permission", description = "Permission policy and role assignment APIs"),
+        (name = "permission-definitions", description = "Permission definition management APIs"),
+        (name = "role-definitions", description = "Role definition management APIs"),
         (name = "billing", description = "Billing and subscription management APIs"),
         (name = "billing.payment-providers", description = "Payment provider configuration APIs"),
+        (name = "billing-invoice", description = "Invoice and credit note management APIs"),
         (name = "points", description = "Points and virtual currency APIs"),
+        (name = "InternalPoints", description = "Internal quota entitlement APIs (service-to-service, demo/test only)"),
         (name = "ext", description = "External API (API Key authentication)"),
         (name = "system", description = "System health and monitoring APIs"),
         (name = "audit", description = "Audit log query APIs"),
@@ -413,8 +420,9 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
         // Internal Caddy On-Demand TLS ask authorization endpoint
         // (design §4.2.2, BE-D07). Top-level (NOT under /api/realms → no
         // inject_identity). Uses the X-Herald-Ask-Key shared secret checked
-        // in-handler. (The public host→realmId resolve endpoint was removed:
-        // realm routing now always relies on the {realmId} path segment.)
+        // in-handler. The public host→realmId resolve endpoint remains
+        // separate: the SPA needs it before a custom-domain visitor has a
+        // session, while this endpoint must never disclose realm identity.
         .route(
             "/api/internal/custom-domain/authorize",
             get(realm::custom_domain_config::handle_custom_domain_authorize),
@@ -507,6 +515,8 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
         )
         // Auth routes
         .nest("/api/auth/{realmId}", auth_routes)
+        // Session-scoped auth routes resolve their realm from the X-Auth session.
+        .nest("/api/auth", herald_api_auth::session_router())
         // Permission routes: /check endpoint (NO middleware) + others (WITH middleware)
         .route(
             "/api/permission/check",
@@ -531,6 +541,8 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
             "/api/user",
             user::router()
                 .merge(users::router())
+                .merge(herald_api_points::routes::user_points_router())
+                .merge(herald_api_billing::routes::billing_user_routes())
                 .merge(herald_api_auth::user_passkey::router())
                 .layer(from_fn_with_state((*state).clone(), inject_identity)),
         )

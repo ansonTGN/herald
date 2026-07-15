@@ -27,6 +27,13 @@ pub struct FeatureAvailabilityResponse {
 
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
+pub struct UserFeatureAvailabilityResponse {
+    pub user: UserFeatureAvailability,
+    pub invoice_eligibility: InvoiceEligibilitySummary,
+}
+
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct AdminFeatureAvailability {
     pub billing_visible: bool,
     pub billing_config_visible: bool,
@@ -94,6 +101,9 @@ pub async fn get_feature_availability(
         has_permission(&state, &realm_id, &user_id, "billing", "view"),
         has_permission(&state, &realm_id, &user_id, "points", "view"),
     )?;
+    if !can_view_billing && !can_view_points {
+        return Err(ApiError::forbidden("Management permission required"));
+    }
     let facts = load_feature_facts(&state, &realm_id).await?;
 
     let admin_billing_visible = can_view_billing;
@@ -138,6 +148,38 @@ pub async fn get_feature_availability(
             has_invoice_seller_config: facts.has_invoice_seller_config,
             has_invoices: facts.has_invoices,
             has_subscription_history: facts.has_subscription_history,
+        },
+        invoice_eligibility,
+    }))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/user/feature-availability",
+    responses(
+        (status = 200, description = "Current user's feature availability", body = UserFeatureAvailabilityResponse),
+        (status = 401, description = "Unauthorized")
+    ),
+    tag = "user",
+    security(("bearer_auth" = []))
+)]
+pub async fn get_user_feature_availability(
+    State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
+) -> Result<Json<UserFeatureAvailabilityResponse>, ApiError> {
+    if !identity.is_user() {
+        return Err(ApiError::unauthorized("User session required"));
+    }
+    let realm_id = identity.realm_id();
+    let facts = load_feature_facts(&state, &realm_id).await?;
+    let invoice_eligibility =
+        evaluate_realm_invoice_eligibility(&state, &realm_id, facts.has_invoice_seller_config)
+            .await?;
+    Ok(Json(UserFeatureAvailabilityResponse {
+        user: UserFeatureAvailability {
+            points_visible: points_area_visible(&facts),
+            subscription_visible: facts.has_enabled_mappings,
+            invoices_visible: facts.has_invoice_seller_config,
         },
         invoice_eligibility,
     }))

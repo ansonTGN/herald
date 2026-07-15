@@ -200,7 +200,7 @@ describe('loginFlow redirectTo logic', () => {
     expect(result.redirectTo).toBeUndefined()
     expect(result.response.redirectTo).toBeUndefined()
     expect(storeMock.login).toHaveBeenCalledWith('realm1')
-    expect(fetchAuthData).toHaveBeenCalledWith('realm1')
+    expect(fetchAuthData).toHaveBeenCalledWith()
     expect(result.redirectPath).toBe('/user/profile')
   })
 
@@ -218,7 +218,7 @@ describe('loginFlow redirectTo logic', () => {
     expect(result.redirectTo).toBeUndefined()
     expect(result.response.redirectTo).toBeNull()
     expect(storeMock.login).toHaveBeenCalledWith('realm1')
-    expect(fetchAuthData).toHaveBeenCalledWith('realm1')
+    expect(fetchAuthData).toHaveBeenCalledWith()
   })
 
   it('calls store.logout when performLogin throws', async () => {
@@ -268,7 +268,7 @@ describe('completeLoginAfterTotp redirectTo logic', () => {
 
     expect(result.redirectPath).toBe('/user/profile')
     expect(result.redirectTo).toBeUndefined()
-    expect(fetchAuthData).toHaveBeenCalledWith('realm1')
+    expect(fetchAuthData).toHaveBeenCalledWith()
     expect(storeMock.setAuthStatus).toHaveBeenCalled()
     expect(storeMock.setUserPermissions).toHaveBeenCalled()
     expect(storeMock.setUserProfile).toHaveBeenCalled()
@@ -287,7 +287,7 @@ describe('completeLoginAfterTotp redirectTo logic', () => {
     const result = await completeLoginAfterTotp('realm1', verifyResponse)
 
     expect(result.redirectTo).toBeUndefined()
-    expect(fetchAuthData).toHaveBeenCalledWith('realm1')
+    expect(fetchAuthData).toHaveBeenCalledWith()
   })
 
   it('calls store.logout when fetchAuthData throws', async () => {

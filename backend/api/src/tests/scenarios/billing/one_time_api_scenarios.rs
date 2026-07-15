@@ -195,13 +195,13 @@ mod tests {
     /// Send GET to /api/bill/{realmId}/purchase/history with auth cookie.
     async fn make_purchase_history_request(
         app: &axum::Router,
-        realm_id: &str,
+        _realm_id: &str,
         token: &str,
         query_params: Option<&str>,
     ) -> (StatusCode, serde_json::Value) {
         let uri = match query_params {
-            Some(params) => format!("/api/bill/{}/purchase/history?{}", realm_id, params),
-            None => format!("/api/bill/{}/purchase/history", realm_id),
+            Some(params) => format!("/api/user/bill/purchase/history?{}", params),
+            None => "/api/user/bill/purchase/history".to_string(),
         };
 
         let response = app

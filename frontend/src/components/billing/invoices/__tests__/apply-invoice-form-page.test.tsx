@@ -42,7 +42,7 @@ function sellerConfigHandler() {
 }
 
 function applyInvoiceHandler() {
-  return http.post(`${BASE_URL}/api/bill/${REALM_ID}/my/invoices`, async () => {
+  return http.post(`${BASE_URL}/api/user/bill/invoices`, async () => {
     return HttpResponse.json({ id: 'inv-new' }, { status: 201 })
   })
 }
@@ -151,7 +151,7 @@ describe('ApplyInvoiceFormPage', () => {
 
       server.use(
         sellerConfigHandler(),
-        http.post(`${BASE_URL}/api/bill/${REALM_ID}/my/invoices`, async ({ request }) => {
+        http.post(`${BASE_URL}/api/user/bill/invoices`, async ({ request }) => {
           capturedBody = await request.json()
           return HttpResponse.json({ id: 'inv-new' }, { status: 201 })
         })
@@ -225,7 +225,7 @@ describe('ApplyInvoiceFormPage', () => {
     it('shows inline rejection alert when backend returns 400', async () => {
       server.use(
         sellerConfigHandler(),
-        http.post(`${BASE_URL}/api/bill/${REALM_ID}/my/invoices`, async () => {
+        http.post(`${BASE_URL}/api/user/bill/invoices`, async () => {
           return HttpResponse.json(
             {
               status: 400,

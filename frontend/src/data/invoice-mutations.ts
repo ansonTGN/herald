@@ -238,7 +238,6 @@ export function useApplyInvoice(realmId: string) {
   return useMutation({
     mutationFn: async (values: ApplyInvoiceFormData) => {
       const response = await applyInvoice({
-        path: { realmId },
         body: {
           currency: values.currency,
           paymentAttemptId: values.paymentAttemptId ?? undefined,
