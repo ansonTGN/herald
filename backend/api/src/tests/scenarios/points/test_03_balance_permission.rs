@@ -26,7 +26,7 @@ use crate::tests::scenarios::points::fixtures::*;
 use crate::tests::schema_test_context::SchemaTestContext as TestContext;
 use axum::{
     body::Body,
-    http::{Request, StatusCode, header},
+    http::{Request, StatusCode},
 };
 use serde_json::json;
 use test_context::test_context;
@@ -88,14 +88,8 @@ async fn test_scenario_user_cannot_view_other_user_balance(ctx: &mut TestContext
     assert_eq!(login_response.status(), StatusCode::OK);
 
     // Extract session token
-    let set_cookie = login_response
-        .headers()
-        .get(header::SET_COOKIE)
-        .and_then(|v| v.to_str().ok())
-        .expect("Should return Set-Cookie header");
-
-    let token = crate::tests::extract_set_cookie_token(set_cookie, "X-Auth")
-        .expect("Should extract X-Auth token");
+    let (_response, token) = crate::tests::extract_bearer_token(login_response).await;
+    let token = token.expect("Login should return accessToken");
 
     println!("[Step 2] ✓ User A logged in: token={}", token);
 
@@ -107,7 +101,7 @@ async fn test_scenario_user_cannot_view_other_user_balance(ctx: &mut TestContext
             "/api/points/{}/wallets/{}",
             ctx._realm_id, user_b_id
         ))
-        .header("cookie", format!("X-Auth={}", token))
+        .header("authorization", format!("Bearer {}", token))
         .body(Body::empty())
         .unwrap();
 

@@ -21,12 +21,37 @@ use axum::{
     http::{Request, StatusCode, header},
 };
 use herald_core::domain::authorization::permission_service::PermissionService;
+use herald_core::domain::{
+    authentication::BrowserTokenService, client::ports::ClientService, user::UserRepository,
+};
+use herald_core::infrastructure::authentication::RedisBrowserTokenService;
 use test_context::test_context;
 use tower::ServiceExt;
 
 // =============================================================================
 // Helpers
 // =============================================================================
+
+async fn create_first_party_token_for_user(ctx: &TestContext, user_id: &str) -> String {
+    let user = ctx
+        .app_state
+        .user_repository
+        .get_user_by_id(uuid::Uuid::parse_str(user_id).expect("test user id must be a UUID"))
+        .await
+        .expect("Failed to load test user");
+    let client_app = ctx
+        .app_state
+        .service
+        .client_service()
+        .get_client_app_by_client_id(&ctx._realm_id, &ctx._client_id)
+        .await
+        .expect("Failed to load FirstParty test client app");
+    RedisBrowserTokenService::new(ctx.app_state.redis_manager.clone())
+        .create_first_party_token_family(&user, &client_app)
+        .await
+        .expect("Failed to create FirstParty token family")
+        .access_token
+}
 
 /// Insert an audit event directly into the database for seeding test data.
 async fn seed_audit_event(
@@ -127,7 +152,7 @@ async fn test_scenario_dashboard_stats_basic_metrics_returned(ctx: &mut TestCont
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/dashboard/{}/stats", realm_id))
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
+        .header(header::AUTHORIZATION, format!("Bearer {admin_token}"))
         .body(Body::empty())
         .unwrap();
 
@@ -219,7 +244,7 @@ async fn test_scenario_dashboard_stats_auth_trend_aggregated(ctx: &mut TestConte
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/dashboard/{}/stats", realm_id))
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
+        .header(header::AUTHORIZATION, format!("Bearer {admin_token}"))
         .body(Body::empty())
         .unwrap();
 
@@ -343,23 +368,7 @@ async fn test_scenario_dashboard_stats_empty_realm_returns_zeros(ctx: &mut TestC
         .invalidate_user_role_cache(&empty_realm_id, &empty_admin_id)
         .await;
 
-    // Create a session for the empty-realm user
-    let empty_token = ctx.generate_test_token();
-    let session_data = crate::application::http::auth::util::SessionData {
-        realm_id: empty_realm_id.clone(),
-        client_id: ctx._client_id.clone(),
-        user_id: empty_admin_id.clone(),
-        client_ip: "127.0.0.1".to_string(),
-        renewal_ttl_seconds: None,
-    };
-    crate::application::http::auth::util::store_session(
-        &ctx._app_state,
-        &empty_token,
-        &session_data,
-        1800,
-    )
-    .await
-    .unwrap();
+    let empty_token = create_first_party_token_for_user(ctx, &empty_admin_id).await;
 
     // Verify preconditions: only the admin user exists (will be counted in totalUsers)
     let event_count: i64 =
@@ -377,7 +386,7 @@ async fn test_scenario_dashboard_stats_empty_realm_returns_zeros(ctx: &mut TestC
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/dashboard/{}/stats", empty_realm_id))
-        .header(header::COOKIE, format!("X-Auth={}", empty_token))
+        .header(header::AUTHORIZATION, format!("Bearer {empty_token}"))
         .body(Body::empty())
         .unwrap();
 
@@ -507,29 +516,16 @@ async fn test_scenario_dashboard_stats_realm_isolation_no_leakage(ctx: &mut Test
         .invalidate_user_role_cache(&realm_b_id, &realm_b_admin_id)
         .await;
 
-    // Create session for the Realm B admin user
-    let realm_b_session_token = ctx.generate_test_token();
-    let session_data = crate::application::http::auth::util::SessionData {
-        realm_id: realm_b_id.clone(),
-        client_id: ctx._client_id.clone(),
-        user_id: realm_b_admin_id.clone(),
-        client_ip: "127.0.0.1".to_string(),
-        renewal_ttl_seconds: None,
-    };
-    crate::application::http::auth::util::store_session(
-        &ctx._app_state,
-        &realm_b_session_token,
-        &session_data,
-        1800,
-    )
-    .await
-    .unwrap();
+    let realm_b_session_token = create_first_party_token_for_user(ctx, &realm_b_admin_id).await;
 
     // When: calling stats API for Realm B
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/dashboard/{}/stats", realm_b_id))
-        .header(header::COOKIE, format!("X-Auth={}", realm_b_session_token))
+        .header(
+            header::AUTHORIZATION,
+            format!("Bearer {realm_b_session_token}"),
+        )
         .body(Body::empty())
         .unwrap();
 
@@ -600,7 +596,7 @@ async fn test_scenario_dashboard_stats_non_admin_forbidden(ctx: &mut TestContext
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/dashboard/{}/stats", ctx._realm_id))
-        .header(header::COOKIE, format!("X-Auth={}", user_token))
+        .header(header::AUTHORIZATION, format!("Bearer {user_token}"))
         .body(Body::empty())
         .unwrap();
 

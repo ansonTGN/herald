@@ -114,7 +114,7 @@ async fn test_scenario_billing_view_grants_history_access(ctx: &mut TestContext)
             "/api/bill/{}/subscriptions/history?page=1&pageSize=20",
             ctx._realm_id
         ))
-        .header(header::COOKIE, format!("X-Auth={}", user_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", user_token))
         .body(Body::empty())
         .unwrap();
 
@@ -152,7 +152,7 @@ async fn test_scenario_can_list_payment_providers(ctx: &mut TestContext) {
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/third/pay/{}/providers", ctx._realm_id))
-        .header(header::COOKIE, format!("X-Auth={}", user_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", user_token))
         .body(Body::empty())
         .unwrap();
 

@@ -51,7 +51,7 @@ async fn test_scenario_assign_role_to_user(ctx: &mut SchemaTestContext) {
         .method("POST")
         .uri(format!("/api/permission/users/{}/roles", user_id))
         .header("content-type", "application/json")
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", token))
         .body(Body::from(req_body))
         .unwrap();
 
@@ -70,7 +70,7 @@ async fn test_scenario_assign_role_to_user(ctx: &mut SchemaTestContext) {
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/permission/users/{}/roles", user_id))
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", token))
         .body(Body::empty())
         .unwrap();
 
@@ -109,7 +109,7 @@ async fn test_scenario_remove_role_from_user(ctx: &mut SchemaTestContext) {
             "/api/permission/users/{}/roles/{}",
             user_id, role_id
         ))
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", token))
         .body(Body::empty())
         .unwrap();
 
@@ -122,7 +122,7 @@ async fn test_scenario_remove_role_from_user(ctx: &mut SchemaTestContext) {
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/permission/users/{}/roles", user_id))
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", token))
         .body(Body::empty())
         .unwrap();
 
@@ -150,7 +150,7 @@ async fn test_scenario_assign_duplicate_role_ids_in_single_request(ctx: &mut Sch
         .method("POST")
         .uri(format!("/api/permission/users/{}/roles", user_id))
         .header("content-type", "application/json")
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", token))
         .body(Body::from(req_body))
         .unwrap();
 
@@ -160,7 +160,7 @@ async fn test_scenario_assign_duplicate_role_ids_in_single_request(ctx: &mut Sch
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/permission/users/{}/roles", user_id))
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", token))
         .body(Body::empty())
         .unwrap();
 
@@ -204,7 +204,7 @@ async fn test_scenario_assign_multiple_roles(ctx: &mut SchemaTestContext) {
         .method("POST")
         .uri(format!("/api/permission/users/{}/roles", user_id))
         .header("content-type", "application/json")
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", token))
         .body(Body::from(req_body))
         .unwrap();
 
@@ -215,7 +215,7 @@ async fn test_scenario_assign_multiple_roles(ctx: &mut SchemaTestContext) {
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/permission/users/{}/roles", user_id))
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", token))
         .body(Body::empty())
         .unwrap();
 
@@ -260,7 +260,7 @@ async fn test_scenario_assign_role_requires_roles_manage(ctx: &mut SchemaTestCon
         .method("POST")
         .uri(format!("/api/permission/users/{}/roles", target_user_id))
         .header("content-type", "application/json")
-        .header(header::COOKIE, format!("X-Auth={}", user_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", user_token))
         .body(Body::from(
             json!({
                 "roleIds": [role_id]

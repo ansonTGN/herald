@@ -107,7 +107,7 @@ mod tests {
             .method("POST")
             .uri(format!("/api/permission/{}/define", ctx._realm_id))
             .header("content-type", "application/json")
-            .header(header::COOKIE, format!("X-Auth={}", admin_token))
+            .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
             .body(Body::from(
                 json!(PermissionCreateRequest {
                     name: "test.delete".to_string(),
@@ -169,7 +169,7 @@ mod tests {
                 "/api/permission/{}/define/{}",
                 ctx._realm_id, permission_id
             ))
-            .header("cookie", format!("X-Auth={}", admin_token))
+            .header("authorization", format!("Bearer {}", admin_token))
             .body(Body::empty())
             .unwrap();
 
@@ -329,7 +329,7 @@ mod tests {
                 "/api/roles/{}/define/{}",
                 ctx._realm_id, test_role_id
             ))
-            .header("cookie", format!("X-Auth={}", admin_token))
+            .header("authorization", format!("Bearer {}", admin_token))
             .body(Body::empty())
             .unwrap();
 

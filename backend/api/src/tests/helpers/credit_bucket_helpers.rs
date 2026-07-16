@@ -548,8 +548,8 @@ pub fn grant_points_admin_request_with_bucket(
         .uri(format!("/api/points/{}/grant", realm_id))
         .header("content-type", "application/json")
         .header(
-            axum::http::header::COOKIE,
-            format!("X-Auth={}", session_token),
+            axum::http::header::AUTHORIZATION,
+            format!("Bearer {}", session_token),
         )
         .body(Body::from(body.to_string()))
         .unwrap()
@@ -848,7 +848,7 @@ pub async fn seed_wallet_with_balance_on_bucket(
 }
 
 /// Build a Bucket directory API request authenticated via admin session cookie
-/// (`X-Auth=<token>`). `body` is sent as JSON; pass `None` for bodyless verbs
+/// (`Bearer <token>`). `body` is sent as JSON; pass `None` for bodyless verbs
 /// (GET/DELETE).
 pub fn auth_admin_request(
     method: &str,
@@ -860,7 +860,10 @@ pub fn auth_admin_request(
         .method(method)
         .uri(uri)
         .header("content-type", "application/json")
-        .header(axum::http::header::COOKIE, format!("X-Auth={}", token))
+        .header(
+            axum::http::header::AUTHORIZATION,
+            format!("Bearer {}", token),
+        )
         .body(if let Some(b) = body {
             Body::from(b.to_string())
         } else {
@@ -914,7 +917,7 @@ pub async fn auth_admin_request_via_api(
 // =============================================================================
 
 /// Build a GET request to the points query endpoints authenticated via the
-/// session cookie (`X-Auth=<token>`). `query` is appended as the raw query
+/// session cookie (`Bearer <token>`). `query` is appended as the raw query
 /// string (may be empty).
 pub fn auth_user_get_request(uri: &str, query: &str, token: &str) -> Request<Body> {
     let full_uri = if query.is_empty() {
@@ -925,7 +928,10 @@ pub fn auth_user_get_request(uri: &str, query: &str, token: &str) -> Request<Bod
     Request::builder()
         .method("GET")
         .uri(full_uri)
-        .header(axum::http::header::COOKIE, format!("X-Auth={}", token))
+        .header(
+            axum::http::header::AUTHORIZATION,
+            format!("Bearer {}", token),
+        )
         .body(Body::empty())
         .unwrap()
 }

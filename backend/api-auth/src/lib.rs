@@ -1,11 +1,14 @@
 // Herald API Auth Module
 // Authentication handlers (login, register, password reset, TOTP, email verification)
 
+pub mod browser_token;
 pub mod change_email;
 pub mod consent_gate;
 pub mod login;
 pub mod logout;
+mod mailflow;
 mod passkey_rp;
+pub mod reauth;
 pub mod register;
 pub mod registration_status;
 pub mod reset_password;
@@ -17,14 +20,11 @@ pub mod verify_email;
 pub mod verify_passkey;
 pub mod verify_totp;
 
-#[cfg(test)]
-mod util_test;
-
 use axum::routing::get;
 use axum::{Router, routing::post};
 use herald_api_base::application::http::state::AppState;
 
-// Re-export shared auth utilities from api-base for backward compatibility
+// Preserve the API crate's module facade while implementations live in api-base.
 pub mod util {
     pub use herald_api_base::application::http::auth::util::*;
 }
@@ -39,10 +39,12 @@ pub mod error {
 pub use login::{LoginRequestPayload, LoginResponse};
 
 // Re-export utoipa path markers
+pub use browser_token::__path_refresh as __path_browser_token_refresh;
 pub use change_email::__path_confirm as __path_change_email_confirm;
 pub use change_email::__path_request as __path_change_email_request;
 pub use login::__path_login;
 pub use logout::__path_logout;
+pub use reauth::{__path_handle_begin_reauth, __path_handle_verify_reauth};
 pub use register::__path_register;
 pub use reset_password::__path_confirm as __path_reset_password_confirm;
 pub use reset_password::__path_request as __path_reset_password_request;
@@ -71,7 +73,10 @@ pub use verify_totp::__path_handle_verify_totp as __path_verify_totp;
 #[openapi(
     paths(
         crate::login::login,
+        crate::browser_token::refresh,
         crate::register::register,
+        crate::reauth::handle_begin_reauth,
+        crate::reauth::handle_verify_reauth,
         crate::logout::logout,
         crate::status::status,
         crate::turnstile_status::get_turnstile_status,
@@ -100,8 +105,15 @@ pub use verify_totp::__path_handle_verify_totp as __path_verify_totp;
     components(schemas(
         crate::login::LoginRequestPayload,
         crate::login::LoginResponse,
+        crate::browser_token::BrowserTokenResponse,
+        crate::browser_token::RefreshBrowserTokenRequest,
         crate::register::RegisterRequest,
         crate::register::RegisterResponse,
+        crate::reauth::ReauthBeginRequest,
+        crate::reauth::ReauthBeginResponse,
+        crate::reauth::ReauthVerifyRequest,
+        crate::reauth::PasskeyAssertion,
+        crate::reauth::ReauthTicket,
         crate::status::StatusResponse,
         crate::turnstile_status::TurnstileStatusResponse,
         crate::verify_email::VerifyEmailTriggerRequest,
@@ -189,9 +201,18 @@ pub fn auth_router() -> Router<AppState> {
         )
 }
 
-/// Routes whose realm is derived from the current session rather than the URL.
-pub fn session_router() -> Router<AppState> {
+pub fn browser_token_router() -> Router<AppState> {
+    Router::new().route("/browser-token/refresh", post(browser_token::refresh))
+}
+
+/// Routes whose realm and Client App are derived exclusively from a Bearer token.
+pub fn token_router() -> Router<AppState> {
     Router::new()
-        .route("/logout", get(logout::logout).post(logout::logout))
+        .route("/logout", post(logout::logout))
         .route("/status", get(status::status))
+}
+
+/// Re-authentication routes documented under `/api/user`.
+pub fn reauth_router() -> Router<AppState> {
+    reauth::router()
 }

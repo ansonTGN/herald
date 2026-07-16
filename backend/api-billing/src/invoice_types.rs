@@ -179,6 +179,10 @@ pub struct ApplyInvoiceRequest {
     pub payment_attempt_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subscription_id: Option<Uuid>,
+
+    /// Fresh re-authentication ticket obtained from `/api/user/reauth/verify`.
+    pub reauth_token: String,
+
     #[validate(length(min = 3, max = 3))]
     pub currency: String,
     #[validate(length(min = 1, max = 200))]

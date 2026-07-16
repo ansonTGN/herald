@@ -53,7 +53,7 @@ async fn test_put_realm_passkey_config_returns_wrapped_response(ctx: &mut TestCo
         .method("PUT")
         .uri(format!("/api/realms/{}/config/passkey", ctx._realm_id))
         .header("content-type", "application/json")
-        .header(header::COOKIE, format!("X-Auth={token}"))
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::from(
             json!({
                 "enabled": true,
@@ -104,7 +104,7 @@ async fn test_put_realm_passkey_config_rejects_invalid_user_verification(ctx: &m
         .method("PUT")
         .uri(format!("/api/realms/{}/config/passkey", ctx._realm_id))
         .header("content-type", "application/json")
-        .header(header::COOKIE, format!("X-Auth={token}"))
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::from(
             json!({
                 "enabled": true,
@@ -134,7 +134,7 @@ async fn test_get_realm_passkey_config_returns_wrapped_response(ctx: &mut TestCo
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/realms/{}/config/passkey", ctx._realm_id))
-        .header(header::COOKIE, format!("X-Auth={token}"))
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::empty())
         .unwrap();
 
@@ -162,7 +162,7 @@ async fn test_put_realm_passkey_config_requires_settings_manage(ctx: &mut TestCo
         .method("PUT")
         .uri(format!("/api/realms/{}/config/passkey", ctx._realm_id))
         .header("content-type", "application/json")
-        .header(header::COOKIE, format!("X-Auth={token}"))
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::from(
             json!({
                 "enabled": true,
@@ -193,7 +193,7 @@ async fn test_get_realm_passkey_config_requires_settings_view(ctx: &mut TestCont
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/realms/{}/config/passkey", ctx._realm_id))
-        .header(header::COOKIE, format!("X-Auth={token}"))
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::empty())
         .unwrap();
 
@@ -223,7 +223,7 @@ async fn test_realm_passkey_config_cross_realm_forbidden(ctx: &mut TestContext) 
         .method("PUT")
         .uri(format!("/api/realms/{}/config/passkey", other_realm_id))
         .header("content-type", "application/json")
-        .header(header::COOKIE, format!("X-Auth={token}"))
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::from(
             json!({
                 "enabled": true,
@@ -244,7 +244,7 @@ async fn test_realm_passkey_config_cross_realm_forbidden(ctx: &mut TestContext) 
     let get_req = Request::builder()
         .method("GET")
         .uri(format!("/api/realms/{}/config/passkey", other_realm_id))
-        .header(header::COOKIE, format!("X-Auth={token}"))
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::empty())
         .unwrap();
 
@@ -273,7 +273,7 @@ async fn test_force_enable_passkey_persists_flag(ctx: &mut TestContext) {
         .method("PUT")
         .uri(format!("/api/realms/{}/config/passkey", ctx._realm_id))
         .header("content-type", "application/json")
-        .header(header::COOKIE, format!("X-Auth={admin_token}"))
+        .header(header::AUTHORIZATION, format!("Bearer {admin_token}"))
         .body(Body::from(
             json!({
                 "enabled": true,

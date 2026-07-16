@@ -1,13 +1,49 @@
 //! Client App validation utilities
 //!
 //! This module provides validation functions for Client App settings,
-//! including redirect URI validation and session configuration validation.
+//! including redirect URI and browser-origin validation.
 
 use crate::common::entities::app_errors::CoreError;
 use url::Url;
 
-const MAX_SESSION_TTL_SECONDS: i32 = 86_400;
-const MAX_SESSION_RENEWAL_TTL_SECONDS: i32 = 604_800;
+pub fn validate_origin(origin: &str) -> Result<String, CoreError> {
+    if origin.contains('*') {
+        return Err(CoreError::BadRequest(
+            "Origin wildcards are not allowed".to_string(),
+        ));
+    }
+    let url = Url::parse(origin)
+        .map_err(|_| CoreError::BadRequest(format!("Invalid origin: {origin}")))?;
+    if !matches!(url.scheme(), "http" | "https")
+        || url.host_str().is_none()
+        || url.username() != ""
+        || url.password().is_some()
+        || url.path() != "/"
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(CoreError::BadRequest(
+            "Origin must contain only scheme, host, and optional port".to_string(),
+        ));
+    }
+    let is_loopback = matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"));
+    if url.scheme() != "https" && !is_loopback {
+        return Err(CoreError::BadRequest(
+            "Origins must use HTTPS except for loopback development hosts".to_string(),
+        ));
+    }
+    Ok(url.origin().ascii_serialization())
+}
+
+pub fn normalize_origins(origins: &[String]) -> Result<Vec<String>, CoreError> {
+    let mut normalized = origins
+        .iter()
+        .map(|origin| validate_origin(origin))
+        .collect::<Result<Vec<_>, _>>()?;
+    normalized.sort();
+    normalized.dedup();
+    Ok(normalized)
+}
 
 /// Validates a redirect URI according to security requirements
 ///
@@ -98,65 +134,36 @@ pub fn validate_redirect_uris(uris: &[String], is_development: bool) -> Result<(
     Ok(())
 }
 
-/// Validates session TTL configuration
-///
-/// # Rules
-/// - Session TTL must be at least 60 seconds
-/// - Session renewal TTL (if provided) must be at least 60 seconds
-/// - Session renewal TTL (if provided) must be at least the session TTL
-///
-/// # Arguments
-/// * `session_ttl_seconds` - The initial session TTL in seconds
-/// * `session_renewal_ttl_seconds` - The optional session renewal TTL in seconds
-///
-/// # Returns
-/// * `Ok(())` if the configuration is valid
-/// * `Err(CoreError)` if validation fails
-pub fn validate_session_config(
-    session_ttl_seconds: i32,
-    session_renewal_ttl_seconds: Option<i32>,
-) -> Result<(), CoreError> {
-    // Validate initial session TTL
-    if session_ttl_seconds < 60 {
-        return Err(CoreError::BadRequest(format!(
-            "Session TTL must be at least 60 seconds, got {}",
-            session_ttl_seconds
-        )));
-    }
-    if session_ttl_seconds > MAX_SESSION_TTL_SECONDS {
-        return Err(CoreError::BadRequest(format!(
-            "Session TTL must be at most {} seconds, got {}",
-            MAX_SESSION_TTL_SECONDS, session_ttl_seconds
-        )));
-    }
-
-    // Validate renewal TTL if provided
-    if let Some(renewal_ttl) = session_renewal_ttl_seconds {
-        if renewal_ttl < 60 {
-            return Err(CoreError::BadRequest(format!(
-                "Session renewal TTL must be at least 60 seconds, got {}",
-                renewal_ttl
-            )));
-        }
-        if renewal_ttl > MAX_SESSION_RENEWAL_TTL_SECONDS {
-            return Err(CoreError::BadRequest(format!(
-                "Session renewal TTL must be at most {} seconds, got {}",
-                MAX_SESSION_RENEWAL_TTL_SECONDS, renewal_ttl
-            )));
-        }
-        if renewal_ttl < session_ttl_seconds {
-            return Err(CoreError::BadRequest(
-                "Session renewal TTL must be greater than or equal to session TTL".to_string(),
-            ));
-        }
-    }
-
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn origin_normalization_deduplicates_equivalent_origins() {
+        let origins = vec![
+            "https://EXAMPLE.com".to_string(),
+            "https://example.com:443".to_string(),
+        ];
+        assert_eq!(
+            normalize_origins(&origins).unwrap(),
+            vec!["https://example.com"]
+        );
+    }
+
+    #[test]
+    fn origin_rejects_paths_wildcards_and_credentials() {
+        for origin in [
+            "https://example.com/path",
+            "https://*.example.com",
+            "https://user@example.com",
+            "http://example.com",
+        ] {
+            assert!(
+                validate_origin(origin).is_err(),
+                "unsafe origin must be rejected: {origin}"
+            );
+        }
+    }
 
     #[test]
     fn test_validate_redirect_uri_valid_https() {
@@ -200,30 +207,5 @@ mod tests {
             "https://app.example.com/auth".to_string(),
         ];
         assert!(validate_redirect_uris(&uris, false).is_ok());
-    }
-
-    #[test]
-    fn test_validate_session_config_valid() {
-        assert!(validate_session_config(1800, Some(3600)).is_ok());
-    }
-
-    #[test]
-    fn test_validate_session_config_ttl_too_short() {
-        assert!(validate_session_config(30, None).is_err());
-    }
-
-    #[test]
-    fn test_validate_session_config_renewal_ttl_too_short() {
-        assert!(validate_session_config(1800, Some(30)).is_err());
-    }
-
-    #[test]
-    fn test_validate_session_config_renewal_ttl_less_than_session_ttl() {
-        assert!(validate_session_config(1800, Some(300)).is_err());
-    }
-
-    #[test]
-    fn test_validate_session_config_no_renewal() {
-        assert!(validate_session_config(1800, None).is_ok());
     }
 }

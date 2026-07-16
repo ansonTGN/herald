@@ -45,7 +45,7 @@ pub fn grant_points_admin_request(
         .method("POST")
         .uri(format!("/api/points/{}/grant", realm_id))
         .header("content-type", "application/json")
-        .header(header::COOKIE, format!("X-Auth={}", session_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", session_token))
         .body(Body::from(body.to_string()))
         .unwrap()
 }

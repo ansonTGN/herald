@@ -6,7 +6,7 @@ use axum::{
     Json, Router,
     extract::State,
     http::{
-        HeaderName, HeaderValue, Method, Request,
+        HeaderName, Method, Request,
         header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE},
     },
 };
@@ -15,7 +15,7 @@ use serde::Serialize;
 use std::sync::Arc;
 use tower::ServiceBuilder;
 use tower_http::{
-    cors::CorsLayer,
+    cors::{AllowOrigin, CorsLayer},
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
     services::{ServeDir, ServeFile},
     trace::TraceLayer,
@@ -26,8 +26,77 @@ use super::points::routes;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
-use crate::application::http::auth::identity_middleware::inject_identity;
+use crate::application::http::auth::identity_middleware::{
+    inject_token_identity, require_first_party_token,
+};
 use crate::application::http::state::AppState;
+
+fn origin_is_allowed(origin: &str, frontend_url: &str, rows: &[serde_json::Value]) -> bool {
+    origin == frontend_url
+        || rows.iter().any(|origins| {
+            origins.as_array().is_some_and(|origins| {
+                origins
+                    .iter()
+                    .any(|allowed| allowed.as_str() == Some(origin))
+            })
+        })
+}
+
+/// Extract the realm id from request paths that encode it as the first route
+/// parameter. Returns `None` for realm-less routes such as `/api/permission/check`
+/// or `/api/auth` (browser-token routes).
+fn extract_realm_id_from_path(path: &str) -> Option<&str> {
+    let parts: Vec<&str> = path.split('/').collect();
+    // Realm-less top-level routes (e.g. /api/permission/check, /api/auth)
+    if parts.len() < 4 {
+        return None;
+    }
+    // /api/legal/admin/{realmId} -> realm is the 4th segment
+    if parts.get(2) == Some(&"legal") && parts.get(3) == Some(&"admin") {
+        return parts.get(4).copied();
+    }
+    // /api/<prefix>/{realmId}/... -> realm is the 3rd segment
+    parts.get(3).copied()
+}
+
+#[cfg(test)]
+mod cors_origin_tests {
+    use super::{extract_realm_id_from_path, origin_is_allowed};
+
+    #[test]
+    fn cors_origin_maps_frontend_and_enabled_client_origin_candidates() {
+        let rows = vec![serde_json::json!(["https://app.example.com"])];
+        assert!(origin_is_allowed(
+            "https://console.example.com",
+            "https://console.example.com",
+            &[]
+        ));
+        assert!(origin_is_allowed(
+            "https://app.example.com",
+            "https://console.example.com",
+            &rows
+        ));
+        assert!(!origin_is_allowed(
+            "https://evil.example.com",
+            "https://console.example.com",
+            &rows
+        ));
+    }
+
+    #[test]
+    fn cors_extracts_realm_id_from_api_paths() {
+        assert_eq!(
+            extract_realm_id_from_path("/api/oauth/acme/authorize"),
+            Some("acme")
+        );
+        assert_eq!(
+            extract_realm_id_from_path("/api/legal/admin/acme"),
+            Some("acme")
+        );
+        assert_eq!(extract_realm_id_from_path("/api/permission/check"), None);
+        assert_eq!(extract_realm_id_from_path("/api/auth"), None);
+    }
+}
 use crate::application::http::{
     admin, api_keys, audit, auth, billing, client_apps, dashboard, legal, oauth, permission,
     points, public_config, realm, realm_config, user, users,
@@ -216,35 +285,18 @@ pub fn build_openapi_spec() -> utoipa::openapi::OpenApi {
         .merge_from(herald_api_points::ApiDoc::openapi())
         .merge_from(herald_api_ext::ApiDoc::openapi());
 
-    // Operations annotate themselves with `security(("bearer_auth"|"session_token"|"api_key" = []))`,
+    // Operations annotate themselves with `security(("bearer_auth"|"api_key" = []))`,
     // but utoipa's `#[openapi(components(...))]` only registers schemas/responses — not security
     // schemes. Without matching `components.securitySchemes`, the generated spec references scheme
     // ids that never resolve, and consumers like the fumadocs-openapi playground crash reading
     // `.deprecated` on the undefined scheme. Register them here, against the real mechanisms:
-    // `bearer_auth`/`session_token` both read the `X-Auth` session cookie via inject_identity;
-    // `api_key` reads the `X-API-Key` header via api_key_auth.
+    // `bearer_auth` reads the Authorization header; `api_key` reads X-API-Key.
     let components = spec.components.get_or_insert_with(Default::default);
     components.security_schemes.insert(
         "bearer_auth".to_string(),
-        utoipa::openapi::security::SecurityScheme::ApiKey(
-            utoipa::openapi::security::ApiKey::Header(
-                utoipa::openapi::security::ApiKeyValue::with_description(
-                    "X-Auth",
-                    "Session token from the `X-Auth` cookie set on login.",
-                ),
-            ),
-        ),
-    );
-    components.security_schemes.insert(
-        "session_token".to_string(),
-        utoipa::openapi::security::SecurityScheme::ApiKey(
-            utoipa::openapi::security::ApiKey::Header(
-                utoipa::openapi::security::ApiKeyValue::with_description(
-                    "X-Auth",
-                    "Session token from the `X-Auth` cookie set on login.",
-                ),
-            ),
-        ),
+        utoipa::openapi::security::SecurityScheme::Http(utoipa::openapi::security::Http::new(
+            utoipa::openapi::security::HttpAuthScheme::Bearer,
+        )),
     );
     components.security_schemes.insert(
         "api_key".to_string(),
@@ -268,11 +320,40 @@ pub fn create_router(
 ) -> Router {
     // Build CORS layer
     // Note: frontend_url is validated in main.rs before calling this function
-    let frontend_origin = frontend_url
-        .parse::<HeaderValue>()
-        .expect("Frontend URL validation failed: should have been caught in main.rs");
+    let cors_state = state.clone();
+    let cors_frontend_url = frontend_url.clone();
     let cors = CorsLayer::new()
-        .allow_origin(frontend_origin)
+        .allow_origin(AllowOrigin::async_predicate(move |origin, parts| {
+            let state = cors_state.clone();
+            let frontend_url = cors_frontend_url.clone();
+            // Extract the realm id before the async block so we do not borrow `parts`.
+            let realm_id = extract_realm_id_from_path(parts.uri.path()).map(String::from);
+            async move {
+                let Ok(origin) = origin.to_str() else {
+                    return false;
+                };
+                if origin == frontend_url {
+                    return true;
+                }
+                let Some(realm_id) = realm_id else {
+                    // Realm-less routes only allow the configured frontend origin.
+                    return false;
+                };
+                let rows = sqlx::query_scalar::<_, serde_json::Value>(
+                    "SELECT allowed_origins FROM client_app WHERE realm_id = $1 AND enabled = true",
+                )
+                .bind(realm_id)
+                .fetch_all(&state.pool)
+                .await;
+                match rows {
+                    Ok(rows) => origin_is_allowed(origin, &frontend_url, &rows),
+                    Err(error) => {
+                        tracing::warn!(%error, "Dynamic CORS origin lookup failed");
+                        false
+                    }
+                }
+            }
+        }))
         .allow_methods([
             Method::GET,
             Method::POST,
@@ -402,6 +483,7 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
     let admin_routes = admin::admin_router_with_middleware((*state).clone());
     let realm_routes = realm::realm_router();
     let billing_routes = billing::billing_routes();
+    let billing_browser_routes = billing::billing_browser_routes();
     let audit_routes = audit::audit_router();
 
     // Test routes - included in test builds and when ENABLE_TEST_API is set (e.g., demo mode)
@@ -419,7 +501,7 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
         )
         // Internal Caddy On-Demand TLS ask authorization endpoint
         // (design §4.2.2, BE-D07). Top-level (NOT under /api/realms → no
-        // inject_identity). Uses the X-Herald-Ask-Key shared secret checked
+        // Bearer middleware). Uses the X-Herald-Ask-Key shared secret checked
         // in-handler. The public host→realmId resolve endpoint remains
         // separate: the SPA needs it before a custom-domain visitor has a
         // session, while this endpoint must never disclose realm identity.
@@ -427,8 +509,8 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
             "/api/internal/custom-domain/authorize",
             get(realm::custom_domain_config::handle_custom_domain_authorize),
         )
-        // Public legal agreement endpoints (NO inject_identity).
-        // Grouped separately from the consent nest below so the inject_identity
+        // Public legal agreement endpoints (no Bearer identity).
+        // Grouped separately from the consent nest below so the Bearer middleware
         // layer never covers the public agreements routes.
         .route(
             "/api/legal/{realmId}/agreements",
@@ -471,8 +553,13 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
             post(oauth::device_authorize),
         )
         .route("/api/device/{realmId}/token", post(oauth::device_token))
-        .route("/api/device/{realmId}/verify", post(oauth::device_verify))
-        .route("/api/device/{realmId}/confirm", post(oauth::device_confirm))
+        .nest(
+            "/api/device/{realmId}",
+            Router::new()
+                .route("/verify", post(oauth::device_verify))
+                .route("/confirm", post(oauth::device_confirm))
+                .layer(from_fn_with_state((*state).clone(), inject_token_identity)),
+        )
         .nest(
             "/api/oauth/{realmId}/configs",
             Router::new()
@@ -486,7 +573,8 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
                         .put(oauth::update_oauth_config)
                         .delete(oauth::delete_oauth_config),
                 )
-                .layer(from_fn_with_state((*state).clone(), inject_identity)),
+                .layer(axum::middleware::from_fn(require_first_party_token))
+                .layer(from_fn_with_state((*state).clone(), inject_token_identity)),
         )
         // Realm Config routes
         .nest(
@@ -511,12 +599,17 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
                     "/{realmId}/{configType}/{configKey}",
                     get(realm_config::get_realm_config).delete(realm_config::delete_realm_config),
                 )
-                .layer(from_fn_with_state((*state).clone(), inject_identity)),
+                .layer(axum::middleware::from_fn(require_first_party_token))
+                .layer(from_fn_with_state((*state).clone(), inject_token_identity)),
         )
         // Auth routes
         .nest("/api/auth/{realmId}", auth_routes)
-        // Session-scoped auth routes resolve their realm from the X-Auth session.
-        .nest("/api/auth", herald_api_auth::session_router())
+        .nest("/api/auth", herald_api_auth::browser_token_router())
+        .nest(
+            "/api/auth",
+            herald_api_auth::token_router()
+                .layer(from_fn_with_state((*state).clone(), inject_token_identity)),
+        )
         // Permission routes: /check endpoint (NO middleware) + others (WITH middleware)
         .route(
             "/api/permission/check",
@@ -525,15 +618,20 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
         .nest(
             "/api/permission",
             permission::permission_router()
-                .layer(from_fn_with_state((*state).clone(), inject_identity)),
+                .layer(axum::middleware::from_fn(require_first_party_token))
+                .layer(from_fn_with_state((*state).clone(), inject_token_identity)),
         )
         .nest(
             "/api/client/{realmId}",
-            client_apps::router().layer(from_fn_with_state((*state).clone(), inject_identity)),
+            client_apps::router()
+                .layer(axum::middleware::from_fn(require_first_party_token))
+                .layer(from_fn_with_state((*state).clone(), inject_token_identity)),
         )
         .nest(
             "/api/api-keys/{realmId}",
-            api_keys::router().layer(from_fn_with_state((*state).clone(), inject_identity)),
+            api_keys::router()
+                .layer(axum::middleware::from_fn(require_first_party_token))
+                .layer(from_fn_with_state((*state).clone(), inject_token_identity)),
         )
         .nest("/api/roles", admin_routes)
         // Personal center routes (tag = "user") - no realmId in prefix
@@ -544,19 +642,23 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
                 .merge(herald_api_points::routes::user_points_router())
                 .merge(herald_api_billing::routes::billing_user_routes())
                 .merge(herald_api_auth::user_passkey::router())
-                .layer(from_fn_with_state((*state).clone(), inject_identity)),
+                .merge(herald_api_auth::reauth_router())
+                .layer(from_fn_with_state((*state).clone(), inject_token_identity)),
         )
         // Admin user management (tag = "users") - realm_id required
         .nest(
             "/api/users/{realmId}",
             admin::admin_users::router()
-                .layer(from_fn_with_state((*state).clone(), inject_identity)),
+                .layer(axum::middleware::from_fn(require_first_party_token))
+                .layer(from_fn_with_state((*state).clone(), inject_token_identity)),
         )
         .nest(
             "/api/realms",
-            realm_routes.layer(from_fn_with_state((*state).clone(), inject_identity)),
+            realm_routes
+                .layer(axum::middleware::from_fn(require_first_party_token))
+                .layer(from_fn_with_state((*state).clone(), inject_token_identity)),
         )
-        // Self-service consent endpoints (WITH inject_identity).
+        // Self-service consent endpoints (WITH bearer identity).
         // Distinct prefix from the public agreements routes above so the
         // identity layer only covers consent, not the public agreement reads.
         .nest(
@@ -564,9 +666,9 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
             Router::new()
                 .route("/status", get(legal::get_consent_status))
                 .route("/", post(legal::record_consent))
-                .layer(from_fn_with_state((*state).clone(), inject_identity)),
+                .layer(from_fn_with_state((*state).clone(), inject_token_identity)),
         )
-        // Admin legal agreement management (WITH inject_identity). Distinct
+        // Admin legal agreement management (WITH first-party bearer identity). Distinct
         // `/admin` prefix keeps the public agreements routes above unguarded.
         // Permission enforcement (settings.view / settings.manage) happens
         // inside each handler via `require_permission`.
@@ -599,22 +701,34 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
                     "/agreements/{agreementType}/publish",
                     axum::routing::post(legal::admin_publish_from_draft),
                 )
-                .layer(from_fn_with_state((*state).clone(), inject_identity)),
+                .layer(axum::middleware::from_fn(require_first_party_token))
+                .layer(from_fn_with_state((*state).clone(), inject_token_identity)),
         )
         // Audit log query routes
         .nest(
             "/api/audit/{realmId}",
-            audit_routes.layer(from_fn_with_state((*state).clone(), inject_identity)),
+            audit_routes
+                .layer(axum::middleware::from_fn(require_first_party_token))
+                .layer(from_fn_with_state((*state).clone(), inject_token_identity)),
         )
         // Dashboard statistics routes
         .nest(
             "/api/dashboard/{realmId}",
             dashboard::dashboard_router()
-                .layer(from_fn_with_state((*state).clone(), inject_identity)),
+                .layer(axum::middleware::from_fn(require_first_party_token))
+                .layer(from_fn_with_state((*state).clone(), inject_token_identity)),
         )
         .merge(billing::billing_public_routes())
         .merge(routes::internal_public_routes())
-        .merge(billing_routes.layer(from_fn_with_state((*state).clone(), inject_identity)))
+        .merge(
+            billing_browser_routes
+                .layer(from_fn_with_state((*state).clone(), inject_token_identity)),
+        )
+        .merge(
+            billing_routes
+                .layer(axum::middleware::from_fn(require_first_party_token))
+                .layer(from_fn_with_state((*state).clone(), inject_token_identity)),
+        )
         // Points endpoints - flexible authentication (session or API key)
         .nest(
             "/api/points/{realmId}",

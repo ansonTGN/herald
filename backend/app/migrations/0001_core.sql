@@ -132,30 +132,45 @@ CREATE TABLE client_app (
     name text NOT NULL,
     description text,
     redirect_uris jsonb DEFAULT '[]'::jsonb NOT NULL,
+    allowed_origins jsonb DEFAULT '[]'::jsonb NOT NULL,
+    email_verify_return_url text,
+    password_reset_return_url text,
+    browser_refresh_absolute_ttl_seconds integer DEFAULT 2592000 NOT NULL,
+    is_first_party boolean DEFAULT false NOT NULL,
     enabled boolean DEFAULT true NOT NULL,
     icon_url text,
-    session_ttl_seconds integer DEFAULT 1800 NOT NULL,
-    session_renewal_ttl_seconds integer,
     client_secret text,
     device_code_grant_enabled boolean NOT NULL DEFAULT false,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamptz DEFAULT now(),
-    CONSTRAINT client_app_realm_client_idx UNIQUE (realm_id, client_id)
+    CONSTRAINT client_app_realm_client_idx UNIQUE (realm_id, client_id),
+    CONSTRAINT chk_client_app_allowed_origins_array
+        CHECK (jsonb_typeof(allowed_origins) = 'array'),
+    CONSTRAINT chk_client_app_browser_refresh_absolute_ttl
+        CHECK (browser_refresh_absolute_ttl_seconds BETWEEN 86400 AND 7776000),
+    CONSTRAINT chk_client_app_first_party_reserved
+        CHECK (NOT is_first_party OR client_id = 'admin-web-console')
 );
 
 CREATE INDEX client_app_id_realm_id_index ON client_app(id, realm_id);
 CREATE INDEX idx_client_app_realm_enabled ON client_app(realm_id, enabled);
+CREATE UNIQUE INDEX uniq_client_app_first_party_realm
+    ON client_app(realm_id) WHERE is_first_party;
 COMMENT ON TABLE client_app IS 'OAuth client applications';
 COMMENT ON COLUMN client_app.id IS 'Internal UUID primary key (UUID v7)';
 COMMENT ON COLUMN client_app.client_id IS 'External client identifier for API usage (alphanumeric, 3-36 chars)';
 COMMENT ON COLUMN client_app.redirect_uris IS 'Redirect URI whitelist, JSON array format, must contain at least one valid HTTPS address (HTTP allowed in dev)';
+COMMENT ON COLUMN client_app.allowed_origins IS 'Normalized exact origins allowed to call Herald APIs';
+COMMENT ON COLUMN client_app.email_verify_return_url IS 'Pre-registered return URL for email verification results';
+COMMENT ON COLUMN client_app.password_reset_return_url IS 'Pre-registered return URL for password reset results';
+COMMENT ON COLUMN client_app.browser_refresh_absolute_ttl_seconds IS 'Absolute browser refresh token family lifetime in seconds (1-90 days)';
+COMMENT ON COLUMN client_app.is_first_party IS 'Internal trust marker reserved for the built-in admin-web-console';
 COMMENT ON COLUMN client_app.enabled IS 'Whether the client app is enabled, OAuth authorization cannot be completed when disabled';
 COMMENT ON COLUMN client_app.icon_url IS 'App icon URL, optional';
-COMMENT ON COLUMN client_app.session_ttl_seconds IS 'Initial session validity period at login (seconds), default 1800 (30 minutes)';
-COMMENT ON COLUMN client_app.session_renewal_ttl_seconds IS 'Sliding session validity period after active protected API renewal (seconds), NULL means renewal not allowed';
 COMMENT ON COLUMN client_app.client_secret IS 'OAuth client secret, UUID auto-generated on creation';
 COMMENT ON INDEX client_app_realm_client_idx IS 'Unique constraint on (realm_id, client_id) for external lookups';
 COMMENT ON INDEX idx_client_app_realm_enabled IS 'Index for filtering enabled client apps by realm';
+COMMENT ON INDEX uniq_client_app_first_party_realm IS 'Only one first-party client app per realm';
 
 -- ====================================
 -- RBAC Tables (Role-Based Access Control)

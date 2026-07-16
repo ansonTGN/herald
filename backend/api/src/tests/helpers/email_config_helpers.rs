@@ -119,7 +119,7 @@ pub async fn get_email_status(
             "/api/configs/{realmId}/email/status",
             realmId = realm_id
         ))
-        .header(header::COOKIE, format!("X-Auth={token}"))
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::empty())
         .unwrap();
 
@@ -149,7 +149,7 @@ pub async fn send_test_email(
             realmId = realm_id
         ))
         .header("content-type", "application/json")
-        .header(header::COOKIE, format!("X-Auth={token}"))
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::from(payload.to_string()))
         .unwrap();
 

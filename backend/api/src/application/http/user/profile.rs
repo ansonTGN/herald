@@ -1,14 +1,21 @@
-use axum::{Json, extract::State, http::HeaderMap};
+use axum::{
+    Json,
+    extract::{Extension, State},
+};
 use axum_valid::Valid;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 use validator::Validate;
 
-use crate::application::http::auth::util::require_session;
+use crate::application::http::common::auth_utils::require_token_scope;
 pub use crate::application::http::server::api_entities::ErrorResponse;
 use crate::application::http::server::api_entities::{ApiError, ApiResult};
 use crate::application::http::state::AppState;
+use herald_api_auth::reauth::consume_reauth;
+use herald_core::domain::authentication::{
+    CredentialScope, Identity, TargetOperation, TokenCredentialContext,
+};
 use herald_core::domain::security_constants::DEFAULT_BCRYPT_COST;
 use herald_core::domain::user::entities::Profile;
 use herald_core::domain::user::ports::UserRepository;
@@ -45,15 +52,16 @@ pub struct UpdateProfileRequest {
 )]
 pub async fn get_profile(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(identity): Extension<Identity>,
+    Extension(context): Extension<TokenCredentialContext>,
 ) -> Result<ApiResult<UserProfile>, ApiError> {
-    let (_token, sess) = require_session(&state, &headers).await?;
+    require_token_scope(&identity, &context, CredentialScope::ProfileRead)?;
 
     // Use repository to access data
     let user_repo = PostgresUserRepository::new(state.db.clone());
 
     // Get user
-    let user_id = uuid::Uuid::parse_str(&sess.user_id).map_err(|e| {
+    let user_id = uuid::Uuid::parse_str(&identity.user_id()).map_err(|e| {
         tracing::error!("Invalid user_id format: {}", e);
         ApiError::internal("Invalid user_id format")
     })?;
@@ -92,15 +100,16 @@ pub async fn get_profile(
 )]
 pub async fn update_profile(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(identity): Extension<Identity>,
+    Extension(context): Extension<TokenCredentialContext>,
     Valid(Json(payload)): Valid<Json<UpdateProfileRequest>>,
 ) -> Result<ApiResult<UserProfile>, ApiError> {
-    let (_token, sess) = require_session(&state, &headers).await?;
+    require_token_scope(&identity, &context, CredentialScope::ProfileWriteNickname)?;
 
     // Use repository to access data
     let user_repo = PostgresUserRepository::new(state.db.clone());
 
-    let user_id = uuid::Uuid::parse_str(&sess.user_id).map_err(|e| {
+    let user_id = uuid::Uuid::parse_str(&identity.user_id()).map_err(|e| {
         tracing::error!("Invalid user_id format: {}", e);
         ApiError::internal("Invalid user_id format")
     })?;
@@ -117,7 +126,7 @@ pub async fn update_profile(
             let now = chrono::Utc::now();
             let profile = Profile {
                 id: user_id,
-                realm_id: sess.realm_id.clone(),
+                realm_id: identity.realm_id(),
                 nickname: Some(nickname.clone()),
                 created_at: now,
                 updated_at: now,
@@ -164,38 +173,27 @@ pub async fn update_profile(
 )]
 pub async fn change_password(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(identity): Extension<Identity>,
+    Extension(context): Extension<TokenCredentialContext>,
     Valid(Json(payload)): Valid<Json<ChangePasswordRequest>>,
 ) -> Result<ApiResult<serde_json::Value>, ApiError> {
-    let (_token, sess) = require_session(&state, &headers).await?;
+    require_token_scope(&identity, &context, CredentialScope::ChangePassword)?;
+    consume_reauth(
+        &state,
+        &identity,
+        &context,
+        &payload.reauth_token,
+        TargetOperation::ChangePassword,
+    )
+    .await?;
 
     // Use repository to access data
     let user_repo = PostgresUserRepository::new(state.db.clone());
 
-    let user_id = uuid::Uuid::parse_str(&sess.user_id).map_err(|e| {
+    let user_id = uuid::Uuid::parse_str(&identity.user_id()).map_err(|e| {
         tracing::error!("Invalid user_id format: {}", e);
         ApiError::internal("Invalid user_id format")
     })?;
-
-    // Fetch current user
-    let user = user_repo.get_user_by_id(user_id).await.map_err(|e| {
-        tracing::error!("Failed to fetch user: {}", e);
-        ApiError::internal("Failed to fetch user")
-    })?;
-
-    let password_hash = user
-        .password_hash
-        .ok_or_else(|| ApiError::bad_request("User has no password set"))?;
-
-    // Verify old password
-    let is_valid = bcrypt::verify(&payload.old_pass, &password_hash).map_err(|e| {
-        tracing::error!("Failed to verify password: {}", e);
-        ApiError::internal("Failed to verify password")
-    })?;
-
-    if !is_valid {
-        return Err(ApiError::unauthorized("Invalid old password"));
-    }
 
     // Hash new password
     let new_password_hash = bcrypt::hash(&payload.new_pass, DEFAULT_BCRYPT_COST).map_err(|e| {
@@ -205,7 +203,7 @@ pub async fn change_password(
 
     // Update password using repository
     user_repo
-        .change_password(&sess.realm_id, user_id, new_password_hash)
+        .change_password(&identity.realm_id(), user_id, new_password_hash)
         .await
         .map_err(|e| {
             tracing::error!("Failed to update password: {}", e);
@@ -220,8 +218,43 @@ pub async fn change_password(
 #[derive(Debug, Serialize, Deserialize, ToSchema, Validate)]
 #[serde(rename_all = "camelCase")]
 pub struct ChangePasswordRequest {
-    #[validate(length(min = 1, max = 36))]
-    pub old_pass: String,
+    pub reauth_token: String,
     #[validate(length(min = 8, max = 36))]
     pub new_pass: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+    use herald_core::domain::authentication::CredentialClass;
+    use herald_core::domain::user::entities::{User, UserStatus};
+    use std::collections::HashSet;
+
+    #[test]
+    fn self_service_profile_scope_rejects_custom_ui_token_without_grant() {
+        let identity = Identity::User(User {
+            id: Uuid::now_v7(),
+            realm_id: "realm".to_string(),
+            email: "user@example.com".to_string(),
+            nickname: None,
+            password_hash: None,
+            provider_ids: vec![],
+            status: UserStatus::Normal,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        });
+        let context = TokenCredentialContext {
+            client_app_id: Uuid::now_v7(),
+            family_id: Uuid::now_v7(),
+            credential_class: CredentialClass::CustomUserUi,
+            allowed_scopes: HashSet::new(),
+        };
+
+        assert!(require_token_scope(&identity, &context, CredentialScope::ProfileRead).is_err());
+        assert!(
+            require_token_scope(&identity, &context, CredentialScope::ProfileWriteNickname)
+                .is_err()
+        );
+    }
 }

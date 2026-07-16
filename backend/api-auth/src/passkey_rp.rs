@@ -9,6 +9,7 @@ pub async fn resolve_passkey_rp(
     state: &AppState,
     realm_id: &str,
     headers: &HeaderMap,
+    target_client_app_id: Option<uuid::Uuid>,
 ) -> Result<PasskeyRelyingParty, ApiError> {
     let configured_id =
         std::env::var("RP_ID").map_err(|_| ApiError::internal("RP_ID is not configured"))?;
@@ -29,6 +30,43 @@ pub async fn resolve_passkey_rp(
         });
     }
 
+    let normalized_request_origin = normalized_origin(&request_uri);
+    let allowed_origins = match target_client_app_id {
+        Some(client_app_id) => sqlx::query_scalar::<_, serde_json::Value>(
+            "SELECT allowed_origins FROM client_app WHERE realm_id = $1 AND id = $2 AND enabled = true",
+        )
+        .bind(realm_id)
+        .bind(client_app_id)
+        .fetch_all(&state.pool)
+        .await
+        .map_err(|error| {
+            tracing::error!(%error, %realm_id, %client_app_id, "Failed to resolve Passkey Client App origin");
+            ApiError::internal("Failed to resolve Passkey origin")
+        })?,
+        None => sqlx::query_scalar::<_, serde_json::Value>(
+            "SELECT allowed_origins FROM client_app WHERE realm_id = $1 AND enabled = true",
+        )
+        .bind(realm_id)
+        .fetch_all(&state.pool)
+        .await
+        .map_err(|error| {
+            tracing::error!(%error, %realm_id, "Failed to resolve Passkey Client App origin");
+            ApiError::internal("Failed to resolve Passkey origin")
+        })?,
+    };
+    let matches_enabled_client = allowed_origins.iter().any(|origins| {
+        serde_json::from_value::<Vec<String>>(origins.clone())
+            .map(|origins| {
+                origins
+                    .iter()
+                    .any(|origin| origin == &normalized_request_origin)
+            })
+            .unwrap_or(false)
+    });
+    if let Some(relying_party) = select_client_app_rp(&request_uri, matches_enabled_client)? {
+        return Ok(relying_party);
+    }
+
     let hostname = request_uri
         .host()
         .ok_or_else(|| ApiError::bad_request("Passkey origin has no hostname"))?;
@@ -47,6 +85,22 @@ pub async fn resolve_passkey_rp(
         &normalized_origin(&request_uri),
         mapping.as_ref().map(|mapping| mapping.realm_id.as_str()),
     )
+}
+
+fn select_client_app_rp(
+    request_uri: &Uri,
+    matches_enabled_client: bool,
+) -> Result<Option<PasskeyRelyingParty>, ApiError> {
+    if !matches_enabled_client {
+        return Ok(None);
+    }
+    let hostname = request_uri
+        .host()
+        .ok_or_else(|| ApiError::bad_request("Passkey origin has no hostname"))?;
+    Ok(Some(PasskeyRelyingParty {
+        id: hostname.to_string(),
+        origin: normalized_origin(request_uri),
+    }))
 }
 
 fn select_custom_domain_rp(
@@ -141,5 +195,15 @@ mod tests {
             select_custom_domain_rp("realm-a", "unknown.test", "https://unknown.test", None,)
                 .is_err()
         );
+    }
+
+    #[test]
+    fn enabled_client_app_origin_uses_its_host_as_rp_id() {
+        let origin = parse_origin("https://app.customer.test:8443").unwrap();
+
+        let rp = select_client_app_rp(&origin, true).unwrap().unwrap();
+        assert_eq!(rp.id, "app.customer.test");
+        assert_eq!(rp.origin, "https://app.customer.test:8443");
+        assert!(select_client_app_rp(&origin, false).unwrap().is_none());
     }
 }

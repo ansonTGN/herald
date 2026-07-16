@@ -15,10 +15,13 @@ pub struct Model {
 
     // New fields for Client App settings
     pub redirect_uris: JsonValue,
+    pub allowed_origins: JsonValue,
+    pub email_verify_return_url: Option<String>,
+    pub password_reset_return_url: Option<String>,
+    pub browser_refresh_absolute_ttl_seconds: i32,
+    pub is_first_party: bool,
     pub enabled: bool,
     pub icon_url: Option<String>,
-    pub session_ttl_seconds: i32,
-    pub session_renewal_ttl_seconds: Option<i32>,
     pub client_secret: Option<String>,
     pub device_code_grant_enabled: bool,
 

@@ -3,7 +3,6 @@
 use axum::{
     Form, Json,
     extract::{Path, Query, State},
-    http::{HeaderMap, header},
     response::{IntoResponse, Redirect, Response},
 };
 use serde::{Deserialize, Serialize};
@@ -11,12 +10,12 @@ use utoipa::ToSchema;
 use validator::Validate;
 
 use crate::helper::handle_oauth_callback;
-use herald_api_base::application::http::auth::util::{
-    ClientIp, SessionData, build_set_cookie, renewal_ttl_seconds_from_i32, store_session,
-};
 use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
 use herald_api_base::application::http::state::AppState;
-use uuid::Uuid;
+use herald_core::domain::authentication::{BrowserTokenService, BrowserTokenSet};
+use herald_core::domain::client::ports::ClientService;
+use herald_core::domain::user::UserRepository;
+use herald_core::infrastructure::authentication::RedisBrowserTokenService;
 
 #[derive(Debug, Deserialize, Serialize, ToSchema, Validate)]
 pub struct OAuthCallbackQuery {
@@ -29,7 +28,8 @@ pub struct OAuthCallbackQuery {
 pub struct OAuthCallbackResponse {
     pub message: String,
     pub user_id: String,
-    pub access_token: String,
+    #[serde(flatten)]
+    pub tokens: BrowserTokenSet,
 }
 
 /// Handle OAuth callback from provider for a realm
@@ -53,36 +53,30 @@ pub struct OAuthCallbackResponse {
 )]
 #[tracing::instrument(
     // Governance: query carries provider authorization
-    // code + state (CSRF) — both secrets. state holds handles; headers may
-    // carry cookies; client_ip is PII; realm_id/provider are low-cardinality
-    // but conservatively skipped. Only http.route is recorded.
-    skip(state, headers, client_ip, query),
+    // code + state (CSRF) — both secrets. state holds handles.
+    // realm_id/provider are low-cardinality but conservatively skipped.
+    // Only http.route is recorded.
+    skip(state, query),
     fields(http.route = "/api/oauth/{realmId}/{provider}/callback")
 )]
 pub async fn oauth_callback(
     State(state): State<AppState>,
-    ClientIp(client_ip): ClientIp,
-    headers: HeaderMap,
     Path((realm_id, provider)): Path<(String, String)>,
     Query(query): Query<OAuthCallbackQuery>,
 ) -> Result<Response, ApiError> {
-    oauth_callback_inner(state, headers, client_ip, realm_id, provider, query).await
+    oauth_callback_inner(state, realm_id, provider, query).await
 }
 
 pub async fn oauth_callback_form(
     State(state): State<AppState>,
-    ClientIp(client_ip): ClientIp,
-    headers: HeaderMap,
     Path((realm_id, provider)): Path<(String, String)>,
     Form(query): Form<OAuthCallbackQuery>,
 ) -> Result<Response, ApiError> {
-    oauth_callback_inner(state, headers, client_ip, realm_id, provider, query).await
+    oauth_callback_inner(state, realm_id, provider, query).await
 }
 
 async fn oauth_callback_inner(
     state: AppState,
-    headers: HeaderMap,
-    client_ip: String,
     realm_id: String,
     provider: String,
     query: OAuthCallbackQuery,
@@ -119,101 +113,51 @@ async fn oauth_callback_inner(
     }
 
     let user_id = callback.user_id;
-    let jwt_token = callback.jwt_token;
     let client_id = callback.client_id;
-
-    let session_token = Uuid::now_v7().to_string();
-    let session_config = load_client_session_config(&state, &realm_id, &client_id).await?;
-    let session_data = SessionData {
-        realm_id: realm_id.clone(),
-        client_id,
-        user_id: user_id.to_string(),
-        client_ip,
-        renewal_ttl_seconds: session_config.renewal_ttl_seconds,
-    };
-
-    store_session(
-        &state,
-        &session_token,
-        &session_data,
-        session_config.ttl_seconds,
-    )
-    .await?;
-
-    let set_cookie = build_set_cookie(
-        "X-Auth",
-        &session_token,
-        session_config.ttl_seconds as i64,
-        state.app_env == "production",
-    );
-
-    let wants_json = headers
-        .get(header::ACCEPT)
-        .and_then(|value| value.to_str().ok())
-        .is_some_and(|accept| accept.contains("application/json"));
-
-    if !wants_json {
-        return Ok((
-            [(header::SET_COOKIE, set_cookie)],
-            Redirect::temporary(&format!("/{realm_id}")),
-        )
-            .into_response());
-    }
-
-    // Return JSON response (for SPA/mobile clients)
-    // Note: This is a B-class exception (OAuth protocol callback), so we return Json<T> directly
-    Ok((
-        [(header::SET_COOKIE, set_cookie)],
-        Json(OAuthCallbackResponse {
-            message: "OAuth login successful".to_string(),
-            user_id: user_id.to_string(),
-            access_token: jwt_token,
-        }),
-    )
-        .into_response())
-
-    // Alternatively, redirect to frontend with token:
-    // Ok(Redirect::to(&format!("{}/oauth/callback?token=...", redirect_uri)))
+    issue_callback_token_response(&state, &realm_id, user_id, &client_id).await
 }
 
-struct ClientSessionConfig {
-    ttl_seconds: usize,
-    renewal_ttl_seconds: Option<u64>,
-}
-
-async fn load_client_session_config(
+pub async fn issue_callback_token_response(
     state: &AppState,
     realm_id: &str,
+    user_id: uuid::Uuid,
     client_id: &str,
-) -> Result<ClientSessionConfig, ApiError> {
-    let config = sqlx::query_as::<_, (i32, Option<i32>)>(
-        "SELECT session_ttl_seconds, session_renewal_ttl_seconds FROM client_app WHERE realm_id = $1 AND client_id = $2 AND enabled = true",
-    )
-    .bind(realm_id)
-    .bind(client_id)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|e| {
-        tracing::error!(
-            realm_id = %realm_id,
-            client_id = %client_id,
-            error = %e,
-            "Failed to load OAuth client session TTL"
-        );
-        ApiError::internal("Failed to load client session configuration".to_string())
+) -> Result<Response, ApiError> {
+    let client_app = state
+        .service
+        .client_service()
+        .get_client_app_by_client_id(realm_id, client_id)
+        .await
+        .map_err(|_| ApiError::bad_request("OAuth client app is not enabled"))?;
+    if !client_app.enabled {
+        return Err(ApiError::bad_request("OAuth client app is not enabled"));
+    }
+    let user = state
+        .user_repository
+        .get_user_by_id(user_id)
+        .await
+        .map_err(|_| ApiError::unauthorized("OAuth user no longer exists"))?;
+    if user.realm_id != realm_id {
+        return Err(ApiError::bad_request("OAuth user realm mismatch"));
+    }
+    let token_service = RedisBrowserTokenService::new(state.redis_manager.clone());
+    let tokens = if client_app.is_first_party {
+        token_service
+            .create_first_party_token_family(&user, &client_app)
+            .await
+    } else {
+        token_service.create_token_family(&user, &client_app).await
+    }
+    .map_err(|error| {
+        tracing::error!(%error, "Failed to issue browser token family after OAuth callback");
+        ApiError::internal("Internal server error")
     })?;
-
-    let Some((ttl, renewal_ttl)) = config else {
-        return Err(ApiError::bad_request(
-            "OAuth client app is not enabled".to_string(),
-        ));
-    };
-
-    Ok(ClientSessionConfig {
-        ttl_seconds: usize::try_from(ttl)
-            .map_err(|_| ApiError::internal("Client session TTL is invalid".to_string()))?,
-        renewal_ttl_seconds: renewal_ttl_seconds_from_i32(renewal_ttl)?,
+    Ok(Json(OAuthCallbackResponse {
+        message: "OAuth login successful".to_string(),
+        user_id: user_id.to_string(),
+        tokens,
     })
+    .into_response())
 }
 
 // Governance tests.
@@ -262,7 +206,7 @@ mod instrument_skip_tests {
     fn instrument_skip_oauth_callback_excludes_code_state() {
         let body = instrument_body_preceding(CALLBACK_SRC, "oauth_callback");
         // `query` carries the provider authorization `code` + CSRF `state`.
-        for required in ["query", "headers", "client_ip", "state"] {
+        for required in ["query", "state"] {
             assert!(
                 body.contains(required),
                 "oauth_callback must skip `{required}`; body was:\n{body}"

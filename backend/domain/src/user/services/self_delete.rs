@@ -1,7 +1,7 @@
 // Account self-deletion (soft-delete) service — BE-D07.
 //
 // Implements the design §5.2 self-service deletion pipeline:
-//   pre-tx : bcrypt verify password, status guard, cancel active subscriptions
+//   pre-tx : status guard, cancel active subscriptions
 //   in-tx  : account anonymization
 //            (email/password/username/provider_ids), status=Deleted, profile
 //            nickname clear, TOTP config delete — all delegated to the
@@ -24,7 +24,7 @@ use crate::audit::{
     NewAuditEvent,
 };
 use crate::authentication::Identity;
-use crate::authentication::ports::SessionRepository;
+use crate::authentication::ports::BrowserTokenService;
 use crate::billing::ports::BillingRepository;
 use crate::common::entities::app_errors::CoreError;
 use crate::user::entities::UserStatus;
@@ -36,7 +36,7 @@ where
     U: UserRepository,
     T: UserTotpRepository,
     B: BillingRepository,
-    S: SessionRepository,
+    S: BrowserTokenService,
     A: AuditEventRepository,
 {
     user_repo: Arc<U>,
@@ -45,7 +45,7 @@ where
     #[allow(dead_code)]
     totp_repo: Arc<T>,
     billing_repo: Arc<B>,
-    session_repo: Arc<S>,
+    token_service: Arc<S>,
     audit_repo: Arc<A>,
 }
 
@@ -54,7 +54,7 @@ where
     U: UserRepository,
     T: UserTotpRepository,
     B: BillingRepository,
-    S: SessionRepository,
+    S: BrowserTokenService,
     A: AuditEventRepository,
 {
     #[allow(clippy::too_many_arguments)]
@@ -62,31 +62,27 @@ where
         user_repo: Arc<U>,
         totp_repo: Arc<T>,
         billing_repo: Arc<B>,
-        session_repo: Arc<S>,
+        token_service: Arc<S>,
         audit_repo: Arc<A>,
     ) -> Self {
         Self {
             user_repo,
             totp_repo,
             billing_repo,
-            session_repo,
+            token_service,
             audit_repo,
         }
     }
 
     /// Self-service account deletion.
     ///
-    /// Identity is the authenticated caller; `password` is the second-factor
-    /// confirmation. Errors:
+    /// Identity is the authenticated caller. The HTTP boundary consumes the
+    /// operation-bound reauthentication ticket before invoking this service.
+    /// Errors:
     ///   - [`CoreError::NotFound`] — account does not exist (should not happen
     ///     for a valid session).
-    ///   - [`CoreError::Unauthorized`] — password missing / wrong.
     ///   - [`CoreError::Conflict`] — account is already in the `Deleted` state.
-    pub async fn self_delete_account(
-        &self,
-        identity: &Identity,
-        password: &str,
-    ) -> Result<(), CoreError> {
+    pub async fn self_delete_account(&self, identity: &Identity) -> Result<(), CoreError> {
         let user_id = parse_user_id(identity.user_id())?;
         let realm_id = identity.realm_id();
 
@@ -100,15 +96,6 @@ where
             ));
         }
 
-        // Password second-factor: missing hash or wrong password => 401.
-        // Reuse the domain `verify_password` helper (handles `None` as false).
-        let password_ok = account.verify_password(password).map_err(|_| {
-            CoreError::InternalServerError("Password verification failed".to_string())
-        })?;
-        if !password_ok {
-            return Err(CoreError::Unauthorized);
-        }
-
         // ---- Phase 2: cancel active subscriptions before deletion ----
         // A cancellation failure leaves the account reachable so the user can
         // retry instead of losing access while billing may continue.
@@ -120,33 +107,33 @@ where
             self.billing_repo.cancel_subscription(sub.id, false).await?;
         }
 
-        // ---- Phase 3: in-tx anonymization (account + profile + totp_config) ----
+        // ---- Phase 3: revoke browser token families before anonymization ----
+        // Token revocation must succeed before the account is anonymized; otherwise
+        // a deleted account could keep using long-lived bearer tokens.
+        let user_id_str = user_id.to_string();
+        self.token_service
+            .revoke_user_families(&user_id_str)
+            .await
+            .map_err(|e| {
+                tracing::error!(
+                    error = %e,
+                    user_id = %user_id,
+                    "self_delete: failed to revoke user token families"
+                );
+                CoreError::InternalServerError(format!("Failed to revoke user sessions: {e}"))
+            })?;
+
+        // ---- Phase 4: in-tx anonymization (account + profile + totp_config) ----
         // A single repository transaction. The anonymized email is derived from
         // the account id so it is unique within `(realm_id, email)`.
         self.user_repo
             .anonymize_user_for_deletion(&realm_id, user_id)
             .await?;
 
-        // ---- Phase 4: post-tx side effects ----
-        // Session revocation is required so a deleted account cannot keep
-        // using protected endpoints. Audit remains best-effort.
+        // ---- Phase 5: post-tx side effects ----
+        // Audit remains best-effort.
 
-        // 4a. Revoke all of the user's sessions / tokens (incl. the caller's
-        //     current session — delete == logout).
-        let user_id_str = user_id.to_string();
-        self.session_repo
-            .delete_user_sessions(&user_id_str)
-            .await
-            .map_err(|e| {
-                tracing::error!(
-                    error = %e,
-                    user_id = %user_id,
-                    "self_delete: failed to delete user sessions"
-                );
-                e
-            })?;
-
-        // 4b. Audit `user.delete` (Compliance, method=self_service). Reuses the
+        // 5a. Audit `user.delete` (Compliance, method=self_service). Reuses the
         //     existing UserDelete action (slug `user.delete`) — no near-synonym.
         let audit_event = NewAuditEvent {
             realm_id: realm_id.clone(),
@@ -184,7 +171,7 @@ where
     U: UserRepository,
     T: UserTotpRepository,
     B: BillingRepository,
-    S: SessionRepository,
+    S: BrowserTokenService,
     A: AuditEventRepository,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

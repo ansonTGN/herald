@@ -8,6 +8,7 @@ CREATE TABLE user_passkey_credential (
     id UUID PRIMARY KEY DEFAULT uuidv7(),
     user_id UUID NOT NULL REFERENCES account(id) ON DELETE CASCADE,
     realm_id TEXT NOT NULL,
+    rp_id TEXT NOT NULL,
     credential_id BYTEA NOT NULL,
     credential_public_key BYTEA NOT NULL,
     counter BIGINT NOT NULL DEFAULT 0,
@@ -22,12 +23,14 @@ CREATE TABLE user_passkey_credential (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE UNIQUE INDEX uniq_user_passkey_credential_realm_cred
-    ON user_passkey_credential(realm_id, credential_id);
+CREATE UNIQUE INDEX uniq_user_passkey_credential_realm_user_rp_cred
+    ON user_passkey_credential(realm_id, user_id, rp_id, credential_id);
 CREATE INDEX idx_user_passkey_credential_user
     ON user_passkey_credential(user_id);
 CREATE INDEX idx_user_passkey_credential_realm
     ON user_passkey_credential(realm_id);
+CREATE INDEX idx_user_passkey_credential_rp
+    ON user_passkey_credential(rp_id);
 
 COMMENT ON TABLE user_passkey_credential IS 'User WebAuthn/FIDO2 passkey credentials';
 COMMENT ON COLUMN user_passkey_credential.user_id IS 'Account that owns this passkey credential';

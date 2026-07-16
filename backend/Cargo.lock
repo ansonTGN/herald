@@ -1919,6 +1919,7 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "chrono",
+ "herald-api-auth",
  "herald-api-base",
  "herald-core",
  "hex",

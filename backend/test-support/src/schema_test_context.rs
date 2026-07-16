@@ -14,6 +14,7 @@ use herald_core::application::{ApplicationServiceBuilder, WebhookService};
 use herald_core::domain::points::PointsService;
 use herald_core::domain::points::services::RealmConfigService;
 use herald_core::infrastructure::PostgresCustomDomainMappingRepository;
+use herald_core::infrastructure::authentication::init_authentication_functions;
 use herald_core::infrastructure::authorization::policies::PermissionBasedPointsPolicy;
 use herald_core::infrastructure::authorization::{RedisCache, RedisPermissionChecker};
 use herald_core::infrastructure::points::init_idempotency_function;
@@ -26,6 +27,7 @@ use herald_core::infrastructure::user::{
 };
 use herald_core::infrastructure::webhook::WebhookEventRepository;
 use herald_test_db::{clone_schema_from_template, create_schema_scoped_connections};
+use redis::AsyncCommands;
 use sqlx::Row;
 use std::sync::Arc;
 use test_context::AsyncTestContext;
@@ -35,6 +37,7 @@ const SCHEMA_POOL_MAX_CONNECTIONS: u32 = 3;
 /// 确保 Redis Functions 只初始化一次
 static RATE_LIMIT_INIT: tokio::sync::OnceCell<()> = tokio::sync::OnceCell::const_new();
 static IDEMPOTENCY_INIT: tokio::sync::OnceCell<()> = tokio::sync::OnceCell::const_new();
+static AUTHENTICATION_INIT: tokio::sync::OnceCell<()> = tokio::sync::OnceCell::const_new();
 
 /// Schema 隔离的测试上下文
 ///
@@ -419,7 +422,7 @@ impl AsyncTestContext for SchemaTestContext {
                     ),
                     billing_repository.clone(),
                     Arc::new(
-                        herald_core::infrastructure::authentication::RedisSessionRepository::new(
+                        herald_core::infrastructure::authentication::RedisBrowserTokenService::new(
                             redis_manager.clone(),
                         ),
                     ),
@@ -457,6 +460,14 @@ impl AsyncTestContext for SchemaTestContext {
                 init_idempotency_function(&app_state.redis_manager)
                     .await
                     .expect("Failed to initialize idempotency Redis Function");
+            })
+            .await;
+
+        AUTHENTICATION_INIT
+            .get_or_init(|| async {
+                init_authentication_functions(&app_state.redis_manager)
+                    .await
+                    .expect("Failed to initialize authentication Redis Functions");
             })
             .await;
 
@@ -515,5 +526,47 @@ impl SchemaTestContext {
         let api_routes = herald_api::create_api_routes(self.app_state.clone());
 
         api_routes.with_state(state)
+    }
+
+    /// Create the production router including its dynamic CORS layer.
+    pub fn create_cors_test_router(&self, frontend_url: &str) -> axum::Router {
+        herald_api::application::http::server::create_router(
+            self.app_state.clone(),
+            frontend_url.to_owned(),
+            None,
+        )
+    }
+
+    /// Store a namespaced test fixture in the same Redis database used by the app.
+    pub async fn redis_set_ex(&self, key: &str, value: &str, ttl_seconds: u64) {
+        let mut connection = self.app_state.redis_manager.get().await.unwrap();
+        connection
+            .set_ex::<_, _, ()>(key, value, ttl_seconds)
+            .await
+            .unwrap();
+    }
+
+    /// Issue a reauthentication fixture whose business expiry is already in the past.
+    pub async fn issue_expired_reauth(
+        &self,
+        client_app_id: uuid::Uuid,
+        user_id: &str,
+        target_operation: herald_core::domain::authentication::TargetOperation,
+    ) -> String {
+        use chrono::{Duration, Utc};
+        use herald_core::domain::authentication::ReauthResult;
+        use herald_core::infrastructure::authentication::RedisReauthStore;
+
+        RedisReauthStore::new(self.app_state.redis_manager.clone())
+            .issue(ReauthResult {
+                realm_id: self._realm_id.clone(),
+                client_app_id,
+                user_id: user_id.to_owned(),
+                target_operation,
+                expires_at: Utc::now() - Duration::seconds(1),
+                consumed: false,
+            })
+            .await
+            .unwrap()
     }
 }

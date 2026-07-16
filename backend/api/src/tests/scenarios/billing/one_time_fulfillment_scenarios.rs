@@ -455,7 +455,7 @@ mod tests {
                     .method("POST")
                     .uri(format!("/api/bill/{}/purchase/payment-attempts", realm_id))
                     .header("Content-Type", "application/json")
-                    .header("cookie", format!("X-Auth={token}"))
+                    .header("authorization", format!("Bearer {token}"))
                     .body(Body::from(
                         json!({
                             "targetType": "entitlement_mapping",
@@ -520,7 +520,7 @@ mod tests {
                     .method("POST")
                     .uri(format!("/api/bill/{}/purchase/payment-attempts", realm_id))
                     .header("Content-Type", "application/json")
-                    .header("cookie", format!("X-Auth={token}"))
+                    .header("authorization", format!("Bearer {token}"))
                     .body(Body::from(
                         json!({
                             "targetType": "entitlement_mapping",
@@ -611,7 +611,7 @@ mod tests {
                     .method("POST")
                     .uri(format!("/api/bill/{}/purchase/payment-attempts", realm_id))
                     .header("Content-Type", "application/json")
-                    .header("cookie", format!("X-Auth={token}"))
+                    .header("authorization", format!("Bearer {token}"))
                     .body(Body::from(
                         json!({
                             "targetType": "entitlement_mapping",

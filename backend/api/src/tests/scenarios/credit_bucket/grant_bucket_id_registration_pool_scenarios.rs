@@ -632,8 +632,8 @@ async fn second_registration_pool_in_same_realm_returns_409_registration_pool_co
                 .uri(format!("/api/realms/{}/billing/credit-buckets", realm_id))
                 .header("content-type", "application/json")
                 .header(
-                    axum::http::header::COOKIE,
-                    format!("X-Auth={}", admin_token),
+                    axum::http::header::AUTHORIZATION,
+                    format!("Bearer {}", admin_token),
                 )
                 .body(Body::from(
                     json!({

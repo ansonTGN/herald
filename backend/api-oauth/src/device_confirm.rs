@@ -5,17 +5,16 @@
 // from "verified" to "authorized" or "denied".
 
 use axum::{
-    Json,
+    Extension, Json,
     extract::{Path, State},
-    http::HeaderMap,
 };
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use herald_api_base::application::http::auth::util::require_session;
 use herald_api_base::application::http::server::api_entities::ApiError;
 use herald_api_base::application::http::state::AppState;
+use herald_core::domain::authentication::Identity;
 
 // ---------------------------------------------------------------------------
 // DTOs
@@ -60,12 +59,10 @@ pub struct DeviceConfirmResponse {
 pub async fn device_confirm(
     Path(realm_id): Path<String>,
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(identity): Extension<Identity>,
     Json(payload): Json<DeviceConfirmRequest>,
 ) -> Result<Json<DeviceConfirmResponse>, ApiError> {
-    // Authenticate user session
-    let (_token, sess) = require_session(&state, &headers).await?;
-    if sess.realm_id != realm_id {
+    if identity.realm_id() != realm_id {
         return Err(ApiError::forbidden(
             "Access denied: cannot confirm device code for a different realm",
         ));
@@ -154,7 +151,7 @@ pub async fn device_confirm(
         .get("user_id")
         .and_then(|v| v.as_str())
         .unwrap_or("");
-    if stored_user_id != sess.user_id {
+    if stored_user_id != identity.user_id() {
         return Err(ApiError::conflict_json(DeviceConfirmErrorResponse {
             error: "already_used".to_string(),
             error_description: "Device code was verified by a different user".to_string(),

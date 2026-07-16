@@ -392,7 +392,7 @@ async fn scenario_cross_realm_access(ctx: &mut SchemaTestContext) {
     // Step 3: 创建客户端应用（realm-2）
     let client_app2_id = Uuid::now_v7();
     sqlx::query(
-        "INSERT INTO client_app (id, client_id, realm_id, name, enabled, session_ttl_seconds)
+        "INSERT INTO client_app (id, client_id, realm_id, name, enabled, browser_refresh_absolute_ttl_seconds)
          VALUES ($1, $2, $3, $4, $5, $6)",
     )
     .bind(client_app2_id)
@@ -400,7 +400,7 @@ async fn scenario_cross_realm_access(ctx: &mut SchemaTestContext) {
     .bind(realm2_id)
     .bind("Test Client 2")
     .bind(true)
-    .bind(1800)
+    .bind(86400)
     .execute(&ctx._app_state.pool)
     .await
     .expect("Failed to create client app");

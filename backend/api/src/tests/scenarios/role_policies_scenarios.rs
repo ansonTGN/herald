@@ -48,7 +48,7 @@ async fn test_scenario_add_policy_to_role(ctx: &mut SchemaTestContext) {
         .method("POST")
         .uri(format!("/api/permission/roles/{}/policies", role_id))
         .header("content-type", "application/json")
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", token))
         .body(Body::from(req_body))
         .unwrap();
 
@@ -124,7 +124,7 @@ async fn test_scenario_delete_policy_from_role(ctx: &mut SchemaTestContext) {
             "/api/permission/roles/{}/policies/{}",
             role_id, policy_id
         ))
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", token))
         .body(Body::empty())
         .unwrap();
 
@@ -193,7 +193,7 @@ async fn test_scenario_policy_uniqueness_constraint(ctx: &mut SchemaTestContext)
         .method("POST")
         .uri(format!("/api/permission/roles/{}/policies", role_id))
         .header("content-type", "application/json")
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", token))
         .body(Body::from(req_body))
         .unwrap();
 

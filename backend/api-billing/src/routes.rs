@@ -23,7 +23,7 @@ use crate::handlers_history::{
 };
 use crate::invoice_handlers::{
     apply_invoice, create_credit_note, create_invoice, download_invoice_pdf,
-    download_my_invoice_pdf, get_invoice, get_invoice_apply_eligibility, get_my_invoice,
+    download_my_invoice_pdf, get_invoice, get_invoice_apply_eligibility, get_my_invoice_scoped,
     get_seller_config, issue_invoice, list_attribution_anomalies, list_invoices, list_my_invoices,
     mark_paid, update_invoice, upsert_seller_config, void_invoice,
 };
@@ -111,16 +111,8 @@ pub fn billing_routes() -> Router<AppState> {
         )
         // ===== Subscription (Client App) =====
         .route(
-            "/api/bill/{realmId}/client/{clientAppId}/subscription",
-            get(get_subscription_for_client_app),
-        )
-        .route(
             "/api/bill/{realmId}/client/{clientAppId}/subscription/cancel",
             post(cancel_subscription_for_client_app),
-        )
-        .route(
-            "/api/bill/{realmId}/client/{clientAppId}/purchase-options",
-            get(list_purchase_options),
         )
         // ===== Subscription History =====
         .route(
@@ -131,31 +123,10 @@ pub fn billing_routes() -> Router<AppState> {
             "/api/bill/{realmId}/subscriptions/history",
             get(list_subscription_history),
         )
-        .route(
-            "/api/bill/{realmId}/my/subscriptions/history",
-            get(list_my_subscription_history),
-        )
-        .route(
-            "/api/bill/{realmId}/my/subscriptions/{subscriptionId}/history",
-            get(get_my_subscription_history),
-        )
         // ===== Purchase Flow =====
-        .route(
-            "/api/bill/{realmId}/purchase/payment-attempts",
-            post(create_payment_attempt),
-        )
-        .route(
-            "/api/bill/{realmId}/purchase/payment-attempts/{attemptId}",
-            get(get_payment_attempt_status),
-        )
         .route(
             "/api/bill/{realmId}/purchase/payment-attempts/{attemptId}/cancel",
             post(cancel_payment_attempt),
-        )
-        // ===== Payment Provider Configuration =====
-        .route(
-            "/api/third/pay/{realmId}/providers",
-            get(list_payment_providers),
         )
         // ===== Invoice Management =====
         .route(
@@ -196,6 +167,42 @@ pub fn billing_routes() -> Router<AppState> {
         )
 }
 
+/// Browser-token billing endpoints from the CustomUserUi allowlist.
+///
+/// Mounted separately from `billing_routes` so a CustomUserUi credential can
+/// never enter the admin billing router.
+pub fn billing_browser_routes() -> Router<AppState> {
+    Router::new()
+        .route(
+            "/api/bill/{realmId}/client/{clientAppId}/subscription",
+            get(get_subscription_for_client_app),
+        )
+        .route(
+            "/api/bill/{realmId}/client/{clientAppId}/purchase-options",
+            get(list_purchase_options),
+        )
+        .route(
+            "/api/bill/{realmId}/purchase/payment-attempts",
+            post(create_payment_attempt),
+        )
+        .route(
+            "/api/bill/{realmId}/purchase/payment-attempts/{attemptId}",
+            get(get_payment_attempt_status),
+        )
+        .route(
+            "/api/third/pay/{realmId}/providers",
+            get(list_payment_providers),
+        )
+        .route(
+            "/api/bill/{realmId}/my/subscriptions/history",
+            get(list_my_subscription_history),
+        )
+        .route(
+            "/api/bill/{realmId}/my/subscriptions/{subscriptionId}/history",
+            get(get_my_subscription_history),
+        )
+}
+
 pub fn billing_user_routes() -> Router<AppState> {
     Router::new()
         .route("/feature-availability", get(get_user_feature_availability))
@@ -205,7 +212,7 @@ pub fn billing_user_routes() -> Router<AppState> {
             get(get_invoice_apply_eligibility),
         )
         .route("/bill/invoices", get(list_my_invoices).post(apply_invoice))
-        .route("/bill/invoices/{invoiceId}", get(get_my_invoice))
+        .route("/bill/invoices/{invoiceId}", get(get_my_invoice_scoped))
         .route(
             "/bill/invoices/{invoiceId}/pdf",
             get(download_my_invoice_pdf),

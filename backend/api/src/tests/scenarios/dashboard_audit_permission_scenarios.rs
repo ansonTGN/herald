@@ -120,7 +120,7 @@ async fn test_scenario_dashboard_view_grants_access(ctx: &mut TestContext) {
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/dashboard/{}/stats", ctx._realm_id))
-        .header(header::COOKIE, format!("X-Auth={}", user_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", user_token))
         .body(Body::empty())
         .unwrap();
 
@@ -158,7 +158,7 @@ async fn test_scenario_dashboard_access_denied_without_view(ctx: &mut TestContex
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/dashboard/{}/stats", ctx._realm_id))
-        .header(header::COOKIE, format!("X-Auth={}", user_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", user_token))
         .body(Body::empty())
         .unwrap();
 
@@ -196,7 +196,7 @@ async fn test_scenario_audit_view_grants_list_access(ctx: &mut TestContext) {
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/audit/{}?page=0&pageSize=20", ctx._realm_id))
-        .header(header::COOKIE, format!("X-Auth={}", user_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", user_token))
         .body(Body::empty())
         .unwrap();
 
@@ -252,7 +252,7 @@ async fn test_scenario_audit_view_grants_detail_access(ctx: &mut TestContext) {
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/audit/{}/{}", ctx._realm_id, event_id))
-        .header(header::COOKIE, format!("X-Auth={}", user_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", user_token))
         .body(Body::empty())
         .unwrap();
 
@@ -290,7 +290,7 @@ async fn test_scenario_audit_users_view_insufficient(ctx: &mut TestContext) {
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/audit/{}?page=0&pageSize=20", ctx._realm_id))
-        .header(header::COOKIE, format!("X-Auth={}", user_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", user_token))
         .body(Body::empty())
         .unwrap();
 

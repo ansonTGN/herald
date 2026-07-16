@@ -219,10 +219,12 @@ where
                         name: "Admin Web Console".to_string(),
                         description: Some("Admin web console client application".to_string()),
                         redirect_uris: None,
+                        allowed_origins: None,
+                        email_verify_return_url: None,
+                        password_reset_return_url: None,
+                        browser_refresh_absolute_ttl_seconds: Some(2_592_000),
                         enabled: Some(true),
                         icon_url: None,
-                        session_ttl_seconds: Some(1800),
-                        session_renewal_ttl_seconds: Some(1800),
                         device_code_grant_enabled: None,
                     })
                     .await;
@@ -245,6 +247,10 @@ where
                 }
             }
         };
+
+        self.client_repository
+            .set_first_party(client.id, true)
+            .await?;
 
         // 2. Call RBAC initialization (failure should rollback realm creation)
         match self
@@ -300,10 +306,12 @@ where
                         name: "API Key Client".to_string(),
                         description: Some("Built-in client for API key authentication".to_string()),
                         redirect_uris: None,
+                        allowed_origins: None,
+                        email_verify_return_url: None,
+                        password_reset_return_url: None,
+                        browser_refresh_absolute_ttl_seconds: Some(2_592_000),
                         enabled: Some(true),
                         icon_url: None,
-                        session_ttl_seconds: None,
-                        session_renewal_ttl_seconds: None,
                         device_code_grant_enabled: None,
                     })
                     .await

@@ -895,7 +895,7 @@ mod tests {
     /// Test: Verify without session returns 401
     ///
     /// Given: No session cookie
-    /// When: POST verify without X-Auth cookie
+    /// When: POST verify without an Authorization Bearer token
     /// Then: 401 Unauthorized
     #[test_context(SchemaTestContext)]
     #[tokio::test]
@@ -1034,14 +1034,14 @@ mod tests {
             .method("PUT")
             .uri(format!("/api/client/{}/{}", realm_id, app_id))
             .header("content-type", "application/json")
-            .header("cookie", format!("X-Auth={}", admin_token))
+            .header("authorization", format!("Bearer {}", admin_token))
             .body(axum::body::Body::from(
                 json!({
                     "name": "DC Grant Toggle App",
                     "description": "Updated for grant toggle",
                     "redirectUris": ["https://example.com/callback"],
                     "enabled": true,
-                    "sessionTtlSeconds": 1800,
+                    "browserRefreshAbsoluteTtlSeconds": 86400,
                     "deviceCodeGrantEnabled": true
                 })
                 .to_string(),
@@ -1064,14 +1064,14 @@ mod tests {
             .method("PUT")
             .uri(format!("/api/client/{}/{}", realm_id, app_id))
             .header("content-type", "application/json")
-            .header("cookie", format!("X-Auth={}", admin_token))
+            .header("authorization", format!("Bearer {}", admin_token))
             .body(axum::body::Body::from(
                 json!({
                     "name": "DC Grant Toggle App",
                     "description": "Updated for grant toggle",
                     "redirectUris": ["https://example.com/callback"],
                     "enabled": true,
-                    "sessionTtlSeconds": 1800,
+                    "browserRefreshAbsoluteTtlSeconds": 86400,
                     "deviceCodeGrantEnabled": false
                 })
                 .to_string(),
@@ -1116,7 +1116,7 @@ mod tests {
             .method("POST")
             .uri(format!("/api/client/{}", realm_id))
             .header("content-type", "application/json")
-            .header("cookie", format!("X-Auth={}", admin_token))
+            .header("authorization", format!("Bearer {}", admin_token))
             .body(axum::body::Body::from(
                 json!({
                     "clientId": "dc-default-app",
@@ -1124,7 +1124,7 @@ mod tests {
                     "description": "App without explicit deviceCodeGrantEnabled",
                     "redirectUris": ["https://example.com/callback"],
                     "enabled": true,
-                    "sessionTtlSeconds": 1800
+                    "browserRefreshAbsoluteTtlSeconds": 86400
                 })
                 .to_string(),
             ))

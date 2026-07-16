@@ -22,7 +22,7 @@ use crate::tests::helpers::test_setup_helpers::record_test_user_consent;
 use crate::tests::schema_test_context::SchemaTestContext as TestContext;
 use axum::{
     body::Body,
-    http::{Request, StatusCode, header},
+    http::{Request, StatusCode},
 };
 use base32;
 use bcrypt;
@@ -85,13 +85,6 @@ async fn create_temp_totp_session(
     let login_response = app.clone().oneshot(login_request).await.unwrap();
     assert!(login_response.status().is_success());
 
-    // Extract Set-Cookie header before moving the response
-    let set_cookie_value: Option<String> = login_response
-        .headers()
-        .get(header::SET_COOKIE)
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string());
-
     // Extract response body before moving login_response
     let (_login_status, _login_headers, login_response_body) = (
         login_response.status(),
@@ -119,10 +112,10 @@ async fn create_temp_totp_session(
         println!("  - User has TOTP enabled, temp_token={}", temp_token);
         (temp_token, user_id)
     } else {
-        // User does not have TOTP enabled - return session_token from cookie
-        let set_cookie_value = set_cookie_value.expect("Should return Set-Cookie header");
-        let session_token = crate::tests::extract_set_cookie_token(&set_cookie_value, "X-Auth")
-            .expect("Should extract X-Auth token");
+        let session_token = login_body["accessToken"]
+            .as_str()
+            .expect("Login should return accessToken")
+            .to_owned();
         println!(
             "  - User does not have TOTP enabled, session_token={}",
             session_token
@@ -163,22 +156,15 @@ async fn complete_totp_login(
         return Err(verify_response.status());
     }
 
-    // Extract session token from cookie
-    let session_token = crate::tests::extract_set_cookie_token(
-        verify_response
-            .headers()
-            .get(header::SET_COOKIE)
-            .and_then(|v| v.to_str().ok())
-            .expect("Should return Set-Cookie header"),
-        "X-Auth",
-    )
-    .expect("Should extract X-Auth token");
-
     let verify_body_bytes = axum::body::to_bytes(verify_response.into_body(), usize::MAX)
         .await
         .expect("Failed to read response body");
     let verify_body: serde_json::Value =
         serde_json::from_slice(&verify_body_bytes).expect("Failed to parse JSON");
+    let session_token = verify_body["accessToken"]
+        .as_str()
+        .expect("TOTP verification should return accessToken")
+        .to_owned();
 
     Ok((session_token, verify_body))
 }
@@ -323,15 +309,8 @@ async fn test_scenario_totp_full_enable_flow(ctx: &mut TestContext) {
         .unwrap();
 
     let login_response = app.clone().oneshot(login_request).await.unwrap();
-    let login_token = crate::tests::extract_set_cookie_token(
-        login_response
-            .headers()
-            .get(header::SET_COOKIE)
-            .and_then(|v| v.to_str().ok())
-            .expect("Should return Set-Cookie header"),
-        "X-Auth",
-    )
-    .expect("Should extract X-Auth token");
+    let (_response, login_token) = crate::tests::extract_bearer_token(login_response).await;
+    let login_token = login_token.expect("Login should return accessToken");
     println!("[Step 3] ✓ 登录成功, token={}", login_token);
 
     // ============================================================================
@@ -343,7 +322,7 @@ async fn test_scenario_totp_full_enable_flow(ctx: &mut TestContext) {
         .method("POST")
         .uri("/api/user/totp")
         .header("content-type", "application/json")
-        .header("Cookie", format!("X-Auth={}", login_token))
+        .header("authorization", format!("Bearer {}", login_token))
         .body(Body::from(enable_payload.to_string()))
         .unwrap();
 
@@ -403,7 +382,7 @@ async fn test_scenario_totp_full_enable_flow(ctx: &mut TestContext) {
         .method("POST")
         .uri("/api/user/totp/verify")
         .header("content-type", "application/json")
-        .header("Cookie", format!("X-Auth={}", login_token))
+        .header("authorization", format!("Bearer {}", login_token))
         .body(Body::from(verify_payload.to_string()))
         .unwrap();
 
@@ -433,7 +412,7 @@ async fn test_scenario_totp_full_enable_flow(ctx: &mut TestContext) {
     let status_request = Request::builder()
         .method("GET")
         .uri("/api/user/totp/status")
-        .header("Cookie", format!("X-Auth={}", login_token))
+        .header("authorization", format!("Bearer {}", login_token))
         .body(Body::empty())
         .unwrap();
 
@@ -545,15 +524,8 @@ async fn test_scenario_totp_restart_unverified_setup(ctx: &mut TestContext) {
         .body(Body::from(login_payload.to_string()))
         .unwrap();
     let login_response = app.clone().oneshot(login_request).await.unwrap();
-    let login_token = crate::tests::extract_set_cookie_token(
-        login_response
-            .headers()
-            .get(header::SET_COOKIE)
-            .and_then(|v| v.to_str().ok())
-            .expect("Should return Set-Cookie header"),
-        "X-Auth",
-    )
-    .unwrap();
+    let (_response, login_token) = crate::tests::extract_bearer_token(login_response).await;
+    let login_token = login_token.expect("Login should return accessToken");
     println!("[Setup] ✓ 准备完成");
 
     // ============================================================================
@@ -565,7 +537,7 @@ async fn test_scenario_totp_restart_unverified_setup(ctx: &mut TestContext) {
         .method("POST")
         .uri("/api/user/totp")
         .header("content-type", "application/json")
-        .header("Cookie", format!("X-Auth={}", login_token))
+        .header("authorization", format!("Bearer {}", login_token))
         .body(Body::from(enable_payload.to_string()))
         .unwrap();
 
@@ -609,7 +581,7 @@ async fn test_scenario_totp_restart_unverified_setup(ctx: &mut TestContext) {
         .method("POST")
         .uri("/api/user/totp")
         .header("content-type", "application/json")
-        .header("Cookie", format!("X-Auth={}", login_token))
+        .header("authorization", format!("Bearer {}", login_token))
         .body(Body::from(enable_payload.to_string()))
         .unwrap();
 
@@ -652,7 +624,7 @@ async fn test_scenario_totp_restart_unverified_setup(ctx: &mut TestContext) {
         .method("POST")
         .uri("/api/user/totp/verify")
         .header("content-type", "application/json")
-        .header("Cookie", format!("X-Auth={}", login_token))
+        .header("authorization", format!("Bearer {}", login_token))
         .body(Body::from(verify_payload.to_string()))
         .unwrap();
 
@@ -667,7 +639,7 @@ async fn test_scenario_totp_restart_unverified_setup(ctx: &mut TestContext) {
     let status_request = Request::builder()
         .method("GET")
         .uri("/api/user/totp/status")
-        .header("Cookie", format!("X-Auth={}", login_token))
+        .header("authorization", format!("Bearer {}", login_token))
         .body(Body::empty())
         .unwrap();
 
@@ -758,15 +730,8 @@ async fn test_scenario_totp_disable(ctx: &mut TestContext) {
         .body(Body::from(login_payload.to_string()))
         .unwrap();
     let login_response = app.clone().oneshot(login_request).await.unwrap();
-    let login_token = crate::tests::extract_set_cookie_token(
-        login_response
-            .headers()
-            .get(header::SET_COOKIE)
-            .and_then(|v| v.to_str().ok())
-            .expect("Should return Set-Cookie header"),
-        "X-Auth",
-    )
-    .unwrap();
+    let (_response, login_token) = crate::tests::extract_bearer_token(login_response).await;
+    let login_token = login_token.expect("Login should return accessToken");
     println!("[Setup] ✓ 准备完成");
 
     // ============================================================================
@@ -778,7 +743,7 @@ async fn test_scenario_totp_disable(ctx: &mut TestContext) {
         .method("POST")
         .uri("/api/user/totp")
         .header("content-type", "application/json")
-        .header("Cookie", format!("X-Auth={}", login_token))
+        .header("authorization", format!("Bearer {}", login_token))
         .body(Body::from(enable_payload.to_string()))
         .unwrap();
 
@@ -805,7 +770,7 @@ async fn test_scenario_totp_disable(ctx: &mut TestContext) {
         .method("POST")
         .uri("/api/user/totp/verify")
         .header("content-type", "application/json")
-        .header("Cookie", format!("X-Auth={}", login_token))
+        .header("authorization", format!("Bearer {}", login_token))
         .body(Body::from(verify_payload.to_string()))
         .unwrap();
 
@@ -822,7 +787,7 @@ async fn test_scenario_totp_disable(ctx: &mut TestContext) {
         .method("DELETE")
         .uri("/api/user/totp")
         .header("content-type", "application/json")
-        .header("Cookie", format!("X-Auth={}", login_token))
+        .header("authorization", format!("Bearer {}", login_token))
         .body(Body::from(disable_payload.to_string()))
         .unwrap();
 
@@ -852,7 +817,7 @@ async fn test_scenario_totp_disable(ctx: &mut TestContext) {
     let status_request = Request::builder()
         .method("GET")
         .uri("/api/user/totp/status")
-        .header("Cookie", format!("X-Auth={}", login_token))
+        .header("authorization", format!("Bearer {}", login_token))
         .body(Body::empty())
         .unwrap();
 
@@ -949,15 +914,8 @@ async fn test_scenario_totp_regenerate_secret(ctx: &mut TestContext) {
         .body(Body::from(login_payload.to_string()))
         .unwrap();
     let login_response = app.clone().oneshot(login_request).await.unwrap();
-    let login_token = crate::tests::extract_set_cookie_token(
-        login_response
-            .headers()
-            .get(header::SET_COOKIE)
-            .and_then(|v| v.to_str().ok())
-            .expect("Should return Set-Cookie header"),
-        "X-Auth",
-    )
-    .unwrap();
+    let (_response, login_token) = crate::tests::extract_bearer_token(login_response).await;
+    let login_token = login_token.expect("Login should return accessToken");
     println!("[Setup] ✓ 准备完成");
 
     // ============================================================================
@@ -969,7 +927,7 @@ async fn test_scenario_totp_regenerate_secret(ctx: &mut TestContext) {
         .method("POST")
         .uri("/api/user/totp")
         .header("content-type", "application/json")
-        .header("Cookie", format!("X-Auth={}", login_token))
+        .header("authorization", format!("Bearer {}", login_token))
         .body(Body::from(enable_payload.to_string()))
         .unwrap();
 
@@ -996,7 +954,7 @@ async fn test_scenario_totp_regenerate_secret(ctx: &mut TestContext) {
         .method("POST")
         .uri("/api/user/totp/verify")
         .header("content-type", "application/json")
-        .header("Cookie", format!("X-Auth={}", login_token))
+        .header("authorization", format!("Bearer {}", login_token))
         .body(Body::from(verify_payload.to_string()))
         .unwrap();
 
@@ -1013,7 +971,7 @@ async fn test_scenario_totp_regenerate_secret(ctx: &mut TestContext) {
         .method("POST")
         .uri("/api/user/totp/regenerate")
         .header("content-type", "application/json")
-        .header("Cookie", format!("X-Auth={}", login_token))
+        .header("authorization", format!("Bearer {}", login_token))
         .body(Body::from(regenerate_payload.to_string()))
         .unwrap();
 
@@ -1058,7 +1016,7 @@ async fn test_scenario_totp_regenerate_secret(ctx: &mut TestContext) {
         .method("POST")
         .uri("/api/user/totp/verify")
         .header("content-type", "application/json")
-        .header("Cookie", format!("X-Auth={}", login_token))
+        .header("authorization", format!("Bearer {}", login_token))
         .body(Body::from(new_verify_payload.to_string()))
         .unwrap();
 
@@ -1136,15 +1094,8 @@ async fn test_scenario_totp_backup_codes_stats(ctx: &mut TestContext) {
         .body(Body::from(login_payload.to_string()))
         .unwrap();
     let login_response = app.clone().oneshot(login_request).await.unwrap();
-    let login_token = crate::tests::extract_set_cookie_token(
-        login_response
-            .headers()
-            .get(header::SET_COOKIE)
-            .and_then(|v| v.to_str().ok())
-            .expect("Should return Set-Cookie header"),
-        "X-Auth",
-    )
-    .unwrap();
+    let (_response, login_token) = crate::tests::extract_bearer_token(login_response).await;
+    let login_token = login_token.expect("Login should return accessToken");
     println!("[Setup] ✓ 准备完成");
 
     // ============================================================================
@@ -1156,7 +1107,7 @@ async fn test_scenario_totp_backup_codes_stats(ctx: &mut TestContext) {
         .method("POST")
         .uri("/api/user/totp")
         .header("content-type", "application/json")
-        .header("Cookie", format!("X-Auth={}", login_token))
+        .header("authorization", format!("Bearer {}", login_token))
         .body(Body::from(enable_payload.to_string()))
         .unwrap();
 
@@ -1183,7 +1134,7 @@ async fn test_scenario_totp_backup_codes_stats(ctx: &mut TestContext) {
         .method("POST")
         .uri("/api/user/totp/verify")
         .header("content-type", "application/json")
-        .header("Cookie", format!("X-Auth={}", login_token))
+        .header("authorization", format!("Bearer {}", login_token))
         .body(Body::from(verify_payload.to_string()))
         .unwrap();
 
@@ -1198,7 +1149,7 @@ async fn test_scenario_totp_backup_codes_stats(ctx: &mut TestContext) {
     let status_request = Request::builder()
         .method("GET")
         .uri("/api/user/totp/status")
-        .header("Cookie", format!("X-Auth={}", login_token))
+        .header("authorization", format!("Bearer {}", login_token))
         .body(Body::empty())
         .unwrap();
 
@@ -1319,15 +1270,8 @@ async fn test_scenario_totp_login_success(ctx: &mut TestContext) {
         .body(Body::from(login_payload.to_string()))
         .unwrap();
     let login_response = app.clone().oneshot(login_request).await.unwrap();
-    let login_token = crate::tests::extract_set_cookie_token(
-        login_response
-            .headers()
-            .get(header::SET_COOKIE)
-            .and_then(|v| v.to_str().ok())
-            .expect("Should return Set-Cookie header"),
-        "X-Auth",
-    )
-    .unwrap();
+    let (_response, login_token) = crate::tests::extract_bearer_token(login_response).await;
+    let login_token = login_token.expect("Login should return accessToken");
 
     // Enable TOTP
     let enable_payload = json!({ "password": password });
@@ -1335,7 +1279,7 @@ async fn test_scenario_totp_login_success(ctx: &mut TestContext) {
         .method("POST")
         .uri("/api/user/totp")
         .header("content-type", "application/json")
-        .header("Cookie", format!("X-Auth={}", login_token))
+        .header("authorization", format!("Bearer {}", login_token))
         .body(Body::from(enable_payload.to_string()))
         .unwrap();
     let enable_response = app.clone().oneshot(enable_request).await.unwrap();
@@ -1359,7 +1303,7 @@ async fn test_scenario_totp_login_success(ctx: &mut TestContext) {
         .method("POST")
         .uri("/api/user/totp/verify")
         .header("content-type", "application/json")
-        .header("Cookie", format!("X-Auth={}", login_token))
+        .header("authorization", format!("Bearer {}", login_token))
         .body(Body::from(verify_payload.to_string()))
         .unwrap();
     let verify_response = app.clone().oneshot(verify_request).await.unwrap();
@@ -1497,22 +1441,15 @@ async fn test_scenario_totp_login_expired_code_failure(ctx: &mut TestContext) {
         .body(Body::from(login_payload.to_string()))
         .unwrap();
     let login_response = app.clone().oneshot(login_request).await.unwrap();
-    let login_token = crate::tests::extract_set_cookie_token(
-        login_response
-            .headers()
-            .get(header::SET_COOKIE)
-            .and_then(|v| v.to_str().ok())
-            .expect("Should return Set-Cookie header"),
-        "X-Auth",
-    )
-    .unwrap();
+    let (_response, login_token) = crate::tests::extract_bearer_token(login_response).await;
+    let login_token = login_token.expect("Login should return accessToken");
 
     let enable_payload = json!({ "password": password });
     let enable_request = Request::builder()
         .method("POST")
         .uri("/api/user/totp")
         .header("content-type", "application/json")
-        .header("Cookie", format!("X-Auth={}", login_token))
+        .header("authorization", format!("Bearer {}", login_token))
         .body(Body::from(enable_payload.to_string()))
         .unwrap();
     let enable_response = app.clone().oneshot(enable_request).await.unwrap();
@@ -1536,7 +1473,7 @@ async fn test_scenario_totp_login_expired_code_failure(ctx: &mut TestContext) {
         .method("POST")
         .uri("/api/user/totp/verify")
         .header("content-type", "application/json")
-        .header("Cookie", format!("X-Auth={}", login_token))
+        .header("authorization", format!("Bearer {}", login_token))
         .body(Body::from(verify_payload.to_string()))
         .unwrap();
     let verify_response = app.clone().oneshot(verify_request).await.unwrap();
@@ -1657,22 +1594,15 @@ async fn test_scenario_totp_login_with_backup_code(ctx: &mut TestContext) {
         .body(Body::from(login_payload.to_string()))
         .unwrap();
     let login_response = app.clone().oneshot(login_request).await.unwrap();
-    let login_token = crate::tests::extract_set_cookie_token(
-        login_response
-            .headers()
-            .get(header::SET_COOKIE)
-            .and_then(|v| v.to_str().ok())
-            .expect("Should return Set-Cookie header"),
-        "X-Auth",
-    )
-    .unwrap();
+    let (_response, login_token) = crate::tests::extract_bearer_token(login_response).await;
+    let login_token = login_token.expect("Login should return accessToken");
 
     let enable_payload = json!({ "password": password });
     let enable_request = Request::builder()
         .method("POST")
         .uri("/api/user/totp")
         .header("content-type", "application/json")
-        .header("Cookie", format!("X-Auth={}", login_token))
+        .header("authorization", format!("Bearer {}", login_token))
         .body(Body::from(enable_payload.to_string()))
         .unwrap();
     let enable_response = app.clone().oneshot(enable_request).await.unwrap();
@@ -1703,7 +1633,7 @@ async fn test_scenario_totp_login_with_backup_code(ctx: &mut TestContext) {
         .method("POST")
         .uri("/api/user/totp/verify")
         .header("content-type", "application/json")
-        .header("Cookie", format!("X-Auth={}", login_token))
+        .header("authorization", format!("Bearer {}", login_token))
         .body(Body::from(verify_payload.to_string()))
         .unwrap();
     let verify_response = app.clone().oneshot(verify_request).await.unwrap();
@@ -1832,22 +1762,15 @@ async fn test_scenario_totp_login_backup_codes_exhausted_failure(ctx: &mut TestC
         .body(Body::from(login_payload.to_string()))
         .unwrap();
     let login_response = app.clone().oneshot(login_request).await.unwrap();
-    let login_token = crate::tests::extract_set_cookie_token(
-        login_response
-            .headers()
-            .get(header::SET_COOKIE)
-            .and_then(|v| v.to_str().ok())
-            .expect("Should return Set-Cookie header"),
-        "X-Auth",
-    )
-    .unwrap();
+    let (_response, login_token) = crate::tests::extract_bearer_token(login_response).await;
+    let login_token = login_token.expect("Login should return accessToken");
 
     let enable_payload = json!({ "password": password });
     let enable_request = Request::builder()
         .method("POST")
         .uri("/api/user/totp")
         .header("content-type", "application/json")
-        .header("Cookie", format!("X-Auth={}", login_token))
+        .header("authorization", format!("Bearer {}", login_token))
         .body(Body::from(enable_payload.to_string()))
         .unwrap();
     let enable_response = app.clone().oneshot(enable_request).await.unwrap();
@@ -1871,7 +1794,7 @@ async fn test_scenario_totp_login_backup_codes_exhausted_failure(ctx: &mut TestC
         .method("POST")
         .uri("/api/user/totp/verify")
         .header("content-type", "application/json")
-        .header("Cookie", format!("X-Auth={}", login_token))
+        .header("authorization", format!("Bearer {}", login_token))
         .body(Body::from(verify_payload.to_string()))
         .unwrap();
     let verify_response = app.clone().oneshot(verify_request).await.unwrap();
@@ -1985,15 +1908,8 @@ async fn test_scenario_totp_enable_invalid_code_failure(ctx: &mut TestContext) {
         .body(Body::from(login_payload.to_string()))
         .unwrap();
     let login_response = app.clone().oneshot(login_request).await.unwrap();
-    let login_token = crate::tests::extract_set_cookie_token(
-        login_response
-            .headers()
-            .get(header::SET_COOKIE)
-            .and_then(|v| v.to_str().ok())
-            .expect("Should return Set-Cookie header"),
-        "X-Auth",
-    )
-    .unwrap();
+    let (_response, login_token) = crate::tests::extract_bearer_token(login_response).await;
+    let login_token = login_token.expect("Login should return accessToken");
 
     println!("[Step 1] 启动 TOTP setup");
     let enable_payload = json!({ "password": password });
@@ -2001,7 +1917,7 @@ async fn test_scenario_totp_enable_invalid_code_failure(ctx: &mut TestContext) {
         .method("POST")
         .uri("/api/user/totp")
         .header("content-type", "application/json")
-        .header("Cookie", format!("X-Auth={}", login_token))
+        .header("authorization", format!("Bearer {}", login_token))
         .body(Body::from(enable_payload.to_string()))
         .unwrap();
 
@@ -2026,7 +1942,7 @@ async fn test_scenario_totp_enable_invalid_code_failure(ctx: &mut TestContext) {
         .method("POST")
         .uri("/api/user/totp/verify")
         .header("content-type", "application/json")
-        .header("Cookie", format!("X-Auth={}", login_token))
+        .header("authorization", format!("Bearer {}", login_token))
         .body(Body::from(verify_payload.to_string()))
         .unwrap();
 
@@ -2115,15 +2031,8 @@ async fn test_scenario_totp_enable_backup_codes_displayed_once(ctx: &mut TestCon
         .body(Body::from(login_payload.to_string()))
         .unwrap();
     let login_response = app.clone().oneshot(login_request).await.unwrap();
-    let login_token = crate::tests::extract_set_cookie_token(
-        login_response
-            .headers()
-            .get(header::SET_COOKIE)
-            .and_then(|v| v.to_str().ok())
-            .expect("Should return Set-Cookie header"),
-        "X-Auth",
-    )
-    .unwrap();
+    let (_response, login_token) = crate::tests::extract_bearer_token(login_response).await;
+    let login_token = login_token.expect("Login should return accessToken");
 
     println!("[Step 1] 首次调用 TOTP setup");
     let enable_payload = json!({ "password": password });
@@ -2131,7 +2040,7 @@ async fn test_scenario_totp_enable_backup_codes_displayed_once(ctx: &mut TestCon
         .method("POST")
         .uri("/api/user/totp")
         .header("content-type", "application/json")
-        .header("Cookie", format!("X-Auth={}", login_token))
+        .header("authorization", format!("Bearer {}", login_token))
         .body(Body::from(enable_payload.to_string()))
         .unwrap();
 
@@ -2157,7 +2066,7 @@ async fn test_scenario_totp_enable_backup_codes_displayed_once(ctx: &mut TestCon
     let status_request = Request::builder()
         .method("GET")
         .uri("/api/user/totp/status")
-        .header("Cookie", format!("X-Auth={}", login_token))
+        .header("authorization", format!("Bearer {}", login_token))
         .body(Body::empty())
         .unwrap();
 
@@ -2248,22 +2157,15 @@ async fn test_scenario_totp_regenerate_invalid_password_failure(ctx: &mut TestCo
         .body(Body::from(login_payload.to_string()))
         .unwrap();
     let login_response = app.clone().oneshot(login_request).await.unwrap();
-    let login_token = crate::tests::extract_set_cookie_token(
-        login_response
-            .headers()
-            .get(header::SET_COOKIE)
-            .and_then(|v| v.to_str().ok())
-            .expect("Should return Set-Cookie header"),
-        "X-Auth",
-    )
-    .unwrap();
+    let (_response, login_token) = crate::tests::extract_bearer_token(login_response).await;
+    let login_token = login_token.expect("Login should return accessToken");
 
     let enable_payload = json!({ "password": password });
     let enable_request = Request::builder()
         .method("POST")
         .uri("/api/user/totp")
         .header("content-type", "application/json")
-        .header("Cookie", format!("X-Auth={}", login_token))
+        .header("authorization", format!("Bearer {}", login_token))
         .body(Body::from(enable_payload.to_string()))
         .unwrap();
 
@@ -2288,7 +2190,7 @@ async fn test_scenario_totp_regenerate_invalid_password_failure(ctx: &mut TestCo
         .method("POST")
         .uri("/api/user/totp/verify")
         .header("content-type", "application/json")
-        .header("Cookie", format!("X-Auth={}", login_token))
+        .header("authorization", format!("Bearer {}", login_token))
         .body(Body::from(verify_payload.to_string()))
         .unwrap();
 
@@ -2303,7 +2205,7 @@ async fn test_scenario_totp_regenerate_invalid_password_failure(ctx: &mut TestCo
         .method("POST")
         .uri("/api/user/totp/regenerate")
         .header("content-type", "application/json")
-        .header("Cookie", format!("X-Auth={}", login_token))
+        .header("authorization", format!("Bearer {}", login_token))
         .body(Body::from(regenerate_payload.to_string()))
         .unwrap();
 
@@ -2388,22 +2290,15 @@ async fn test_scenario_totp_regenerate_verification_required(ctx: &mut TestConte
         .body(Body::from(login_payload.to_string()))
         .unwrap();
     let login_response = app.clone().oneshot(login_request).await.unwrap();
-    let login_token = crate::tests::extract_set_cookie_token(
-        login_response
-            .headers()
-            .get(header::SET_COOKIE)
-            .and_then(|v| v.to_str().ok())
-            .expect("Should return Set-Cookie header"),
-        "X-Auth",
-    )
-    .unwrap();
+    let (_response, login_token) = crate::tests::extract_bearer_token(login_response).await;
+    let login_token = login_token.expect("Login should return accessToken");
 
     let enable_payload = json!({ "password": password });
     let enable_request = Request::builder()
         .method("POST")
         .uri("/api/user/totp")
         .header("content-type", "application/json")
-        .header("Cookie", format!("X-Auth={}", login_token))
+        .header("authorization", format!("Bearer {}", login_token))
         .body(Body::from(enable_payload.to_string()))
         .unwrap();
 
@@ -2428,7 +2323,7 @@ async fn test_scenario_totp_regenerate_verification_required(ctx: &mut TestConte
         .method("POST")
         .uri("/api/user/totp/verify")
         .header("content-type", "application/json")
-        .header("Cookie", format!("X-Auth={}", login_token))
+        .header("authorization", format!("Bearer {}", login_token))
         .body(Body::from(verify_payload.to_string()))
         .unwrap();
 
@@ -2454,7 +2349,7 @@ async fn test_scenario_totp_regenerate_verification_required(ctx: &mut TestConte
         .method("POST")
         .uri("/api/user/totp/regenerate")
         .header("content-type", "application/json")
-        .header("Cookie", format!("X-Auth={}", login_token))
+        .header("authorization", format!("Bearer {}", login_token))
         .body(Body::from(regenerate_payload.to_string()))
         .unwrap();
 
@@ -2482,7 +2377,7 @@ async fn test_scenario_totp_regenerate_verification_required(ctx: &mut TestConte
         .method("POST")
         .uri("/api/user/totp/verify")
         .header("content-type", "application/json")
-        .header("Cookie", format!("X-Auth={}", login_token))
+        .header("authorization", format!("Bearer {}", login_token))
         .body(Body::from(new_verify_payload.to_string()))
         .unwrap();
 

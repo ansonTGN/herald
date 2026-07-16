@@ -24,9 +24,24 @@ where
     serde_json::from_slice(&body_bytes).unwrap()
 }
 
-/// 从 Set-Cookie 头中提取指定的 token
-pub fn extract_set_cookie_token(set_cookie: &str, name: &str) -> Option<String> {
-    let prefix = format!("{name}=");
-    let rest = set_cookie.strip_prefix(&prefix)?;
-    Some(rest.split(';').next()?.to_string())
+/// Read a browser access token from a successful JSON response while preserving
+/// the response for the caller's existing status/body assertions.
+pub async fn extract_bearer_token(
+    response: axum::response::Response,
+) -> (axum::response::Response, Option<String>) {
+    let (parts, body) = response.into_parts();
+    let bytes = to_bytes(body, usize::MAX).await.unwrap();
+    let token = serde_json::from_slice::<serde_json::Value>(&bytes)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("accessToken")
+                .or_else(|| value.get("access_token"))
+                .and_then(|token| token.as_str())
+                .map(str::to_owned)
+        });
+    (
+        axum::response::Response::from_parts(parts, axum::body::Body::from(bytes)),
+        token,
+    )
 }

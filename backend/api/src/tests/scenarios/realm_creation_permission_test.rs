@@ -74,7 +74,7 @@ async fn test_scenario_realm_creation_with_permission(ctx: &mut TestContext) {
     let request = Request::builder()
         .method("POST")
         .uri("/api/realms")
-        .header("cookie", format!("X-Auth={}", admin_token))
+        .header("authorization", format!("Bearer {}", admin_token))
         .header("content-type", "application/json")
         .body(Body::from(
             json!({
@@ -114,7 +114,7 @@ async fn test_scenario_realm_creation_without_permission_returns_403(ctx: &mut T
     let request = Request::builder()
         .method("POST")
         .uri("/api/realms")
-        .header("cookie", format!("X-Auth={}", admin_token))
+        .header("authorization", format!("Bearer {}", admin_token))
         .header("content-type", "application/json")
         .body(Body::from(
             json!({

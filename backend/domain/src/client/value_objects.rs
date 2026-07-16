@@ -15,10 +15,12 @@ pub struct CreateClientAppRequest {
     // New fields for Client App settings
     // redirect_uris is optional during creation (can be added later)
     pub redirect_uris: Option<Vec<String>>,
+    pub allowed_origins: Option<Vec<String>>,
+    pub email_verify_return_url: Option<String>,
+    pub password_reset_return_url: Option<String>,
+    pub browser_refresh_absolute_ttl_seconds: Option<i32>,
     pub enabled: Option<bool>,
     pub icon_url: Option<String>,
-    pub session_ttl_seconds: Option<i32>,
-    pub session_renewal_ttl_seconds: Option<i32>,
     pub device_code_grant_enabled: Option<bool>,
 }
 
@@ -30,10 +32,12 @@ pub struct UpdateClientAppRequest {
 
     // New fields for Client App settings
     pub redirect_uris: Option<Vec<String>>,
+    pub allowed_origins: Option<Vec<String>>,
+    pub email_verify_return_url: Option<String>,
+    pub password_reset_return_url: Option<String>,
+    pub browser_refresh_absolute_ttl_seconds: Option<i32>,
     pub enabled: Option<bool>,
     pub icon_url: Option<String>,
-    pub session_ttl_seconds: Option<i32>,
-    pub session_renewal_ttl_seconds: Option<i32>,
     pub device_code_grant_enabled: Option<bool>,
     pub regenerate_secret: Option<bool>,
 }
@@ -48,10 +52,13 @@ pub struct ClientAppResponse {
 
     // New fields for Client App settings
     pub redirect_uris: Vec<String>,
+    pub allowed_origins: Vec<String>,
+    pub email_verify_return_url: Option<String>,
+    pub password_reset_return_url: Option<String>,
+    pub browser_refresh_absolute_ttl_seconds: i32,
+    pub is_first_party: bool,
     pub enabled: bool,
     pub icon_url: Option<String>,
-    pub session_ttl_seconds: i32,
-    pub session_renewal_ttl_seconds: Option<i32>,
     pub client_secret: Option<String>,
     pub device_code_grant_enabled: bool,
 
@@ -68,10 +75,13 @@ impl From<crate::client::entities::ClientApp> for ClientAppResponse {
             name: app.name,
             description: app.description,
             redirect_uris: app.redirect_uris,
+            allowed_origins: app.allowed_origins,
+            email_verify_return_url: app.email_verify_return_url,
+            password_reset_return_url: app.password_reset_return_url,
+            browser_refresh_absolute_ttl_seconds: app.browser_refresh_absolute_ttl_seconds,
+            is_first_party: app.is_first_party,
             enabled: app.enabled,
             icon_url: app.icon_url,
-            session_ttl_seconds: app.session_ttl_seconds,
-            session_renewal_ttl_seconds: app.session_renewal_ttl_seconds,
             client_secret: app.client_secret,
             device_code_grant_enabled: app.device_code_grant_enabled,
             created_at: app.created_at.to_rfc3339(),

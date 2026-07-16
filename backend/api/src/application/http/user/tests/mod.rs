@@ -10,8 +10,6 @@ use tower::ServiceExt;
 // Use SchemaTestContext
 use crate::tests::schema_test_context::SchemaTestContext;
 
-// Import test helper from main.rs
-use crate::tests::extract_set_cookie_token;
 use crate::tests::helpers::email_config_helpers::insert_resend_email_config_direct;
 
 // TODO: unignore once email sending is mocked in tests — fake Resend API key causes 401
@@ -97,19 +95,16 @@ async fn test_get_profile_success(ctx: &mut SchemaTestContext) {
     let resp = app.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 
-    let set_cookie = resp
-        .headers()
-        .get(header::SET_COOKIE)
-        .and_then(|v| v.to_str().ok())
-        .unwrap()
-        .to_string();
-    let token = extract_set_cookie_token(&set_cookie, "X-Auth").unwrap();
+    assert!(!resp.headers().contains_key(header::SET_COOKIE));
+    let login_body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let login_json: serde_json::Value = serde_json::from_slice(&login_body).unwrap();
+    let token = login_json["accessToken"].as_str().unwrap().to_owned();
 
     // 4) Get profile
     let req = Request::builder()
         .method("GET")
         .uri("/api/user/profile")
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::empty())
         .unwrap();
     let resp = app.oneshot(req).await.unwrap();
@@ -205,13 +200,10 @@ async fn test_update_profile_nickname(ctx: &mut SchemaTestContext) {
     let resp = app.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 
-    let set_cookie = resp
-        .headers()
-        .get(header::SET_COOKIE)
-        .and_then(|v| v.to_str().ok())
-        .unwrap()
-        .to_string();
-    let token = extract_set_cookie_token(&set_cookie, "X-Auth").unwrap();
+    assert!(!resp.headers().contains_key(header::SET_COOKIE));
+    let login_body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let login_json: serde_json::Value = serde_json::from_slice(&login_body).unwrap();
+    let token = login_json["accessToken"].as_str().unwrap().to_owned();
 
     // 4) Update nickname
     let payload = json!({
@@ -221,7 +213,7 @@ async fn test_update_profile_nickname(ctx: &mut SchemaTestContext) {
         .method("PUT")
         .uri("/api/user/profile")
         .header("content-type", "application/json")
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::from(payload.to_string()))
         .unwrap();
     let resp = app.oneshot(req).await.unwrap();
@@ -316,13 +308,10 @@ async fn test_change_password_success(ctx: &mut SchemaTestContext) {
     let resp = app.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 
-    let set_cookie = resp
-        .headers()
-        .get(header::SET_COOKIE)
-        .and_then(|v| v.to_str().ok())
-        .unwrap()
-        .to_string();
-    let token = extract_set_cookie_token(&set_cookie, "X-Auth").unwrap();
+    assert!(!resp.headers().contains_key(header::SET_COOKIE));
+    let login_body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let login_json: serde_json::Value = serde_json::from_slice(&login_body).unwrap();
+    let token = login_json["accessToken"].as_str().unwrap().to_owned();
 
     // 4) Change password
     let payload = json!({
@@ -333,7 +322,7 @@ async fn test_change_password_success(ctx: &mut SchemaTestContext) {
         .method("POST")
         .uri("/api/user/change-password")
         .header("content-type", "application/json")
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::from(payload.to_string()))
         .unwrap();
     let resp = app.clone().oneshot(req).await.unwrap();

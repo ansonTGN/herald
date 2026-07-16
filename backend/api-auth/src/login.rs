@@ -1,7 +1,7 @@
 use axum::{
     Json,
     extract::{Path, State},
-    http::{HeaderMap, header::SET_COOKIE},
+    http::HeaderMap,
     response::IntoResponse,
 };
 use axum_valid::Valid;
@@ -11,8 +11,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use herald_api_base::application::http::auth::util::{
-    ClientIp, build_set_cookie, normalize_email, rate_limit_hit, renewal_ttl_seconds_from_i32,
-    verify_turnstile_for_realm,
+    ClientIp, normalize_email, rate_limit_hit, verify_turnstile_for_realm,
 };
 use herald_api_base::application::http::server::api_entities::ApiError;
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
@@ -21,20 +20,23 @@ use herald_core::domain::audit::{
     ActorType, AuditAction, AuditCategory, AuditEventRepository, AuditResult, AuditTargetType,
     NewAuditEvent,
 };
-use herald_core::domain::authentication::ports::AuthenticationService;
+use herald_core::domain::authentication::BrowserTokenService;
 use herald_core::domain::client::ports::ClientService;
 use herald_core::domain::security_constants::{
-    DEFAULT_OAUTH_SESSION_TTL_SECONDS, LOGIN_IDENTIFIER_RATE_LIMIT, LOGIN_IP_RATE_LIMIT,
+    DEFAULT_OAUTH_CODE_TTL_SECONDS, LOGIN_IDENTIFIER_RATE_LIMIT, LOGIN_IP_RATE_LIMIT,
     OAUTH_STATE_TTL_SECONDS,
 };
 use herald_core::domain::user::ports::UserService;
 use herald_core::domain::user::value_objects::LoginRequest as DomainLoginRequest;
 use herald_core::domain::user_passkey::UserPasskeyRepository;
 use herald_core::domain::user_totp::UserTotpRepository;
+use herald_core::infrastructure::authentication::RedisBrowserTokenService;
 use herald_core::infrastructure::user_passkey::PostgresUserPasskeyRepository;
 use herald_core::infrastructure::user_totp::PostgresUserTotpRepository;
 
+use crate::browser_token::BrowserTokenResponse;
 use crate::consent_gate::AuthConsentAgreement;
+use crate::passkey_rp::resolve_passkey_rp;
 
 #[derive(Serialize, Deserialize, ToSchema, validator::Validate)]
 #[serde(rename_all = "camelCase")]
@@ -213,6 +215,9 @@ pub async fn login(
                 _ => ApiError::internal("Internal server error".to_string()),
             }
         })?;
+    if !client_app.enabled {
+        return Err(ApiError::forbidden("client app is disabled"));
+    }
 
     // Create login request for service
     let login_request = DomainLoginRequest {
@@ -296,10 +301,41 @@ pub async fn login(
         .map(|config| config.enabled)
         .unwrap_or(false);
 
-    // Check if user has passkeys registered for second-factor login
+    // Check if user has passkeys registered for second-factor login.
+    //
+    // This passkey lookup is a best-effort probe to decide whether passkey is
+    // *one of several* optional second factors (design §4.1: credentials →
+    // TOTP → consent → session). A password-only login must NEVER depend on
+    // global passkey RP config (`RP_ID`/`RP_ORIGIN`) being set. So if RP
+    // resolution fails — most importantly because those env vars are unset,
+    // but robustly for any resolution failure here — we treat it as "user has
+    // no passkey for this request" (`has_passkey = false`) instead of failing
+    // the whole login with a 500. Registration/reauth keep strict behavior via
+    // their own `resolve_passkey_rp` call sites; only this login probe is
+    // tolerant.
     let passkey_repo = PostgresUserPasskeyRepository::new(state.db.clone());
-    let passkey_credentials = passkey_repo.list_by_user(&user.realm_id, user.id).await?;
-    let has_passkey = !passkey_credentials.is_empty();
+    let has_passkey = match resolve_passkey_rp(
+        &state,
+        &user.realm_id,
+        &headers,
+        Some(client_app.id),
+    )
+    .await
+    {
+        Ok(relying_party) => !passkey_repo
+            .list_by_user_and_rp(&user.realm_id, user.id, &relying_party.id)
+            .await?
+            .is_empty(),
+        Err(error) => {
+            tracing::debug!(
+                user_id = %user.id,
+                realm_id = %user.realm_id,
+                error = %error,
+                "Passkey RP resolution failed during login second-factor probe; passkey will not be offered"
+            );
+            false
+        }
+    };
 
     let mut second_factors = Vec::new();
     if has_totp {
@@ -326,7 +362,9 @@ pub async fn login(
             "user_id": user.id,
             "realm_id": realm_id,
             "client_id": payload.client_id,
+            "client_app_id": client_app.id,
             "client_ip": ip,
+            "flow": "custom_user_ui",
         });
         if let Some(ref oauth_client_id) = payload.oauth_client_id {
             temp_session_data["oauth_client_id"] = serde_json::json!(oauth_client_id);
@@ -576,7 +614,7 @@ pub async fn login(
             requires_totp: Some(false),
             second_factors: None,
             temp_token: None,
-            expires_in_seconds: DEFAULT_OAUTH_SESSION_TTL_SECONDS as i64,
+            expires_in_seconds: DEFAULT_OAUTH_CODE_TTL_SECONDS as i64,
             redirect_to: Some(redirect_to),
             consent_required: None,
             agreements: None,
@@ -584,40 +622,9 @@ pub async fn login(
         .into_response());
     }
 
-    // Normal login flow: create session
-    let ttl = client_app.session_ttl_seconds as u64;
-    let renewal_ttl_seconds = renewal_ttl_seconds_from_i32(client_app.session_renewal_ttl_seconds)?;
-
-    tracing::debug!(
-        "Creating session with user_id: {}, realm_id: {}, client_id: {}",
-        user.id,
-        realm_id,
-        payload.client_id
-    );
-
-    // Use AuthenticationService to create session with proper client_id
-    let auth_service = state.service.authentication_service();
-    let (session, identity) = auth_service
-        .create_session(
-            user.clone(),
-            payload.client_id.clone(),
-            ip.clone(),
-            ttl,
-            renewal_ttl_seconds,
-        )
-        .await
-        .map_err(|e| match e {
-            herald_core::domain::common::entities::app_errors::CoreError::NotFound => {
-                tracing::error!("User not found in database after password auth");
-                ApiError::internal("Internal server error".to_string())
-            }
-            _ => ApiError::internal(format!("Failed to create session: {}", e)),
-        })?;
-
-    // Use the token from the session created by AuthenticationService
-    let token = session.token.clone();
-
-    tracing::debug!("Session created with identity: {}", identity.user_id());
+    let tokens = RedisBrowserTokenService::new(state.redis_manager.clone())
+        .create_token_family(&user, &client_app)
+        .await?;
 
     // Record login success audit event
     if let Err(audit_err) = state
@@ -643,26 +650,7 @@ pub async fn login(
         tracing::warn!(error = %audit_err, "Failed to record audit event");
     }
 
-    let ttl = ttl as i64;
-    let is_production = state.app_env == "production";
-    let set_cookie = build_set_cookie("X-Auth", &token, ttl, is_production);
-    let response = (
-        [(SET_COOKIE, set_cookie)],
-        Json(LoginResponse {
-            message: "ok".to_string(),
-            user_id: user.id,
-            realm_id: realm_id.clone(),
-            requires_totp: Some(false),
-            second_factors: None,
-            temp_token: None,
-            expires_in_seconds: ttl,
-            redirect_to: None,
-            consent_required: None,
-            agreements: None,
-        }),
-    )
-        .into_response();
-    Ok(response)
+    Ok(Json(BrowserTokenResponse::from(tokens)).into_response())
 }
 
 // Governance tests.

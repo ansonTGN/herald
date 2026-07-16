@@ -10,7 +10,9 @@
 
 use crate::application::http::server::api_entities::ApiError;
 use crate::application::http::state::AppState;
-use herald_core::domain::authentication::Identity;
+use herald_core::domain::authentication::{
+    CredentialClass, CredentialScope, Identity, TokenCredentialContext,
+};
 use herald_core::domain::authorization::permission_service::PermissionService;
 use uuid::Uuid;
 
@@ -24,7 +26,7 @@ impl SelfIdentity {
     pub fn require(identity: Identity) -> Result<Self, ApiError> {
         if !identity.is_user() {
             return Err(ApiError::forbidden(
-                "Access denied: authenticated user session required",
+                "Access denied: authenticated user token required",
             ));
         }
 
@@ -66,7 +68,7 @@ impl AdminIdentity {
     pub fn require(identity: Identity, realm_id: &str, context: &str) -> Result<Self, ApiError> {
         if !identity.is_user() {
             return Err(ApiError::forbidden(format!(
-                "Access denied: authenticated user session required for {}",
+                "Access denied: authenticated user token required for {}",
                 context
             )));
         }
@@ -140,7 +142,50 @@ impl AdminIdentity {
     }
 }
 
-/// Require an authenticated user session and verify realm access.
+pub fn require_token_scope(
+    identity: &Identity,
+    credential_context: &TokenCredentialContext,
+    scope: CredentialScope,
+) -> Result<(), ApiError> {
+    if !identity.is_user() {
+        return Err(ApiError::forbidden(
+            "Access denied: authenticated user token required",
+        ));
+    }
+    match credential_context.credential_class {
+        CredentialClass::FirstParty => Ok(()),
+        CredentialClass::CustomUserUi if credential_context.allowed_scopes.contains(&scope) => {
+            Ok(())
+        }
+        CredentialClass::CustomUserUi => Err(ApiError::forbidden("token scope denied")),
+    }
+}
+
+pub fn require_first_party_credential(
+    credential_context: &TokenCredentialContext,
+) -> Result<(), ApiError> {
+    if credential_context.credential_class != CredentialClass::FirstParty {
+        return Err(ApiError::forbidden(
+            "Access denied: first-party credential required",
+        ));
+    }
+    Ok(())
+}
+
+pub fn require_authenticated_user_in_realm_with_token(
+    identity: &Identity,
+    credential_context: &TokenCredentialContext,
+    realm_id: &str,
+    context: &str,
+) -> Result<Uuid, ApiError> {
+    match credential_context.credential_class {
+        CredentialClass::FirstParty | CredentialClass::CustomUserUi => {
+            require_authenticated_user_in_realm(identity, realm_id, context)
+        }
+    }
+}
+
+/// Require an authenticated user identity and verify realm access.
 ///
 /// This helper ensures that:
 /// - The identity represents an authenticated user (not a client/API key)
@@ -161,7 +206,7 @@ pub fn require_authenticated_user_in_realm(
 ) -> Result<Uuid, ApiError> {
     if !identity.is_user() {
         return Err(ApiError::forbidden(format!(
-            "Access denied: authenticated user session required for {}",
+            "Access denied: authenticated user token required for {}",
             context
         )));
     }
@@ -208,9 +253,12 @@ mod tests {
     use super::*;
     use chrono::Utc;
     use herald_core::domain::{
-        authentication::Identity, client::entities::ClientApp, common::entities::generate_uuid_v7,
+        authentication::{CredentialClass, CredentialScope, Identity, TokenCredentialContext},
+        client::entities::ClientApp,
+        common::entities::generate_uuid_v7,
         user::entities::User,
     };
+    use std::collections::HashSet;
 
     fn create_test_user(user_id: &str, realm_id: &str) -> User {
         User {
@@ -234,15 +282,79 @@ mod tests {
             name: "Test Client".to_string(),
             description: None,
             redirect_uris: vec![],
+            allowed_origins: vec![],
+            email_verify_return_url: None,
+            password_reset_return_url: None,
+            browser_refresh_absolute_ttl_seconds: 2_592_000,
+            is_first_party: false,
             enabled: true,
             icon_url: None,
-            session_ttl_seconds: 1800,
-            session_renewal_ttl_seconds: None,
             client_secret: None,
             device_code_grant_enabled: false,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
+    }
+
+    fn token_context(
+        credential_class: CredentialClass,
+        allowed_scopes: impl IntoIterator<Item = CredentialScope>,
+    ) -> TokenCredentialContext {
+        TokenCredentialContext {
+            client_app_id: generate_uuid_v7(),
+            family_id: generate_uuid_v7(),
+            credential_class,
+            allowed_scopes: HashSet::from_iter(allowed_scopes),
+        }
+    }
+
+    #[test]
+    fn token_scope_allows_custom_user_ui_whitelisted_scope() {
+        let identity = Identity::User(create_test_user("user123", "realm1"));
+        let context = token_context(
+            CredentialClass::CustomUserUi,
+            [CredentialScope::ProfileRead],
+        );
+
+        assert!(require_token_scope(&identity, &context, CredentialScope::ProfileRead).is_ok());
+    }
+
+    #[test]
+    fn token_scope_rejects_custom_user_ui_unlisted_scope_fail_closed() {
+        let identity = Identity::User(create_test_user("user123", "realm1"));
+        let context = token_context(CredentialClass::CustomUserUi, []);
+
+        let error = require_token_scope(&identity, &context, CredentialScope::ProfileRead)
+            .expect_err("an unlisted self-service capability must be denied");
+        assert!(error.to_string().contains("token scope denied"));
+    }
+
+    #[test]
+    fn token_scope_rejects_custom_user_ui_admin_capability() {
+        let context = token_context(
+            CredentialClass::CustomUserUi,
+            [CredentialScope::ProfileRead],
+        );
+
+        let error = require_first_party_credential(&context)
+            .expect_err("custom UI credentials must never enter admin RBAC");
+        assert!(
+            error
+                .to_string()
+                .contains("first-party credential required")
+        );
+    }
+
+    #[test]
+    fn token_scope_first_party_bypasses_scope_but_not_realm_authorization() {
+        let identity = Identity::User(create_test_user("user123", "realm1"));
+        let context = token_context(CredentialClass::FirstParty, []);
+
+        assert!(require_token_scope(&identity, &context, CredentialScope::InvoiceApply).is_ok());
+        require_first_party_credential(&context).unwrap();
+        let error = AdminIdentity::require(identity, "realm2", "admin")
+            .expect_err("scope bypass must not bypass the existing realm/RBAC entry gate");
+        assert!(error.to_string().contains("different realm"));
     }
 
     #[test]
@@ -271,7 +383,7 @@ mod tests {
             result
                 .unwrap_err()
                 .to_string()
-                .contains("authenticated user session required")
+                .contains("authenticated user token required")
         );
     }
 
@@ -306,7 +418,7 @@ mod tests {
             result
                 .unwrap_err()
                 .to_string()
-                .contains("authenticated user session required")
+                .contains("authenticated user token required")
         );
     }
 

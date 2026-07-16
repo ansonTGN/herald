@@ -52,7 +52,7 @@ mod tests {
                 Request::builder()
                     .method("GET")
                     .uri(format!("/api/realms/{}/feature-availability", realm_id))
-                    .header("cookie", format!("X-Auth={}", token))
+                    .header("authorization", format!("Bearer {}", token))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -228,7 +228,7 @@ mod tests {
                     .method("PUT")
                     .uri(format!("/api/bill/{}/invoice-seller-config", realm_id))
                     .header("content-type", "application/json")
-                    .header("cookie", format!("X-Auth={}", admin_token))
+                    .header("authorization", format!("Bearer {}", admin_token))
                     .body(Body::from(put_payload.to_string()))
                     .unwrap(),
             )

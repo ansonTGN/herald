@@ -19,27 +19,32 @@ impl PostgresClientRepository {
         Self { db }
     }
 
-    fn to_domain(model: &client_app::Model) -> ClientApp {
+    fn to_domain(model: &client_app::Model) -> Result<ClientApp, CoreError> {
         // Parse redirect_uris from JSON
-        let redirect_uris: Vec<String> =
-            serde_json::from_value(model.redirect_uris.clone()).unwrap_or_else(|_| vec![]);
+        let redirect_uris: Vec<String> = serde_json::from_value(model.redirect_uris.clone())
+            .map_err(|e| CoreError::DatabaseError(format!("Invalid redirect_uris JSON: {e}")))?;
+        let allowed_origins: Vec<String> = serde_json::from_value(model.allowed_origins.clone())
+            .map_err(|e| CoreError::DatabaseError(format!("Invalid allowed_origins JSON: {e}")))?;
 
-        ClientApp {
+        Ok(ClientApp {
             id: model.id,
             realm_id: model.realm_id.clone(),
             client_id: model.client_id.clone(),
             name: model.name.clone(),
             description: model.description.clone(),
             redirect_uris,
+            allowed_origins,
+            email_verify_return_url: model.email_verify_return_url.clone(),
+            password_reset_return_url: model.password_reset_return_url.clone(),
+            browser_refresh_absolute_ttl_seconds: model.browser_refresh_absolute_ttl_seconds,
+            is_first_party: model.is_first_party,
             enabled: model.enabled,
             icon_url: model.icon_url.clone(),
-            session_ttl_seconds: model.session_ttl_seconds,
-            session_renewal_ttl_seconds: model.session_renewal_ttl_seconds,
             client_secret: model.client_secret.clone(),
             device_code_grant_enabled: model.device_code_grant_enabled,
             created_at: model.created_at.into(),
             updated_at: model.updated_at.into(),
-        }
+        })
     }
 }
 
@@ -55,13 +60,14 @@ impl ClientRepository for PostgresClientRepository {
         let redirect_uris = request.redirect_uris.unwrap_or_default();
         let redirect_uris_json = serde_json::to_value(&redirect_uris)
             .map_err(|e| CoreError::BadRequest(format!("Invalid redirect URIs: {}", e)))?;
+        let allowed_origins_json =
+            serde_json::to_value(request.allowed_origins.unwrap_or_default())
+                .map_err(|e| CoreError::BadRequest(format!("Invalid allowed origins: {e}")))?;
 
         // Generate client secret
         let client_secret = Some(herald_domain::common::entities::generate_uuid_v7().to_string());
 
         let enabled = request.enabled.unwrap_or(true);
-        let session_ttl_seconds = request.session_ttl_seconds.unwrap_or(1800);
-
         let active_model = client_app::ActiveModel {
             id: sea_orm::Set(id),
             realm_id: sea_orm::Set(request.realm_id),
@@ -69,10 +75,17 @@ impl ClientRepository for PostgresClientRepository {
             name: sea_orm::Set(request.name),
             description: sea_orm::Set(request.description),
             redirect_uris: sea_orm::Set(redirect_uris_json),
+            allowed_origins: sea_orm::Set(allowed_origins_json),
+            email_verify_return_url: sea_orm::Set(request.email_verify_return_url),
+            password_reset_return_url: sea_orm::Set(request.password_reset_return_url),
+            browser_refresh_absolute_ttl_seconds: sea_orm::Set(
+                request
+                    .browser_refresh_absolute_ttl_seconds
+                    .unwrap_or(2_592_000),
+            ),
+            is_first_party: sea_orm::Set(false),
             enabled: sea_orm::Set(enabled),
             icon_url: sea_orm::Set(request.icon_url),
-            session_ttl_seconds: sea_orm::Set(session_ttl_seconds),
-            session_renewal_ttl_seconds: sea_orm::Set(request.session_renewal_ttl_seconds),
             client_secret: sea_orm::Set(client_secret),
             device_code_grant_enabled: sea_orm::Set(
                 request.device_code_grant_enabled.unwrap_or(false),
@@ -82,7 +95,7 @@ impl ClientRepository for PostgresClientRepository {
         };
 
         let result = active_model.insert(&*self.db).await?;
-        Ok(Self::to_domain(&result))
+        Self::to_domain(&result)
     }
 
     async fn get_client_app_by_id(&self, id: Uuid) -> Result<ClientApp, CoreError> {
@@ -91,7 +104,7 @@ impl ClientRepository for PostgresClientRepository {
             .await?
             .ok_or(CoreError::NotFound)?;
 
-        Ok(Self::to_domain(&result))
+        Self::to_domain(&result)
     }
 
     async fn get_client_app_by_client_id(
@@ -106,7 +119,7 @@ impl ClientRepository for PostgresClientRepository {
             .await?
             .ok_or(CoreError::NotFound)?;
 
-        Ok(Self::to_domain(&result))
+        Self::to_domain(&result)
     }
 
     async fn list_client_apps(&self, realm_id: &str) -> Result<Vec<ClientApp>, CoreError> {
@@ -115,7 +128,7 @@ impl ClientRepository for PostgresClientRepository {
             .all(&*self.db)
             .await?;
 
-        Ok(results.iter().map(Self::to_domain).collect())
+        results.iter().map(Self::to_domain).collect()
     }
 
     async fn list_client_apps_paginated(
@@ -146,7 +159,10 @@ impl ClientRepository for PostgresClientRepository {
             .all(&*self.db)
             .await?;
 
-        let apps = results.iter().map(Self::to_domain).collect();
+        let apps: Vec<ClientApp> = results
+            .iter()
+            .map(Self::to_domain)
+            .collect::<Result<Vec<_>, _>>()?;
         Ok((apps, total_count))
     }
 
@@ -175,6 +191,21 @@ impl ClientRepository for PostgresClientRepository {
                 .map_err(|e| CoreError::BadRequest(format!("Invalid redirect URIs: {}", e)))?;
             active_model.redirect_uris = sea_orm::Set(redirect_uris_json);
         }
+        if let Some(allowed_origins) = request.allowed_origins {
+            active_model.allowed_origins = sea_orm::Set(
+                serde_json::to_value(allowed_origins)
+                    .map_err(|e| CoreError::BadRequest(format!("Invalid allowed origins: {e}")))?,
+            );
+        }
+        if let Some(url) = request.email_verify_return_url {
+            active_model.email_verify_return_url = sea_orm::Set(Some(url));
+        }
+        if let Some(url) = request.password_reset_return_url {
+            active_model.password_reset_return_url = sea_orm::Set(Some(url));
+        }
+        if let Some(ttl) = request.browser_refresh_absolute_ttl_seconds {
+            active_model.browser_refresh_absolute_ttl_seconds = sea_orm::Set(ttl);
+        }
 
         if let Some(enabled) = request.enabled {
             active_model.enabled = sea_orm::Set(enabled);
@@ -182,15 +213,6 @@ impl ClientRepository for PostgresClientRepository {
 
         if let Some(icon_url) = request.icon_url {
             active_model.icon_url = sea_orm::Set(Some(icon_url));
-        }
-
-        if let Some(session_ttl_seconds) = request.session_ttl_seconds {
-            active_model.session_ttl_seconds = sea_orm::Set(session_ttl_seconds);
-        }
-
-        if let Some(session_renewal_ttl_seconds) = request.session_renewal_ttl_seconds {
-            active_model.session_renewal_ttl_seconds =
-                sea_orm::Set(Some(session_renewal_ttl_seconds));
         }
 
         if let Some(v) = request.device_code_grant_enabled {
@@ -206,7 +228,7 @@ impl ClientRepository for PostgresClientRepository {
         active_model.updated_at = sea_orm::Set(chrono::Utc::now().into());
 
         let result = active_model.update(&*self.db).await?;
-        Ok(Self::to_domain(&result))
+        Self::to_domain(&result)
     }
 
     async fn delete_client_app(&self, id: Uuid) -> Result<(), CoreError> {
@@ -225,6 +247,23 @@ impl ClientRepository for PostgresClientRepository {
 
         client_app::Entity::delete_by_id(id).exec(&*self.db).await?;
 
+        Ok(())
+    }
+
+    async fn set_first_party(&self, id: Uuid, is_first_party: bool) -> Result<(), CoreError> {
+        let model = client_app::Entity::find_by_id(id)
+            .one(&*self.db)
+            .await?
+            .ok_or(CoreError::NotFound)?;
+        if is_first_party && model.client_id != "admin-web-console" {
+            return Err(CoreError::Forbidden(
+                "First-party flag is reserved for the admin-web-console client".to_string(),
+            ));
+        }
+        let mut active_model: client_app::ActiveModel = model.into();
+        active_model.is_first_party = sea_orm::Set(is_first_party);
+        active_model.updated_at = sea_orm::Set(chrono::Utc::now().into());
+        active_model.update(&*self.db).await?;
         Ok(())
     }
 }

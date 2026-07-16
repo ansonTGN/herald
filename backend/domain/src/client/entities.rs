@@ -15,12 +15,14 @@ pub struct ClientApp {
     // New fields for Client App settings
     #[schema(example = json!(["https://example.com/callback"]))]
     pub redirect_uris: Vec<String>,
+    pub allowed_origins: Vec<String>,
+    pub email_verify_return_url: Option<String>,
+    pub password_reset_return_url: Option<String>,
+    pub browser_refresh_absolute_ttl_seconds: i32,
+    pub is_first_party: bool,
     #[schema(example = true)]
     pub enabled: bool,
     pub icon_url: Option<String>,
-    #[schema(example = 1800)]
-    pub session_ttl_seconds: i32,
-    pub session_renewal_ttl_seconds: Option<i32>,
     pub client_secret: Option<String>,
     pub device_code_grant_enabled: bool,
 
@@ -61,8 +63,6 @@ pub struct CreateClientAppConfig {
     pub redirect_uris: Option<Vec<String>>,
     pub enabled: Option<bool>,
     pub icon_url: Option<String>,
-    pub session_ttl_seconds: Option<i32>,
-    pub session_renewal_ttl_seconds: Option<i32>,
     pub device_code_grant_enabled: Option<bool>,
 }
 
@@ -75,8 +75,6 @@ pub struct UpdateClientAppConfig {
     pub redirect_uris: Option<Vec<String>>,
     pub enabled: Option<bool>,
     pub icon_url: Option<String>,
-    pub session_ttl_seconds: Option<i32>,
-    pub session_renewal_ttl_seconds: Option<i32>,
     pub device_code_grant_enabled: Option<bool>,
     pub regenerate_secret: bool,
 }

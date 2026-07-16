@@ -81,7 +81,7 @@ async fn test_scenario_admin_cannot_access_other_realms(ctx: &mut TestContext) {
         .method("POST")
         .uri("/api/realms")
         .header(header::CONTENT_TYPE, "application/json")
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
         .body(Body::from(realm1_payload.to_string()))
         .unwrap();
 
@@ -101,7 +101,7 @@ async fn test_scenario_admin_cannot_access_other_realms(ctx: &mut TestContext) {
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/users/{}?page=0&pageSize=20", realm1_id))
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
         .body(Body::empty())
         .unwrap();
 
@@ -180,7 +180,10 @@ async fn test_scenario_realm_admin_can_only_manage_own_realm(ctx: &mut TestConte
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/users/{}?page=0&pageSize=20", ctx._realm_id))
-        .header(header::COOKIE, format!("X-Auth={}", realm1_admin_token))
+        .header(
+            header::AUTHORIZATION,
+            format!("Bearer {}", realm1_admin_token),
+        )
         .body(Body::empty())
         .unwrap();
 
@@ -205,7 +208,10 @@ async fn test_scenario_realm_admin_can_only_manage_own_realm(ctx: &mut TestConte
     let req = Request::builder()
         .method("GET")
         .uri("/api/users/realm-2?page=0&pageSize=20")
-        .header(header::COOKIE, format!("X-Auth={}", realm1_admin_token))
+        .header(
+            header::AUTHORIZATION,
+            format!("Bearer {}", realm1_admin_token),
+        )
         .body(Body::empty())
         .unwrap();
 
@@ -315,7 +321,7 @@ async fn test_scenario_all_permission_no_longer_matches(ctx: &mut TestContext) {
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/users/{}?page=0&pageSize=20", ctx._realm_id))
-        .header(header::COOKIE, format!("X-Auth={}", user_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", user_token))
         .body(Body::empty())
         .unwrap();
 

@@ -226,7 +226,7 @@ mod tests {
                 Request::builder()
                     .method("POST")
                     .uri(format!("/api/bill/{}/purchase/payment-attempts", realm_id))
-                    .header(header::COOKIE, format!("X-Auth={}", token))
+                    .header(header::AUTHORIZATION, format!("Bearer {}", token))
                     .header("Content-Type", "application/json")
                     .body(Body::from(
                         json!({
@@ -267,7 +267,7 @@ mod tests {
                         "/api/bill/{}/client/{}/purchase-options",
                         realm_id, client_app_id
                     ))
-                    .header(header::COOKIE, format!("X-Auth={}", token))
+                    .header(header::AUTHORIZATION, format!("Bearer {}", token))
                     .body(Body::empty())
                     .unwrap(),
             )

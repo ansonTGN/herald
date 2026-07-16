@@ -105,7 +105,7 @@ async fn enable_totp_for_user(
         .method("POST")
         .uri("/api/user/totp")
         .header("content-type", "application/json")
-        .header("Cookie", format!("X-Auth={}", session_token))
+        .header("authorization", format!("Bearer {}", session_token))
         .body(axum::body::Body::from(
             serde_json::json!({ "password": password }).to_string(),
         ))
@@ -130,7 +130,7 @@ async fn enable_totp_for_user(
         .method("POST")
         .uri("/api/user/totp/verify")
         .header("content-type", "application/json")
-        .header("Cookie", format!("X-Auth={}", session_token))
+        .header("authorization", format!("Bearer {}", session_token))
         .body(axum::body::Body::from(
             serde_json::json!({
                 "tempToken": temp_token,
@@ -305,12 +305,12 @@ async fn test_scenario_oauth_pkce_full_flow_success(ctx: &mut SchemaTestContext)
         "expires_in should be positive"
     );
 
-    // Then: access_token is a valid session token
+    // Then: access_token is a valid Bearer token
     let access_token = token_json["access_token"].as_str().unwrap();
     let app = ctx.create_unified_test_router();
     let status_request = axum::http::Request::builder()
         .uri(format!("/api/auth/{}/status", realm_id))
-        .header("cookie", format!("X-Auth={}", access_token))
+        .header("authorization", format!("Bearer {}", access_token))
         .body(axum::body::Body::empty())
         .unwrap();
     let status_response = app.oneshot(status_request).await.unwrap();
@@ -532,35 +532,25 @@ async fn test_scenario_oauth_pkce_normal_login_regression(ctx: &mut SchemaTestCo
 
     let login_response = app.clone().oneshot(login_request).await.unwrap();
 
-    // Then: Login succeeds with 200, returns session cookie (X-Auth)
+    // Then: Login succeeds with a browser Bearer token and no cookie.
     assert_eq!(
         login_response.status(),
         StatusCode::OK,
         "Normal login should succeed"
     );
 
-    let set_cookie = login_response
-        .headers()
-        .get(axum::http::header::SET_COOKIE)
-        .and_then(|v| v.to_str().ok())
-        .expect("Should return Set-Cookie header");
-
-    assert!(set_cookie.contains("X-Auth="), "Should set X-Auth cookie");
-
-    let token = crate::tests::extract_set_cookie_token(set_cookie, "X-Auth")
-        .expect("Should extract X-Auth token");
-
-    let login_body: Value = response_json(login_response).await;
-    assert_eq!(
-        login_body["userId"].as_str().unwrap(),
-        user_id.to_string().as_str(),
-        "userId should match"
+    assert!(
+        !login_response
+            .headers()
+            .contains_key(axum::http::header::SET_COOKIE)
     );
+    let (_login_response, token) = crate::tests::extract_bearer_token(login_response).await;
+    let token = token.expect("Normal login should return accessToken");
 
-    // Then: Session cookie is valid (status endpoint returns authenticated)
+    // Then: Bearer token is valid (status endpoint returns authenticated)
     let status_request = axum::http::Request::builder()
-        .uri(format!("/api/auth/{}/status", realm_id))
-        .header("cookie", format!("X-Auth={}", token))
+        .uri("/api/auth/status")
+        .header("authorization", format!("Bearer {}", token))
         .body(axum::body::Body::empty())
         .unwrap();
 
@@ -568,12 +558,13 @@ async fn test_scenario_oauth_pkce_normal_login_regression(ctx: &mut SchemaTestCo
     assert_eq!(status_response.status(), StatusCode::OK);
 
     let status_json: Value = response_json(status_response).await;
+    let status_data = status_json.get("data").unwrap_or(&status_json);
     assert_eq!(
-        status_json["authenticated"], true,
+        status_data["authenticated"], true,
         "Should be authenticated"
     );
     assert_eq!(
-        status_json["userId"].as_str(),
+        status_data["userId"].as_str(),
         Some(user_id.to_string().as_str()),
         "userId should match"
     );

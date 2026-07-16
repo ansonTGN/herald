@@ -6,11 +6,15 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 use validator::Validate;
 
+use crate::reauth::consume_reauth;
 use herald_api_base::application::http::common::auth_utils::SelfIdentity;
+use herald_api_base::application::http::common::auth_utils::require_token_scope;
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
-use herald_core::domain::authentication::Identity;
+use herald_core::domain::authentication::{
+    CredentialScope, Identity, TargetOperation, TokenCredentialContext,
+};
 use herald_core::domain::user::ports::UserRepository;
 use herald_core::domain::user_totp::{
     RealmTotpConfigRepository, UserTotpBackupCode, UserTotpConfig, UserTotpRepository,
@@ -43,7 +47,7 @@ pub fn router() -> axum::Router<AppState> {
 
 #[derive(Debug, Deserialize, ToSchema, Validate)]
 pub struct EnableTotpRequest {
-    pub password: String,
+    pub reauth_token: String,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -75,9 +79,11 @@ pub struct EnableTotpResponse {
 pub async fn handle_enable_totp(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
+    Extension(context): Extension<TokenCredentialContext>,
     Valid(Json(req)): Valid<Json<EnableTotpRequest>>,
 ) -> Result<ApiResult<EnableTotpResponse>, ApiError> {
-    let self_identity = SelfIdentity::require(identity)?;
+    require_token_scope(&identity, &context, CredentialScope::TotpManage)?;
+    let self_identity = SelfIdentity::require(identity.clone())?;
     let user_id = self_identity.user_id();
 
     // 1. Verify current password
@@ -92,24 +98,6 @@ pub async fn handle_enable_totp(
         ));
     }
 
-    if user.password_hash.is_none() {
-        return Err(ApiError::bad_request(
-            "Password authentication not enabled for this account".to_string(),
-        ));
-    }
-
-    let password_valid = bcrypt::verify(
-        &req.password,
-        user.password_hash
-            .as_ref()
-            .ok_or_else(|| ApiError::internal("Password hash not found".to_string()))?,
-    )
-    .map_err(|_| ApiError::internal("Internal server error".to_string()))?;
-
-    if !password_valid {
-        return Err(ApiError::unauthorized("Invalid password".to_string()));
-    }
-
     // 2. Check if user already has TOTP enabled
     let totp_repo = PostgresUserTotpRepository::new(state.db.clone());
     let existing_config = totp_repo.get_config_by_user_id(user_id).await?;
@@ -120,6 +108,17 @@ pub async fn handle_enable_totp(
     {
         return Err(ApiError::conflict("TOTP already enabled".to_string()));
     }
+
+    // Consume the single-use reauth ticket only after all prerequisites have
+    // been validated and just before the state-mutating operation.
+    consume_reauth(
+        &state,
+        &identity,
+        &context,
+        &req.reauth_token,
+        TargetOperation::BindAuthenticator,
+    )
+    .await?;
 
     // If config exists but is not enabled, delete and recreate
     if existing_config.is_some() {
@@ -221,9 +220,11 @@ pub struct VerifyTotpSetupResponse {
 pub async fn handle_verify_totp_setup(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
+    Extension(context): Extension<TokenCredentialContext>,
     Valid(Json(req)): Valid<Json<VerifyTotpSetupRequest>>,
 ) -> Result<ApiResult<VerifyTotpSetupResponse>, ApiError> {
-    let self_identity = SelfIdentity::require(identity)?;
+    require_token_scope(&identity, &context, CredentialScope::TotpManage)?;
+    let self_identity = SelfIdentity::require(identity.clone())?;
     let user_id = self_identity.user_id();
 
     // 1. Retrieve and validate temp token
@@ -302,7 +303,7 @@ pub async fn handle_verify_totp_setup(
 
 #[derive(Debug, Deserialize, ToSchema, Validate)]
 pub struct DisableTotpRequest {
-    pub password: String,
+    pub reauth_token: String,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -331,26 +332,16 @@ pub struct DisableTotpResponse {
 pub async fn handle_disable_totp(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
+    Extension(context): Extension<TokenCredentialContext>,
     Valid(Json(req)): Valid<Json<DisableTotpRequest>>,
 ) -> Result<ApiResult<DisableTotpResponse>, ApiError> {
-    let self_identity = SelfIdentity::require(identity)?;
+    require_token_scope(&identity, &context, CredentialScope::TotpManage)?;
+    let self_identity = SelfIdentity::require(identity.clone())?;
     let user_id = self_identity.user_id();
 
     // 1. Verify current password
     let user_repo = PostgresUserRepository::new(state.db.clone());
     let user = user_repo.get_user_by_id(user_id).await?;
-
-    let password_valid = bcrypt::verify(
-        &req.password,
-        user.password_hash
-            .as_ref()
-            .ok_or_else(|| ApiError::internal("Password hash not found".to_string()))?,
-    )
-    .map_err(|_| ApiError::internal("Internal server error".to_string()))?;
-
-    if !password_valid {
-        return Err(ApiError::unauthorized("Invalid password".to_string()));
-    }
 
     // 2. Check Realm TOTP force_enabled setting
     let realm_repo = PostgresRealmTotpConfigRepository::new(state.db.clone());
@@ -365,6 +356,21 @@ pub async fn handle_disable_totp(
     // 3. Get config and delete it with associated backup codes
     let totp_repo = PostgresUserTotpRepository::new(state.db.clone());
     let config = totp_repo.get_config_by_user_id(user_id).await?;
+    if config.is_none() {
+        return Err(ApiError::bad_request("TOTP is not enabled".to_string()));
+    }
+
+    // Consume the single-use reauth ticket only after validating the user and
+    // realm settings, and just before the state-mutating delete.
+    consume_reauth(
+        &state,
+        &identity,
+        &context,
+        &req.reauth_token,
+        TargetOperation::RemoveAuthenticator,
+    )
+    .await?;
+
     if let Some(_config) = config {
         totp_repo.delete_config(user_id).await?;
         // Note: delete_config will cascade delete backup codes via ON DELETE CASCADE
@@ -382,7 +388,7 @@ pub async fn handle_disable_totp(
 
 #[derive(Debug, Deserialize, ToSchema, Validate)]
 pub struct RegenerateTotpRequest {
-    pub password: String,
+    pub reauth_token: String,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -413,26 +419,24 @@ pub struct RegenerateTotpResponse {
 pub async fn handle_regenerate_totp(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
+    Extension(context): Extension<TokenCredentialContext>,
     Valid(Json(req)): Valid<Json<RegenerateTotpRequest>>,
 ) -> Result<ApiResult<RegenerateTotpResponse>, ApiError> {
-    let self_identity = SelfIdentity::require(identity)?;
+    require_token_scope(&identity, &context, CredentialScope::TotpManage)?;
+    consume_reauth(
+        &state,
+        &identity,
+        &context,
+        &req.reauth_token,
+        TargetOperation::BindAuthenticator,
+    )
+    .await?;
+    let self_identity = SelfIdentity::require(identity.clone())?;
     let user_id = self_identity.user_id();
 
     // 1. Verify current password
     let user_repo = PostgresUserRepository::new(state.db.clone());
     let user = user_repo.get_user_by_id(user_id).await?;
-
-    let password_valid = bcrypt::verify(
-        &req.password,
-        user.password_hash
-            .as_ref()
-            .ok_or_else(|| ApiError::internal("Password hash not found".to_string()))?,
-    )
-    .map_err(|_| ApiError::internal("Internal server error".to_string()))?;
-
-    if !password_valid {
-        return Err(ApiError::unauthorized("Invalid password".to_string()));
-    }
 
     // 2. Get existing TOTP config
     let totp_repo = PostgresUserTotpRepository::new(state.db.clone());
@@ -536,8 +540,10 @@ pub struct BackupCodeStatsResponse {
 pub async fn handle_get_totp_status(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
+    Extension(context): Extension<TokenCredentialContext>,
 ) -> Result<ApiResult<TotpStatusResponse>, ApiError> {
-    let self_identity = SelfIdentity::require(identity)?;
+    require_token_scope(&identity, &context, CredentialScope::TotpManage)?;
+    let self_identity = SelfIdentity::require(identity.clone())?;
     let user_id = self_identity.user_id();
 
     let totp_repo = PostgresUserTotpRepository::new(state.db.clone());

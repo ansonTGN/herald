@@ -106,7 +106,7 @@ mod tests {
                     .method("PUT")
                     .uri(format!("/api/bill/{}/invoice-seller-config", realm_id))
                     .header("content-type", "application/json")
-                    .header("cookie", format!("X-Auth={}", admin_token))
+                    .header("authorization", format!("Bearer {}", admin_token))
                     .body(Body::from(put_payload.to_string()))
                     .unwrap(),
             )
@@ -240,7 +240,7 @@ mod tests {
                         "/api/user/bill/invoices/apply-eligibility?referenceType={}&referenceId={}",
                         reference_type, reference_id
                     ))
-                    .header("cookie", format!("X-Auth={}", token))
+                    .header("authorization", format!("Bearer {}", token))
                     .body(Body::empty())
                     .unwrap(),
             )

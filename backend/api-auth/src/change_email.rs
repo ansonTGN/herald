@@ -8,13 +8,16 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use validator::Validate;
 
+use crate::reauth::consume_reauth;
+use herald_api_base::application::http::auth::identity_middleware::authenticate_bearer;
 use herald_api_base::application::http::auth::util::{
-    ClientIp, epoch_seconds, normalize_email, rate_limit_hit, require_session,
+    ClientIp, epoch_seconds, normalize_email, rate_limit_hit,
 };
 use herald_api_base::application::http::common::public_helper::realm_public_url_parts;
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
+use herald_core::domain::authentication::TargetOperation;
 use herald_core::domain::security_constants::{
     CHANGE_EMAIL_CONFIRM_IP_RATE_LIMIT, CHANGE_EMAIL_REQUEST_EMAIL_RATE_LIMIT,
     CHANGE_EMAIL_REQUEST_IP_RATE_LIMIT,
@@ -26,6 +29,9 @@ use herald_core::third::email::{EmailService, EmailTemplateKind};
 pub struct ChangeEmailRequest {
     #[validate(email)]
     pub new_email: String,
+
+    /// Fresh re-authentication ticket obtained from `/api/user/reauth/verify`.
+    pub reauth_token: String,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -62,12 +68,22 @@ pub async fn request(
     headers: HeaderMap,
     Valid(Json(payload)): Valid<Json<ChangeEmailRequest>>,
 ) -> Result<ApiResult<ChangeEmailResponse>, ApiError> {
-    let (_token, sess) = require_session(&state, &headers).await?;
-    if sess.realm_id != realm_id {
+    let (identity, context) = authenticate_bearer(&state, &headers).await?;
+    if identity.realm_id() != realm_id {
         return Err(ApiError::forbidden(
             "cannot request email change for a different realm",
         ));
     }
+
+    // Require a fresh re-authentication ticket for this high-assurance operation.
+    consume_reauth(
+        &state,
+        &identity,
+        &context,
+        &payload.reauth_token,
+        TargetOperation::ChangeEmail,
+    )
+    .await?;
 
     let new_email = normalize_email(&payload.new_email);
 
@@ -89,10 +105,10 @@ pub async fn request(
 
     // Generate verification code and create email change request
     let code =
-        request_email_change_internal(&state, &sess.realm_id, &sess.user_id, &new_email).await?;
+        request_email_change_internal(&state, &realm_id, &identity.user_id(), &new_email).await?;
 
     // Send confirmation email
-    send_confirmation_email(&state, &sess.realm_id, &new_email, &code).await?;
+    send_confirmation_email(&state, &realm_id, &new_email, &code).await?;
 
     Ok(ApiResult::ok(ChangeEmailResponse {
         message: "ok".to_string(),
@@ -178,7 +194,7 @@ pub async fn confirm(
     headers: HeaderMap,
     Path((realm_id, code)): Path<(String, String)>,
 ) -> Result<ApiResult<ChangeEmailResponse>, ApiError> {
-    let (_token, sess) = require_session(&state, &headers).await?;
+    let (identity, _) = authenticate_bearer(&state, &headers).await?;
 
     rate_limit_hit(
         &state,
@@ -188,7 +204,7 @@ pub async fn confirm(
     )
     .await?;
 
-    if sess.realm_id != realm_id {
+    if identity.realm_id() != realm_id {
         return Err(ApiError::forbidden(
             "cannot confirm email change for a different realm",
         ));
@@ -196,7 +212,7 @@ pub async fn confirm(
 
     // Use the current authenticated session as the source of truth so a stolen
     // confirmation code cannot be replayed across users or sessions.
-    confirm_email_change_internal(&state, &sess.realm_id, &sess.user_id, &code).await?;
+    confirm_email_change_internal(&state, &realm_id, &identity.user_id(), &code).await?;
 
     Ok(ApiResult::ok(ChangeEmailResponse {
         message: "ok".to_string(),

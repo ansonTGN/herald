@@ -44,7 +44,6 @@ struct DownstreamAuthorizationState {
 
 pub struct OAuthCallbackResult {
     pub user_id: Uuid,
-    pub jwt_token: String,
     pub client_id: String,
     pub downstream_redirect_uri: Option<String>,
 }
@@ -703,10 +702,6 @@ pub async fn handle_oauth_callback(
     // Find or create user
     let user_id = find_or_create_user(state, &realm_id, &user_info).await?;
 
-    // Generate JWT token
-    let jwt_secret_val = jwt_secret(state)?;
-    let jwt_token = generate_jwt_token(&user_id.to_string(), &realm_id, jwt_secret_val)?;
-
     let downstream_redirect_uri = match state_data.downstream_state {
         Some(downstream_state) => Some(
             issue_downstream_authorization_code(state, &realm_id, user_id, &downstream_state)
@@ -717,7 +712,6 @@ pub async fn handle_oauth_callback(
 
     Ok(OAuthCallbackResult {
         user_id,
-        jwt_token,
         client_id: state_data.client_id,
         downstream_redirect_uri,
     })

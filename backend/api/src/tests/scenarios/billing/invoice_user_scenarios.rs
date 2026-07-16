@@ -22,7 +22,10 @@ mod tests {
     };
     use chrono::{Datelike, Utc};
     use herald_api_billing::invoice_handlers::get_my_invoice;
-    use herald_core::domain::{authentication::Identity, client_api_keys::entities::ClientApiKey};
+    use herald_core::domain::{
+        authentication::{CredentialClass, Identity, TokenCredentialContext},
+        client_api_keys::entities::ClientApiKey,
+    };
     use serde_json::json;
     use test_context::test_context;
     use tower::ServiceExt;
@@ -77,7 +80,7 @@ mod tests {
                     .method("PUT")
                     .uri(format!("/api/bill/{}/invoice-seller-config", realm_id))
                     .header("content-type", "application/json")
-                    .header("cookie", format!("X-Auth={}", admin_token))
+                    .header("authorization", format!("Bearer {}", admin_token))
                     .body(Body::from(put_payload.to_string()))
                     .unwrap(),
             )
@@ -260,7 +263,7 @@ mod tests {
                     .method("POST")
                     .uri("/api/user/bill/invoices")
                     .header("content-type", "application/json")
-                    .header("cookie", format!("X-Auth={}", user_token))
+                    .header("authorization", format!("Bearer {}", user_token))
                     .body(Body::from(payload.to_string()))
                     .unwrap(),
             )
@@ -337,7 +340,7 @@ mod tests {
                     .method("POST")
                     .uri("/api/user/bill/invoices")
                     .header("content-type", "application/json")
-                    .header("cookie", format!("X-Auth={}", user_token))
+                    .header("authorization", format!("Bearer {}", user_token))
                     .body(Body::from(payload.to_string()))
                     .unwrap(),
             )
@@ -391,7 +394,7 @@ mod tests {
                     .method("POST")
                     .uri("/api/user/bill/invoices")
                     .header("content-type", "application/json")
-                    .header("cookie", format!("X-Auth={}", user_token))
+                    .header("authorization", format!("Bearer {}", user_token))
                     .body(Body::from(payload.to_string()))
                     .unwrap(),
             )
@@ -446,7 +449,7 @@ mod tests {
                     .method("POST")
                     .uri("/api/user/bill/invoices")
                     .header("content-type", "application/json")
-                    .header("cookie", format!("X-Auth={}", user_token))
+                    .header("authorization", format!("Bearer {}", user_token))
                     .body(Body::from(payload.to_string()))
                     .unwrap(),
             )
@@ -499,7 +502,7 @@ mod tests {
                 Request::builder()
                     .method("GET")
                     .uri("/api/user/bill/invoices")
-                    .header("cookie", format!("X-Auth={}", user_a_token))
+                    .header("authorization", format!("Bearer {}", user_a_token))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -564,7 +567,7 @@ mod tests {
                 Request::builder()
                     .method("GET")
                     .uri(format!("/api/user/bill/invoices/{}", invoice_id))
-                    .header("cookie", format!("X-Auth={}", user_token))
+                    .header("authorization", format!("Bearer {}", user_token))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -610,9 +613,16 @@ mod tests {
         let realm_id = ctx._realm_id.clone();
         let identity = third_party_identity_in_realm(&realm_id);
 
+        let context = TokenCredentialContext {
+            client_app_id: Uuid::now_v7(),
+            family_id: Uuid::now_v7(),
+            credential_class: CredentialClass::CustomUserUi,
+            allowed_scopes: std::collections::HashSet::new(),
+        };
         let err = match get_my_invoice(
             State((*ctx.app_state).clone()),
             Extension(identity),
+            Extension(context),
             Path(Uuid::now_v7()),
         )
         .await
@@ -658,7 +668,7 @@ mod tests {
                 Request::builder()
                     .method("GET")
                     .uri(format!("/api/bill/{}/invoices", realm_id))
-                    .header("cookie", format!("X-Auth={}", user_token))
+                    .header("authorization", format!("Bearer {}", user_token))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -692,7 +702,7 @@ mod tests {
                     .method("POST")
                     .uri(format!("/api/bill/{}/invoices", realm_id))
                     .header("content-type", "application/json")
-                    .header("cookie", format!("X-Auth={}", user_token))
+                    .header("authorization", format!("Bearer {}", user_token))
                     .body(Body::from(create_payload.to_string()))
                     .unwrap(),
             )
@@ -712,7 +722,7 @@ mod tests {
                 Request::builder()
                     .method("GET")
                     .uri(format!("/api/bill/{}/invoice-seller-config", realm_id))
-                    .header("cookie", format!("X-Auth={}", user_token))
+                    .header("authorization", format!("Bearer {}", user_token))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -739,7 +749,7 @@ mod tests {
                     .method("PUT")
                     .uri(format!("/api/bill/{}/invoice-seller-config", realm_id))
                     .header("content-type", "application/json")
-                    .header("cookie", format!("X-Auth={}", user_token))
+                    .header("authorization", format!("Bearer {}", user_token))
                     .body(Body::from(seller_payload.to_string()))
                     .unwrap(),
             )
@@ -769,7 +779,7 @@ mod tests {
                             realm_id, fake_invoice_id, path_suffix
                         ))
                         .header("content-type", "application/json")
-                        .header("cookie", format!("X-Auth={}", user_token))
+                        .header("authorization", format!("Bearer {}", user_token))
                         .body(Body::from(json!({}).to_string()))
                         .unwrap(),
                 )
@@ -829,7 +839,7 @@ mod tests {
                     .method("POST")
                     .uri("/api/user/bill/invoices")
                     .header("content-type", "application/json")
-                    .header("cookie", format!("X-Auth={}", user_token))
+                    .header("authorization", format!("Bearer {}", user_token))
                     .body(Body::from(payload.to_string()))
                     .unwrap(),
             )
@@ -887,7 +897,7 @@ mod tests {
                     .method("POST")
                     .uri("/api/user/bill/invoices")
                     .header("content-type", "application/json")
-                    .header("cookie", format!("X-Auth={}", user_token))
+                    .header("authorization", format!("Bearer {}", user_token))
                     .body(Body::from(payload.to_string()))
                     .unwrap(),
             )
@@ -906,7 +916,7 @@ mod tests {
                 Request::builder()
                     .method("GET")
                     .uri("/api/user/bill/invoices?status=draft")
-                    .header("cookie", format!("X-Auth={}", user_token))
+                    .header("authorization", format!("Bearer {}", user_token))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -939,7 +949,7 @@ mod tests {
                     .method("PATCH")
                     .uri(format!("/api/bill/{}/invoices/{}", realm_id, invoice_id))
                     .header("content-type", "application/json")
-                    .header("cookie", format!("X-Auth={}", admin_token))
+                    .header("authorization", format!("Bearer {}", admin_token))
                     .body(Body::from(patch_payload.to_string()))
                     .unwrap(),
             )
@@ -959,7 +969,7 @@ mod tests {
                         realm_id, invoice_id
                     ))
                     .header("content-type", "application/json")
-                    .header("cookie", format!("X-Auth={}", admin_token))
+                    .header("authorization", format!("Bearer {}", admin_token))
                     .body(Body::from(json!({}).to_string()))
                     .unwrap(),
             )
@@ -975,7 +985,7 @@ mod tests {
                 Request::builder()
                     .method("GET")
                     .uri(format!("/api/user/bill/invoices/{}", invoice_id))
-                    .header("cookie", format!("X-Auth={}", user_token))
+                    .header("authorization", format!("Bearer {}", user_token))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -1038,7 +1048,7 @@ mod tests {
                     .method("POST")
                     .uri("/api/user/bill/invoices")
                     .header("content-type", "application/json")
-                    .header("cookie", format!("X-Auth={}", user_token))
+                    .header("authorization", format!("Bearer {}", user_token))
                     .body(Body::from(payload.to_string()))
                     .unwrap(),
             )
@@ -1099,7 +1109,7 @@ mod tests {
                     .method("POST")
                     .uri("/api/user/bill/invoices")
                     .header("content-type", "application/json")
-                    .header("cookie", format!("X-Auth={}", user_b_token))
+                    .header("authorization", format!("Bearer {}", user_b_token))
                     .body(Body::from(payload.to_string()))
                     .unwrap(),
             )
@@ -1153,7 +1163,7 @@ mod tests {
                     .method("POST")
                     .uri("/api/user/bill/invoices")
                     .header("content-type", "application/json")
-                    .header("cookie", format!("X-Auth={}", user_token))
+                    .header("authorization", format!("Bearer {}", user_token))
                     .body(Body::from(payload.to_string()))
                     .unwrap(),
             )

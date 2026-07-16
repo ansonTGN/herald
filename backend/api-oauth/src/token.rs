@@ -1,7 +1,7 @@
 // OAuth token endpoint for authorization code exchange with PKCE validation
 //
-// Third-party SPAs exchange an authorization code (obtained via the authorize + login flow)
-// for a session token. PKCE ensures the code cannot be intercepted and reused.
+// Browser clients exchange an authorization code (obtained via the authorize + login flow)
+// for a Bearer token family. PKCE ensures the code cannot be intercepted and reused.
 
 use axum::{
     Json,
@@ -9,14 +9,18 @@ use axum::{
 };
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
+use herald_api_base::application::http::state::AppState;
+use herald_core::domain::authentication::BrowserTokenService;
+use herald_core::domain::client::ports::ClientService;
+use herald_core::domain::common::entities::app_errors::CoreError;
+use herald_core::domain::user::UserRepository;
+use herald_core::infrastructure::authentication::RedisBrowserTokenService;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use utoipa::ToSchema;
-use uuid::Uuid;
 
-use herald_api_base::application::http::auth::util::{ClientIp, SessionData, store_session};
-use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
-use herald_api_base::application::http::state::AppState;
+const FIRST_PARTY_CALLBACK_PATH: &str = "/callback";
 
 // ---------------------------------------------------------------------------
 // DTOs
@@ -41,8 +45,10 @@ pub struct TokenRequest {
 #[serde(rename_all = "snake_case")]
 pub struct TokenResponse {
     pub access_token: String,
+    pub refresh_token: String,
     pub token_type: String,
-    pub expires_in: i64,
+    pub expires_in: u64,
+    pub refresh_expires_in: u64,
 }
 
 // ---------------------------------------------------------------------------
@@ -87,29 +93,11 @@ fn verify_pkce(code_verifier: &str, code_challenge: &str) -> bool {
 pub async fn oauth_token(
     Path(realm_id): Path<String>,
     State(state): State<AppState>,
-    client_ip: ClientIp,
     Json(req): Json<TokenRequest>,
 ) -> Result<Json<TokenResponse>, ApiError> {
     if req.grant_type != "authorization_code" {
         return Err(ApiError::bad_request(
             "grant_type must be 'authorization_code'",
-        ));
-    }
-
-    // Fail loud: a verifiable source IP is required for session binding.
-    // Checked BEFORE the one-time authorization code is consumed (GETDEL below),
-    // so a missing IP does not force the client to re-run the full OAuth flow.
-    // The three-level `ClientIp` fallback (X-Real-IP → X-Forwarded-For →
-    // direct socket) returns "" only when the proxy chain is misconfigured.
-    if client_ip.0.trim().is_empty() {
-        tracing::error!(
-            realm_id = %realm_id,
-            client_id = %req.client_id,
-            "OAuth token issuance refused: client IP unavailable \
-             (proxy headers misconfigured?)"
-        );
-        return Err(ApiError::bad_request(
-            "Unable to determine client IP; token issuance requires a verifiable source IP",
         ));
     }
 
@@ -145,49 +133,61 @@ pub async fn oauth_token(
     let stored_user_id = stored["user_id"].as_str().unwrap_or("");
     let stored_code_challenge = stored["code_challenge"].as_str().unwrap_or("");
 
-    if stored_client_id != req.client_id {
-        return Err(ApiError::bad_request("client_id mismatch".to_string()));
+    validate_code_bindings(
+        stored_client_id,
+        stored_redirect_uri,
+        stored_realm_id,
+        stored_code_challenge,
+        &realm_id,
+        &req,
+    )?;
+
+    let client_app = state
+        .service
+        .client_service()
+        .get_client_app_by_client_id(&realm_id, &req.client_id)
+        .await
+        .map_err(map_client_error)?;
+    if !client_app.enabled {
+        return Err(ApiError::bad_request("OAuth client app is not enabled"));
+    }
+    if client_app.is_first_party {
+        validate_first_party_redirect(&state.public_base_url, &req.redirect_uri)?;
     }
 
-    if stored_redirect_uri != req.redirect_uri {
-        return Err(ApiError::bad_request("redirect_uri mismatch".to_string()));
+    let user_id = uuid::Uuid::parse_str(stored_user_id)
+        .map_err(|_| ApiError::bad_request("authorization code user is invalid"))?;
+    let user = state
+        .user_repository
+        .get_user_by_id(user_id)
+        .await
+        .map_err(|error| {
+            tracing::error!(%error, %user_id, "OAuth token user lookup failed");
+            ApiError::bad_request("authorization code user is invalid")
+        })?;
+    if user.realm_id != realm_id {
+        return Err(ApiError::bad_request("authorization code user is invalid"));
     }
 
-    if stored_realm_id != realm_id {
-        return Err(ApiError::bad_request("realm_id mismatch".to_string()));
+    let token_service = RedisBrowserTokenService::new(state.redis_manager.clone());
+    let tokens = if client_app.is_first_party {
+        token_service
+            .create_first_party_token_family(&user, &client_app)
+            .await
+    } else {
+        token_service.create_token_family(&user, &client_app).await
     }
-
-    if !verify_pkce(&req.code_verifier, stored_code_challenge) {
-        return Err(ApiError::bad_request(
-            "PKCE verification failed".to_string(),
-        ));
-    }
-
-    let session_config = load_client_session_config(&state, &realm_id, &req.client_id).await?;
-
-    let session_token = Uuid::now_v7().to_string();
-    let session_data = SessionData {
-        realm_id: realm_id.clone(),
-        client_id: req.client_id,
-        user_id: stored_user_id.to_string(),
-        client_ip: client_ip.0,
-        renewal_ttl_seconds: session_config.renewal_ttl_seconds,
-    };
-
-    store_session(
-        &state,
-        &session_token,
-        &session_data,
-        session_config.ttl_seconds,
-    )
-    .await?;
-
-    let expires_in = session_config.ttl_seconds as i64;
+    .map_err(|error| {
+        tracing::error!(%error, "OAuth browser token issuance failed");
+        ApiError::internal("Internal server error")
+    })?;
 
     Ok(Json(TokenResponse {
-        access_token: session_token,
-        token_type: "Bearer".to_string(),
-        expires_in,
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token,
+        token_type: tokens.token_type,
+        expires_in: tokens.expires_in,
+        refresh_expires_in: tokens.refresh_expires_in,
     }))
 }
 
@@ -195,49 +195,53 @@ pub async fn oauth_token(
 // Helpers
 // ---------------------------------------------------------------------------
 
-struct ClientSessionConfig {
-    ttl_seconds: usize,
-    renewal_ttl_seconds: Option<u64>,
+fn map_client_error(error: CoreError) -> ApiError {
+    match error {
+        CoreError::NotFound => ApiError::bad_request("OAuth client app is not enabled"),
+        error => {
+            tracing::error!(%error, "OAuth Client App lookup failed");
+            ApiError::internal("Internal server error")
+        }
+    }
 }
 
-async fn load_client_session_config(
-    state: &AppState,
+fn validate_code_bindings(
+    stored_client_id: &str,
+    stored_redirect_uri: &str,
+    stored_realm_id: &str,
+    stored_code_challenge: &str,
     realm_id: &str,
-    client_id: &str,
-) -> Result<ClientSessionConfig, ApiError> {
-    let config = sqlx::query_as::<_, (i32, Option<i32>)>(
-        "SELECT session_ttl_seconds, session_renewal_ttl_seconds FROM client_app WHERE realm_id = $1 AND client_id = $2 AND enabled = true",
-    )
-    .bind(realm_id)
-    .bind(client_id)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|e| {
-        tracing::error!(
-            realm_id = %realm_id,
-            client_id = %client_id,
-            error = %e,
-            "Failed to load OAuth client session TTL"
-        );
-        ApiError::internal("Failed to load client session configuration".to_string())
-    })?;
+    request: &TokenRequest,
+) -> Result<(), ApiError> {
+    if stored_client_id != request.client_id {
+        return Err(ApiError::bad_request("client_id mismatch"));
+    }
+    if stored_redirect_uri != request.redirect_uri {
+        return Err(ApiError::bad_request("redirect_uri mismatch"));
+    }
+    if stored_realm_id != realm_id {
+        return Err(ApiError::bad_request("realm_id mismatch"));
+    }
+    if !verify_pkce(&request.code_verifier, stored_code_challenge) {
+        return Err(ApiError::bad_request("PKCE verification failed"));
+    }
+    Ok(())
+}
 
-    let Some((ttl, renewal_ttl)) = config else {
-        return Err(ApiError::bad_request(
-            "OAuth client app is not enabled".to_string(),
-        ));
-    };
-
-    Ok(ClientSessionConfig {
-        ttl_seconds: usize::try_from(ttl)
-            .map_err(|_| ApiError::internal("Client session TTL is invalid".to_string()))?,
-        renewal_ttl_seconds: renewal_ttl
-            .map(|v| {
-                u64::try_from(v)
-                    .map_err(|_| ApiError::internal("Session renewal TTL is invalid".to_string()))
-            })
-            .transpose()?,
-    })
+pub(crate) fn validate_first_party_redirect(
+    frontend_url: &str,
+    redirect_uri: &str,
+) -> Result<(), ApiError> {
+    let expected = format!(
+        "{}{}",
+        frontend_url.trim_end_matches('/'),
+        FIRST_PARTY_CALLBACK_PATH
+    );
+    url::Url::parse(&expected).map_err(|_| ApiError::internal("Frontend URL is invalid"))?;
+    if redirect_uri != expected {
+        return Err(ApiError::bad_request("redirect_uri mismatch"));
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -272,5 +276,48 @@ mod tests {
             URL_SAFE_NO_PAD.encode(h.finalize())
         };
         assert!(verify_pkce("", &hash));
+    }
+
+    #[test]
+    fn first_party_redirect_must_exactly_match_server_frontend_callback() {
+        assert!(
+            validate_first_party_redirect("https://herald.test/", "https://herald.test/callback")
+                .is_ok()
+        );
+        assert!(
+            validate_first_party_redirect("https://herald.test", "https://evil.test/callback")
+                .is_err()
+        );
+        assert!(
+            validate_first_party_redirect(
+                "https://herald.test",
+                "https://herald.test/callback/extra"
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn first_party_wrong_client_app_is_rejected_by_code_binding() {
+        let verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
+        let request = TokenRequest {
+            grant_type: "authorization_code".into(),
+            code: "one-time-code".into(),
+            redirect_uri: "https://herald.test/callback".into(),
+            client_id: "attacker-client".into(),
+            code_verifier: verifier.into(),
+        };
+        assert!(
+            validate_code_bindings(
+                "admin-web-console",
+                "https://herald.test/callback",
+                "admin",
+                "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+                "admin",
+                &request,
+            )
+            .is_err(),
+            "an authorization code must remain bound to its original Client App"
+        );
     }
 }

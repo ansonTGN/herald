@@ -216,7 +216,7 @@ pub async fn handle_update_custom_domain_config(
 // Internal endpoint: Caddy On-Demand TLS ask authorization
 //
 // Unauthenticated top-level route registered in `server/mod.rs` (NOT under
-// `/api/realms`, so no `inject_identity`). It shares the
+// `/api/realms`, so no Bearer identity). It shares the
 // `custom_domain_mapping` table with the management handlers with a minimal
 // response shape (design §4.2.2):
 //   - ask → `{"authorized": true}` only (NO realm info — certificate-abuse

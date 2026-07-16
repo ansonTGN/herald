@@ -160,7 +160,6 @@ pub async fn list_realm_configs(
 ) -> Result<Json<Vec<RealmConfigResponse>>, ApiError> {
     let realm_config_service = state.service.realm_config_service();
 
-    // Extract identity from request extension (injected by inject_identity middleware)
     let identity_realm_id = identity.realm_id();
     let current_user_id = identity.user_id();
 
@@ -210,7 +209,6 @@ pub async fn list_realm_configs_by_type(
 ) -> Result<Json<Vec<RealmConfigResponse>>, ApiError> {
     let realm_config_service = state.service.realm_config_service();
 
-    // Extract identity from request extension (injected by inject_identity middleware)
     let identity_realm_id = identity.realm_id();
     let current_user_id = identity.user_id();
 
@@ -262,7 +260,6 @@ pub async fn get_realm_config(
 ) -> Result<Json<RealmConfigResponse>, ApiError> {
     let realm_config_service = state.service.realm_config_service();
 
-    // Extract identity from request extension (injected by inject_identity middleware)
     let identity_realm_id = identity.realm_id();
     let current_user_id = identity.user_id();
 
@@ -322,7 +319,6 @@ pub async fn upsert_realm_config(
 
     let realm_config_service = state.service.realm_config_service();
 
-    // Extract identity from request extension (injected by inject_identity middleware)
     let identity_realm_id = identity.realm_id();
     let current_user_id = identity.user_id();
 
@@ -427,7 +423,6 @@ pub async fn batch_upsert_realm_configs(
 
     let realm_config_service = state.service.realm_config_service();
 
-    // Extract identity from request extension (injected by inject_identity middleware)
     let identity_realm_id = identity.realm_id();
     let current_user_id = identity.user_id();
 
@@ -589,7 +584,6 @@ pub async fn delete_realm_config(
 ) -> Result<StatusCode, ApiError> {
     let realm_config_service = state.service.realm_config_service();
 
-    // Extract identity from request extension (injected by inject_identity middleware)
     let identity_realm_id = identity.realm_id();
     let current_user_id = identity.user_id();
 

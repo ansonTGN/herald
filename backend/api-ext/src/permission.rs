@@ -6,15 +6,17 @@ use axum::{
     Json,
     extract::{Extension, State},
 };
-use herald_core::domain::authentication::Identity;
+use herald_core::domain::authentication::{BrowserTokenService, Identity};
 use herald_core::domain::authorization::permission_service::PermissionService;
+use herald_core::domain::common::entities::app_errors::CoreError;
+use herald_core::domain::user::UserRepository;
+use herald_core::infrastructure::authentication::RedisBrowserTokenService;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 use validator::Validate;
 
 use crate::client_app_scope::{bound_client_identifier, is_admin_api_key};
-use herald_api_base::application::http::auth::util::load_session;
 use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
 use herald_api_base::application::http::state::AppState;
 
@@ -31,9 +33,8 @@ fn denied_response(error: Option<String>) -> Json<PermissionCheckResponse> {
 #[derive(Debug, Deserialize, ToSchema, Validate)]
 #[serde(rename_all = "camelCase")]
 pub struct PermissionCheckRequest {
-    /// User's session token
-    #[serde(alias = "token")]
-    pub session_token: String,
+    /// User's browser access token.
+    pub access_token: String,
 
     /// Permission rules to check
     pub rules: Vec<PermissionRule>,
@@ -68,7 +69,7 @@ pub struct PermissionCheckResponse {
 /// Check user permissions
 ///
 /// This endpoint allows third-party applications to check if a user
-/// has specific permissions using their session token.
+/// has specific permissions using their browser access token.
 ///
 /// # Authentication
 /// Requires valid API Key via X-API-Key header
@@ -76,7 +77,7 @@ pub struct PermissionCheckResponse {
 /// # Example
 /// ```json
 /// {
-///   "session_token": "user-session-token",
+///   "accessToken": "user-access-token",
 ///   "rules": [
 ///     {"resource": "article", "action": "read"},
 ///     {"resource": "article", "action": "write"}
@@ -110,17 +111,19 @@ pub async fn check_permission(
     }
 
     tracing::info!(
-        session_token_length = req.session_token.len(),
+        access_token_length = req.access_token.len(),
         rules_count = req.rules.len(),
         "Permission check requested"
     );
 
-    // 1. Validate session token and load session data
-    let session_data = match load_session(&state, &req.session_token).await {
+    let token_data = match RedisBrowserTokenService::new(state.redis_manager.clone())
+        .lookup_access_token(&req.access_token)
+        .await
+    {
         Ok(Some(data)) => data,
         Ok(None) => {
-            tracing::warn!("Session not found or expired");
-            return Ok(denied_response(Some("session_not_found".to_string())));
+            tracing::warn!("Browser access token not found or expired");
+            return Ok(denied_response(Some("token_not_found".to_string())));
         }
         Err(e) => {
             tracing::error!("Failed to load session: {:?}", e);
@@ -128,10 +131,10 @@ pub async fn check_permission(
         }
     };
 
-    if !identity.has_access_to_realm(&session_data.realm_id) {
+    if !identity.has_access_to_realm(&token_data.realm_id) {
         tracing::warn!(
             api_key_realm_id = %identity.realm_id(),
-            session_realm_id = %session_data.realm_id,
+            token_realm_id = %token_data.realm_id,
             "Cross-realm permission check blocked"
         );
         return Ok(denied_response(Some(
@@ -147,26 +150,55 @@ pub async fn check_permission(
         Ok(value) => value,
         Err(_) => return Ok(denied_response(Some("internal_error".to_string()))),
     };
-    if !admin_api_key
-        && bound_client_id
-            .as_deref()
-            .is_some_and(|id| id != session_data.client_id)
-    {
+    let token_client_id: Option<String> = sqlx::query_scalar(
+        "SELECT client_id FROM client_app WHERE id = $1 AND realm_id = $2 AND enabled = true",
+    )
+    .bind(token_data.client_app_id)
+    .bind(&token_data.realm_id)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|error| {
+        tracing::error!(%error, "Failed to load token Client App");
+        ApiError::internal("Internal server error")
+    })?;
+    if !admin_api_key && bound_client_id != token_client_id {
         tracing::warn!(
             api_key_id = %identity.id(),
             bound_client_id = ?bound_client_id,
-            session_client_id = %session_data.client_id,
+            token_client_app_id = %token_data.client_app_id,
             "Client App scoped API key attempted permission check for another Client App"
         );
         return Ok(denied_response(Some("forbidden".to_string())));
     }
 
-    // 2. Parse user_id from session
-    let user_id = match Uuid::parse_str(&session_data.user_id) {
+    let user_id = match Uuid::parse_str(&token_data.user_id) {
         Ok(id) => id,
         Err(e) => {
-            tracing::error!("Invalid user_id in session: {}", e);
-            return Ok(denied_response(Some("invalid_session".to_string())));
+            tracing::error!("Invalid user_id in browser token: {}", e);
+            return Ok(denied_response(Some("invalid_token".to_string())));
+        }
+    };
+
+    let _user = match state.user_repository.get_user_by_id(user_id).await {
+        Ok(user) if user.realm_id == token_data.realm_id => user,
+        Ok(_) => {
+            tracing::warn!(
+                token_user_id = %token_data.user_id,
+                token_realm_id = %token_data.realm_id,
+                "User realm does not match token realm"
+            );
+            return Ok(denied_response(Some("invalid_token".to_string())));
+        }
+        Err(CoreError::NotFound) => {
+            tracing::warn!(
+                token_user_id = %token_data.user_id,
+                "User referenced by browser token no longer exists"
+            );
+            return Ok(denied_response(Some("invalid_token".to_string())));
+        }
+        Err(e) => {
+            tracing::error!("Failed to load user for permission check: {:?}", e);
+            return Ok(denied_response(Some("internal_error".to_string())));
         }
     };
 
@@ -177,7 +209,7 @@ pub async fn check_permission(
     for rule in &req.rules {
         match permission_checker
             .check_permission(
-                &session_data.realm_id,
+                &token_data.realm_id,
                 &user_id.to_string(),
                 &rule.resource,
                 &rule.action,
@@ -188,7 +220,7 @@ pub async fn check_permission(
                 if !allowed {
                     all_allowed = false;
                     tracing::debug!(
-                        realm_id = %session_data.realm_id,
+                        realm_id = %token_data.realm_id,
                         user_id = %user_id,
                         resource = %rule.resource,
                         action = %rule.action,
@@ -205,7 +237,7 @@ pub async fn check_permission(
     }
 
     tracing::info!(
-        realm_id = %session_data.realm_id,
+        realm_id = %token_data.realm_id,
         user_id = %user_id,
         allowed = all_allowed,
         "Permission check completed"

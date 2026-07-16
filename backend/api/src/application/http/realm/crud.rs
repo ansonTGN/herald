@@ -100,7 +100,6 @@ pub async fn list_realms(
 ) -> Result<ApiResult<ListRealmsResponse>, ApiError> {
     let realm_service = state.service.realm_service();
 
-    // Extract identity from request extension (injected by inject_identity middleware)
     let identity_realm_id = identity.realm_id();
     let current_user_id = identity.user_id();
 
@@ -152,7 +151,6 @@ pub async fn list_realms_paginated(
 ) -> Result<ApiResult<PageResponse<RealmResponse>>, ApiError> {
     let realm_service = state.service.realm_service();
 
-    // Extract identity from request extension (injected by inject_identity middleware)
     let identity_realm_id = identity.realm_id();
     let current_user_id = identity.user_id();
 
@@ -214,7 +212,6 @@ pub async fn get_realm(
 ) -> Result<ApiResult<RealmResponse>, ApiError> {
     let realm_service = state.service.realm_service();
 
-    // Extract identity from request extension (injected by inject_identity middleware)
     let identity_realm_id = identity.realm_id();
     let current_user_id = identity.user_id();
 
@@ -271,7 +268,6 @@ pub async fn create_realm(
 
     let realm_service = state.service.realm_service();
 
-    // Extract identity from request extension (injected by inject_identity middleware)
     let identity_realm_id = identity.realm_id();
     let current_user_id = identity.user_id();
 
@@ -347,7 +343,6 @@ pub async fn update_realm(
 
     let realm_service = state.service.realm_service();
 
-    // Extract identity from request extension (injected by inject_identity middleware)
     let identity_realm_id = identity.realm_id();
     let current_user_id = identity.user_id();
 

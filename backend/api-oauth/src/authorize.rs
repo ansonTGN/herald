@@ -99,8 +99,8 @@ pub async fn oauth_authorize(
     }
 
     // Validate client_id and redirect_uri
-    let client_row = sqlx::query_as::<_, (String, String, bool)>(
-        "SELECT id::text, redirect_uris::text, enabled FROM client_app
+    let client_row = sqlx::query_as::<_, (String, String, bool, bool)>(
+        "SELECT id::text, redirect_uris::text, enabled, is_first_party FROM client_app
          WHERE realm_id = $1 AND client_id = $2",
     )
     .bind(&realm_id)
@@ -117,7 +117,7 @@ pub async fn oauth_authorize(
         ApiError::internal("Database query failed".to_string())
     })?;
 
-    let Some((_id, redirect_uris, enabled)) = client_row else {
+    let Some((_id, redirect_uris, enabled, is_first_party)) = client_row else {
         tracing::debug!(
             realm_id = %realm_id,
             client_id = %params.client_id,
@@ -149,7 +149,12 @@ pub async fn oauth_authorize(
     )
     .map_err(|e| ApiError::bad_request(format!("Invalid redirect_uri: {}", e)))?;
 
-    let is_whitelisted = allowed_uris.contains(&params.redirect_uri);
+    let is_whitelisted = if is_first_party {
+        crate::token::validate_first_party_redirect(&state.public_base_url, &params.redirect_uri)
+            .is_ok()
+    } else {
+        allowed_uris.contains(&params.redirect_uri)
+    };
 
     if !is_whitelisted {
         tracing::debug!(

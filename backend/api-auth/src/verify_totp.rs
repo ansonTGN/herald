@@ -1,7 +1,6 @@
 use axum::{
     Json,
     extract::{Path, State},
-    http::header::SET_COOKIE,
     response::IntoResponse,
 };
 use axum_valid::Valid;
@@ -11,13 +10,11 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 use validator::Validate;
 
-use herald_api_base::application::http::auth::util::{
-    ClientIp, SessionData, build_set_cookie, epoch_seconds, rate_limit_hit,
-    renewal_ttl_seconds_from_i32, store_session,
-};
+use herald_api_base::application::http::auth::util::{ClientIp, epoch_seconds, rate_limit_hit};
 use herald_api_base::application::http::server::api_entities::ApiError;
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
 use herald_api_base::application::http::state::AppState;
+use herald_core::domain::authentication::BrowserTokenService;
 use herald_core::domain::client::ports::ClientService;
 use herald_core::domain::security_constants::{
     OAUTH_STATE_TTL_SECONDS, TOTP_LOCKOUT_SECONDS, TOTP_MAX_FAILURES, TOTP_VERIFY_IP_RATE_LIMIT,
@@ -27,8 +24,10 @@ use herald_core::domain::user::ports::UserRepository;
 use herald_core::domain::user_totp::{
     TotpVerificationResultWithBackup, UserTotpRepository, UserTotpService,
 };
+use herald_core::infrastructure::authentication::RedisBrowserTokenService;
 use herald_core::infrastructure::user_totp::PostgresUserTotpRepository;
 
+use crate::browser_token::BrowserTokenResponse;
 use crate::consent_gate::AuthConsentAgreement;
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -107,7 +106,9 @@ struct TempSessionData {
     user_id: String,
     realm_id: String,
     client_id: String,
+    client_app_id: Uuid,
     client_ip: String,
+    flow: String,
     #[serde(default)]
     oauth_client_id: Option<String>,
     #[serde(default)]
@@ -163,15 +164,25 @@ pub async fn handle_verify_totp(
         ApiError::internal("Redis operation error".to_string())
     })?;
 
-    // Look up client app for session TTL
+    if temp_session.realm_id != realm_id {
+        return Err(ApiError::bad_request(
+            "Path realm_id does not match temporary session realm".to_string(),
+        ));
+    }
+
+    // Resolve the same Client App bound into the temporary login state.
     let client_app = state
         .service
         .client_service()
         .get_client_app_by_client_id(&temp_session.realm_id, &temp_session.client_id)
         .await
         .map_err(|_| ApiError::internal("Client app lookup failed".to_string()))?;
-    let session_ttl = client_app.session_ttl_seconds as usize;
-    let renewal_ttl_seconds = renewal_ttl_seconds_from_i32(client_app.session_renewal_ttl_seconds)?;
+    if !client_app.enabled
+        || client_app.id != temp_session.client_app_id
+        || temp_session.flow != "custom_user_ui"
+    {
+        return Err(ApiError::unauthorized("Invalid temporary token"));
+    }
 
     // 2. Check rate limits
     rate_limit_hit(
@@ -468,39 +479,8 @@ pub async fn handle_verify_totp(
         return Ok(response);
     }
 
-    // 9. Create permanent session (normal flow, no OAuth)
-    let token = format!("{}_{}_{}", realm_id, temp_session.user_id, epoch_seconds());
-
-    let session_data = SessionData {
-        realm_id: temp_session.realm_id.clone(),
-        client_id: temp_session.client_id,
-        user_id: temp_session.user_id.clone(),
-        client_ip,
-        renewal_ttl_seconds,
-    };
-
-    store_session(&state, &token, &session_data, session_ttl).await?;
-
-    // 10. Build response with session cookie
-    let cookie_header = build_set_cookie(
-        "X-Auth",
-        &token,
-        session_ttl as i64,
-        state.app_env == "production",
-    );
-    let response = (
-        [(SET_COOKIE, cookie_header)],
-        Json(VerifyTotpResponse {
-            message: "ok".to_string(),
-            user_id: temp_session.user_id,
-            token,
-            expires_in_seconds: session_ttl as i64,
-            redirect_to: None,
-            consent_required: None,
-            agreements: None,
-        }),
-    )
-        .into_response();
-
-    Ok(response)
+    let tokens = RedisBrowserTokenService::new(state.redis_manager.clone())
+        .create_token_family(&user, &client_app)
+        .await?;
+    Ok(Json(BrowserTokenResponse::from(tokens)).into_response())
 }

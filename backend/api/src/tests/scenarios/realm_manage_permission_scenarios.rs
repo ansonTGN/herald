@@ -129,7 +129,7 @@ async fn test_scenario_realm_manage_grants_create_in_admin_realm(ctx: &mut TestC
     let req = Request::builder()
         .method("POST")
         .uri("/api/realms")
-        .header(header::COOKIE, format!("X-Auth={}", user_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", user_token))
         .header("content-type", "application/json")
         .body(Body::from(
             json!({
@@ -187,7 +187,7 @@ async fn test_scenario_realm_view_cannot_create(ctx: &mut TestContext) {
     let req = Request::builder()
         .method("POST")
         .uri("/api/realms")
-        .header(header::COOKIE, format!("X-Auth={}", user_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", user_token))
         .header("content-type", "application/json")
         .body(Body::from(
             json!({
@@ -240,7 +240,7 @@ async fn test_scenario_realm_manage_cannot_update_other_realm(ctx: &mut TestCont
     let create_req = Request::builder()
         .method("POST")
         .uri("/api/realms")
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
         .header("content-type", "application/json")
         .body(Body::from(
             json!({
@@ -278,7 +278,7 @@ async fn test_scenario_realm_manage_cannot_update_other_realm(ctx: &mut TestCont
     let update_req = Request::builder()
         .method("PUT")
         .uri(format!("/api/realms/{}", target_realm_id))
-        .header(header::COOKIE, format!("X-Auth={}", user_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", user_token))
         .header("content-type", "application/json")
         .body(Body::from(
             json!({
@@ -330,7 +330,7 @@ async fn test_scenario_realm_view_cannot_update_other_realm(ctx: &mut TestContex
     let create_req = Request::builder()
         .method("POST")
         .uri("/api/realms")
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
         .header("content-type", "application/json")
         .body(Body::from(
             json!({
@@ -368,7 +368,7 @@ async fn test_scenario_realm_view_cannot_update_other_realm(ctx: &mut TestContex
     let update_req = Request::builder()
         .method("PUT")
         .uri(format!("/api/realms/{}", target_realm_id))
-        .header(header::COOKIE, format!("X-Auth={}", user_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", user_token))
         .header("content-type", "application/json")
         .body(Body::from(
             json!({

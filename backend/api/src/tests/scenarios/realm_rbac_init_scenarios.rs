@@ -71,7 +71,7 @@ mod tests {
             .method(Method::POST)
             .uri("/api/realms")
             .header(header::CONTENT_TYPE, "application/json")
-            .header(header::COOKIE, format!("X-Auth={}", admin_token))
+            .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
             .body(Body::from(
                 json!({
                     "id": new_realm_id,
@@ -143,7 +143,7 @@ mod tests {
         let list_roles_req = Request::builder()
             .method(Method::GET)
             .uri(format!("/api/roles/{}/define", new_realm_id))
-            .header(header::COOKIE, format!("X-Auth={}", admin_token))
+            .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
             .body(Body::empty())
             .unwrap();
 

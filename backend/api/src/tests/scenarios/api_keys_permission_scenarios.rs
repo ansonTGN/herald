@@ -137,7 +137,7 @@ async fn test_scenario_api_keys_view_grants_list(ctx: &mut TestContext) {
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/api-keys/{}", ctx._realm_id))
-        .header(header::COOKIE, format!("X-Auth={}", user_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", user_token))
         .body(Body::empty())
         .unwrap();
 
@@ -181,7 +181,7 @@ async fn test_scenario_api_keys_view_grants_get_detail(ctx: &mut TestContext) {
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/api-keys/{}/{}", ctx._realm_id, key_id))
-        .header(header::COOKIE, format!("X-Auth={}", user_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", user_token))
         .body(Body::empty())
         .unwrap();
 
@@ -220,7 +220,7 @@ async fn test_scenario_api_keys_view_cannot_create(ctx: &mut TestContext) {
     let req = Request::builder()
         .method("POST")
         .uri(format!("/api/api-keys/{}", ctx._realm_id))
-        .header(header::COOKIE, format!("X-Auth={}", user_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", user_token))
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(body.to_string()))
         .unwrap();
@@ -265,7 +265,7 @@ async fn test_scenario_api_keys_view_cannot_delete(ctx: &mut TestContext) {
     let req = Request::builder()
         .method("DELETE")
         .uri(format!("/api/api-keys/{}/{}", ctx._realm_id, key_id))
-        .header(header::COOKIE, format!("X-Auth={}", user_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", user_token))
         .body(Body::empty())
         .unwrap();
 
@@ -303,7 +303,7 @@ async fn test_scenario_api_keys_manage_covers_view(ctx: &mut TestContext) {
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/api-keys/{}", ctx._realm_id))
-        .header(header::COOKIE, format!("X-Auth={}", user_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", user_token))
         .body(Body::empty())
         .unwrap();
 

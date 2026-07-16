@@ -1,7 +1,6 @@
 // End-to-end tests for DELETE /api/user (BE-D07).
 // Covers design §6.1「账户注销」and US-RU-014.
 
-use crate::application::http::auth::util::{SessionData, store_session};
 use crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm;
 use crate::tests::schema_test_context::SchemaTestContext as TestContext;
 use axum::{
@@ -9,6 +8,10 @@ use axum::{
     http::{Request, StatusCode, header},
 };
 use herald_core::domain::legal::entities::AgreementType;
+use herald_core::domain::{
+    authentication::BrowserTokenService, client::ports::ClientService, user::UserRepository,
+};
+use herald_core::infrastructure::authentication::RedisBrowserTokenService;
 use serde_json::json;
 use sqlx::Row;
 use test_context::test_context;
@@ -205,7 +208,7 @@ async fn login_with_credentials(
     app.oneshot(req).await.unwrap()
 }
 
-/// Login and extract the X-Auth session token.
+/// Login and extract the Bearer access token.
 async fn login_and_get_token(
     ctx: &TestContext,
     realm_id: &str,
@@ -213,49 +216,57 @@ async fn login_and_get_token(
     password: &str,
 ) -> String {
     let resp = login_with_credentials(ctx, realm_id, email, password).await;
-    let set_cookie = resp
-        .headers()
-        .get(header::SET_COOKIE)
-        .and_then(|v| v.to_str().ok())
-        .expect("Login should return Set-Cookie header");
-    crate::tests::extract_set_cookie_token(set_cookie, "X-Auth")
-        .expect("Should extract X-Auth token")
+    assert!(
+        !resp.headers().contains_key(header::SET_COOKIE),
+        "Browser-token login must not set a cookie"
+    );
+    let body: serde_json::Value = crate::tests::response_json(resp).await;
+    body["accessToken"]
+        .as_str()
+        .expect("Login should return accessToken")
+        .to_owned()
 }
 
-/// Call DELETE /api/user with the given session token.
+/// Call DELETE /api/user with the given Bearer token and reauthentication token.
 async fn call_delete_account(
     ctx: &TestContext,
     token: &str,
-    password: &str,
+    reauth_token: &str,
 ) -> axum::response::Response {
     let app = ctx.create_unified_test_router();
-    let payload = json!({ "password": password });
+    let payload = json!({ "reauthToken": reauth_token });
 
     let req = Request::builder()
         .method("DELETE")
         .uri("/api/user")
         .header("content-type", "application/json")
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::from(payload.to_string()))
         .unwrap();
 
     app.oneshot(req).await.unwrap()
 }
 
-/// Create an additional Redis session for the user (multi-device scenario).
+/// Create an additional FirstParty browser-token family for the user.
 async fn create_extra_session(ctx: &TestContext, user_id: Uuid) -> String {
-    let token = ctx.generate_test_token();
-    let session = SessionData {
-        realm_id: ctx._realm_id.clone(),
-        client_id: ctx._client_id.clone(),
-        user_id: user_id.to_string(),
-        client_ip: "127.0.0.1".to_string(),
-        renewal_ttl_seconds: None,
-    };
-    store_session(&ctx.app_state, &token, &session, 1800)
+    let user = ctx
+        .app_state
+        .user_repository
+        .get_user_by_id(user_id)
         .await
-        .expect("Failed to store extra session");
-    token
+        .expect("Failed to load test user");
+    let client_app = ctx
+        .app_state
+        .service
+        .client_service()
+        .get_client_app_by_client_id(&ctx._realm_id, &ctx._client_id)
+        .await
+        .expect("Failed to load test client app");
+    RedisBrowserTokenService::new(ctx.app_state.redis_manager.clone())
+        .create_first_party_token_family(&user, &client_app)
+        .await
+        .expect("Failed to create extra token family")
+        .access_token
 }
 
 /// Read the account row fields that matter for anonymization assertions.
@@ -335,7 +346,7 @@ async fn protected_endpoint_status(ctx: &TestContext, token: &str) -> StatusCode
     let req = Request::builder()
         .method("GET")
         .uri("/api/user/profile")
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::empty())
         .unwrap();
 

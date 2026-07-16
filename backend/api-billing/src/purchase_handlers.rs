@@ -10,11 +10,14 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 use validator::Validate;
 
-use herald_api_base::application::http::common::auth_utils::require_authenticated_user_in_realm;
+use herald_api_base::application::http::common::auth_utils::{
+    require_authenticated_user_in_realm, require_authenticated_user_in_realm_with_token,
+    require_token_scope,
+};
 use herald_api_base::application::http::common::error_helpers::core_error_to_api_error;
 use herald_api_base::application::http::server::api_entities::ApiError;
 use herald_api_base::application::http::state::AppState;
-use herald_core::domain::authentication::Identity;
+use herald_core::domain::authentication::{CredentialScope, Identity, TokenCredentialContext};
 use herald_core::domain::common::entities::app_errors::CoreError;
 use herald_core::domain::payment_attempt::PaymentAttemptRepository;
 use herald_core::domain::purchase::{
@@ -274,14 +277,20 @@ fn fulfillment_result_to_response(result: FulfillmentResult) -> FulfillPaymentRe
 pub async fn create_payment_attempt(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
+    Extension(context): Extension<TokenCredentialContext>,
     Path(realm_id): Path<String>,
     Json(input): Json<CreatePaymentAttemptRequest>,
 ) -> Result<(StatusCode, Json<CreatePaymentAttemptResponse>), ApiError> {
+    require_token_scope(&identity, &context, CredentialScope::PurchaseInitiate)?;
+    let user_id = require_authenticated_user_in_realm_with_token(
+        &identity,
+        &context,
+        &realm_id,
+        "purchase APIs",
+    )?;
     input
         .validate()
         .map_err(|e| ApiError::bad_request(format!("Invalid request: {}", e)))?;
-
-    let user_id = require_authenticated_user_in_realm(&identity, &realm_id, "purchase APIs")?;
 
     let created = state
         .purchase_service
@@ -335,8 +344,15 @@ pub async fn get_payment_attempt_status(
     State(state): State<AppState>,
     Path((realm_id, attempt_id)): Path<(String, Uuid)>,
     Extension(identity): Extension<Identity>,
+    Extension(context): Extension<TokenCredentialContext>,
 ) -> Result<Json<PaymentAttemptStatusResponse>, ApiError> {
-    let user_id = require_authenticated_user_in_realm(&identity, &realm_id, "purchase APIs")?;
+    require_token_scope(&identity, &context, CredentialScope::PurchaseStatusRead)?;
+    let user_id = require_authenticated_user_in_realm_with_token(
+        &identity,
+        &context,
+        &realm_id,
+        "purchase APIs",
+    )?;
 
     let service = &state.payment_attempt_service;
 
@@ -467,10 +483,17 @@ pub async fn fulfill_payment(
 pub async fn get_purchase_history(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
+    Extension(context): Extension<TokenCredentialContext>,
     Query(filters): Query<PurchaseHistoryQuery>,
 ) -> Result<Json<PurchaseHistoryResponse>, ApiError> {
     let realm_id = identity.realm_id();
-    let user_id = require_authenticated_user_in_realm(&identity, &realm_id, "purchase history")?;
+    require_token_scope(&identity, &context, CredentialScope::PurchaseRead)?;
+    let user_id = require_authenticated_user_in_realm_with_token(
+        &identity,
+        &context,
+        &realm_id,
+        "purchase history",
+    )?;
 
     let page = filters.page.unwrap_or(1).max(1);
     let page_size = filters.page_size.unwrap_or(20).min(100);

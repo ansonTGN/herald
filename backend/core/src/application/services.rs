@@ -1,7 +1,6 @@
 // Application Service - Type aliases and service aggregation
 
 use crate::domain::{
-    authentication::services::AuthenticationServiceImpl,
     authorization::services::{AuthorizationServiceImpl, PermissionServiceImpl, RoleServiceImpl},
     client::services::ClientServiceImpl,
     oauth::config_service::OAuthConfigService,
@@ -12,7 +11,6 @@ use crate::domain::{
 };
 use crate::infrastructure::{
     audit::PostgresAuditEventRepository,
-    authentication::RedisSessionRepository,
     authorization::{
         PermissionCheckerAuthorizationRepository, PostgresPermissionRepository,
         PostgresRolePermissionRepository, PostgresRoleRepository, PostgresUserRoleRepository,
@@ -34,7 +32,6 @@ use std::sync::Arc;
 // Repository type aliases
 type UserRepo = PostgresUserRepository;
 type VerificationRepo = PostgresVerificationRepository;
-type SessionRepo = RedisSessionRepository;
 type RoleRepo = PostgresRoleRepository;
 type PermissionRepo = PostgresPermissionRepository;
 type RolePermissionRepo = PostgresRolePermissionRepository;
@@ -56,7 +53,6 @@ pub type UserServiceType = UserServiceImpl<
     VerificationRepo,
     crate::domain::common::policies::AllowAllUserPolicy,
 >;
-pub type AuthenticationServiceType = AuthenticationServiceImpl<UserServiceType, SessionRepo>;
 pub type RoleServiceType = RoleServiceImpl<RoleRepo>;
 pub type PermissionCrudServiceType = PermissionServiceImpl<PermissionRepo>;
 pub type AuthorizationServiceType = AuthorizationServiceImpl<RolePermissionRepo, AuthorizationRepo>;
@@ -98,7 +94,6 @@ pub type PermissionCheckerType = RedisPermissionChecker;
 pub struct ApplicationService {
     // All services use pub(crate) visibility
     pub(crate) user_service: Arc<UserServiceType>,
-    pub(crate) authentication_service: Arc<AuthenticationServiceType>,
     pub(crate) role_service: Arc<RoleServiceType>,
     pub(crate) permission_crud_service: Arc<PermissionCrudServiceType>,
     pub(crate) authorization_service: Arc<AuthorizationServiceType>,
@@ -113,7 +108,6 @@ pub struct ApplicationService {
 impl ApplicationService {
     pub fn new(
         user_service: Arc<UserServiceType>,
-        authentication_service: Arc<AuthenticationServiceType>,
         role_service: Arc<RoleServiceType>,
         permission_crud_service: Arc<PermissionCrudServiceType>,
         authorization_service: Arc<AuthorizationServiceType>,
@@ -126,7 +120,6 @@ impl ApplicationService {
     ) -> Self {
         Self {
             user_service,
-            authentication_service,
             role_service,
             permission_crud_service,
             authorization_service,
@@ -142,11 +135,6 @@ impl ApplicationService {
     /// Get user service
     pub fn user_service(&self) -> Arc<UserServiceType> {
         self.user_service.clone()
-    }
-
-    /// Get authentication service
-    pub fn authentication_service(&self) -> Arc<AuthenticationServiceType> {
-        self.authentication_service.clone()
     }
 
     /// Get role service

@@ -88,7 +88,7 @@ async fn test_scenario_admin_list_users_success(ctx: &mut TestContext) {
             "/api/roles/{}/users?page=0&pageSize=20",
             ctx._realm_id
         ))
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
         .body(Body::empty())
         .unwrap();
 
@@ -359,7 +359,7 @@ async fn test_scenario_user_list_includes_nicknames(ctx: &mut TestContext) {
         .method("PUT")
         .uri(format!("/api/users/admin/{}", user1_id))
         .header(header::CONTENT_TYPE, "application/json")
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
         .body(Body::from(serde_json::to_string(&update_payload).unwrap()))
         .unwrap();
 
@@ -373,7 +373,7 @@ async fn test_scenario_user_list_includes_nicknames(ctx: &mut TestContext) {
             "/api/roles/{}/users?page=0&pageSize=20",
             ctx._realm_id
         ))
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
         .body(Body::empty())
         .unwrap();
 

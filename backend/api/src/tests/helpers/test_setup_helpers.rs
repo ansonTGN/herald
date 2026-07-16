@@ -31,7 +31,7 @@
 use crate::tests::schema_test_context::SchemaTestContext as TestContext;
 use axum::{
     body::Body,
-    http::{Method, Request, StatusCode, header},
+    http::{Method, Request, StatusCode},
 };
 use serde_json::json;
 use tower::ServiceExt;
@@ -183,14 +183,8 @@ pub async fn login_user(ctx: &mut TestContext, email: &str, password: &str) -> S
         .unwrap();
     assert_eq!(login_response.status(), StatusCode::OK);
 
-    let set_cookie = login_response
-        .headers()
-        .get(header::SET_COOKIE)
-        .and_then(|v| v.to_str().ok())
-        .expect("Should return Set-Cookie header");
-
-    crate::tests::extract_set_cookie_token(set_cookie, "X-Auth")
-        .expect("Should extract X-Auth token")
+    let (_response, token) = crate::tests::extract_bearer_token(login_response).await;
+    token.expect("Login should return accessToken")
 }
 
 // =============================================================================

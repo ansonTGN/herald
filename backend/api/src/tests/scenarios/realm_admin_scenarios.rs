@@ -95,7 +95,7 @@ async fn test_scenario_realm_admin_can_access_users(ctx: &mut TestContext) {
         .method("POST")
         .uri("/api/realms")
         .header("content-type", "application/json")
-        .header("cookie", format!("X-Auth={}", super_admin_token))
+        .header("authorization", format!("Bearer {}", super_admin_token))
         .body(Body::from(create_payload))
         .unwrap();
 
@@ -265,15 +265,8 @@ async fn test_scenario_realm_admin_can_access_users(ctx: &mut TestContext) {
     let resp = app.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK, "登录失败");
 
-    // 提取 token
-    let set_cookie = resp
-        .headers()
-        .get("set-cookie")
-        .and_then(|v| v.to_str().ok())
-        .unwrap()
-        .to_string();
-
-    let realm_admin_token = crate::tests::extract_set_cookie_token(&set_cookie, "X-Auth").unwrap();
+    let (_resp, realm_admin_token) = crate::tests::extract_bearer_token(resp).await;
+    let realm_admin_token = realm_admin_token.expect("Login should return accessToken");
     println!("[Step 4] ✓ Realm Admin 用户登录成功");
 
     // ============================================================================
@@ -319,7 +312,7 @@ async fn test_scenario_realm_admin_can_access_users(ctx: &mut TestContext) {
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/roles/{}/users", new_realm_id))
-        .header("cookie", format!("X-Auth={}", realm_admin_token))
+        .header("authorization", format!("Bearer {}", realm_admin_token))
         .body(Body::empty())
         .unwrap();
 
@@ -458,7 +451,7 @@ async fn test_scenario_realm_creation_sets_realm_admin_permissions(ctx: &mut Tes
         .method("POST")
         .uri("/api/realms")
         .header("content-type", "application/json")
-        .header("cookie", format!("X-Auth={}", super_admin_token))
+        .header("authorization", format!("Bearer {}", super_admin_token))
         .body(Body::from(create_payload))
         .unwrap();
 

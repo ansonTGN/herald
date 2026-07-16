@@ -26,7 +26,7 @@ async fn test_scenario_change_email_flow(ctx: &mut TestContext) {
         .method("POST")
         .uri(format!("/api/auth/{}/change_email/request", realm_id))
         .header("content-type", "application/json")
-        .header("cookie", format!("X-Auth={}", _token))
+        .header("authorization", format!("Bearer {}", _token))
         .body(Body::from(request_payload.to_string()))
         .unwrap();
 
@@ -65,7 +65,7 @@ async fn test_scenario_change_email_confirm_requires_same_authenticated_user(
         .method("POST")
         .uri(format!("/api/auth/{}/change_email/request", realm_id))
         .header("content-type", "application/json")
-        .header("cookie", format!("X-Auth={}", token_a))
+        .header("authorization", format!("Bearer {}", token_a))
         .body(Body::from(request_payload.to_string()))
         .unwrap();
 
@@ -88,7 +88,7 @@ async fn test_scenario_change_email_confirm_requires_same_authenticated_user(
             "/api/auth/{}/change_email/confirm/{}",
             realm_id, change_code
         ))
-        .header("cookie", format!("X-Auth={}", token_b))
+        .header("authorization", format!("Bearer {}", token_b))
         .body(Body::empty())
         .unwrap();
 
@@ -101,7 +101,7 @@ async fn test_scenario_change_email_confirm_requires_same_authenticated_user(
             "/api/auth/{}/change_email/confirm/{}",
             realm_id, change_code
         ))
-        .header("cookie", format!("X-Auth={}", token_a))
+        .header("authorization", format!("Bearer {}", token_a))
         .body(Body::empty())
         .unwrap();
 

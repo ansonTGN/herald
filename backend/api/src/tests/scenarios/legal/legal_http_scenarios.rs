@@ -46,7 +46,7 @@ use uuid::Uuid;
 /// Build a bare (unauthenticated) request to the unified test router.
 ///
 /// Public legal endpoints (`/api/legal/{realmId}/agreements*`) take no
-/// `inject_identity` layer, so this is the canonical request shape for them.
+/// Bearer authentication, so this is the canonical request shape for them.
 fn build_request(method: &str, path: &str) -> Request<Body> {
     Request::builder()
         .method(method)
@@ -56,16 +56,16 @@ fn build_request(method: &str, path: &str) -> Request<Body> {
         .expect("failed to build request")
 }
 
-/// Build an authenticated request, attaching the `X-Auth` session cookie.
+/// Build an authenticated request with an Authorization Bearer token.
 ///
-/// Used for self-service consent (inject_identity) and admin (inject_identity +
-/// require_permission) endpoints — both gated on a valid session.
+/// Used for self-service consent (Bearer authentication) and admin (Bearer
+/// authentication + require_permission) endpoints — both gated on a valid token.
 fn authed_request(method: &str, path: &str, token: &str, body: Option<String>) -> Request<Body> {
     let mut builder = Request::builder()
         .method(method)
         .uri(path)
         .header(header::CONTENT_TYPE, "application/json")
-        .header(header::COOKIE, format!("X-Auth={token}"))
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .header("x-forwarded-for", "203.0.113.10")
         .header(header::USER_AGENT, "legal-http-scene-test/1.0");
     if let Some(b) = body {
@@ -190,11 +190,10 @@ async fn seed_extra_realm(ctx: &TestContext, realm_id2: &str) {
     .await
     .expect("failed to seed extra realm");
 
-    // admin-web-console client_app must exist for the test realm so that
-    // session/permission machinery (which keys off client_id) resolves.
+    // The FirstParty admin console must exist for the extra realm.
     sqlx::query(
-        "INSERT INTO client_app (id, realm_id, client_id, name, description, redirect_uris, enabled, session_ttl_seconds, session_renewal_ttl_seconds, client_secret)
-         VALUES ($1, $2, 'admin-web-console', 'legal-scene-test', 'Legal scene test console', '[\"http://localhost:3000/callback\"]'::jsonb, true, 1800, 86400, 'test-secret')
+        "INSERT INTO client_app (id, realm_id, client_id, name, description, redirect_uris, enabled, browser_refresh_absolute_ttl_seconds, client_secret, is_first_party)
+         VALUES ($1, $2, 'admin-web-console', 'legal-scene-test', 'Legal scene test console', '[\"http://localhost:3000/callback\"]'::jsonb, true, 86400, 'test-secret', true)
          ON CONFLICT (realm_id, client_id) DO NOTHING",
     )
     .bind(Uuid::now_v7())
@@ -252,7 +251,7 @@ async fn max_custom_version_no(ctx: &TestContext, realm_id: &str, agreement_type
 
 /// User Story: US-RU-013 (public view of agreements, no login required)
 /// Covers: Design §4.2.1 — the agreements list endpoint is PUBLIC (no
-/// `inject_identity` layer). An anonymous request must resolve and return both
+/// Bearer authentication requirement). An anonymous request must resolve and return both
 /// agreement types' current effective summaries from the seeded platform
 /// defaults.
 ///
@@ -829,7 +828,7 @@ async fn test_post_consent_returns_409_on_stale_version(ctx: &mut TestContext) {
 
 /// User Story: US-RU-015 (consent is a self-service, identity-bound action)
 /// Covers: Design §4.5 — consent is self-service and gated behind
-/// `inject_identity`. An unauthenticated POST must return 401 before any write
+/// Bearer authentication. An unauthenticated POST must return 401 before any write
 /// happens, so an anonymous client cannot fabricate consent on someone's behalf.
 ///
 /// WHY this matters: consent is a legal commitment attributed to a specific
@@ -842,7 +841,7 @@ async fn test_post_consent_requires_login(ctx: &mut TestContext) {
     let app = ctx.create_unified_test_router();
     let realm_id = ctx._realm_id.clone();
 
-    // No X-Auth cookie at all — the inject_identity layer must short-circuit.
+    // No Authorization header — the token identity layer must short-circuit.
     let resp = app
         .oneshot(build_request_bodyful(
             "POST",

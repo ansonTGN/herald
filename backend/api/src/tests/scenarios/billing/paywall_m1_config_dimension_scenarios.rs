@@ -44,7 +44,7 @@ mod tests {
         let mut builder = Request::builder()
             .method(method)
             .uri(uri)
-            .header(header::COOKIE, format!("X-Auth={}", token));
+            .header(header::AUTHORIZATION, format!("Bearer {}", token));
         if let Some(b) = body {
             builder = builder.header("Content-Type", "application/json");
             builder.body(b).unwrap()

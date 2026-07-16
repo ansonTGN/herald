@@ -128,7 +128,7 @@ async fn test_scenario_audit_list_paginated_sorted_by_time_desc(ctx: &mut TestCo
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/audit/{}?page=0&pageSize=20", realm_id))
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
         .body(Body::empty())
         .unwrap();
 
@@ -178,7 +178,7 @@ async fn test_scenario_audit_list_empty_when_no_events(ctx: &mut TestContext) {
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/audit/{}?page=0&pageSize=20", ctx._realm_id))
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
         .body(Body::empty())
         .unwrap();
 
@@ -266,7 +266,7 @@ async fn test_scenario_audit_filter_by_category(ctx: &mut TestContext) {
             "/api/audit/{}?page=0&pageSize=20&category=auth",
             realm_id
         ))
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
         .body(Body::empty())
         .unwrap();
 
@@ -346,7 +346,7 @@ async fn test_scenario_audit_filter_by_actor_id(ctx: &mut TestContext) {
             "/api/audit/{}?page=0&pageSize=20&actorId={}",
             realm_id, admin_user_id
         ))
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
         .body(Body::empty())
         .unwrap();
 
@@ -409,7 +409,7 @@ async fn test_scenario_audit_filter_by_time_range(ctx: &mut TestContext) {
             "/api/audit/{}?page=0&pageSize=20&startTime={}&endTime={}",
             realm_id, start_time, end_time
         ))
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
         .body(Body::empty())
         .unwrap();
 
@@ -436,7 +436,7 @@ async fn test_scenario_audit_filter_by_time_range(ctx: &mut TestContext) {
             "/api/audit/{}?page=0&pageSize=20&startTime={}&endTime={}",
             realm_id, past_start, past_end
         ))
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
         .body(Body::empty())
         .unwrap();
 
@@ -496,7 +496,7 @@ async fn test_scenario_audit_detail_returns_full_fields(ctx: &mut TestContext) {
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/audit/{}/{}", realm_id, event_id))
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
         .body(Body::empty())
         .unwrap();
 
@@ -590,7 +590,7 @@ async fn test_scenario_audit_list_realm_isolation(ctx: &mut TestContext) {
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/audit/{}?page=0&pageSize=20", realm_id))
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
         .body(Body::empty())
         .unwrap();
 
@@ -650,7 +650,7 @@ async fn test_scenario_audit_detail_cross_realm_returns_404(ctx: &mut TestContex
             "/api/audit/{}/{}",
             ctx._realm_id, cross_realm_event_id
         ))
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
         .body(Body::empty())
         .unwrap();
 
@@ -686,7 +686,7 @@ async fn test_scenario_audit_list_non_admin_forbidden(ctx: &mut TestContext) {
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/audit/{}?page=0&pageSize=20", ctx._realm_id))
-        .header(header::COOKIE, format!("X-Auth={}", user_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", user_token))
         .body(Body::empty())
         .unwrap();
 
@@ -739,7 +739,7 @@ async fn test_scenario_audit_pagination_metadata(ctx: &mut TestContext) {
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/audit/{}?page=0&pageSize=2", realm_id))
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
         .body(Body::empty())
         .unwrap();
 
@@ -760,7 +760,7 @@ async fn test_scenario_audit_pagination_metadata(ctx: &mut TestContext) {
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/audit/{}?page=1&pageSize=2", realm_id))
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
         .body(Body::empty())
         .unwrap();
 

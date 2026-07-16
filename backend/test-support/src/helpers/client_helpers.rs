@@ -109,7 +109,10 @@ pub async fn create_test_user_with_permissions(
     email: &str,
     permissions: &[(&str, &str)],
 ) -> (String, String) {
-    use herald_api::application::http::auth::util::{SessionData, store_session};
+    use herald_core::domain::authentication::BrowserTokenService;
+    use herald_core::domain::client::ports::ClientService;
+    use herald_core::domain::user::UserRepository;
+    use herald_core::infrastructure::authentication::RedisBrowserTokenService;
 
     // 1. 创建用户
     let user_id = Uuid::now_v7();
@@ -169,22 +172,24 @@ pub async fn create_test_user_with_permissions(
     .expect("Failed to assign role to user");
 
     // 5. 创建会话
-    let session_token = ctx.generate_test_token();
-    let session_state = SessionData {
-        realm_id: ctx._realm_id.clone(),
-        client_id: ctx._client_id.clone(),
-        user_id: user_id.to_string(),
-        client_ip: "127.0.0.1".to_string(),
-        renewal_ttl_seconds: None,
-    };
-    store_session(
-        &ctx.app_state,
-        &session_token,
-        &session_state,
-        1800, // 30 minutes
-    )
-    .await
-    .expect("Failed to store session");
+    let user = ctx
+        .app_state
+        .user_repository
+        .get_user_by_id(user_id)
+        .await
+        .unwrap();
+    let client_app = ctx
+        .app_state
+        .service
+        .client_service()
+        .get_client_app_by_client_id(&ctx._realm_id, &ctx._client_id)
+        .await
+        .unwrap();
+    let session_token = RedisBrowserTokenService::new(ctx.app_state.redis_manager.clone())
+        .create_first_party_token_family(&user, &client_app)
+        .await
+        .unwrap()
+        .access_token;
 
     (user_id.to_string(), session_token)
 }

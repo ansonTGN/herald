@@ -43,7 +43,7 @@ pub async fn create_role(
         .method("POST")
         .uri(format!("/api/roles/{}/define", realm_id))
         .header("content-type", "application/json")
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::from(req_body))
         .unwrap();
 

@@ -62,7 +62,7 @@ mod tests {
             .method("PUT")
             .uri(format!("/api/roles/{}/define/{}", ctx._realm_id, role_id))
             .header("content-type", "application/json")
-            .header(header::COOKIE, format!("X-Auth={}", admin_token))
+            .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
             .body(Body::from(
                 json!(RoleUpdateRequest {
                     name: "hacked-admin".to_string(),
@@ -149,7 +149,7 @@ mod tests {
             .method("PUT")
             .uri(format!("/api/roles/{}/define/{}", ctx._realm_id, role_id))
             .header("content-type", "application/json")
-            .header(header::COOKIE, format!("X-Auth={}", admin_token))
+            .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
             .body(Body::from(
                 json!(RoleUpdateRequest {
                     name: current_name, // 保持原有名称
@@ -239,7 +239,7 @@ mod tests {
                 "/api/roles/{}/define/{}/permissions/{}",
                 ctx._realm_id, role_id, permission_id
             ))
-            .header(header::COOKIE, format!("X-Auth={}", admin_token))
+            .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
             .body(Body::empty())
             .unwrap();
 
@@ -317,7 +317,7 @@ mod tests {
                 "/api/roles/{}/define/{}",
                 ctx._realm_id, custom_role_id
             ))
-            .header("cookie", format!("X-Auth={}", admin_token))
+            .header("authorization", format!("Bearer {}", admin_token))
             .body(Body::empty())
             .unwrap();
 
@@ -379,7 +379,7 @@ mod tests {
         let list_req = Request::builder()
             .method("GET")
             .uri(format!("/api/roles/{}/define", ctx._realm_id))
-            .header(header::COOKIE, format!("X-Auth={}", admin_token))
+            .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
             .body(Body::empty())
             .unwrap();
 

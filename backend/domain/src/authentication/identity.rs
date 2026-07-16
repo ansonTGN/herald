@@ -6,7 +6,47 @@ use crate::{
     client_api_keys::entities::ClientApiKey,
     user::entities::User,
 };
+use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::fmt;
+use utoipa::ToSchema;
+use uuid::Uuid;
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CredentialClass {
+    FirstParty,
+    CustomUserUi,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, ToSchema, Hash, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CredentialScope {
+    FeatureRead,
+    ProfileRead,
+    ProfileWriteNickname,
+    ChangePassword,
+    DeleteAccount,
+    TotpManage,
+    PasskeyManage,
+    Logout,
+    PointsRead,
+    PointsTransactionsRead,
+    PurchaseRead,
+    PurchaseInitiate,
+    PurchaseStatusRead,
+    InvoiceRead,
+    InvoiceApply,
+    SubscriptionRead,
+}
+
+#[derive(Debug, Clone)]
+pub struct TokenCredentialContext {
+    pub client_app_id: Uuid,
+    pub family_id: Uuid,
+    pub credential_class: CredentialClass,
+    pub allowed_scopes: HashSet<CredentialScope>,
+}
 
 /// Authenticated identity representing the caller
 ///
@@ -219,10 +259,13 @@ mod tests {
             name: "Test Client".to_string(),
             description: None,
             redirect_uris: vec![],
+            allowed_origins: vec![],
+            email_verify_return_url: None,
+            password_reset_return_url: None,
+            browser_refresh_absolute_ttl_seconds: 2_592_000,
+            is_first_party: false,
             enabled: true,
             icon_url: None,
-            session_ttl_seconds: 1800,
-            session_renewal_ttl_seconds: None,
             client_secret: None,
             device_code_grant_enabled: false,
             created_at: Utc::now(),

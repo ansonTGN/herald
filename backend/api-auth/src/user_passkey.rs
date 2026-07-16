@@ -12,13 +12,16 @@ use uuid::Uuid;
 use validator::Validate;
 
 use herald_api_base::application::http::auth::util::rate_limit_hit;
+use herald_api_base::application::http::common::auth_utils::require_token_scope;
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::audit::{
     AuditAction, AuditCategory, AuditEventRepository, AuditResult, AuditTargetType, NewAuditEvent,
 };
-use herald_core::domain::authentication::Identity;
+use herald_core::domain::authentication::{
+    CredentialScope, Identity, TargetOperation, TokenCredentialContext,
+};
 use herald_core::domain::common::entities::app_errors::CoreError;
 use herald_core::domain::realm_config::ConfigType;
 use herald_core::domain::user::ports::UserRepository;
@@ -31,6 +34,7 @@ use herald_core::infrastructure::user_passkey::{
 };
 
 use crate::passkey_rp::resolve_passkey_rp;
+use crate::reauth::consume_reauth;
 
 const PASSKEY_USER_RATE_LIMIT: (i64, usize) = (5, 60);
 const PASSKEY_CHALLENGE_TTL_SECONDS: u64 = 300;
@@ -59,7 +63,7 @@ pub fn router() -> axum::Router<AppState> {
 #[derive(Debug, Deserialize, ToSchema, Validate)]
 #[serde(rename_all = "camelCase")]
 pub struct BeginRegistrationRequest {
-    pub password: String,
+    pub reauth_token: String,
     pub nickname: Option<String>,
 }
 
@@ -73,6 +77,7 @@ pub struct BeginRegistrationResponse {
 #[derive(Debug, Deserialize, ToSchema, Validate)]
 #[serde(rename_all = "camelCase")]
 pub struct FinishRegistrationRequest {
+    pub reauth_token: String,
     pub reg_token: String,
     pub attestation: serde_json::Value,
 }
@@ -111,6 +116,12 @@ pub struct RenamePasskeyRequest {
     pub nickname: String,
 }
 
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DeletePasskeyRequest {
+    pub reauth_token: String,
+}
+
 #[utoipa::path(
     post,
     path = "/api/user/passkey/registration/begin",
@@ -129,9 +140,11 @@ pub struct RenamePasskeyRequest {
 pub async fn handle_begin_passkey_registration(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
+    Extension(context): Extension<TokenCredentialContext>,
     headers: HeaderMap,
     Valid(Json(req)): Valid<Json<BeginRegistrationRequest>>,
 ) -> Result<ApiResult<BeginRegistrationResponse>, ApiError> {
+    require_token_scope(&identity, &context, CredentialScope::PasskeyManage)?;
     let user_id = identity_user_id(&identity)?;
     rate_limit_passkey_user(&state, user_id).await?;
 
@@ -139,23 +152,34 @@ pub async fn handle_begin_passkey_registration(
     let user = user_repo.get_user_by_id(user_id).await?;
     ensure_passkey_enabled(&state, &user.realm_id).await?;
 
-    let password_hash = user.password_hash.as_ref().ok_or_else(|| {
-        ApiError::bad_request("Password authentication not enabled for this account")
-    })?;
-    let password_valid = bcrypt::verify(&req.password, password_hash)
-        .map_err(|_| ApiError::internal("Internal server error"))?;
-    if !password_valid {
-        return Err(ApiError::unauthorized("Invalid password"));
-    }
-
     let repo = Arc::new(PostgresUserPasskeyRepository::new(state.db.clone()));
-    let existing = repo.list_by_user(&user.realm_id, user_id).await?;
+    let relying_party = resolve_passkey_rp(
+        &state,
+        &user.realm_id,
+        &headers,
+        Some(context.client_app_id),
+    )
+    .await?;
+    let existing = repo
+        .list_by_user_and_rp(&user.realm_id, user_id, &relying_party.id)
+        .await?;
     let exclude = existing
         .iter()
         .map(|credential| credential.credential_id.clone())
         .collect::<Vec<_>>();
     let service = passkey_service(&state, repo)?;
-    let relying_party = resolve_passkey_rp(&state, &user.realm_id, &headers).await?;
+
+    // Consume the single-use reauth ticket only after all prerequisites have
+    // been validated and just before the state-mutating operation.
+    consume_reauth(
+        &state,
+        &identity,
+        &context,
+        &req.reauth_token,
+        TargetOperation::BindAuthenticator,
+    )
+    .await?;
+
     let (options, reg_token) = service
         .begin_registration(&user.realm_id, &user, &exclude, relying_party)
         .await
@@ -189,14 +213,28 @@ pub async fn handle_begin_passkey_registration(
 pub async fn handle_finish_passkey_registration(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
+    Extension(context): Extension<TokenCredentialContext>,
     Valid(Json(req)): Valid<Json<FinishRegistrationRequest>>,
 ) -> Result<ApiResult<FinishRegistrationResponse>, ApiError> {
+    require_token_scope(&identity, &context, CredentialScope::PasskeyManage)?;
     let user_id = identity_user_id(&identity)?;
     rate_limit_passkey_user(&state, user_id).await?;
 
     let repo = Arc::new(PostgresUserPasskeyRepository::new(state.db.clone()));
     let service = passkey_service(&state, repo)?;
     let nickname = load_registration_nickname(&state, &req.reg_token).await?;
+
+    // Consume the single-use reauth ticket only after validating the registration
+    // token and just before the state-mutating operation.
+    consume_reauth(
+        &state,
+        &identity,
+        &context,
+        &req.reauth_token,
+        TargetOperation::BindAuthenticator,
+    )
+    .await?;
+
     let credential = service
         .finish_registration(&req.reg_token, &req.attestation, nickname.as_deref())
         .await
@@ -254,13 +292,23 @@ pub async fn handle_finish_passkey_registration(
 pub async fn handle_list_passkey_credentials(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
+    Extension(context): Extension<TokenCredentialContext>,
+    headers: HeaderMap,
 ) -> Result<ApiResult<ListPasskeysResponse>, ApiError> {
+    require_token_scope(&identity, &context, CredentialScope::PasskeyManage)?;
     let user_id = identity_user_id(&identity)?;
     rate_limit_passkey_user(&state, user_id).await?;
 
     let repo = PostgresUserPasskeyRepository::new(state.db.clone());
+    let relying_party = resolve_passkey_rp(
+        &state,
+        &identity.realm_id(),
+        &headers,
+        Some(context.client_app_id),
+    )
+    .await?;
     let credentials = repo
-        .list_by_user(&identity.realm_id(), user_id)
+        .list_by_user_and_rp(&identity.realm_id(), user_id, &relying_party.id)
         .await?
         .into_iter()
         .map(|credential| PasskeyCredentialViewResponse::from(credential.to_view()))
@@ -291,18 +339,34 @@ pub async fn handle_list_passkey_credentials(
 pub async fn handle_rename_passkey_credential(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
+    Extension(context): Extension<TokenCredentialContext>,
+    headers: HeaderMap,
     Path(credential_id): Path<String>,
     Valid(Json(req)): Valid<Json<RenamePasskeyRequest>>,
 ) -> Result<ApiResult<()>, ApiError> {
+    require_token_scope(&identity, &context, CredentialScope::PasskeyManage)?;
     let user_id = identity_user_id(&identity)?;
     rate_limit_passkey_user(&state, user_id).await?;
     let credential_id = Uuid::parse_str(&credential_id)
         .map_err(|_| ApiError::bad_request("Invalid credentialId"))?;
 
     let repo = PostgresUserPasskeyRepository::new(state.db.clone());
-    repo.rename(&identity.realm_id(), user_id, credential_id, &req.nickname)
-        .await
-        .map_err(map_repository_error)?;
+    let relying_party = resolve_passkey_rp(
+        &state,
+        &identity.realm_id(),
+        &headers,
+        Some(context.client_app_id),
+    )
+    .await?;
+    repo.rename(
+        &identity.realm_id(),
+        user_id,
+        &relying_party.id,
+        credential_id,
+        &req.nickname,
+    )
+    .await
+    .map_err(map_repository_error)?;
 
     Ok(ApiResult::no_content())
 }
@@ -314,6 +378,7 @@ pub async fn handle_rename_passkey_credential(
     params(
         ("credentialId" = String, Path, description = "Passkey credential UUID")
     ),
+    request_body = DeletePasskeyRequest,
     responses(
         (status = 204, description = "Passkey credential deleted"),
         (status = 400, description = "Bad request", body = ErrorResponse),
@@ -328,17 +393,45 @@ pub async fn handle_rename_passkey_credential(
 pub async fn handle_delete_passkey_credential(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
+    Extension(context): Extension<TokenCredentialContext>,
+    headers: HeaderMap,
     Path(credential_id): Path<String>,
+    Json(req): Json<DeletePasskeyRequest>,
 ) -> Result<ApiResult<()>, ApiError> {
+    require_token_scope(&identity, &context, CredentialScope::PasskeyManage)?;
     let user_id = identity_user_id(&identity)?;
     rate_limit_passkey_user(&state, user_id).await?;
     let credential_id = Uuid::parse_str(&credential_id)
         .map_err(|_| ApiError::bad_request("Invalid credentialId"))?;
 
     let repo = PostgresUserPasskeyRepository::new(state.db.clone());
-    repo.delete(&identity.realm_id(), user_id, credential_id)
-        .await
-        .map_err(map_repository_error)?;
+    let relying_party = resolve_passkey_rp(
+        &state,
+        &identity.realm_id(),
+        &headers,
+        Some(context.client_app_id),
+    )
+    .await?;
+
+    // Consume the single-use reauth ticket only after validating the credential
+    // id and origin, and just before the state-mutating delete.
+    consume_reauth(
+        &state,
+        &identity,
+        &context,
+        &req.reauth_token,
+        TargetOperation::RemoveAuthenticator,
+    )
+    .await?;
+
+    repo.delete(
+        &identity.realm_id(),
+        user_id,
+        &relying_party.id,
+        credential_id,
+    )
+    .await
+    .map_err(map_repository_error)?;
 
     // Audit passkey credential deletion (PRD §4.1 audit rule).
     if let Err(audit_err) = state
@@ -539,5 +632,38 @@ fn map_repository_error(err: CoreError) -> ApiError {
         CoreError::Forbidden(msg) => ApiError::forbidden(msg),
         CoreError::NotFound => ApiError::not_found("Passkey credential not found"),
         other => ApiError::from(other),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+    use herald_core::domain::authentication::CredentialClass;
+    use herald_core::domain::user::entities::{User, UserStatus};
+    use std::collections::HashSet;
+
+    #[test]
+    fn self_service_passkey_scope_rejects_custom_ui_token_without_grant() {
+        let user_id = Uuid::now_v7();
+        let identity = Identity::User(User {
+            id: user_id,
+            realm_id: "realm".to_string(),
+            email: "user@example.com".to_string(),
+            nickname: None,
+            password_hash: None,
+            provider_ids: vec![],
+            status: UserStatus::Normal,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        });
+        let context = TokenCredentialContext {
+            client_app_id: Uuid::now_v7(),
+            family_id: Uuid::now_v7(),
+            credential_class: CredentialClass::CustomUserUi,
+            allowed_scopes: HashSet::new(),
+        };
+
+        assert!(require_token_scope(&identity, &context, CredentialScope::PasskeyManage).is_err());
     }
 }

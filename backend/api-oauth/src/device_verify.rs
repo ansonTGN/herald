@@ -5,17 +5,16 @@
 // returns the client app name/icon for the confirmation page.
 
 use axum::{
-    Json,
+    Extension, Json,
     extract::{Path, State},
-    http::HeaderMap,
 };
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use herald_api_base::application::http::auth::util::require_session;
 use herald_api_base::application::http::server::api_entities::ApiError;
 use herald_api_base::application::http::state::AppState;
+use herald_core::domain::authentication::Identity;
 use herald_core::domain::security_constants::DEVICE_CODE_USER_CODE_ALPHABET;
 
 // ---------------------------------------------------------------------------
@@ -103,12 +102,10 @@ fn validate_user_code(code: &str) -> Result<(), ApiError> {
 pub async fn device_verify(
     Path(realm_id): Path<String>,
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(identity): Extension<Identity>,
     Json(payload): Json<DeviceVerifyRequest>,
 ) -> Result<Json<DeviceVerifyResponse>, ApiError> {
-    // Authenticate user session
-    let (_token, sess) = require_session(&state, &headers).await?;
-    if sess.realm_id != realm_id {
+    if identity.realm_id() != realm_id {
         return Err(ApiError::forbidden(
             "Access denied: cannot verify device code for a different realm",
         ));
@@ -194,7 +191,7 @@ pub async fn device_verify(
             }));
         }
         // Idempotent: same user re-verifying
-        "verified" if stored_user_id == sess.user_id => {
+        "verified" if stored_user_id == identity.user_id() => {
             // Fall through to query client app and return
         }
         // Different user already verified this code
@@ -207,7 +204,7 @@ pub async fn device_verify(
         // Fresh pending code: verify it
         "pending" => {
             device_state["status"] = serde_json::Value::String("verified".to_string());
-            device_state["user_id"] = serde_json::Value::String(sess.user_id.clone());
+            device_state["user_id"] = serde_json::Value::String(identity.user_id());
 
             let updated_json = serde_json::to_string(&device_state).map_err(|e| {
                 tracing::error!(error = %e, "Failed to serialize device state");

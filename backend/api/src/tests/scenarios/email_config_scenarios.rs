@@ -217,7 +217,7 @@ async fn test_scenario_email_config_save_via_batch_upsert(ctx: &mut TestContext)
             realmId = ctx._realm_id
         ))
         .header("content-type", "application/json")
-        .header(header::COOKIE, format!("X-Auth={token}"))
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::from(batch_payload.to_string()))
         .unwrap();
 
@@ -304,7 +304,7 @@ async fn test_scenario_enable_email_verification_without_email_config_rejected(
         .method("POST")
         .uri(format!("/api/configs/{}/batch", ctx._realm_id))
         .header("content-type", "application/json")
-        .header(header::COOKIE, format!("X-Auth={token}"))
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::from(payload.to_string()))
         .unwrap();
 
@@ -366,7 +366,7 @@ async fn test_scenario_enable_email_verification_with_email_config_succeeds(ctx:
         .method("POST")
         .uri(format!("/api/configs/{}/batch", ctx._realm_id))
         .header("content-type", "application/json")
-        .header(header::COOKIE, format!("X-Auth={token}"))
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::from(payload.to_string()))
         .unwrap();
 

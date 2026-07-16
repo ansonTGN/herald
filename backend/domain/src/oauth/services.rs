@@ -5,7 +5,6 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::{
-    authentication::ports::AuthenticationService,
     common::entities::app_errors::CoreError,
     oauth::{
         entities::{CreateOAuthProviderConfig, OAuthProvider},
@@ -17,12 +16,11 @@ use crate::{
 };
 
 /// OAuth Service
-pub struct OAuthService<R, C, U, A, H>
+pub struct OAuthService<R, C, U, H>
 where
     R: OAuthRepository,
     C: OAuthConfigService,
     U: UserService,
-    A: AuthenticationService,
     H: HttpClient + Send + Sync,
 {
     oauth_repository: Arc<R>,
@@ -30,30 +28,26 @@ where
     #[allow(dead_code)] // 保留用于未来使用（用户服务集成）
     user_service: Arc<U>,
     #[allow(dead_code)] // 保留用于未来使用（认证服务集成）
-    authentication_service: Arc<A>,
     http_client: Arc<H>,
 }
 
-impl<R, C, U, A, H> OAuthService<R, C, U, A, H>
+impl<R, C, U, H> OAuthService<R, C, U, H>
 where
     R: OAuthRepository,
     C: OAuthConfigService,
     U: UserService,
-    A: AuthenticationService,
     H: HttpClient + Send + Sync,
 {
     pub fn new(
         oauth_repository: Arc<R>,
         oauth_config_service: Arc<C>,
         user_service: Arc<U>,
-        authentication_service: Arc<A>,
         http_client: Arc<H>,
     ) -> Self {
         Self {
             oauth_repository,
             oauth_config_service,
             user_service,
-            authentication_service,
             http_client,
         }
     }

@@ -112,7 +112,7 @@ async fn test_scenario_create_multiple_realms_and_access_users(ctx: &mut TestCon
         .method("POST")
         .uri("/api/realms")
         .header(header::CONTENT_TYPE, "application/json")
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
         .body(Body::from(serde_json::to_string(&create_payload).unwrap()))
         .unwrap();
 
@@ -146,7 +146,7 @@ async fn test_scenario_create_multiple_realms_and_access_users(ctx: &mut TestCon
         .method("POST")
         .uri("/api/realms")
         .header(header::CONTENT_TYPE, "application/json")
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
         .body(Body::from(serde_json::to_string(&create_payload).unwrap()))
         .unwrap();
 
@@ -185,27 +185,18 @@ async fn test_scenario_create_multiple_realms_and_access_users(ctx: &mut TestCon
         "realm1 管理员登录应成功"
     );
 
-    // Extract session token from Set-Cookie header
-    let set_cookie = login_resp
-        .headers()
-        .get("set-cookie")
-        .expect("Should have Set-Cookie header")
-        .to_str()
-        .unwrap();
-    let realm1_admin_token = set_cookie
-        .split("X-Auth=")
-        .nth(1)
-        .unwrap()
-        .split(";")
-        .next()
-        .unwrap();
+    let (_login_resp, realm1_admin_token) = crate::tests::extract_bearer_token(login_resp).await;
+    let realm1_admin_token = realm1_admin_token.expect("Login should return accessToken");
     println!("[Step 3] ✓ realm1 管理员登录成功");
 
     // Access realm1 users
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/users/{}?page=0&pageSize=20", realm1_id))
-        .header(header::COOKIE, format!("X-Auth={}", realm1_admin_token))
+        .header(
+            header::AUTHORIZATION,
+            format!("Bearer {}", realm1_admin_token),
+        )
         .body(Body::empty())
         .unwrap();
 
@@ -225,7 +216,10 @@ async fn test_scenario_create_multiple_realms_and_access_users(ctx: &mut TestCon
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/users/{}?page=0&pageSize=20", realm2_id))
-        .header(header::COOKIE, format!("X-Auth={}", realm1_admin_token))
+        .header(
+            header::AUTHORIZATION,
+            format!("Bearer {}", realm1_admin_token),
+        )
         .body(Body::empty())
         .unwrap();
 
@@ -307,7 +301,7 @@ async fn test_scenario_admin_list_realms_paginated_includes_all_realms(ctx: &mut
         .method("POST")
         .uri("/api/realms")
         .header(header::CONTENT_TYPE, "application/json")
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
         .body(Body::from(serde_json::to_string(&create_payload).unwrap()))
         .unwrap();
 
@@ -325,7 +319,7 @@ async fn test_scenario_admin_list_realms_paginated_includes_all_realms(ctx: &mut
     let req = Request::builder()
         .method("GET")
         .uri("/api/realms/paginated?page=0&pageSize=100")
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
         .body(Body::empty())
         .unwrap();
 

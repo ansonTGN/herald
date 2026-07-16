@@ -1,7 +1,7 @@
 use axum::{
     Json,
     extract::{Path, State},
-    http::{HeaderMap, header::SET_COOKIE},
+    http::HeaderMap,
     response::{IntoResponse, Response},
 };
 use axum_valid::Valid;
@@ -13,8 +13,7 @@ use uuid::Uuid;
 use validator::Validate;
 
 use herald_api_base::application::http::auth::util::{
-    ClientIp, SessionData, build_set_cookie, epoch_seconds, rate_limit_hit,
-    renewal_ttl_seconds_from_i32, store_session, verify_turnstile_for_realm,
+    ClientIp, rate_limit_hit, verify_turnstile_for_realm,
 };
 use herald_api_base::application::http::server::api_entities::ApiError;
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
@@ -22,6 +21,7 @@ use herald_api_base::application::http::state::AppState;
 use herald_core::domain::audit::{
     AuditAction, AuditCategory, AuditEventRepository, AuditResult, AuditTargetType, NewAuditEvent,
 };
+use herald_core::domain::authentication::BrowserTokenService;
 use herald_core::domain::client::ports::ClientService;
 use herald_core::domain::security_constants::{
     LOGIN_IDENTIFIER_RATE_LIMIT, LOGIN_IP_RATE_LIMIT, OAUTH_STATE_TTL_SECONDS,
@@ -30,10 +30,12 @@ use herald_core::domain::security_constants::{
 };
 use herald_core::domain::user::ports::UserRepository;
 use herald_core::domain::user_passkey::{PasskeyError, PasskeyLoginState, UserPasskeyService};
+use herald_core::infrastructure::authentication::RedisBrowserTokenService;
 use herald_core::infrastructure::user_passkey::{
     PostgresPasskeyRealmConfigReader, PostgresUserPasskeyRepository, RedisPasskeyChallengeStore,
 };
 
+use crate::browser_token::BrowserTokenResponse;
 use crate::consent_gate::AuthConsentAgreement;
 use crate::passkey_rp::resolve_passkey_rp;
 
@@ -132,7 +134,9 @@ struct TempSessionData {
     user_id: String,
     realm_id: String,
     client_id: String,
+    client_app_id: Uuid,
     client_ip: String,
+    flow: String,
     #[serde(default)]
     oauth_client_id: Option<String>,
     #[serde(default)]
@@ -184,7 +188,7 @@ pub async fn handle_passkey_options(
     };
 
     let service = passkey_service(&state)?;
-    let relying_party = resolve_passkey_rp(&state, &realm_id, &headers).await?;
+    let relying_party = resolve_passkey_rp(&state, &realm_id, &headers, None).await?;
     let (options, auth_token) = service
         .begin_login_first_factor(&realm_id, login_state, relying_party)
         .await
@@ -273,9 +277,9 @@ pub async fn handle_passkey_verify(
     clear_fail_count(&state, user_id).await?;
     finish_login(
         &state,
-        &realm_id,
         user_id,
         login_state,
+        None,
         req.agreements.as_deref(),
         client_ip,
     )
@@ -319,7 +323,13 @@ pub async fn handle_passkey_2fa_options(
 
     let login_state = temp_session.to_login_state();
     let service = passkey_service(&state)?;
-    let relying_party = resolve_passkey_rp(&state, &realm_id, &headers).await?;
+    let relying_party = resolve_passkey_rp(
+        &state,
+        &realm_id,
+        &headers,
+        Some(temp_session.client_app_id),
+    )
+    .await?;
     let (options, auth_token) = service
         .begin_second_factor(&login_state, user_id, relying_party)
         .await
@@ -387,9 +397,9 @@ pub async fn handle_passkey_2fa_verify(
 
     finish_login(
         &state,
-        &realm_id,
         user_id,
         temp_session.to_login_state(),
+        Some((temp_session.client_app_id, temp_session.flow.as_str())),
         req.agreements.as_deref(),
         client_ip,
     )
@@ -411,9 +421,9 @@ impl TempSessionData {
 
 async fn finish_login(
     state: &AppState,
-    realm_id: &str,
     user_id: Uuid,
     login_state: PasskeyLoginState,
+    temp_binding: Option<(Uuid, &str)>,
     agreements: Option<&[AuthConsentAgreement]>,
     client_ip: String,
 ) -> Result<Response, ApiError> {
@@ -423,8 +433,11 @@ async fn finish_login(
         .get_client_app_by_client_id(&login_state.realm_id, &login_state.client_id)
         .await
         .map_err(|_| ApiError::internal("Client app lookup failed"))?;
-    let session_ttl = client_app.session_ttl_seconds as usize;
-    let renewal_ttl_seconds = renewal_ttl_seconds_from_i32(client_app.session_renewal_ttl_seconds)?;
+    if !client_app.enabled
+        || temp_binding.is_some_and(|(id, flow)| id != client_app.id || flow != "custom_user_ui")
+    {
+        return Err(ApiError::unauthorized("invalid client app binding"));
+    }
 
     let user = state.user_repository.get_user_by_id(user_id).await?;
     if let Some(summaries) = crate::consent_gate::evaluate_login_consent_gate(
@@ -534,22 +547,11 @@ async fn finish_login(
         .into_response());
     }
 
-    let token = format!("{}_{}_{}", realm_id, user_id, epoch_seconds());
-    let session_data = SessionData {
-        realm_id: login_state.realm_id,
-        client_id: login_state.client_id,
-        user_id: user_id.to_string(),
-        client_ip,
-        renewal_ttl_seconds,
-    };
-
-    store_session(state, &token, &session_data, session_ttl).await?;
-
     // Audit passkey login success (mirrors login.rs password-success audit).
     if let Err(audit_err) = state
         .audit_event_repository
         .create(NewAuditEvent {
-            realm_id: session_data.realm_id.clone(),
+            realm_id: login_state.realm_id.clone(),
             category: AuditCategory::Auth,
             action: AuditAction::AuthLogin,
             actor_id: user_id.to_string(),
@@ -560,7 +562,7 @@ async fn finish_login(
             target_name: Some(user.email.clone()),
             result: AuditResult::Success,
             details: Some(serde_json::json!({"method": "passkey"})),
-            ip_address: Some(session_data.client_ip.clone()),
+            ip_address: Some(client_ip),
             user_agent: None,
             trace_id: None,
         })
@@ -569,25 +571,10 @@ async fn finish_login(
         tracing::warn!(error = %audit_err, "Failed to record passkey login-success audit event");
     }
 
-    let cookie_header = build_set_cookie(
-        "X-Auth",
-        &token,
-        session_ttl as i64,
-        state.app_env == "production",
-    );
-    Ok((
-        [(SET_COOKIE, cookie_header)],
-        Json(PasskeyVerifyResponse {
-            message: "ok".to_string(),
-            user_id: user_id.to_string(),
-            token,
-            expires_in_seconds: session_ttl as i64,
-            redirect_to: None,
-            consent_required: None,
-            agreements: None,
-        }),
-    )
-        .into_response())
+    let tokens = RedisBrowserTokenService::new(state.redis_manager.clone())
+        .create_token_family(&user, &client_app)
+        .await?;
+    Ok(Json(BrowserTokenResponse::from(tokens)).into_response())
 }
 
 async fn ensure_client_exists(

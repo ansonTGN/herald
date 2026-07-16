@@ -191,7 +191,7 @@ async fn test_get_api_key_roles_with_roles(ctx: &mut TestContext) {
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/api-keys/{}/{}", ctx._realm_id, key_id))
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", token))
         .body(Body::empty())
         .unwrap();
 
@@ -206,7 +206,7 @@ async fn test_get_api_key_roles_with_roles(ctx: &mut TestContext) {
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/api-keys/{}/{}/roles", ctx._realm_id, key_id))
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", token))
         .body(Body::empty())
         .unwrap();
 
@@ -263,7 +263,7 @@ async fn test_get_api_key_roles_empty(ctx: &mut TestContext) {
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/api-keys/{}/{}/roles", ctx._realm_id, key_id))
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", token))
         .body(Body::empty())
         .unwrap();
 
@@ -316,7 +316,7 @@ async fn test_get_api_key_roles_not_found(ctx: &mut TestContext) {
             "/api/api-keys/{}/{}/roles",
             ctx._realm_id, fake_key_id
         ))
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", token))
         .body(Body::empty())
         .unwrap();
 
@@ -358,7 +358,7 @@ async fn test_replace_api_key_roles_add(ctx: &mut TestContext) {
     let req = Request::builder()
         .method("PUT")
         .uri(format!("/api/api-keys/{}/{}/roles", ctx._realm_id, key_id))
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", token))
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(json!({ "roleIds": [role_id] }).to_string()))
         .unwrap();
@@ -376,7 +376,7 @@ async fn test_replace_api_key_roles_add(ctx: &mut TestContext) {
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/api-keys/{}/{}/roles", ctx._realm_id, key_id))
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", token))
         .body(Body::empty())
         .unwrap();
 
@@ -421,7 +421,7 @@ async fn test_replace_api_key_roles_clear(ctx: &mut TestContext) {
     let req = Request::builder()
         .method("PUT")
         .uri(format!("/api/api-keys/{}/{}/roles", ctx._realm_id, key_id))
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", token))
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(json!({ "roleIds": empty_roles }).to_string()))
         .unwrap();
@@ -439,7 +439,7 @@ async fn test_replace_api_key_roles_clear(ctx: &mut TestContext) {
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/api-keys/{}/{}/roles", ctx._realm_id, key_id))
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", token))
         .body(Body::empty())
         .unwrap();
 
@@ -483,7 +483,7 @@ async fn test_replace_api_key_roles_swap(ctx: &mut TestContext) {
     let req = Request::builder()
         .method("PUT")
         .uri(format!("/api/api-keys/{}/{}/roles", ctx._realm_id, key_id))
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", token))
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(json!({ "roleIds": [role_b] }).to_string()))
         .unwrap();
@@ -501,7 +501,7 @@ async fn test_replace_api_key_roles_swap(ctx: &mut TestContext) {
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/api-keys/{}/{}/roles", ctx._realm_id, key_id))
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", token))
         .body(Body::empty())
         .unwrap();
 
@@ -544,7 +544,7 @@ async fn test_replace_api_key_roles_not_found_role(ctx: &mut TestContext) {
     let req = Request::builder()
         .method("PUT")
         .uri(format!("/api/api-keys/{}/{}/roles", ctx._realm_id, key_id))
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", token))
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(json!({ "roleIds": [fake_role_id] }).to_string()))
         .unwrap();
@@ -599,7 +599,7 @@ async fn test_replace_api_key_roles_rejects_builtin_roles(ctx: &mut TestContext)
     let req = Request::builder()
         .method("PUT")
         .uri(format!("/api/api-keys/{}/{}/roles", ctx._realm_id, key_id))
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", token))
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(
             json!({ "roleIds": [builtin_role_id] }).to_string(),
@@ -619,7 +619,7 @@ async fn test_replace_api_key_roles_rejects_builtin_roles(ctx: &mut TestContext)
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/api-keys/{}/{}/roles", ctx._realm_id, key_id))
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", token))
         .body(Body::empty())
         .unwrap();
 
@@ -663,7 +663,7 @@ async fn test_get_api_key_roles_forbidden(ctx: &mut TestContext) {
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/api-keys/{}/{}/roles", ctx._realm_id, key_id))
-        .header(header::COOKIE, format!("X-Auth={}", user_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", user_token))
         .body(Body::empty())
         .unwrap();
 
@@ -705,7 +705,7 @@ async fn test_replace_api_key_roles_forbidden(ctx: &mut TestContext) {
     let req = Request::builder()
         .method("PUT")
         .uri(format!("/api/api-keys/{}/{}/roles", ctx._realm_id, key_id))
-        .header(header::COOKIE, format!("X-Auth={}", user_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", user_token))
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(json!({ "roleIds": [role_id] }).to_string()))
         .unwrap();
@@ -774,7 +774,7 @@ async fn test_api_key_roles_cache_invalidation(ctx: &mut TestContext) {
     let req = Request::builder()
         .method("PUT")
         .uri(format!("/api/api-keys/{}/{}/roles", ctx._realm_id, key_id))
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", token))
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(json!({ "roleIds": [role_id] }).to_string()))
         .unwrap();
@@ -846,7 +846,7 @@ async fn test_api_key_roles_cache_invalidation_on_remove(ctx: &mut TestContext) 
     let req = Request::builder()
         .method("PUT")
         .uri(format!("/api/api-keys/{}/{}/roles", ctx._realm_id, key_id))
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", token))
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(json!({ "roleIds": [role_id] }).to_string()))
         .unwrap();
@@ -877,7 +877,7 @@ async fn test_api_key_roles_cache_invalidation_on_remove(ctx: &mut TestContext) 
     let req = Request::builder()
         .method("PUT")
         .uri(format!("/api/api-keys/{}/{}/roles", ctx._realm_id, key_id))
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", token))
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(json!({ "roleIds": [] }).to_string()))
         .unwrap();
@@ -927,8 +927,8 @@ async fn test_api_key_roles_cache_invalidation_on_remove(ctx: &mut TestContext) 
 async fn seed_realm_api_key_client(ctx: &TestContext) -> uuid::Uuid {
     let app_id = uuid::Uuid::now_v7();
     let inserted: Option<(uuid::Uuid,)> = sqlx::query_as(
-        "INSERT INTO client_app (id, realm_id, client_id, name, enabled, redirect_uris, session_ttl_seconds)
-         VALUES ($1, $2, 'admin-api-client', 'API Key Client', true, '[]'::jsonb, 1800)
+        "INSERT INTO client_app (id, realm_id, client_id, name, enabled, redirect_uris, browser_refresh_absolute_ttl_seconds)
+         VALUES ($1, $2, 'admin-api-client', 'API Key Client', true, '[]'::jsonb, 86400)
          ON CONFLICT (realm_id, client_id) DO NOTHING
          RETURNING id",
     )
@@ -958,8 +958,8 @@ async fn seed_realm_api_key_client(ctx: &TestContext) -> uuid::Uuid {
 async fn seed_scoped_client_app(ctx: &TestContext, client_id: &str, name: &str) -> uuid::Uuid {
     let app_id = uuid::Uuid::now_v7();
     sqlx::query(
-        "INSERT INTO client_app (id, realm_id, client_id, name, enabled, redirect_uris, session_ttl_seconds)
-         VALUES ($1, $2, $3, $4, true, '[]'::jsonb, 1800)",
+        "INSERT INTO client_app (id, realm_id, client_id, name, enabled, redirect_uris, browser_refresh_absolute_ttl_seconds)
+         VALUES ($1, $2, $3, $4, true, '[]'::jsonb, 86400)",
     )
     .bind(app_id)
     .bind(&ctx._realm_id)
@@ -1000,7 +1000,7 @@ async fn test_create_api_key_uses_realm_api_key_client(ctx: &mut TestContext) {
     let req = Request::builder()
         .method("POST")
         .uri(format!("/api/api-keys/{}", ctx._realm_id))
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", token))
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(
             json!({ "name": "lifecycle-test-key" }).to_string(),
@@ -1049,7 +1049,7 @@ async fn test_create_api_key_returns_plaintext_when_role_binding_fails(ctx: &mut
     let req = Request::builder()
         .method("POST")
         .uri(format!("/api/api-keys/{}", ctx._realm_id))
-        .header(header::COOKIE, format!("X-Auth={token}"))
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(
             json!({
@@ -1109,7 +1109,7 @@ async fn test_create_api_key_accepts_client_app_scope(ctx: &mut TestContext) {
     let req = Request::builder()
         .method("POST")
         .uri(format!("/api/api-keys/{}", ctx._realm_id))
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", token))
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(
             json!({
@@ -1198,7 +1198,7 @@ async fn test_create_api_key_fails_when_realm_api_key_client_missing(ctx: &mut T
     let req = Request::builder()
         .method("POST")
         .uri(format!("/api/api-keys/{}", ctx._realm_id))
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", token))
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(
             json!({ "name": "should-not-be-created" }).to_string(),
@@ -1273,7 +1273,7 @@ async fn test_delete_api_key_keeps_realm_api_key_client(ctx: &mut TestContext) {
     let req = Request::builder()
         .method("DELETE")
         .uri(format!("/api/api-keys/{}/{}", ctx._realm_id, key_id))
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", token))
         .body(Body::empty())
         .unwrap();
 
@@ -1354,7 +1354,7 @@ async fn test_disable_api_key_does_not_update_realm_api_key_client(ctx: &mut Tes
     let req = Request::builder()
         .method("PUT")
         .uri(format!("/api/api-keys/{}/{}", ctx._realm_id, key_id))
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", token))
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(json!({ "enabled": false }).to_string()))
         .unwrap();
@@ -1423,7 +1423,7 @@ async fn test_api_key_roles_use_realm_api_key_client_id(ctx: &mut TestContext) {
     let req = Request::builder()
         .method("PUT")
         .uri(format!("/api/api-keys/{}/{}/roles", ctx._realm_id, key_id))
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", token))
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(json!({ "roleIds": [role_id] }).to_string()))
         .unwrap();

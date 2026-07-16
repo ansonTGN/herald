@@ -26,6 +26,6 @@ pub fn router() -> Router<AppState> {
         .route("/change-password", post(profile::change_password))
         // Self-service account deletion (soft-delete) — BE-D07.
         // Mounted on the existing `/api/user` group, which already carries the
-        // `inject_identity` layer (server/mod.rs); no extra layer needed.
+        // `inject_token_identity` layer (server/mod.rs); no extra layer needed.
         .route("/", delete(delete_account::delete_account))
 }

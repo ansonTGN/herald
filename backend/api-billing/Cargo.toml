@@ -6,6 +6,7 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
+herald-api-auth = { path = "../api-auth" }
 herald-api-base = { path = "../api-base" }
 herald-core = { path = "../core" }
 axum = { workspace = true }

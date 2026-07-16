@@ -1,76 +1,63 @@
 use axum::{
     Json,
-    extract::State,
-    http::{HeaderMap, header::SET_COOKIE},
-    response::IntoResponse,
+    extract::{Extension, State},
+    http::HeaderMap,
 };
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use herald_api_base::application::http::auth::util::{
-    ClientIp, build_clear_cookie, delete_session, get_cookie, load_session,
-};
+use herald_api_base::application::http::auth::util::ClientIp;
 use herald_api_base::application::http::server::api_entities::ApiError;
-pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::audit::{
-    AuditAction, AuditCategory, AuditEventRepository, AuditResult, AuditTargetType, NewAuditEvent,
+    ActorType, AuditAction, AuditCategory, AuditEventRepository, AuditResult, AuditTargetType,
+    NewAuditEvent,
 };
+use herald_core::domain::authentication::{BrowserTokenService, Identity, TokenCredentialContext};
+use herald_core::infrastructure::authentication::RedisBrowserTokenService;
 
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct LogoutResponse {
     pub message: String,
 }
 
-/// Logout user and invalidate session
-///
-/// Clears the session cookie and invalidates the user's session token.
 #[utoipa::path(
-  get,
+  post,
   path = "/api/auth/logout",
   tag = "auth",
-  responses(
-    (status = 200, description = "Logged out.", body = LogoutResponse),
-    (status = 500, description = "Internal server error", body = ErrorResponse)
-  )
+  responses((status = 200, body = LogoutResponse), (status = 401)),
+  security(("bearer_auth" = []))
 )]
 pub async fn logout(
     State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
+    Extension(context): Extension<TokenCredentialContext>,
     ClientIp(ip): ClientIp,
     headers: HeaderMap,
-) -> Result<impl IntoResponse, ApiError> {
+) -> Result<Json<LogoutResponse>, ApiError> {
+    RedisBrowserTokenService::new(state.redis_manager.clone())
+        .revoke_family(context.family_id)
+        .await?;
+
     let user_agent = headers
         .get("user-agent")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string());
-    let token = get_cookie(&headers, "X-Auth");
-    let session = match token.as_deref() {
-        Some(token) => load_session(&state, token).await?,
-        None => None,
-    };
-
-    if let Some(ref token_val) = token {
-        // best effort
-        let _ = delete_session(&state, token_val).await;
-    }
-
-    // Record logout audit event
-    let actor_id = token.unwrap_or_else(|| "anonymous".to_string());
-    if let Err(audit_err) = state
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    let user = identity
+        .as_user()
+        .ok_or_else(|| ApiError::forbidden("authenticated user token required"))?;
+    if let Err(error) = state
         .audit_event_repository
         .create(NewAuditEvent {
-            realm_id: session
-                .as_ref()
-                .map(|session| session.realm_id.clone())
-                .unwrap_or_else(|| "unknown".to_string()),
+            realm_id: user.realm_id.clone(),
             category: AuditCategory::Auth,
             action: AuditAction::AuthLogout,
-            actor_id: actor_id.clone(),
-            actor_type: None,
-            actor_name: None,
+            actor_id: user.id.to_string(),
+            actor_type: Some(ActorType::User),
+            actor_name: Some(user.email.clone()),
             target_type: AuditTargetType::User,
-            target_id: actor_id,
-            target_name: None,
+            target_id: user.id.to_string(),
+            target_name: Some(user.email.clone()),
             result: AuditResult::Success,
             details: None,
             ip_address: Some(ip),
@@ -79,15 +66,10 @@ pub async fn logout(
         })
         .await
     {
-        tracing::warn!(error = %audit_err, "Failed to record audit event");
+        tracing::warn!(%error, "Failed to record logout audit event");
     }
 
-    let is_production = state.app_env == "production";
-    let clear_cookie = build_clear_cookie("X-Auth", is_production);
-    Ok((
-        [(SET_COOKIE, clear_cookie)],
-        Json(LogoutResponse {
-            message: "ok".to_string(),
-        }),
-    ))
+    Ok(Json(LogoutResponse {
+        message: "ok".into(),
+    }))
 }

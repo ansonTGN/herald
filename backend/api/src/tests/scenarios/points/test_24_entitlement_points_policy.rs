@@ -28,7 +28,7 @@ use crate::tests::scenarios::points::fixtures::*;
 use crate::tests::schema_test_context::SchemaTestContext as TestContext;
 use axum::{
     body::Body,
-    http::{Request, StatusCode, header},
+    http::{Request, StatusCode},
 };
 use serde_json::json;
 use test_context::test_context;
@@ -72,14 +72,8 @@ async fn test_scenario_admin_update_entitlement_points_policy(ctx: &mut TestCont
     let login_response = app.clone().oneshot(login_request).await.unwrap();
     assert_eq!(login_response.status(), StatusCode::OK);
 
-    let set_cookie = login_response
-        .headers()
-        .get(header::SET_COOKIE)
-        .and_then(|v| v.to_str().ok())
-        .expect("Should return Set-Cookie header");
-
-    let token = crate::tests::extract_set_cookie_token(set_cookie, "X-Auth")
-        .expect("Should extract X-Auth token");
+    let (_response, token) = crate::tests::extract_bearer_token(login_response).await;
+    let token = token.expect("Login should return accessToken");
 
     println!("[Step 2] ✓ Admin logged in");
 
@@ -102,7 +96,7 @@ async fn test_scenario_admin_update_entitlement_points_policy(ctx: &mut TestCont
             ctx._realm_id, mapping_id
         ))
         .header("content-type", "application/json")
-        .header("cookie", format!("X-Auth={}", token))
+        .header("authorization", format!("Bearer {}", token))
         .body(Body::from(update_payload.to_string()))
         .unwrap();
 

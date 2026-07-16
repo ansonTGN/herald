@@ -99,15 +99,8 @@ async fn create_session(ctx: &TestContext, email: &str, password: &str) -> Strin
     let response = ctx.create_unified_test_router().oneshot(req).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 
-    crate::tests::extract_set_cookie_token(
-        response
-            .headers()
-            .get(header::SET_COOKIE)
-            .and_then(|v| v.to_str().ok())
-            .expect("login should set X-Auth"),
-        "X-Auth",
-    )
-    .expect("X-Auth cookie should parse")
+    let (_response, token) = crate::tests::extract_bearer_token(response).await;
+    token.expect("login should return accessToken")
 }
 
 async fn setup_realm_passkey_config(
@@ -186,7 +179,7 @@ async fn begin_registration(
         .method("POST")
         .uri("/api/user/passkey/registration/begin")
         .header("content-type", "application/json")
-        .header(header::COOKIE, format!("X-Auth={session_token}"))
+        .header(header::AUTHORIZATION, format!("Bearer {session_token}"))
         .body(Body::from(payload.to_string()))
         .unwrap();
     let response = ctx.create_unified_test_router().oneshot(req).await.unwrap();
@@ -219,7 +212,7 @@ async fn finish_registration(
         .method("POST")
         .uri("/api/user/passkey/registration/finish")
         .header("content-type", "application/json")
-        .header(header::COOKIE, format!("X-Auth={session_token}"))
+        .header(header::AUTHORIZATION, format!("Bearer {session_token}"))
         .body(Body::from(payload.to_string()))
         .unwrap();
     let response = ctx.create_unified_test_router().oneshot(req).await.unwrap();
@@ -310,15 +303,8 @@ async fn finish_first_factor(
         .unwrap();
     let response = ctx.create_unified_test_router().oneshot(req).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    let token = crate::tests::extract_set_cookie_token(
-        response
-            .headers()
-            .get(header::SET_COOKIE)
-            .and_then(|v| v.to_str().ok())
-            .expect("passkey login should set X-Auth"),
-        "X-Auth",
-    )
-    .expect("X-Auth cookie should parse");
+    let (response, token) = crate::tests::extract_bearer_token(response).await;
+    let token = token.expect("passkey login should return accessToken");
     let body = response_body(response).await;
 
     (token, body)
@@ -395,15 +381,8 @@ async fn finish_second_factor(
         .unwrap();
     let response = ctx.create_unified_test_router().oneshot(req).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    let token = crate::tests::extract_set_cookie_token(
-        response
-            .headers()
-            .get(header::SET_COOKIE)
-            .and_then(|v| v.to_str().ok())
-            .expect("2fa passkey login should set X-Auth"),
-        "X-Auth",
-    )
-    .expect("X-Auth cookie should parse");
+    let (response, token) = crate::tests::extract_bearer_token(response).await;
+    let token = token.expect("2FA passkey login should return accessToken");
     let body = response_body(response).await;
 
     (token, body)
@@ -425,7 +404,7 @@ async fn enable_totp_via_http(ctx: &TestContext, session_token: &str) -> String 
         .method("POST")
         .uri("/api/user/totp")
         .header("content-type", "application/json")
-        .header(header::COOKIE, format!("X-Auth={session_token}"))
+        .header(header::AUTHORIZATION, format!("Bearer {session_token}"))
         .body(Body::from(payload.to_string()))
         .unwrap();
     let response = ctx.create_unified_test_router().oneshot(req).await.unwrap();
@@ -444,7 +423,7 @@ async fn enable_totp_via_http(ctx: &TestContext, session_token: &str) -> String 
         .method("POST")
         .uri("/api/user/totp/verify")
         .header("content-type", "application/json")
-        .header(header::COOKIE, format!("X-Auth={session_token}"))
+        .header(header::AUTHORIZATION, format!("Bearer {session_token}"))
         .body(Body::from(verify_payload.to_string()))
         .unwrap();
     let verify_response = ctx
@@ -466,8 +445,8 @@ async fn create_other_realm(ctx: &TestContext, realm_id: &str) {
 
     sqlx::query(
         "INSERT INTO client_app
-            (id, realm_id, client_id, name, redirect_uris, enabled, session_ttl_seconds)
-         VALUES ($1, $2, $3, 'Other Console', '[]'::jsonb, true, 3600)",
+            (id, realm_id, client_id, name, redirect_uris, enabled, browser_refresh_absolute_ttl_seconds, is_first_party)
+         VALUES ($1, $2, $3, 'Other Console', '[]'::jsonb, true, 86400, true)",
     )
     .bind(Uuid::now_v7())
     .bind(realm_id)
@@ -514,7 +493,7 @@ async fn test_passkey_registration_finish_persists_credential(ctx: &mut TestCont
     let req = Request::builder()
         .method("GET")
         .uri("/api/user/passkey/credentials")
-        .header(header::COOKIE, format!("X-Auth={session}"))
+        .header(header::AUTHORIZATION, format!("Bearer {session}"))
         .body(Body::empty())
         .unwrap();
     let response = ctx.create_unified_test_router().oneshot(req).await.unwrap();
@@ -638,7 +617,7 @@ async fn test_passkey_list_rename_and_delete(ctx: &mut TestContext) {
     let list_req = Request::builder()
         .method("GET")
         .uri("/api/user/passkey/credentials")
-        .header(header::COOKIE, format!("X-Auth={session}"))
+        .header(header::AUTHORIZATION, format!("Bearer {session}"))
         .body(Body::empty())
         .unwrap();
     let list_response = ctx
@@ -660,7 +639,7 @@ async fn test_passkey_list_rename_and_delete(ctx: &mut TestContext) {
         .method("PATCH")
         .uri(format!("/api/user/passkey/credentials/{first_id}"))
         .header("content-type", "application/json")
-        .header(header::COOKIE, format!("X-Auth={session}"))
+        .header(header::AUTHORIZATION, format!("Bearer {session}"))
         .body(Body::from(json!({ "nickname": "Renamed" }).to_string()))
         .unwrap();
     let rename_response = ctx
@@ -674,7 +653,7 @@ async fn test_passkey_list_rename_and_delete(ctx: &mut TestContext) {
     let delete_req = Request::builder()
         .method("DELETE")
         .uri(format!("/api/user/passkey/credentials/{second_id}"))
-        .header(header::COOKIE, format!("X-Auth={session}"))
+        .header(header::AUTHORIZATION, format!("Bearer {session}"))
         .body(Body::empty())
         .unwrap();
     let delete_response = ctx
@@ -717,7 +696,7 @@ async fn test_delete_last_passkey_removes_from_second_factors(ctx: &mut TestCont
     let delete_req = Request::builder()
         .method("DELETE")
         .uri(format!("/api/user/passkey/credentials/{credential_id}"))
-        .header(header::COOKIE, format!("X-Auth={session}"))
+        .header(header::AUTHORIZATION, format!("Bearer {session}"))
         .body(Body::empty())
         .unwrap();
     let delete_response = ctx
@@ -729,12 +708,8 @@ async fn test_delete_last_passkey_removes_from_second_factors(ctx: &mut TestCont
 
     let login_response = password_login(ctx, email, PASSWORD).await;
     assert_eq!(login_response.status(), StatusCode::OK);
-    let set_cookie = login_response
-        .headers()
-        .get(header::SET_COOKIE)
-        .and_then(|v| v.to_str().ok())
-        .expect("password login without passkey should issue session");
-    assert!(crate::tests::extract_set_cookie_token(set_cookie, "X-Auth").is_some());
+    let (login_response, token) = crate::tests::extract_bearer_token(login_response).await;
+    assert!(token.is_some(), "password login should issue accessToken");
     let body = response_body(login_response).await;
     assert_eq!(body["requiresTotp"], false);
     assert!(
@@ -930,7 +905,7 @@ async fn test_registration_finish_duplicate_credential_id_conflict(ctx: &mut Tes
         .method("POST")
         .uri("/api/user/passkey/registration/finish")
         .header("content-type", "application/json")
-        .header(header::COOKIE, format!("X-Auth={session}"))
+        .header(header::AUTHORIZATION, format!("Bearer {session}"))
         .body(Body::from(payload.to_string()))
         .unwrap();
     let response = ctx.create_unified_test_router().oneshot(req).await.unwrap();
@@ -972,13 +947,9 @@ async fn test_password_totp_login_backward_compat_after_second_factors_field(
         .unwrap();
     let response = ctx.create_unified_test_router().oneshot(req).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
+    let (_response, token) = crate::tests::extract_bearer_token(response).await;
     assert!(
-        response
-            .headers()
-            .get(header::SET_COOKIE)
-            .and_then(|v| v.to_str().ok())
-            .and_then(|cookie| crate::tests::extract_set_cookie_token(cookie, "X-Auth"))
-            .is_some(),
-        "TOTP-only verification should still issue an X-Auth session"
+        token.is_some(),
+        "TOTP-only verification should issue accessToken"
     );
 }

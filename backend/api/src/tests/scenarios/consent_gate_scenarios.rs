@@ -22,7 +22,7 @@ use crate::tests::helpers::auth_helpers::{create_admin_session_with_user, grant_
 use crate::tests::schema_test_context::SchemaTestContext as TestContext;
 use axum::{
     body::Body,
-    http::{Request, StatusCode, header},
+    http::{Request, StatusCode},
     response::Response as AxumResponse,
 };
 use herald_core::domain::legal::entities::AgreementType;
@@ -87,9 +87,7 @@ async fn register_user(
 
 /// POST /api/auth/{realmId}/login with the given credentials.
 ///
-/// Returns the response together with the issued `X-Auth` session token, if
-/// a session cookie was returned. This lets tests distinguish the
-/// `consent_required` branch (no cookie) from the normal issuance branch.
+/// Returns the response together with the issued browser access token, if any.
 async fn login_user(
     ctx: &TestContext,
     realm_id: &str,
@@ -117,13 +115,7 @@ async fn login_user(
         .await
         .expect("login request must dispatch");
 
-    let token = response
-        .headers()
-        .get(header::SET_COOKIE)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|set_cookie| crate::tests::extract_set_cookie_token(set_cookie, "X-Auth"));
-
-    (response, token)
+    crate::tests::extract_bearer_token(response).await
 }
 
 /// POST /api/auth/{realmId}/login/verify-totp with the temporary token.
@@ -152,13 +144,7 @@ async fn verify_totp_login(
         .await
         .expect("verify-totp request must dispatch");
 
-    let token = response
-        .headers()
-        .get(header::SET_COOKIE)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|set_cookie| crate::tests::extract_set_cookie_token(set_cookie, "X-Auth"));
-
-    (response, token)
+    crate::tests::extract_bearer_token(response).await
 }
 
 /// Insert an enabled TOTP config and return the plaintext secret for code generation.
@@ -216,7 +202,7 @@ async fn consent_to_current(
         .method("POST")
         .uri(format!("/api/legal/{realm_id}/consent"))
         .header("content-type", "application/json")
-        .header("cookie", format!("X-Auth={token}"))
+        .header("authorization", format!("Bearer {token}"))
         .header("x-forwarded-for", "3.3.3.3")
         .body(Body::from(body))
         .expect("failed to build consent request");
@@ -304,7 +290,7 @@ async fn publish_new_version_as_admin(
             "/api/legal/admin/{realm_id}/agreements/{agreement_type}"
         ))
         .header("content-type", "application/json")
-        .header("cookie", format!("X-Auth={admin_token}"))
+        .header("authorization", format!("Bearer {admin_token}"))
         .header("x-forwarded-for", "3.3.3.3")
         .body(Body::from(body))
         .expect("failed to build publish request");
@@ -608,14 +594,14 @@ async fn test_login_signs_session_after_consent_recorded(ctx: &mut TestContext) 
     assert_eq!(first_login_resp.status(), StatusCode::OK);
     let token = token.expect("first login must issue a session");
 
-    // Publish a new ToS while the user still holds a valid session.
+    // Publish a new ToS while the user still holds a valid Bearer access token.
     publish_new_version_as_admin(&*ctx, &realm_id, "terms_of_service").await;
 
     // The user's consent/status now flags ToS as needing re-consent.
     let status_request = Request::builder()
         .method("GET")
         .uri(format!("/api/legal/{realm_id}/consent/status"))
-        .header("cookie", format!("X-Auth={token}"))
+        .header("authorization", format!("Bearer {token}"))
         .body(Body::empty())
         .expect("failed to build status request");
 

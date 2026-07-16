@@ -92,7 +92,6 @@ pub async fn list_oauth_configs(
 ) -> Result<ApiResult<Vec<OAuthConfigResponse>>, ApiError> {
     let oauth_config_service = state.service.oauth_config_service();
 
-    // Extract identity from request extension (injected by inject_identity middleware)
     let identity_realm_id = identity.realm_id();
     let current_user_id = identity.user_id();
 
@@ -143,7 +142,6 @@ pub async fn get_oauth_config(
 ) -> Result<ApiResult<OAuthConfigResponse>, ApiError> {
     let oauth_config_service = state.service.oauth_config_service();
 
-    // Extract identity from request extension (injected by inject_identity middleware)
     let identity_realm_id = identity.realm_id();
     let current_user_id = identity.user_id();
 
@@ -208,7 +206,6 @@ pub async fn create_oauth_config(
 
     let oauth_config_service = state.service.oauth_config_service();
 
-    // Extract identity from request extension (injected by inject_identity middleware)
     let identity_realm_id = identity.realm_id();
     let current_user_id = identity.user_id();
 
@@ -283,7 +280,6 @@ pub async fn update_oauth_config(
 
     let oauth_config_service = state.service.oauth_config_service();
 
-    // Extract identity from request extension (injected by inject_identity middleware)
     let identity_realm_id = identity.realm_id();
     let current_user_id = identity.user_id();
 
@@ -364,7 +360,6 @@ pub async fn delete_oauth_config(
 ) -> Result<StatusCode, ApiError> {
     let oauth_config_service = state.service.oauth_config_service();
 
-    // Extract identity from request extension (injected by inject_identity middleware)
     let identity_realm_id = identity.realm_id();
     let current_user_id = identity.user_id();
 

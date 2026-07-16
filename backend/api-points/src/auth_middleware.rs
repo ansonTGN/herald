@@ -1,11 +1,10 @@
 // Flexible Authentication Middleware for Points API
 //
-// This middleware supports both session-based authentication (cookies)
-// and API key authentication (X-API-Key header) for points endpoints.
+// This middleware supports Bearer and API key authentication for points endpoints.
 //
 // Priority:
 // 1. First tries API key authentication (X-API-Key header)
-// 2. Falls back to session-based authentication (X-Auth cookie)
+// 2. Falls back to Bearer authentication
 // 3. Returns 401 if neither authentication method succeeds
 
 use axum::{
@@ -22,11 +21,12 @@ use herald_api_base::application::http::common::api_key_utils::{
 use herald_api_base::application::http::common::error_codes::ErrorCode;
 use herald_api_base::application::http::server::api_entities::ApiError;
 use herald_api_base::application::http::state::AppState;
-use herald_core::domain::authentication::Identity;
+use herald_core::domain::authentication::{CredentialClass, Identity, TokenCredentialContext};
 use herald_core::domain::client_api_keys::services::ClientApiKeyService;
-use herald_core::domain::user::UserRepository;
 use herald_core::infrastructure::client_api_keys::cache::ApiKeyCacheValue;
+use std::collections::HashSet;
 use tracing::{debug, error, info, warn};
+use uuid::Uuid;
 
 // Note: API key validation functions (is_cached_key_valid, is_entity_valid, cached_to_entity)
 // are now imported from common::api_key_utils to eliminate duplication
@@ -181,20 +181,18 @@ async fn try_api_key_auth(
     Ok(Some(Identity::ThirdParty(api_key_record)))
 }
 
-/// Flexible authentication middleware that supports both API key and session auth
+/// Flexible authentication middleware that supports both API key and Bearer auth.
 ///
 /// Authentication flow:
 /// 1. Check for X-API-Key header → authenticate as ThirdParty
-/// 2. If no API key, check for X-Auth cookie → authenticate as User
+/// 2. If no API key, check for a Bearer token → authenticate as User
 /// 3. Return 401 if neither authentication method succeeds
 ///
 /// This allows:
 /// - Third-party clients to use API keys (consume points, webhooks)
-/// - Regular users to view their balance via session cookies
-/// - Admin users to manage accounts via session cookies
+/// - Browser users to access points endpoints with scoped Bearer tokens
 #[tracing::instrument(
-    // Governance: req headers carry X-API-Key / X-Auth
-    // (token/session) — both credentials MUST be skipped.
+    // Governance: request headers carry API-key or Bearer credentials.
     skip(state, req, next),
     fields(http.route = "points_flexible_auth")
 )]
@@ -208,103 +206,34 @@ pub async fn flexible_auth_middleware(
 
     match api_key_auth_result {
         Ok(Some(identity)) => {
-            // API key authentication succeeded
-            req.extensions_mut().insert(identity);
+            // Insert a synthetic TokenCredentialContext so downstream handlers that
+            // extract it do not fail at the axum extractor layer. API keys are not
+            // browser-token users, so scopes are empty and user-scoped endpoints
+            // will still be rejected by require_token_scope/require_authenticated_user.
+            req.extensions_mut().insert(identity.clone());
+            req.extensions_mut().insert(TokenCredentialContext {
+                client_app_id: Uuid::nil(),
+                family_id: Uuid::nil(),
+                credential_class: CredentialClass::CustomUserUi,
+                allowed_scopes: HashSet::new(),
+            });
             return next.run(req).await;
         }
-        Ok(None) => {
-            // No API key provided, try session authentication
-        }
+        Ok(None) => {}
         Err(e) => {
-            // API key authentication failed with an error
             debug!("API key auth failed: {}", e);
-            // Fall through to session auth
         }
     }
 
-    // Try session-based authentication
-    match herald_api_base::application::http::auth::util::require_session(&state, req.headers())
-        .await
+    match herald_api_base::application::http::auth::identity_middleware::authenticate_bearer(
+        &state,
+        req.headers(),
+    )
+    .await
     {
-        Ok((_token, session_data)) => {
-            // Parse user_id from session with validation
-            let session_user_id = &session_data.user_id;
-            debug!(
-                "Session user_id: {}, length: {}",
-                session_user_id,
-                session_user_id.len()
-            );
-
-            let user_id = match uuid::Uuid::parse_str(session_user_id) {
-                Ok(id) => id,
-                Err(_) => {
-                    return ApiError::with_error_code(
-                        StatusCode::UNAUTHORIZED,
-                        ErrorCode::Unauthorized.as_str(),
-                        "Invalid user ID in session",
-                    )
-                    .into_response();
-                }
-            };
-
-            debug!("Parsed user_id from session: {}", user_id);
-
-            // Load User from database via repository
-            let user = match state.user_repository.get_user_by_id(user_id).await {
-                Ok(user) => user,
-                Err(e) => match e {
-                    herald_core::domain::common::entities::app_errors::CoreError::NotFound => {
-                        error!(
-                            session_user_id = %session_user_id,
-                            parsed_user_id = %user_id,
-                            "User not found in database"
-                        );
-                        return ApiError::with_error_code(
-                            StatusCode::UNAUTHORIZED,
-                            ErrorCode::Unauthorized.as_str(),
-                            "User not found",
-                        )
-                        .into_response();
-                    }
-                    _ => {
-                        return ApiError::with_error_code(
-                            StatusCode::INTERNAL_SERVER_ERROR,
-                            ErrorCode::InternalError.as_str(),
-                            "Internal server error",
-                        )
-                        .into_response();
-                    }
-                },
-            };
-
-            // Verify the loaded user ID matches the session user ID
-            let loaded_user_id = user.id.to_string();
-            if loaded_user_id != *session_user_id {
-                error!(
-                    session_user_id = %session_user_id,
-                    loaded_user_id = %loaded_user_id,
-                    "User ID mismatch: session user_id doesn't match loaded user ID"
-                );
-                return ApiError::with_error_code(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    ErrorCode::InternalError.as_str(),
-                    "Internal server error",
-                )
-                .into_response();
-            }
-
-            let identity = Identity::User(user);
-
-            debug!(
-                realm_id = %identity.realm_id(),
-                user_id = %identity.user_id(),
-                client_id = %session_data.client_id,
-                "Identity injected into request"
-            );
-
-            // Insert extensions into the request for next handler to extract
+        Ok((identity, credential_context)) => {
             req.extensions_mut().insert(identity);
-
+            req.extensions_mut().insert(credential_context);
             next.run(req).await
         }
         Err(_) => {
@@ -312,7 +241,7 @@ pub async fn flexible_auth_middleware(
             ApiError::with_error_code(
                 StatusCode::UNAUTHORIZED,
                 ErrorCode::Unauthorized.as_str(),
-                "Authentication required (API key or session cookie)",
+                "Authentication required (API key or Bearer token)",
             )
             .into_response()
         }
@@ -325,7 +254,7 @@ pub async fn flexible_auth_middleware(
 // (auth_middleware.rs), `grant_points` (grant.rs), `list_transactions`
 // (transactions.rs) instrument skip correctness.
 //
-// WHY: the auth middleware reads X-API-Key / X-Auth (token/session) from
+// WHY: the auth middleware reads API-key or Bearer credentials from
 // request headers — credentials. The grant/transactions handlers carry
 // `identity` (user_id/realm_id) and the request body/query (target user_id).
 // If the `#[instrument]` macro ever stops skipping those, the credential/PII
@@ -365,7 +294,7 @@ mod instrument_skip_tests {
     #[test]
     fn instrument_skip_points_flexible_auth_excludes_api_key_and_token() {
         let body = instrument_body_preceding(AUTH_SRC, "flexible_auth_middleware");
-        // `req` headers carry X-API-Key / X-Auth (token/session).
+        // `req` headers carry API-key or Bearer credentials.
         for required in ["req", "state", "next"] {
             assert!(
                 body.contains(required),

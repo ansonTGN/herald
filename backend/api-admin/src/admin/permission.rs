@@ -1,20 +1,19 @@
 use axum::{
     Extension, Json,
     extract::{Path, State},
-    http::HeaderMap,
 };
 use axum_valid::Valid;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use herald_api_base::application::http::auth::util::load_session_with_ip_validation;
 use herald_api_base::application::http::common::auth_utils::AdminIdentity;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
-use herald_core::domain::authentication::Identity;
+use herald_core::domain::authentication::{BrowserTokenService, Identity};
 use herald_core::domain::authorization::permission_service::PermissionService;
 use herald_core::domain::user::PermissionManagementService;
+use herald_core::infrastructure::authentication::RedisBrowserTokenService;
 use validator::Validate;
 
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
@@ -192,7 +191,6 @@ pub async fn create_permission(
 pub async fn list_permission(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
-    _headers: HeaderMap,
     Path((realm_id, client_id)): Path<(String, String)>,
 ) -> Result<ApiResult<Vec<PermissionData>>, ApiError> {
     let admin = AdminIdentity::require(identity, &realm_id, "permissions")?;
@@ -338,22 +336,23 @@ pub async fn delete_permission(
     )
   )]
 #[tracing::instrument(
-    // Governance: `headers` carry auth; `payload` carries
-    // the session `token` (credential) and rules that may reference resources
+    // Governance: `payload` carries the access token and permission rules
     // bound to a user. All skipped; only the low-cardinality op type recorded.
-    skip(state, headers, payload),
+    skip(state, payload),
     fields(db.operation = "check_permission")
 )]
 pub async fn check_permission(
     State(state): State<AppState>,
-    headers: HeaderMap,
     Valid(Json(payload)): Valid<Json<PermissionCheckRequest>>,
 ) -> Result<ApiResult<PermissionCheckResponse>, ApiError> {
-    // Load session with IP validation
-    // IP validation is now performed at the session level (in load_session_with_ip_validation)
-    // rather than IP whitelist, to prevent token theft while allowing any IP to initiate requests
-    let sess = load_session_with_ip_validation(&state, &payload.token, Some(&headers)).await?;
-    let Some(sess) = sess else {
+    let token_data = RedisBrowserTokenService::new(state.redis_manager.clone())
+        .lookup_access_token(&payload.token)
+        .await
+        .map_err(|error| {
+            tracing::error!(%error, "Browser token permission lookup failed");
+            ApiError::internal("Internal server error")
+        })?;
+    let Some(token_data) = token_data else {
         return Ok(ApiResult::ok(PermissionCheckResponse {
             allowed: false,
             user_id: None,
@@ -363,8 +362,8 @@ pub async fn check_permission(
     let rules = match payload.rules {
         Some(rules) if !rules.is_empty() => rules,
         _ => {
-            let user_id = Uuid::parse_str(&sess.user_id)
-                .map_err(|_| ApiError::internal("Session contains invalid user_id".to_string()))?;
+            let user_id = Uuid::parse_str(&token_data.user_id)
+                .map_err(|_| ApiError::internal("Token contains invalid user_id".to_string()))?;
             return Ok(ApiResult::ok(PermissionCheckResponse {
                 allowed: true,
                 user_id: Some(user_id),
@@ -378,7 +377,12 @@ pub async fn check_permission(
 
     for rule in rules {
         let auth_res = permission_checker
-            .check_permission(&sess.realm_id, &sess.user_id, &rule.resource, &rule.action)
+            .check_permission(
+                &token_data.realm_id,
+                &token_data.user_id,
+                &rule.resource,
+                &rule.action,
+            )
             .await
             .unwrap_or(false);
 
@@ -388,8 +392,8 @@ pub async fn check_permission(
         }
     }
 
-    let user_id = Uuid::parse_str(&sess.user_id)
-        .map_err(|_| ApiError::internal("Session contains invalid user_id".to_string()))?;
+    let user_id = Uuid::parse_str(&token_data.user_id)
+        .map_err(|_| ApiError::internal("Token contains invalid user_id".to_string()))?;
 
     Ok(ApiResult::ok(PermissionCheckResponse {
         allowed,

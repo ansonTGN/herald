@@ -2,10 +2,12 @@ use axum::{
     Json,
     extract::{Extension, Path, State},
 };
-use herald_api_base::application::http::common::auth_utils::require_authenticated_user_in_realm;
+use herald_api_base::application::http::common::auth_utils::{
+    require_authenticated_user_in_realm, require_token_scope,
+};
 use herald_api_base::application::http::server::api_entities::ApiError;
 use herald_api_base::application::http::state::AppState;
-use herald_core::domain::authentication::Identity;
+use herald_core::domain::authentication::{CredentialScope, Identity, TokenCredentialContext};
 use herald_core::domain::authorization::PermissionService;
 use herald_core::domain::billing::BillingRepository;
 use serde::Serialize;
@@ -166,10 +168,9 @@ pub async fn get_feature_availability(
 pub async fn get_user_feature_availability(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
+    Extension(context): Extension<TokenCredentialContext>,
 ) -> Result<Json<UserFeatureAvailabilityResponse>, ApiError> {
-    if !identity.is_user() {
-        return Err(ApiError::unauthorized("User session required"));
-    }
+    require_token_scope(&identity, &context, CredentialScope::FeatureRead)?;
     let realm_id = identity.realm_id();
     let facts = load_feature_facts(&state, &realm_id).await?;
     let invoice_eligibility =

@@ -38,7 +38,7 @@ mod tests {
             .method("POST")
             .uri(format!("/api/client/{}", ctx._realm_id))
             .header("content-type", "application/json")
-            .header("cookie", format!("X-Auth={}", admin_token))
+            .header("authorization", format!("Bearer {}", admin_token))
             .body(Body::from(
                 json!({
                     "clientId": "test-app",
@@ -46,7 +46,7 @@ mod tests {
                     "description": "A test application",
                     "redirectUris": ["https://example.com/callback"],
                     "enabled": true,
-                    "sessionTtlSeconds": 1800
+                    "browserRefreshAbsoluteTtlSeconds": 86400
                 })
                 .to_string(),
             ))
@@ -89,7 +89,7 @@ mod tests {
             .method("POST")
             .uri(format!("/api/client/{}", ctx._realm_id))
             .header("content-type", "application/json")
-            .header("cookie", format!("X-Auth={}", admin_token))
+            .header("authorization", format!("Bearer {}", admin_token))
             .body(Body::from(
                 json!({
                     "clientId": "test-app",
@@ -126,7 +126,7 @@ mod tests {
             .method("POST")
             .uri(format!("/api/client/{}", ctx._realm_id))
             .header("content-type", "application/json")
-            .header("cookie", format!("X-Auth={}", admin_token))
+            .header("authorization", format!("Bearer {}", admin_token))
             .body(Body::from(
                 json!({
                     "clientId": "test-device-code-app",
@@ -160,7 +160,7 @@ mod tests {
             .method("POST")
             .uri(format!("/api/client/{}", ctx._realm_id))
             .header("content-type", "application/json")
-            .header("cookie", format!("X-Auth={}", admin_token))
+            .header("authorization", format!("Bearer {}", admin_token))
             .body(Body::from(
                 json!({
                     "clientId": "test-app",
@@ -183,7 +183,7 @@ mod tests {
             .method("PUT")
             .uri(format!("/api/client/{}/{}", ctx._realm_id, client_app_id))
             .header("content-type", "application/json")
-            .header("cookie", format!("X-Auth={}", admin_token))
+            .header("authorization", format!("Bearer {}", admin_token))
             .body(Body::from(
                 json!({
                     "redirectUris": ["https://example.com/callback", "https://app.example.com/auth"]
@@ -230,7 +230,7 @@ mod tests {
             .method("POST")
             .uri(format!("/api/client/{}", ctx._realm_id))
             .header("content-type", "application/json")
-            .header("cookie", format!("X-Auth={}", admin_token))
+            .header("authorization", format!("Bearer {}", admin_token))
             .body(Body::from(
                 json!({
                     "clientId": "test-app",
@@ -254,7 +254,7 @@ mod tests {
             .method("PUT")
             .uri(format!("/api/client/{}/{}", ctx._realm_id, client_app_id))
             .header("content-type", "application/json")
-            .header("cookie", format!("X-Auth={}", admin_token))
+            .header("authorization", format!("Bearer {}", admin_token))
             .body(Body::from(
                 json!({
                     "enabled": false
@@ -281,7 +281,7 @@ mod tests {
             .method("PUT")
             .uri(format!("/api/client/{}/{}", ctx._realm_id, client_app_id))
             .header("content-type", "application/json")
-            .header("cookie", format!("X-Auth={}", admin_token))
+            .header("authorization", format!("Bearer {}", admin_token))
             .body(Body::from(
                 json!({
                     "enabled": true
@@ -318,7 +318,7 @@ mod tests {
             .method("POST")
             .uri(format!("/api/client/{}", ctx._realm_id))
             .header("content-type", "application/json")
-            .header("cookie", format!("X-Auth={}", admin_token))
+            .header("authorization", format!("Bearer {}", admin_token))
             .body(Body::from(
                 json!({
                     "clientId": "test-app",
@@ -342,7 +342,7 @@ mod tests {
             .method("PUT")
             .uri(format!("/api/client/{}/{}", ctx._realm_id, client_app_id))
             .header("content-type", "application/json")
-            .header("cookie", format!("X-Auth={}", admin_token))
+            .header("authorization", format!("Bearer {}", admin_token))
             .body(Body::from(
                 json!({
                     "regenerateSecret": true
@@ -363,27 +363,27 @@ mod tests {
             "Client secret should be regenerated"
         );
     }
-    /// 测试：Session TTL 验证
+    /// 测试：浏览器 refresh token 绝对 TTL 验证
     #[test_context(ClientAppTestContext)]
     #[tokio::test]
-    async fn test_session_ttl_validation(ctx: &mut ClientAppTestContext) {
+    async fn test_browser_refresh_absolute_ttl_validation(ctx: &mut ClientAppTestContext) {
         let app = ctx.create_unified_test_router();
 
         // Setup authentication
         let admin_token = setup_admin_session(ctx, "test-ttl-validation@test.com").await;
 
-        // 尝试创建 TTL < 60 的 Client App
+        // 尝试创建低于 1 天最小值的 Client App
         let request = Request::builder()
             .method("POST")
             .uri(format!("/api/client/{}", ctx._realm_id))
             .header("content-type", "application/json")
-            .header("cookie", format!("X-Auth={}", admin_token))
+            .header("authorization", format!("Bearer {}", admin_token))
             .body(Body::from(
                 json!({
                     "clientId": "test-app",
                     "name": "Test Application",
                     "redirectUris": ["https://example.com/callback"],
-                    "sessionTtlSeconds": 30
+                    "browserRefreshAbsoluteTtlSeconds": 30
                 })
                 .to_string(),
             ))

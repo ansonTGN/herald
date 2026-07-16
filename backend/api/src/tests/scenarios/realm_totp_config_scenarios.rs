@@ -20,7 +20,7 @@ async fn test_scenario_update_realm_totp_config_returns_wrapped_response(ctx: &m
         .method("PUT")
         .uri(format!("/api/realms/{}/config/totp", ctx._realm_id))
         .header("content-type", "application/json")
-        .header(header::COOKIE, format!("X-Auth={token}"))
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::from(
             json!({
                 "enabled": true,
@@ -63,7 +63,7 @@ async fn test_scenario_get_realm_totp_config_returns_wrapped_response(ctx: &mut 
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/realms/{}/config/totp", ctx._realm_id))
-        .header(header::COOKIE, format!("X-Auth={token}"))
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::empty())
         .unwrap();
 
@@ -118,7 +118,7 @@ async fn test_scenario_force_enable_totp_for_all_users(ctx: &mut TestContext) {
         .method("PUT")
         .uri(format!("/api/realms/{}/config/totp", ctx._realm_id))
         .header("content-type", "application/json")
-        .header(header::COOKIE, format!("X-Auth={admin_token}"))
+        .header(header::AUTHORIZATION, format!("Bearer {admin_token}"))
         .body(Body::from(
             json!({
                 "enabled": true,

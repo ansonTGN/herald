@@ -19,7 +19,7 @@ fn validate_client_id(client_id: &str) -> Result<(), validator::ValidationError>
 
 /// Request to create a new OAuth client application
 #[derive(Serialize, Deserialize, ToSchema, Validate)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ClientAppCreateRequest {
     /// OAuth client identifier (3-36 characters)
     ///
@@ -51,6 +51,10 @@ pub struct ClientAppCreateRequest {
     /// to these URIs after authentication.
     #[schema(example = json!(["https://example.com/callback", "http://localhost:3000/auth/callback"]))]
     pub redirect_uris: Option<Vec<String>>,
+    pub allowed_origins: Option<Vec<String>>,
+    pub email_verify_return_url: Option<String>,
+    pub password_reset_return_url: Option<String>,
+    pub browser_refresh_absolute_ttl_seconds: Option<i32>,
 
     /// Whether this client application is active
     ///
@@ -65,21 +69,6 @@ pub struct ClientAppCreateRequest {
     #[schema(example = "https://example.com/logo.png")]
     pub icon_url: Option<String>,
 
-    /// Session time-to-live in seconds
-    ///
-    /// After this period, the user must re-authenticate. Sessions are invalidated
-    /// after this duration expires. If not set, a default value will be used.
-    #[schema(example = "3600")]
-    pub session_ttl_seconds: Option<i32>,
-
-    /// Session renewal time-to-live in seconds
-    ///
-    /// If set, sessions can be renewed (refreshed) within this window without
-    /// requiring full re-authentication. Allows for "sliding session" behavior.
-    /// Must be greater than session_ttl_seconds if set.
-    #[schema(example = "86400")]
-    pub session_renewal_ttl_seconds: Option<i32>,
-
     pub device_code_grant_enabled: Option<bool>,
 }
 
@@ -90,7 +79,7 @@ pub struct ClientAppCreateRequest {
 ///
 /// All fields are optional - only provided fields will be updated.
 #[derive(Serialize, Deserialize, ToSchema, Validate)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ClientAppUpdateRequest {
     /// Client application name (1-100 characters)
     ///
@@ -113,6 +102,10 @@ pub struct ClientAppUpdateRequest {
     /// to these URIs after authentication.
     #[schema(example = json!(["https://example.com/callback", "https://app.example.com/auth/callback"]))]
     pub redirect_uris: Option<Vec<String>>,
+    pub allowed_origins: Option<Vec<String>>,
+    pub email_verify_return_url: Option<String>,
+    pub password_reset_return_url: Option<String>,
+    pub browser_refresh_absolute_ttl_seconds: Option<i32>,
 
     /// Whether this client application is active
     ///
@@ -126,19 +119,6 @@ pub struct ClientAppUpdateRequest {
     /// Should be a valid HTTPS URL to an image resource.
     #[schema(example = "https://example.com/new-logo.png")]
     pub icon_url: Option<String>,
-
-    /// Session time-to-live in seconds
-    ///
-    /// Updates the session duration. After this period, the user must re-authenticate.
-    #[schema(example = "7200")]
-    pub session_ttl_seconds: Option<i32>,
-
-    /// Session renewal time-to-live in seconds
-    ///
-    /// Updates the session renewal window. If set, sessions can be renewed within this
-    /// window without requiring full re-authentication.
-    #[schema(example = "172800")]
-    pub session_renewal_ttl_seconds: Option<i32>,
 
     /// Regenerate client secret
     ///
@@ -163,10 +143,13 @@ pub struct ClientAppDbModel {
 
     // New fields for Client App settings
     pub redirect_uris: Json<Vec<String>>,
+    pub allowed_origins: Json<Vec<String>>,
+    pub email_verify_return_url: Option<String>,
+    pub password_reset_return_url: Option<String>,
+    pub browser_refresh_absolute_ttl_seconds: i32,
+    pub is_first_party: bool,
     pub enabled: bool,
     pub icon_url: Option<String>,
-    pub session_ttl_seconds: i32,
-    pub session_renewal_ttl_seconds: Option<i32>,
     pub client_secret: Option<String>,
     pub device_code_grant_enabled: bool,
 }
@@ -211,6 +194,11 @@ pub struct ClientAppItem {
     /// to these URIs after authentication.
     #[schema(example = json!(["https://example.com/callback", "http://localhost:3000/auth/callback"]))]
     pub redirect_uris: Vec<String>,
+    pub allowed_origins: Vec<String>,
+    pub email_verify_return_url: Option<String>,
+    pub password_reset_return_url: Option<String>,
+    pub browser_refresh_absolute_ttl_seconds: i32,
+    pub is_first_party: bool,
 
     /// Whether this client is currently enabled
     ///
@@ -223,19 +211,6 @@ pub struct ClientAppItem {
     /// URL to an image file that will be displayed as the app icon.
     #[schema(example = "https://example.com/logo.png")]
     pub icon_url: Option<String>,
-
-    /// Session TTL in seconds
-    ///
-    /// After this period, the user must re-authenticate.
-    #[schema(example = "3600")]
-    pub session_ttl_seconds: i32,
-
-    /// Session renewal TTL in seconds
-    ///
-    /// If set, sessions can be renewed within this window without requiring
-    /// full re-authentication.
-    #[schema(example = "86400")]
-    pub session_renewal_ttl_seconds: Option<i32>,
 
     /// OAuth client secret (only shown during creation)
     ///
@@ -258,10 +233,13 @@ impl From<ClientAppDbModel> for ClientAppItem {
             name: db_model.name,
             description: db_model.description,
             redirect_uris: db_model.redirect_uris.0,
+            allowed_origins: db_model.allowed_origins.0,
+            email_verify_return_url: db_model.email_verify_return_url,
+            password_reset_return_url: db_model.password_reset_return_url,
+            browser_refresh_absolute_ttl_seconds: db_model.browser_refresh_absolute_ttl_seconds,
+            is_first_party: db_model.is_first_party,
             enabled: db_model.enabled,
             icon_url: db_model.icon_url,
-            session_ttl_seconds: db_model.session_ttl_seconds,
-            session_renewal_ttl_seconds: db_model.session_renewal_ttl_seconds,
             client_secret: db_model.client_secret,
             device_code_grant_enabled: db_model.device_code_grant_enabled,
         }
@@ -284,4 +262,20 @@ fn default_page() -> i64 {
 
 fn default_page_size() -> i64 {
     20
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ClientAppUpdateRequest;
+
+    #[test]
+    fn first_party_cannot_be_written_through_admin_request() {
+        let request = serde_json::from_value::<ClientAppUpdateRequest>(serde_json::json!({
+            "isFirstParty": true
+        }));
+        assert!(
+            request.is_err(),
+            "isFirstParty must remain an internal-only field"
+        );
+    }
 }

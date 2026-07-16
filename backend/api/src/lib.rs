@@ -27,7 +27,6 @@ mod tests;
 pub use application::http::server::create_api_routes;
 
 // Re-export auth util for test support
-pub use application::http::auth::util::{SessionData, load_session, store_session};
 
 // Re-export AppState and WebhookEventProcessorImpl for assembly in main.rs
 pub use application::http::state::AppState;
@@ -51,7 +50,9 @@ use herald_core::domain::user::services::admin::{
 };
 use herald_core::infrastructure::PostgresCustomDomainMappingRepository;
 use herald_core::infrastructure::audit::PostgresAuditEventRepository;
-use herald_core::infrastructure::authentication::RedisSessionRepository;
+use herald_core::infrastructure::authentication::{
+    RedisBrowserTokenService, init_authentication_functions,
+};
 use herald_core::infrastructure::authorization::{
     RedisCache, RedisPermissionChecker,
     policies::{PermissionBasedBillingPolicy, PermissionBasedPointsPolicy},
@@ -291,16 +292,13 @@ pub async fn build_app_state_with_migrations(
     ));
     info!("Legal service initialized");
 
-    // Self-service account deletion pipeline (BE-D07). Owns its own session
-    // repo instance (RedisSessionRepository wraps the shared RedisConnectionManager
-    // cheaply) so it can revoke all of a user's sessions post-transaction.
-    let session_repository = Arc::new(RedisSessionRepository::new(redis_manager.clone()));
+    let browser_token_service = Arc::new(RedisBrowserTokenService::new(redis_manager.clone()));
     let user_totp_repository = Arc::new(PostgresUserTotpRepository::new(db.clone().into()));
     let self_delete_service = Arc::new(SelfDeleteService::new(
         user_repository.clone(),
         user_totp_repository,
         billing_repository.clone(),
-        session_repository,
+        browser_token_service,
         audit_event_repository.clone(),
     ));
     info!("Self-delete service initialized");
@@ -547,6 +545,11 @@ pub async fn build_app_state_with_migrations(
         .await
         .map_err(|e| anyhow::anyhow!("Failed to initialize idempotency Redis Function: {:?}", e))?;
     info!("Idempotency Redis Function initialized");
+
+    init_authentication_functions(&state.redis_manager)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to initialize authentication Redis Functions: {e}"))?;
+    info!("Authentication Redis Functions initialized");
 
     Ok(state)
 }

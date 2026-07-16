@@ -8,6 +8,7 @@ pub struct Model {
     pub id: Uuid,
     pub user_id: Uuid,
     pub realm_id: String,
+    pub rp_id: String,
     pub credential_id: Vec<u8>,
     pub credential_public_key: Vec<u8>,
     pub counter: i64,

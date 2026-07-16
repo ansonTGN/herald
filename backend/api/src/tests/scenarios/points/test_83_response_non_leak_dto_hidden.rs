@@ -32,7 +32,7 @@ use crate::tests::scenarios::points::fixtures::*;
 use crate::tests::schema_test_context::SchemaTestContext as TestContext;
 use axum::{
     body::Body,
-    http::{Request, StatusCode, header},
+    http::{Request, StatusCode},
 };
 use chrono::{Duration, Utc};
 use herald_core::domain::points::entities::{CreditSourceType, CreditType};
@@ -162,12 +162,8 @@ async fn login(ctx: &mut TestContext, app_url: &str, email: &str, password: &str
         .await
         .unwrap();
     assert_eq!(login_response.status(), StatusCode::OK);
-    let set_cookie = login_response
-        .headers()
-        .get(header::SET_COOKIE)
-        .and_then(|v| v.to_str().ok())
-        .expect("Should return Set-Cookie header");
-    crate::tests::extract_set_cookie_token(set_cookie, "X-Auth").expect("Should extract token")
+    let (_response, token) = crate::tests::extract_bearer_token(login_response).await;
+    token.expect("Login should return accessToken")
 }
 
 // =============================================================================
@@ -249,7 +245,7 @@ async fn test_user_transaction_response_hides_effective_at_for_view(ctx: &mut Te
     let request = Request::builder()
         .method("GET")
         .uri(format!("/api/points/{}/transactions", realm_id))
-        .header("cookie", format!("X-Auth={}", token))
+        .header("authorization", format!("Bearer {}", token))
         .body(Body::empty())
         .unwrap();
     let response = app.clone().oneshot(request).await.unwrap();
@@ -363,7 +359,7 @@ async fn test_admin_transaction_response_includes_effective_at_for_manage(ctx: &
             "/api/points/{}/transactions?userId={}",
             realm_id, user_id
         ))
-        .header("cookie", format!("X-Auth={}", token))
+        .header("authorization", format!("Bearer {}", token))
         .body(Body::empty())
         .unwrap();
     let response = app.clone().oneshot(request).await.unwrap();
@@ -528,7 +524,7 @@ async fn test_admin_list_wallets_excludes_future_effective(ctx: &mut TestContext
     let request = Request::builder()
         .method("GET")
         .uri(format!("/api/points/{}/wallets", realm_id))
-        .header("cookie", format!("X-Auth={}", token))
+        .header("authorization", format!("Bearer {}", token))
         .body(Body::empty())
         .unwrap();
     let response = app.clone().oneshot(request).await.unwrap();

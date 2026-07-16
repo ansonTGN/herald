@@ -9,6 +9,10 @@ use axum::{
     http::{Request, StatusCode, header},
 };
 use herald_core::domain::authorization::permission_service::PermissionService;
+use herald_core::domain::{
+    authentication::BrowserTokenService, client::ports::ClientService, user::UserRepository,
+};
+use herald_core::infrastructure::authentication::RedisBrowserTokenService;
 use serde_json::json;
 use test_context::test_context;
 use tower::ServiceExt;
@@ -40,7 +44,7 @@ async fn test_create_realm_success(ctx: &mut RealmTestContext) {
     let req = Request::builder()
         .method("POST")
         .uri("/api/realms")
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
+        .header(header::AUTHORIZATION, format!("Bearer {admin_token}"))
         .header("content-type", "application/json")
         .body(Body::from(payload.to_string()))
         .unwrap();
@@ -67,7 +71,7 @@ async fn test_create_realm_success(ctx: &mut RealmTestContext) {
     let req = Request::builder()
         .method("POST")
         .uri("/api/realms")
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
+        .header(header::AUTHORIZATION, format!("Bearer {admin_token}"))
         .header("content-type", "application/json")
         .body(Body::from(payload.to_string()))
         .unwrap();
@@ -104,7 +108,7 @@ async fn test_list_realms(ctx: &mut RealmTestContext) {
     let req = Request::builder()
         .method("POST")
         .uri("/api/realms")
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
+        .header(header::AUTHORIZATION, format!("Bearer {admin_token}"))
         .header("content-type", "application/json")
         .body(Body::from(payload.to_string()))
         .unwrap();
@@ -116,7 +120,7 @@ async fn test_list_realms(ctx: &mut RealmTestContext) {
     let req = Request::builder()
         .method("GET")
         .uri("/api/realms")
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
+        .header(header::AUTHORIZATION, format!("Bearer {admin_token}"))
         .body(Body::empty())
         .unwrap();
 
@@ -153,7 +157,7 @@ async fn test_update_realm(ctx: &mut RealmTestContext) {
     let req = Request::builder()
         .method("POST")
         .uri("/api/realms")
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
+        .header(header::AUTHORIZATION, format!("Bearer {admin_token}"))
         .header("content-type", "application/json")
         .body(Body::from(payload.to_string()))
         .unwrap();
@@ -170,22 +174,24 @@ async fn test_update_realm(ctx: &mut RealmTestContext) {
     .await
     .expect("realm admin user should exist");
 
-    let realm_admin_token = ctx.generate_test_token();
-    let session_data = crate::application::http::auth::util::SessionData {
-        realm_id: "updatetest".to_string(),
-        client_id: ctx._client_id.clone(),
-        user_id: realm_admin_user_id.to_string(),
-        client_ip: "127.0.0.1".to_string(),
-        renewal_ttl_seconds: None,
-    };
-    crate::application::http::auth::util::store_session(
-        &ctx._app_state,
-        &realm_admin_token,
-        &session_data,
-        1800,
-    )
-    .await
-    .unwrap();
+    let realm_admin_user = ctx
+        ._app_state
+        .user_repository
+        .get_user_by_id(realm_admin_user_id)
+        .await
+        .unwrap();
+    let first_party_app = ctx
+        ._app_state
+        .service
+        .client_service()
+        .get_client_app_by_client_id(&ctx._realm_id, &ctx._client_id)
+        .await
+        .unwrap();
+    let realm_admin_token = RedisBrowserTokenService::new(ctx._app_state.redis_manager.clone())
+        .create_first_party_token_family(&realm_admin_user, &first_party_app)
+        .await
+        .unwrap()
+        .access_token;
 
     // Grant realm-admin role to the updatetest user in updatetest realm
     let role_id: uuid::Uuid = sqlx::query_scalar(
@@ -226,7 +232,7 @@ async fn test_update_realm(ctx: &mut RealmTestContext) {
     let req = Request::builder()
         .method("PUT")
         .uri("/api/realms/updatetest")
-        .header(header::COOKIE, format!("X-Auth={}", realm_admin_token))
+        .header(header::AUTHORIZATION, format!("Bearer {realm_admin_token}"))
         .header("content-type", "application/json")
         .body(Body::from(update_payload.to_string()))
         .unwrap();
@@ -263,7 +269,7 @@ async fn test_create_realm_duplicate_id_fails(ctx: &mut RealmTestContext) {
     let req = Request::builder()
         .method("POST")
         .uri("/api/realms")
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
+        .header(header::AUTHORIZATION, format!("Bearer {admin_token}"))
         .header("content-type", "application/json")
         .body(Body::from(payload.to_string()))
         .unwrap();
@@ -285,7 +291,7 @@ async fn test_create_realm_duplicate_id_fails(ctx: &mut RealmTestContext) {
     let req = Request::builder()
         .method("POST")
         .uri("/api/realms")
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
+        .header(header::AUTHORIZATION, format!("Bearer {admin_token}"))
         .header("content-type", "application/json")
         .body(Body::from(payload.to_string()))
         .unwrap();
@@ -322,7 +328,7 @@ async fn test_delete_realm_not_supported(ctx: &mut RealmTestContext) {
     let req = Request::builder()
         .method("POST")
         .uri("/api/realms")
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
+        .header(header::AUTHORIZATION, format!("Bearer {admin_token}"))
         .header("content-type", "application/json")
         .body(Body::from(payload.to_string()))
         .unwrap();
@@ -334,7 +340,7 @@ async fn test_delete_realm_not_supported(ctx: &mut RealmTestContext) {
     let req = Request::builder()
         .method("DELETE")
         .uri("/api/realms/deletetest")
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
+        .header(header::AUTHORIZATION, format!("Bearer {admin_token}"))
         .body(Body::empty())
         .unwrap();
 

@@ -2,7 +2,8 @@ use axum::{
     extract::{Extension, Path, State},
     http::HeaderMap,
 };
-use herald_core::domain::authentication::Identity;
+use herald_core::domain::authentication::{BrowserTokenService, Identity};
+use herald_core::infrastructure::authentication::RedisBrowserTokenService;
 use uuid::Uuid;
 
 use herald_api_base::application::http::common::auth_utils::AdminIdentity;
@@ -46,6 +47,17 @@ pub async fn delete_client_app(
         "Deleting client app"
     );
 
+    // Revoke browser token families before deleting the client app so that a
+    // deleted OAuth client cannot keep validating tokens.
+    RedisBrowserTokenService::new(state.redis_manager.clone())
+        .revoke_client_families(id)
+        .await
+        .map_err(|e| {
+            ApiError::internal(format!(
+                "Browser token revocation failed before deleting client app: {e}"
+            ))
+        })?;
+
     // Call service layer
     let client_service = state.service.client_service();
     client_service
@@ -57,6 +69,9 @@ pub async fn delete_client_app(
             }
             herald_core::domain::common::entities::app_errors::CoreError::Forbidden(msg) => {
                 ApiError::forbidden(msg)
+            }
+            herald_core::domain::common::entities::app_errors::CoreError::BadRequest(msg) => {
+                ApiError::bad_request(msg)
             }
             e => {
                 tracing::error!("Failed to delete client app: {}", e);

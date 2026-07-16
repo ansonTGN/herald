@@ -88,7 +88,7 @@ async fn test_scenario_create_realm_with_admin_success(ctx: &mut TestContext) {
         .method("POST")
         .uri("/api/realms")
         .header("content-type", "application/json")
-        .header("cookie", format!("X-Auth={}", super_admin_token))
+        .header("authorization", format!("Bearer {}", super_admin_token))
         .body(Body::from(create_payload))
         .unwrap();
 

@@ -21,10 +21,13 @@
 
 #![allow(dead_code)]
 
-use crate::application::http::auth::util::{SessionData, store_session};
 use crate::tests::schema_test_context::SchemaTestContext as TestContext;
+use herald_core::domain::authentication::BrowserTokenService;
 use herald_core::domain::authorization::permission_service::PermissionService;
 use herald_core::domain::authorization::principal_types;
+use herald_core::domain::client::ports::ClientService;
+use herald_core::domain::user::UserRepository;
+use herald_core::infrastructure::authentication::RedisBrowserTokenService;
 
 /// ============================================================================
 /// 会话管理
@@ -77,17 +80,25 @@ pub async fn create_admin_session_with_user(
     };
 
     let user_id_str = user_uuid.to_string();
-    let token = ctx.generate_test_token();
-    let session_state = SessionData {
-        realm_id: ctx._realm_id.clone(),
-        client_id: ctx._client_id.clone(), // TEXT identifier
-        user_id: user_id_str.clone(),
-        client_ip: "127.0.0.1".to_string(),
-        renewal_ttl_seconds: None,
-    };
-    store_session(&ctx._app_state, &token, &session_state, ttl_seconds)
+    let _ = ttl_seconds;
+    let user = ctx
+        ._app_state
+        .user_repository
+        .get_user_by_id(user_uuid)
         .await
         .unwrap();
+    let client_app = ctx
+        ._app_state
+        .service
+        .client_service()
+        .get_client_app_by_client_id(&ctx._realm_id, &ctx._client_id)
+        .await
+        .unwrap();
+    let token = RedisBrowserTokenService::new(ctx._app_state.redis_manager.clone())
+        .create_first_party_token_family(&user, &client_app)
+        .await
+        .unwrap()
+        .access_token;
 
     (token, user_id_str)
 }

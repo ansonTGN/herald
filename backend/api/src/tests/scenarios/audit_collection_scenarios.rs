@@ -114,7 +114,7 @@ async fn test_scenario_user_create_produces_audit_event(ctx: &mut TestContext) {
         .method("POST")
         .uri(format!("/api/users/{}", realm_id))
         .header("content-type", "application/json")
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
         .body(Body::from(create_payload.to_string()))
         .unwrap();
 
@@ -206,7 +206,7 @@ async fn test_scenario_user_update_produces_audit_event(ctx: &mut TestContext) {
         .method("PUT")
         .uri(format!("/api/users/{}/{}", realm_id, target_user_id))
         .header("content-type", "application/json")
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
         .body(Body::from(update_payload.to_string()))
         .unwrap();
 
@@ -273,7 +273,7 @@ async fn test_scenario_user_delete_produces_audit_event(ctx: &mut TestContext) {
     let req = Request::builder()
         .method("DELETE")
         .uri(format!("/api/users/{}/{}", realm_id, target_user_id))
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
         .body(Body::empty())
         .unwrap();
 
@@ -345,7 +345,7 @@ async fn test_scenario_realm_create_produces_audit_events(ctx: &mut TestContext)
         .method("POST")
         .uri("/api/realms")
         .header("content-type", "application/json")
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
         .body(Body::from(create_payload.to_string()))
         .unwrap();
 

@@ -8,7 +8,10 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::helper::{generate_oauth_auth_url, handle_oauth_callback};
+use crate::{
+    callback::issue_callback_token_response,
+    helper::{generate_oauth_auth_url, handle_oauth_callback},
+};
 use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
 use herald_api_base::application::http::state::AppState;
 use validator::Validate;
@@ -133,7 +136,7 @@ pub async fn wechat_callback(
     }
 
     let user_id = callback.user_id;
-    let jwt_token = callback.jwt_token;
+    let client_id = callback.client_id;
 
     tracing::info!(
         realm_id = %realm_id,
@@ -141,19 +144,5 @@ pub async fn wechat_callback(
         "WeChat callback processed successfully"
     );
 
-    // Get redirect_uri from query params or use default
-    let redirect_uri = query
-        .get("redirect_uri")
-        .cloned()
-        .unwrap_or_else(|| format!("{}/", state.public_base_url));
-
-    // Redirect with JWT token in URL fragment to avoid leaking it via logs/history/referrers.
-    let fragment_separator = if redirect_uri.contains('#') { '&' } else { '#' };
-    let redirect_url = format!(
-        "{}{}token={}",
-        redirect_uri,
-        fragment_separator,
-        urlencoding::encode(&jwt_token)
-    );
-    Ok(Redirect::temporary(&redirect_url).into_response())
+    issue_callback_token_response(&state, &realm_id, user_id, &client_id).await
 }

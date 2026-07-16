@@ -938,7 +938,7 @@ fn auth_json_request(
     Request::builder()
         .method(method)
         .uri(uri)
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {}", token))
         .header("Content-Type", "application/json")
         .body(axum::body::Body::from(body.to_string()))
         .unwrap()

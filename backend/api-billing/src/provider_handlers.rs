@@ -10,10 +10,12 @@ use axum::{
 };
 
 use crate::provider_common_types::{PaymentProviderInfo, PaymentProvidersResponse};
-use herald_api_base::application::http::common::auth_utils::require_authenticated_user_in_realm;
+use herald_api_base::application::http::common::auth_utils::{
+    require_authenticated_user_in_realm_with_token, require_token_scope,
+};
 use herald_api_base::application::http::server::api_entities::ApiError;
 use herald_api_base::application::http::state::AppState;
-use herald_core::domain::authentication::Identity;
+use herald_core::domain::authentication::{CredentialScope, Identity, TokenCredentialContext};
 use herald_core::domain::realm_config::RealmConfigRepository;
 
 #[utoipa::path(
@@ -35,9 +37,15 @@ pub async fn list_payment_providers(
     State(state): State<AppState>,
     Path(realm_id): Path<String>,
     Extension(identity): Extension<Identity>,
+    Extension(context): Extension<TokenCredentialContext>,
 ) -> Result<Json<PaymentProvidersResponse>, ApiError> {
-    let _user_id =
-        require_authenticated_user_in_realm(&identity, &realm_id, "list payment providers")?;
+    require_token_scope(&identity, &context, CredentialScope::PurchaseRead)?;
+    let _user_id = require_authenticated_user_in_realm_with_token(
+        &identity,
+        &context,
+        &realm_id,
+        "list payment providers",
+    )?;
 
     let mut providers = Vec::new();
 

@@ -58,7 +58,7 @@ mod tests {
         let list_roles_req = Request::builder()
             .method(Method::GET)
             .uri("/api/roles/admin/define")
-            .header(header::COOKIE, format!("X-Auth={}", admin_token))
+            .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
             .body(Body::empty())
             .unwrap();
 

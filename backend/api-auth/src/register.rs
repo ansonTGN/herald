@@ -19,9 +19,13 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use validator::Validate;
 
+use crate::mailflow::{self, MailflowType};
+
 #[derive(Serialize, Deserialize, ToSchema, Validate)]
 #[serde(rename_all = "camelCase")]
 pub struct RegisterRequest {
+    #[validate(length(min = 1, max = 255))]
+    pub client_id: String,
     #[validate(email)]
     pub email: String,
     #[validate(length(min = 1, max = 36))]
@@ -61,7 +65,7 @@ pub struct RegisterResponse {
 #[tracing::instrument(
     // Governance: payload carries password (credential),
     // turnstile_token, email/username (PII); realm_id conservatively skipped.
-    // state holds session/db handles; ip is client PII. Only the low-cardinality
+    // state holds service/db handles; ip is client PII. Only the low-cardinality
     // operation type is recorded.
     skip(state, payload, realm_id, ip),
     fields(db.system = "postgres", db.operation = "register")
@@ -73,6 +77,8 @@ pub async fn register(
     Valid(Json(payload)): Valid<Json<RegisterRequest>>,
 ) -> Result<ApiResult<RegisterResponse>, ApiError> {
     let email = normalize_email(&payload.email);
+
+    mailflow::require_enabled_client(&state, &realm_id, &payload.client_id).await?;
 
     tracing::info!(
         realm_id = %realm_id,
@@ -189,6 +195,15 @@ pub async fn register(
                 tracing::error!("Failed to create email verification code: {}", e);
                 ApiError::internal("Failed to store email verification code".to_string())
             })?;
+
+        mailflow::store(
+            &state,
+            &code,
+            &realm_id,
+            &payload.client_id,
+            MailflowType::VerifyEmail,
+        )
+        .await?;
 
         // Send email (best effort only when configured)
         let (public_base, _) = realm_public_url_parts(&state, &realm_id).await?;

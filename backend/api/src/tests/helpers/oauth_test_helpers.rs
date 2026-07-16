@@ -66,7 +66,7 @@ pub async fn create_oauth_provider_config(
         .method(Method::POST)
         .uri(format!("/api/oauth/{}/configs", realm_id))
         .header("content-type", "application/json")
-        .header("cookie", format!("X-Auth={}", token))
+        .header("authorization", format!("Bearer {}", token))
         .body(Body::from(create_payload.to_string()))
         .unwrap();
 
@@ -163,7 +163,7 @@ pub async fn get_oauth_provider_config(
     let get_request = Request::builder()
         .method(Method::GET)
         .uri(format!("/api/oauth/{}/configs/{}", realm_id, provider_type))
-        .header("cookie", format!("X-Auth={}", token))
+        .header("authorization", format!("Bearer {}", token))
         .body(Body::empty())
         .unwrap();
 
@@ -181,7 +181,7 @@ pub async fn list_enabled_oauth_providers(
     let list_request = Request::builder()
         .method(Method::GET)
         .uri(format!("/api/oauth/{}/configs?enabled=true", realm_id))
-        .header("cookie", format!("X-Auth={}", token))
+        .header("authorization", format!("Bearer {}", token))
         .body(Body::empty())
         .unwrap();
 
@@ -200,7 +200,7 @@ pub async fn delete_oauth_provider_config(
     let delete_request = Request::builder()
         .method(Method::DELETE)
         .uri(format!("/api/oauth/{}/configs/{}", realm_id, provider_type))
-        .header("cookie", format!("X-Auth={}", token))
+        .header("authorization", format!("Bearer {}", token))
         .body(Body::empty())
         .unwrap();
 

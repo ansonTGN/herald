@@ -1,10 +1,8 @@
 // Centralized security and operational defaults for the Herald backend.
 // All crates should import from here rather than defining local constants.
 
-// --- Session ---
-pub const DEFAULT_SESSION_TTL_SECONDS: u64 = 1800;
-pub const DEFAULT_OAUTH_SESSION_TTL_SECONDS: u64 = 600;
-pub const DEFAULT_TOTP_TEMP_SESSION_TTL_SECONDS: u64 = 300;
+pub const DEFAULT_OAUTH_CODE_TTL_SECONDS: u64 = 600;
+pub const DEFAULT_LOGIN_CHALLENGE_TTL_SECONDS: u64 = 300;
 
 // --- TOTP ---
 pub const TOTP_MAX_FAILURES: i64 = 5;
@@ -30,6 +28,13 @@ pub const CHANGE_EMAIL_CONFIRM_IP_RATE_LIMIT: (i64, usize) = (5, 60);
 
 pub const TOTP_VERIFY_USER_RATE_LIMIT: (i64, usize) = (5, 60);
 pub const TOTP_VERIFY_IP_RATE_LIMIT: (i64, usize) = (10, 60);
+
+pub const REAUTH_VERIFY_USER_RATE_LIMIT: (i64, usize) = (5, 60);
+pub const REAUTH_VERIFY_IP_RATE_LIMIT: (i64, usize) = (10, 60);
+
+// --- Browser refresh token TTL ---
+pub const BROWSER_REFRESH_ABSOLUTE_TTL_MIN_SECONDS: i32 = 86_400;
+pub const BROWSER_REFRESH_ABSOLUTE_TTL_MAX_SECONDS: i32 = 7_776_000;
 
 // --- Password ---
 /// bcrypt cost factor. Kept in sync with `bcrypt::DEFAULT_COST` so the

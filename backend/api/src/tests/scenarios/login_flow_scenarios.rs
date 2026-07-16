@@ -21,8 +21,6 @@
 //
 // =============================================================================
 
-use crate::application::http::auth::status::StatusResponse;
-use crate::application::http::auth::util::load_session;
 use crate::application::http::public_config::PublicConfigResponse;
 use crate::tests::helpers::test_setup_helpers::*;
 use crate::tests::schema_test_context::SchemaTestContext as TestContext;
@@ -81,7 +79,7 @@ async fn test_scenario_complete_login_flow(ctx: &mut TestContext) {
     // ============================================================================
     println!("[Step 2] 检查未认证状态");
     let status_request = Request::builder()
-        .uri(format!("/api/auth/{}/status", realm_id))
+        .uri("/api/auth/status")
         .method(Method::GET)
         .body(Body::empty())
         .unwrap();
@@ -89,38 +87,9 @@ async fn test_scenario_complete_login_flow(ctx: &mut TestContext) {
     let status_response = app.clone().oneshot(status_request).await.unwrap();
     assert_eq!(
         status_response.status(),
-        StatusCode::OK,
-        "Status endpoint should return 200 OK"
+        StatusCode::UNAUTHORIZED,
+        "Bearer-only status must reject a missing Authorization header"
     );
-
-    let status_body = axum::body::to_bytes(status_response.into_body(), usize::MAX)
-        .await
-        .expect("Failed to read status response body");
-    let status_json: StatusResponse =
-        serde_json::from_slice(&status_body).expect("Failed to parse status data");
-
-    assert!(
-        !status_json.authenticated,
-        "Status should return authenticated: false before login"
-    );
-    assert!(
-        status_json.realm_id.is_none(),
-        "realm_id should be None when not authenticated"
-    );
-    assert!(
-        status_json.user_id.is_none(),
-        "user_id should be None when not authenticated"
-    );
-    assert!(
-        status_json.permissions.is_none()
-            || status_json
-                .permissions
-                .as_ref()
-                .map(|p| p.is_empty())
-                .unwrap_or(true),
-        "permissions should be None or empty when not authenticated"
-    );
-    println!("[Step 2] ✓ 未认证状态正确: authenticated=false");
 
     // ============================================================================
     // Step 3: 调用 GET /api/public-config/{realmId} 获取公共配置
@@ -168,13 +137,6 @@ async fn test_scenario_complete_login_flow(ctx: &mut TestContext) {
 
     let login_response = app.clone().oneshot(login_request).await.unwrap();
 
-    // 获取 session token（必须在 consuming body 之前）
-    let set_cookie = login_response
-        .headers()
-        .get(header::SET_COOKIE)
-        .and_then(|v| v.to_str().ok())
-        .expect("Should return Set-Cookie header");
-
     assert_eq!(
         login_response.status(),
         StatusCode::OK,
@@ -182,12 +144,9 @@ async fn test_scenario_complete_login_flow(ctx: &mut TestContext) {
     );
 
     assert!(
-        set_cookie.contains("X-Auth="),
-        "Set-Cookie should contain X-Auth"
+        !login_response.headers().contains_key(header::SET_COOKIE),
+        "Browser-token login must not set a cookie"
     );
-
-    let token = crate::tests::extract_set_cookie_token(set_cookie, "X-Auth")
-        .expect("Should extract X-Auth token");
 
     // Now consume the body
     let login_body = axum::body::to_bytes(login_response.into_body(), usize::MAX)
@@ -196,25 +155,23 @@ async fn test_scenario_complete_login_flow(ctx: &mut TestContext) {
     let login_json: serde_json::Value =
         serde_json::from_slice(&login_body).expect("Failed to parse login JSON");
 
-    assert_eq!(
-        login_json["userId"].as_str().unwrap(),
-        user_id.to_string().as_str(),
-        "user_id should match"
-    );
+    let token = login_json["accessToken"]
+        .as_str()
+        .expect("login should return accessToken")
+        .to_owned();
+    assert!(login_json["refreshToken"].is_string());
+    assert_eq!(login_json["tokenType"], "Bearer");
 
-    println!(
-        "[Step 4] ✓ 登录成功: user_id={}, token={}",
-        login_json["userId"], token
-    );
+    println!("[Step 4] ✓ 登录成功: user_id={}, token={}", user_id, token);
 
     // ============================================================================
     // Step 5: 再次调用 GET /api/auth/{realmId}/status 验证已认证状态
     // ============================================================================
     println!("[Step 5] 检查已认证状态");
     let authenticated_status_request = Request::builder()
-        .uri(format!("/api/auth/{}/status", realm_id))
+        .uri("/api/auth/status")
         .method(Method::GET)
-        .header("cookie", format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::empty())
         .unwrap();
 
@@ -233,52 +190,25 @@ async fn test_scenario_complete_login_flow(ctx: &mut TestContext) {
         axum::body::to_bytes(authenticated_status_response.into_body(), usize::MAX)
             .await
             .expect("Failed to read status response body");
-    let authenticated_status_json: StatusResponse =
-        serde_json::from_slice(&authenticated_status_body)
-            .expect("Failed to parse authenticated status data");
-
-    assert!(
-        authenticated_status_json.authenticated,
-        "Status should return authenticated: true after login"
-    );
+    let authenticated_status_json: serde_json::Value =
+        serde_json::from_slice(&authenticated_status_body).expect("Failed to parse status data");
+    let status_data = authenticated_status_json
+        .get("data")
+        .unwrap_or(&authenticated_status_json);
+    assert_eq!(status_data["authenticated"], true);
     assert_eq!(
-        authenticated_status_json.realm_id.as_deref(),
+        status_data["realmId"].as_str(),
         Some(realm_id.as_str()),
         "realm_id should match"
     );
     assert_eq!(
-        authenticated_status_json.user_id.as_deref(),
+        status_data["userId"].as_str(),
         Some(user_id.to_string().as_str()),
         "user_id should match"
     );
     println!(
         "[Step 5] ✓ 已认证状态正确: authenticated=true, user_id={}, realm_id={}",
-        authenticated_status_json.user_id.unwrap(),
-        authenticated_status_json.realm_id.unwrap()
-    );
-
-    // ============================================================================
-    // Step 6: 验证 session 存储在 Redis 中
-    // ============================================================================
-    println!("[Step 6] 验证 session 存储在 Redis 中");
-    let session = load_session(&ctx._app_state, &token)
-        .await
-        .expect("Failed to load session")
-        .expect("Session should exist");
-
-    assert_eq!(
-        session.user_id,
-        user_id.to_string(),
-        "Session user_id should match"
-    );
-    assert_eq!(session.realm_id, realm_id, "Session realm_id should match");
-    assert_eq!(
-        session.client_id, ctx._client_id,
-        "Session client_id should match"
-    );
-    println!(
-        "[Step 6] ✓ Session 存储在 Redis 中: user_id={}, realm_id={}, client_id={}",
-        session.user_id, session.realm_id, session.client_id
+        status_data["userId"], status_data["realmId"]
     );
 
     // 清理测试数据
@@ -357,15 +287,9 @@ async fn test_scenario_user_login_wrong_password(ctx: &mut TestContext) {
         "Should return 401 Unauthorized for wrong password"
     );
 
-    // 验证不返回 session cookie
-    let set_cookie = response.headers().get(header::SET_COOKIE);
     assert!(
-        set_cookie.is_none()
-            || !set_cookie
-                .and_then(|v| v.to_str().ok())
-                .unwrap_or("")
-                .contains("X-Auth="),
-        "Should not return X-Auth cookie for failed login"
+        !response.headers().contains_key(header::SET_COOKIE),
+        "Failed Bearer login must not set a cookie"
     );
 
     // 验证错误信息

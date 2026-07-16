@@ -1,6 +1,8 @@
 use axum::Router;
 use axum::middleware::from_fn_with_state;
-use herald_api_base::application::http::auth::identity_middleware::inject_identity;
+use herald_api_base::application::http::auth::identity_middleware::{
+    inject_token_identity, require_first_party_token,
+};
 use herald_api_base::application::http::state::AppState;
 
 pub mod admin_users;
@@ -25,12 +27,15 @@ pub fn admin_router_with_middleware(state: AppState) -> Router<AppState> {
         .nest(
             "/{realmId}/define",
             role_definitions::role_defs_router()
-                .layer(from_fn_with_state(state.clone(), inject_identity)),
+                .layer(axum::middleware::from_fn(require_first_party_token))
+                .layer(from_fn_with_state(state.clone(), inject_token_identity)),
         )
         // 🟡 P1: 用户管理 - 主管理员 + 次管理员可访问
         // Permission checks are done in HTTP handlers using enforce()
         .nest(
             "/{realmId}/users",
-            admin_users::router().layer(from_fn_with_state(state.clone(), inject_identity)),
+            admin_users::router()
+                .layer(axum::middleware::from_fn(require_first_party_token))
+                .layer(from_fn_with_state(state.clone(), inject_token_identity)),
         )
 }

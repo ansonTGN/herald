@@ -62,7 +62,7 @@ async fn test_scenario_view_profile(ctx: &mut TestContext) {
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/users/{}/profile", ctx._realm_id))
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::empty())
         .unwrap();
     let resp = app.clone().oneshot(req).await.unwrap();
@@ -131,7 +131,7 @@ async fn test_scenario_update_profile(ctx: &mut TestContext) {
         .method("PUT")
         .uri(format!("/api/users/{}/profile", ctx._realm_id))
         .header("content-type", "application/json")
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::from(req_body))
         .unwrap();
     let resp = app.clone().oneshot(req).await.unwrap();
@@ -146,7 +146,7 @@ async fn test_scenario_update_profile(ctx: &mut TestContext) {
     let req = Request::builder()
         .method("GET")
         .uri(format!("/api/users/{}/profile", ctx._realm_id))
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::empty())
         .unwrap();
     let resp = app.clone().oneshot(req).await.unwrap();
@@ -215,7 +215,7 @@ async fn test_scenario_change_password(ctx: &mut TestContext) {
         .method("POST")
         .uri(format!("/api/users/{}/change-password", ctx._realm_id))
         .header("content-type", "application/json")
-        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::from(req_body))
         .unwrap();
     let resp = app.clone().oneshot(req).await.unwrap();

@@ -1,6 +1,8 @@
 use axum::{
     Json,
     extract::{Path, State},
+    http::{StatusCode, header::LOCATION},
+    response::{IntoResponse, Response},
 };
 use axum_valid::Valid;
 use serde::{Deserialize, Serialize};
@@ -21,9 +23,13 @@ use herald_core::domain::security_constants::{
 use herald_core::domain::user::ports::UserService;
 use herald_core::third::email::{EmailService, EmailTemplateKind};
 
+use crate::mailflow::{self, MailflowType};
+
 #[derive(Serialize, Deserialize, ToSchema, Validate)]
 #[serde(rename_all = "camelCase")]
 pub struct VerifyEmailTriggerRequest {
+    #[validate(length(min = 1, max = 255))]
+    pub client_id: String,
     #[validate(email)]
     pub email: String,
     pub turnstile_token: Option<String>, // Optional: required only if Turnstile is enabled for realm
@@ -63,6 +69,8 @@ pub async fn trigger(
 ) -> Result<ApiResult<VerifyEmailTriggerResponse>, ApiError> {
     let email = normalize_email(&payload.email);
 
+    mailflow::require_enabled_client(&state, &realm_id, &payload.client_id).await?;
+
     // turnstile 校验（根据 realm 配置动态判断）
     verify_turnstile_for_realm(
         &state,
@@ -98,6 +106,15 @@ pub async fn trigger(
             tracing::error!("Failed to store email verification code: {e}");
             ApiError::internal("Failed to store email verification code".to_string())
         })?;
+
+    mailflow::store(
+        &state,
+        &code,
+        &realm_id,
+        &payload.client_id,
+        MailflowType::VerifyEmail,
+    )
+    .await?;
 
     let (public_base, _) = realm_public_url_parts(&state, &realm_id).await?;
     let link = format!("{public_base}/api/auth/{realm_id}/verify_email/confirm/{code}");
@@ -139,7 +156,7 @@ pub struct VerifyEmailConfirmResponse {
     ("emailVerificationCode" = String, Path, description = "Email verification code")
   ),
   responses(
-    (status = 200, description = "Email verified.", body = VerifyEmailConfirmResponse),
+    (status = 302, description = "Email verified; redirecting to the registered Client App URL."),
     (status = 400, description = "Bad request", body = ErrorResponse),
     (status = 500, description = "Internal server error", body = ErrorResponse)
   )
@@ -148,7 +165,7 @@ pub async fn confirm(
     State(state): State<AppState>,
     ClientIp(ip): ClientIp,
     Path((realm_id, code)): Path<(String, String)>,
-) -> Result<ApiResult<VerifyEmailConfirmResponse>, ApiError> {
+) -> Result<Response, ApiError> {
     rate_limit_hit(
         &state,
         format!("rl:verify_email_confirm:ip:{ip}"),
@@ -156,6 +173,8 @@ pub async fn confirm(
         VERIFY_EMAIL_CONFIRM_IP_RATE_LIMIT.1,
     )
     .await?;
+
+    let client = mailflow::load_client(&state, &code, &realm_id, MailflowType::VerifyEmail).await?;
 
     // Use UserService to verify email
     state
@@ -173,7 +192,10 @@ pub async fn confirm(
             }
         })?;
 
-    Ok(ApiResult::ok(VerifyEmailConfirmResponse {
-        message: "ok".to_string(),
-    }))
+    let fallback = herald_api_base::application::http::common::public_helper::realm_public_url(
+        &state, &realm_id, "",
+    )
+    .await?;
+    let location = mailflow::return_url(client.email_verify_return_url.as_deref(), fallback);
+    Ok((StatusCode::FOUND, [(LOCATION, location)]).into_response())
 }

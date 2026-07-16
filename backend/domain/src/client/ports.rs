@@ -44,6 +44,12 @@ pub trait ClientRepository: Send + Sync {
     ) -> impl Future<Output = Result<ClientApp, CoreError>> + Send;
 
     fn delete_client_app(&self, id: Uuid) -> impl Future<Output = Result<(), CoreError>> + Send;
+
+    fn set_first_party(
+        &self,
+        id: Uuid,
+        is_first_party: bool,
+    ) -> impl Future<Output = Result<(), CoreError>> + Send;
 }
 
 #[cfg_attr(test, mockall::automock)]

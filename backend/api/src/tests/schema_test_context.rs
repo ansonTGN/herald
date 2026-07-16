@@ -14,6 +14,7 @@ use crate::tests::shared::SharedContainers;
 use herald_core::admin::user::init_admin_user;
 use herald_core::application::{ApplicationServiceBuilder, WebhookService};
 use herald_core::infrastructure::PostgresCustomDomainMappingRepository;
+use herald_core::infrastructure::authentication::init_authentication_functions;
 use herald_core::infrastructure::authorization::{RedisCache, RedisPermissionChecker};
 use herald_core::infrastructure::points::RedisIdempotencyStore;
 use herald_core::infrastructure::points::init_idempotency_function;
@@ -33,6 +34,7 @@ const TEST_JWT_SECRET: &str = "test-jwt-secret-key-for-integration-tests-32b";
 static RATE_LIMIT_INIT: tokio::sync::OnceCell<()> = tokio::sync::OnceCell::const_new();
 static DEVICE_TOKEN_INIT: tokio::sync::OnceCell<()> = tokio::sync::OnceCell::const_new();
 static IDEMPOTENCY_INIT: tokio::sync::OnceCell<()> = tokio::sync::OnceCell::const_new();
+static AUTHENTICATION_INIT: tokio::sync::OnceCell<()> = tokio::sync::OnceCell::const_new();
 
 /// Schema 隔离的测试上下文
 ///
@@ -471,7 +473,7 @@ impl AsyncTestContext for SchemaTestContext {
                     ),
                     billing_repository.clone(),
                     Arc::new(
-                        herald_core::infrastructure::authentication::RedisSessionRepository::new(
+                        herald_core::infrastructure::authentication::RedisBrowserTokenService::new(
                             (*redis_manager).clone(),
                         ),
                     ),
@@ -515,6 +517,14 @@ impl AsyncTestContext for SchemaTestContext {
                 init_idempotency_function(&app_state.redis_manager)
                     .await
                     .expect("Failed to initialize idempotency Redis Function");
+            })
+            .await;
+
+        AUTHENTICATION_INIT
+            .get_or_init(|| async {
+                init_authentication_functions(&app_state.redis_manager)
+                    .await
+                    .expect("Failed to initialize authentication Redis Functions");
             })
             .await;
 
@@ -584,15 +594,6 @@ async fn cleanup_schema_if_needed(
 
 /// 创建带 Schema 的连接池（sqlx 和 sea-orm）
 impl SchemaTestContext {
-    /// 生成唯一的测试会话令牌
-    ///
-    /// NEW: 不再需要 UUID 前缀，因为测试使用 DB 1 隔离。
-    /// Token 可以是任意唯一字符串。
-    pub fn generate_test_token(&self) -> String {
-        // 简单的唯一令牌（UUID v7），不再需要 key prefix
-        uuid::Uuid::now_v7().to_string()
-    }
-
     /// 创建统一测试路由（包含所有 API）
     ///
     /// 用于场景测试，完全复用 create_api_routes() 确保测试路由与生产路由保持一致

@@ -1,6 +1,8 @@
 use axum::{
     Json,
     extract::{Path, State},
+    http::{StatusCode, header::LOCATION},
+    response::{IntoResponse, Response},
 };
 use axum_valid::Valid;
 use serde::{Deserialize, Serialize};
@@ -21,9 +23,13 @@ use herald_core::domain::security_constants::{
 use herald_core::domain::user::ports::UserService;
 use herald_core::third::email::{EmailService, EmailTemplateKind};
 
+use crate::mailflow::{self, MailflowType};
+
 #[derive(Serialize, Deserialize, ToSchema, Validate)]
 #[serde(rename_all = "camelCase")]
 pub struct ResetPasswordRequestRequest {
+    #[validate(length(min = 1, max = 255))]
+    pub client_id: String,
     #[validate(email)]
     pub email: String,
     pub turnstile_token: Option<String>, // Optional: required only if Turnstile is enabled for realm
@@ -62,6 +68,8 @@ pub async fn request(
 ) -> Result<ApiResult<ResetPasswordRequestResponse>, ApiError> {
     let email = normalize_email(&payload.email);
 
+    mailflow::require_enabled_client(&state, &realm_id, &payload.client_id).await?;
+
     // turnstile 校验（根据 realm 配置动态判断）
     verify_turnstile_for_realm(
         &state,
@@ -97,6 +105,15 @@ pub async fn request(
             tracing::error!("Failed to create reset password code: {}", e);
             ApiError::internal("Failed to store reset password code".to_string())
         })?;
+
+    mailflow::store(
+        &state,
+        &code,
+        &realm_id,
+        &payload.client_id,
+        MailflowType::ResetPassword,
+    )
+    .await?;
 
     // Send email (best effort: don't expose email failure to caller)
     // Link points to the frontend reset-password page, which reads the code
@@ -152,7 +169,7 @@ pub struct ResetPasswordConfirmResponse {
   ),
   request_body = ResetPasswordConfirmRequest,
   responses(
-    (status = 200, description = "Password reset successful.", body = ResetPasswordConfirmResponse),
+    (status = 302, description = "Password reset successful; redirecting to the registered Client App URL."),
     (status = 400, description = "Bad request", body = ErrorResponse),
     (status = 429, description = "Too many requests", body = ErrorResponse),
     (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -163,7 +180,7 @@ pub async fn confirm(
     ClientIp(ip): ClientIp,
     Path((realm_id, code)): Path<(String, String)>,
     Valid(Json(payload)): Valid<Json<ResetPasswordConfirmRequest>>,
-) -> Result<ApiResult<ResetPasswordConfirmResponse>, ApiError> {
+) -> Result<Response, ApiError> {
     // turnstile 校验（根据 realm 配置动态判断）
     verify_turnstile_for_realm(
         &state,
@@ -172,6 +189,9 @@ pub async fn confirm(
         Some(&ip),
     )
     .await?;
+
+    let client =
+        mailflow::load_client(&state, &code, &realm_id, MailflowType::ResetPassword).await?;
 
     rate_limit_hit(
         &state,
@@ -197,7 +217,7 @@ pub async fn confirm(
             }
         })?;
 
-    Ok(ApiResult::ok(ResetPasswordConfirmResponse {
-        message: "ok".to_string(),
-    }))
+    let fallback = realm_public_url(&state, &realm_id, "").await?;
+    let location = mailflow::return_url(client.password_reset_return_url.as_deref(), fallback);
+    Ok((StatusCode::FOUND, [(LOCATION, location)]).into_response())
 }

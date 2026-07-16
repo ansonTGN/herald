@@ -67,7 +67,7 @@ pub mod webhook_handlers;
         crate::invoice_handlers::create_credit_note,
         crate::invoice_handlers::apply_invoice,
         crate::invoice_handlers::list_my_invoices,
-        crate::invoice_handlers::get_my_invoice,
+        crate::invoice_handlers::get_my_invoice_scoped,
         crate::invoice_handlers::get_invoice_apply_eligibility,
         crate::invoice_handlers::download_invoice_pdf,
         crate::invoice_handlers::download_my_invoice_pdf,
@@ -158,7 +158,7 @@ pub mod webhook_handlers;
 )]
 pub struct ApiDoc;
 
-pub use routes::{billing_public_routes, billing_routes};
+pub use routes::{billing_browser_routes, billing_public_routes, billing_routes};
 
 pub use routes::billing_test_routes;
 

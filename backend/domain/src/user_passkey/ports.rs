@@ -6,15 +6,17 @@ use uuid::Uuid;
 
 #[cfg_attr(test, mockall::automock)]
 pub trait UserPasskeyRepository: Send + Sync {
-    fn list_by_user(
+    fn list_by_user_and_rp(
         &self,
         realm_id: &str,
         user_id: Uuid,
+        rp_id: &str,
     ) -> impl Future<Output = Result<Vec<UserPasskeyCredential>, CoreError>> + Send;
 
     fn find_by_credential_id(
         &self,
         realm_id: &str,
+        rp_id: &str,
         credential_id: &[u8],
     ) -> impl Future<Output = Result<Option<UserPasskeyCredential>, CoreError>> + Send;
 
@@ -27,6 +29,7 @@ pub trait UserPasskeyRepository: Send + Sync {
         &self,
         realm_id: &str,
         user_id: Uuid,
+        rp_id: &str,
         id: Uuid,
         nickname: &str,
     ) -> impl Future<Output = Result<(), CoreError>> + Send;
@@ -35,12 +38,15 @@ pub trait UserPasskeyRepository: Send + Sync {
         &self,
         realm_id: &str,
         user_id: Uuid,
+        rp_id: &str,
         id: Uuid,
     ) -> impl Future<Output = Result<(), CoreError>> + Send;
 
     fn update_counter_and_used(
         &self,
         id: Uuid,
+        realm_id: &str,
+        rp_id: &str,
         counter: u64,
         user_verified: bool,
         used_at: DateTime<Utc>,

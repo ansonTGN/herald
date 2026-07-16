@@ -186,6 +186,7 @@ where
             id: generate_uuid_v7(),
             user_id: payload.user_id,
             realm_id: payload.realm_id,
+            rp_id: payload.relying_party.id,
             credential_id: passkey.id.as_bytes().to_vec(),
             credential_public_key: passkey.public_key_cose.as_bytes().to_vec(),
             counter: u64::from(passkey.counter),
@@ -257,7 +258,7 @@ where
     ) -> Result<(AuthenticationChallenge, String), PasskeyError> {
         let credentials = self
             .repo
-            .list_by_user(&temp_session.realm_id, user_id)
+            .list_by_user_and_rp(&temp_session.realm_id, user_id, &relying_party.id)
             .await
             .map_err(PasskeyError::Repo)?;
         if credentials.is_empty() {
@@ -312,7 +313,11 @@ where
             .map_err(|_| PasskeyError::VerificationFailed)?;
         let mut credential = self
             .repo
-            .find_by_credential_id(&payload.login_state.realm_id, credential_id.as_bytes())
+            .find_by_credential_id(
+                &payload.login_state.realm_id,
+                &payload.relying_party.id,
+                credential_id.as_bytes(),
+            )
             .await
             .map_err(PasskeyError::Repo)?
             .ok_or(PasskeyError::VerificationFailed)?;
@@ -338,6 +343,8 @@ where
         self.repo
             .update_counter_and_used(
                 credential.id,
+                &payload.login_state.realm_id,
+                &credential.rp_id,
                 new_counter,
                 auth_result.user_verified,
                 Utc::now(),

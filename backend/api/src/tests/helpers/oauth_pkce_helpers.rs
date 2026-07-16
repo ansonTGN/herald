@@ -140,7 +140,7 @@ pub async fn create_client_app_with_redirect_uris(
         .method("POST")
         .uri(format!("/api/client/{}", realm_id))
         .header("content-type", "application/json")
-        .header("cookie", format!("X-Auth={}", admin_token))
+        .header("authorization", format!("Bearer {}", admin_token))
         .body(Body::from(
             json!({
                 "clientId": client_id,
@@ -148,7 +148,7 @@ pub async fn create_client_app_with_redirect_uris(
                 "description": format!("{} test app", name),
                 "redirectUris": redirect_uris,
                 "enabled": true,
-                "sessionTtlSeconds": 1800,
+                "browserRefreshAbsoluteTtlSeconds": 86400,
             })
             .to_string(),
         ))

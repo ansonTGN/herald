@@ -30,7 +30,7 @@ use crate::tests::scenarios::points::fixtures::*;
 use crate::tests::schema_test_context::SchemaTestContext as TestContext;
 use axum::{
     body::Body,
-    http::{Request, StatusCode, header},
+    http::{Request, StatusCode},
 };
 use chrono::{Duration, Utc};
 use serde_json::json;
@@ -179,14 +179,8 @@ async fn create_admin_and_login(
         .unwrap();
     assert_eq!(login_response.status(), StatusCode::OK);
 
-    let set_cookie = login_response
-        .headers()
-        .get(header::SET_COOKIE)
-        .and_then(|v| v.to_str().ok())
-        .expect("Should return Set-Cookie header");
-
-    let token = crate::tests::extract_set_cookie_token(set_cookie, "X-Auth")
-        .expect("Should extract X-Auth token");
+    let (_response, token) = crate::tests::extract_bearer_token(login_response).await;
+    let token = token.expect("Login should return accessToken");
 
     println!("[Auth] ✓ Admin logged in successfully");
     token
@@ -226,14 +220,8 @@ async fn create_user_and_login(
         .unwrap();
     assert_eq!(login_response.status(), StatusCode::OK);
 
-    let set_cookie = login_response
-        .headers()
-        .get(header::SET_COOKIE)
-        .and_then(|v| v.to_str().ok())
-        .expect("Should return Set-Cookie header");
-
-    let token = crate::tests::extract_set_cookie_token(set_cookie, "X-Auth")
-        .expect("Should extract X-Auth token");
+    let (_response, token) = crate::tests::extract_bearer_token(login_response).await;
+    let token = token.expect("Login should return accessToken");
 
     println!("[Auth] ✓ User logged in successfully");
     (user_id, token)
@@ -257,7 +245,7 @@ async fn make_authenticated_get_request(
     let request = Request::builder()
         .method("GET")
         .uri(&uri)
-        .header("cookie", format!("X-Auth={}", token))
+        .header("authorization", format!("Bearer {}", token))
         .body(Body::empty())
         .unwrap();
 

@@ -18,13 +18,13 @@ use crate::types::{
 };
 
 use herald_api_base::application::http::common::auth_utils::{
-    AdminIdentity, require_authenticated_user_in_realm,
+    AdminIdentity, require_authenticated_user_in_realm_with_token, require_token_scope,
 };
 use herald_api_base::application::http::common::error_helpers::core_error_to_api_error;
 use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
 use herald_api_base::application::http::state::AppState;
 // Import the trait and types from herald_core
-use herald_core::domain::authentication::Identity;
+use herald_core::domain::authentication::{CredentialScope, Identity, TokenCredentialContext};
 use herald_core::domain::billing::entities::BillingType;
 use herald_core::domain::billing::{BillingRepository, EntitlementMapping, Subscription};
 use herald_core::domain::common::entities::app_errors::CoreError;
@@ -95,6 +95,29 @@ async fn require_client_app_in_realm(
         return Err(ApiError::not_found("Client app not found"));
     }
 
+    Ok(())
+}
+
+fn require_bound_client_app(
+    context: &TokenCredentialContext,
+    client_app_id: Uuid,
+) -> Result<(), ApiError> {
+    if context.client_app_id != client_app_id {
+        return Err(ApiError::forbidden(
+            "token is bound to a different Client App",
+        ));
+    }
+    Ok(())
+}
+
+fn require_subscription_ownership(
+    subscription: &Subscription,
+    realm_id: &str,
+    user_id: Uuid,
+) -> Result<(), ApiError> {
+    if subscription.realm_id != realm_id || subscription.user_id != user_id {
+        return Err(ApiError::not_found("Subscription not found"));
+    }
     Ok(())
 }
 
@@ -235,6 +258,7 @@ pub async fn get_subscription(
 pub async fn get_subscription_for_client_app(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
+    Extension(context): Extension<TokenCredentialContext>,
     Path((realm_id, client_app_id)): Path<(String, Uuid)>,
 ) -> Result<Json<SubscriptionDetailResponse>, ApiError> {
     tracing::info!(
@@ -243,7 +267,14 @@ pub async fn get_subscription_for_client_app(
         realm_id
     );
 
-    require_billing_permission(&state, &identity, &realm_id, "view").await?;
+    require_token_scope(&identity, &context, CredentialScope::SubscriptionRead)?;
+    let user_id = require_authenticated_user_in_realm_with_token(
+        &identity,
+        &context,
+        &realm_id,
+        "subscription",
+    )?;
+    require_bound_client_app(&context, client_app_id)?;
 
     let subscription = state
         .billing_repository
@@ -251,9 +282,7 @@ pub async fn get_subscription_for_client_app(
         .await?
         .ok_or_else(|| CoreError::SubscriptionNotFound(client_app_id.to_string()))?;
 
-    if subscription.realm_id != realm_id {
-        return Err(ApiError::not_found("Subscription not found"));
-    }
+    require_subscription_ownership(&subscription, &realm_id, user_id)?;
 
     Ok(Json(subscription_to_response(&subscription)))
 }
@@ -389,6 +418,7 @@ fn mapping_to_purchase_option(m: EntitlementMapping) -> PurchaseOptionView {
 pub async fn list_purchase_options(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
+    Extension(context): Extension<TokenCredentialContext>,
     Path((realm_id, client_app_id)): Path<(String, Uuid)>,
 ) -> Result<Json<PurchaseOptionListResponse>, ApiError> {
     tracing::info!(
@@ -399,7 +429,14 @@ pub async fn list_purchase_options(
 
     // Purchase-page read is an authenticated-user action. The user id drives
     // the per-option `alreadyOwned` computation (design §4.2.2).
-    let user_id = require_authenticated_user_in_realm(&identity, &realm_id, "purchase-options")?;
+    require_token_scope(&identity, &context, CredentialScope::PurchaseRead)?;
+    let user_id = require_authenticated_user_in_realm_with_token(
+        &identity,
+        &context,
+        &realm_id,
+        "purchase-options",
+    )?;
+    require_bound_client_app(&context, client_app_id)?;
     require_client_app_in_realm(&state, &realm_id, client_app_id).await?;
 
     // List ALL enabled price-granularity mappings for the realm (recurring +
@@ -449,4 +486,59 @@ pub async fn list_purchase_options(
     }
 
     Ok(Json(PurchaseOptionListResponse { items }))
+}
+
+#[cfg(test)]
+mod browser_scope_tests {
+    use super::*;
+    use chrono::Utc;
+    use herald_core::domain::authentication::CredentialClass;
+    use herald_core::domain::billing::entities::SubscriptionStatus;
+    use std::collections::HashSet;
+
+    fn context(client_app_id: Uuid) -> TokenCredentialContext {
+        TokenCredentialContext {
+            client_app_id,
+            family_id: Uuid::now_v7(),
+            credential_class: CredentialClass::CustomUserUi,
+            allowed_scopes: HashSet::new(),
+        }
+    }
+
+    fn subscription(realm_id: &str, user_id: Uuid) -> Subscription {
+        Subscription {
+            id: Uuid::now_v7(),
+            realm_id: realm_id.to_string(),
+            user_id,
+            external_subscription_id: "external".to_string(),
+            external_product_id: "product".to_string(),
+            payment_provider: "stripe".to_string(),
+            status: SubscriptionStatus::Active,
+            entitlement_key: "plan".to_string(),
+            external_price_id: None,
+            bucket_id: Uuid::now_v7(),
+            provider_metadata: None,
+            synced_at: None,
+            current_period_start: None,
+            current_period_end: None,
+            cancel_at_period_end: false,
+            client_app_id: None,
+            cancel_at: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn browser_scope_rejects_mismatched_client_app_before_lookup() {
+        let bound = Uuid::now_v7();
+        assert!(require_bound_client_app(&context(bound), Uuid::now_v7()).is_err());
+    }
+
+    #[test]
+    fn browser_scope_rejects_cross_user_subscription_ownership() {
+        let owner = Uuid::now_v7();
+        let sub = subscription("realm", owner);
+        assert!(require_subscription_ownership(&sub, "realm", Uuid::now_v7()).is_err());
+    }
 }

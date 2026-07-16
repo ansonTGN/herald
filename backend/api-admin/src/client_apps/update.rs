@@ -11,8 +11,10 @@ use crate::client_apps::types::{ClientAppItem, ClientAppUpdateRequest};
 use herald_api_base::application::http::common::auth_utils::AdminIdentity;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
+use herald_core::domain::authentication::ports::BrowserTokenService;
 use herald_core::domain::client::ports::ClientService;
 use herald_core::domain::client::value_objects::UpdateClientAppRequest;
+use herald_core::infrastructure::authentication::RedisBrowserTokenService;
 
 /// Update a client app configuration
 ///
@@ -56,13 +58,29 @@ pub async fn update_client_app(
         name: payload.name.clone(),
         description: payload.description.clone(),
         redirect_uris: payload.redirect_uris.clone(),
+        allowed_origins: payload.allowed_origins.clone(),
+        email_verify_return_url: payload.email_verify_return_url.clone(),
+        password_reset_return_url: payload.password_reset_return_url.clone(),
+        browser_refresh_absolute_ttl_seconds: payload.browser_refresh_absolute_ttl_seconds,
         enabled: payload.enabled,
         icon_url: payload.icon_url.clone(),
-        session_ttl_seconds: payload.session_ttl_seconds,
-        session_renewal_ttl_seconds: payload.session_renewal_ttl_seconds,
         regenerate_secret: payload.regenerate_secret,
         device_code_grant_enabled: payload.device_code_grant_enabled,
     };
+
+    // Revoke browser token families *before* disabling the client app so that
+    // a disabled app never has active tokens in the wild. If revocation fails,
+    // do not persist the disable.
+    if payload.enabled == Some(false) {
+        RedisBrowserTokenService::new(state.redis_manager.clone())
+            .revoke_client_families(id)
+            .await
+            .map_err(|e| {
+                ApiError::internal(format!(
+                    "Browser token revocation failed before disabling client app: {e}"
+                ))
+            })?;
+    }
 
     // Call service layer
     let client_service = state.service.client_service();
@@ -91,10 +109,13 @@ pub async fn update_client_app(
         name: client_app.name,
         description: client_app.description,
         redirect_uris: client_app.redirect_uris,
+        allowed_origins: client_app.allowed_origins,
+        email_verify_return_url: client_app.email_verify_return_url,
+        password_reset_return_url: client_app.password_reset_return_url,
+        browser_refresh_absolute_ttl_seconds: client_app.browser_refresh_absolute_ttl_seconds,
+        is_first_party: client_app.is_first_party,
         enabled: client_app.enabled,
         icon_url: client_app.icon_url,
-        session_ttl_seconds: client_app.session_ttl_seconds,
-        session_renewal_ttl_seconds: client_app.session_renewal_ttl_seconds,
         client_secret: payload
             .regenerate_secret
             .filter(|regenerate| *regenerate)

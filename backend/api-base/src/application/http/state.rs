@@ -12,7 +12,7 @@ use herald_core::domain::user::services::admin::{
 };
 use herald_core::infrastructure::PostgresCustomDomainMappingRepository;
 use herald_core::infrastructure::audit::PostgresAuditEventRepository;
-use herald_core::infrastructure::authentication::RedisSessionRepository;
+use herald_core::infrastructure::authentication::RedisBrowserTokenService;
 use herald_core::infrastructure::authorization::RedisPermissionChecker;
 use herald_core::infrastructure::authorization::policies::{
     PermissionBasedBillingPolicy, PermissionBasedPointsPolicy,
@@ -277,7 +277,7 @@ pub struct AppState {
             PostgresUserRepository,
             PostgresUserTotpRepository,
             PostgresBillingRepository,
-            RedisSessionRepository,
+            RedisBrowserTokenService,
             PostgresAuditEventRepository,
         >,
     >,

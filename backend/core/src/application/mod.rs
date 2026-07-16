@@ -4,8 +4,8 @@ mod services;
 mod webhook;
 
 pub use services::{
-    ApplicationService, AuthenticationServiceType, AuthorizationServiceType, ClientServiceType,
-    PermissionCheckerType, PermissionCrudServiceType, RealmServiceType, UserServiceType,
+    ApplicationService, AuthorizationServiceType, ClientServiceType, PermissionCheckerType,
+    PermissionCrudServiceType, RealmServiceType, UserServiceType,
 };
 pub use webhook::{WebhookContext, WebhookProcessResult, WebhookService};
 
@@ -15,7 +15,6 @@ use std::sync::Arc;
 use crate::domain::authorization::services::PermissionServiceImpl;
 use crate::domain::common::policies::AllowAllUserPolicy;
 use crate::domain::{
-    authentication::services::AuthenticationServiceImpl,
     authorization::services::{AuthorizationServiceImpl, RoleServiceImpl},
     client::services::ClientServiceImpl,
     oauth::config_service::OAuthConfigService,
@@ -24,7 +23,6 @@ use crate::domain::{
     user::services::UserServiceImpl,
 };
 use crate::infrastructure::{
-    authentication::RedisSessionRepository,
     authorization::{
         PermissionCheckerAuthorizationRepository, PostgresPermissionRepository,
         PostgresRolePermissionRepository, PostgresRolePolicyRepository, PostgresRoleRepository,
@@ -85,7 +83,7 @@ impl ApplicationServiceBuilder {
         // Step 1: Create all Repository instances (wrapped in Arc)
         let user_repository = Arc::new(PostgresUserRepository::new(db.clone()));
         let verification_repository = Arc::new(PostgresVerificationRepository::new(db.clone()));
-        let session_repository = Arc::new(RedisSessionRepository::new(redis_client));
+        let _redis_client = redis_client;
         let role_repository = Arc::new(PostgresRoleRepository::new(db.clone()));
         let permission_repository = Arc::new(PostgresPermissionRepository::new(db.clone()));
         let role_permission_repository = Arc::new(PostgresRolePermissionRepository::new(
@@ -152,11 +150,6 @@ impl ApplicationServiceBuilder {
             user_policy,
         ));
 
-        let authentication_service = Arc::new(AuthenticationServiceImpl::new(
-            user_service.clone(),
-            session_repository,
-        ));
-
         let role_service = Arc::new(RoleServiceImpl::new(role_repository.clone()));
 
         let permission_crud_service = Arc::new(PermissionServiceImpl::new(permission_repository));
@@ -203,7 +196,6 @@ impl ApplicationServiceBuilder {
         // Step 4: Assemble ApplicationService
         Ok(ApplicationService::new(
             user_service,
-            authentication_service,
             role_service,
             permission_crud_service,
             authorization_service,

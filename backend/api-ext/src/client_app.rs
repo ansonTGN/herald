@@ -144,10 +144,12 @@ pub async fn create_client_app(
         name: req.name,
         description: req.description,
         redirect_uris: Some(req.redirect_uris),
+        allowed_origins: None,
+        email_verify_return_url: None,
+        password_reset_return_url: None,
+        browser_refresh_absolute_ttl_seconds: None,
         enabled: None,
         icon_url: None,
-        session_ttl_seconds: None,
-        session_renewal_ttl_seconds: None,
         device_code_grant_enabled: req.device_code_grant_enabled,
     };
 

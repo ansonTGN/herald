@@ -96,7 +96,7 @@ async fn test_scenario_user_disables_totp_successfully(ctx: &mut TestContext) {
         .method("DELETE")
         .uri("/api/user/totp")
         .header("content-type", "application/json")
-        .header(header::COOKIE, format!("X-Auth={token}"))
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::from(disable_request.to_string()))
         .unwrap();
 

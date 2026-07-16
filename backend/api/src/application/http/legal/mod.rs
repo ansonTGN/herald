@@ -127,7 +127,7 @@ fn pick_locale(content: &serde_json::Value, locale: Option<&str>) -> serde_json:
 
 /// List the current effective agreements for a realm (Terms + Privacy).
 ///
-/// Public — no `inject_identity`. Each agreement type resolves to its current
+/// Public — no Bearer identity. Each agreement type resolves to its current
 /// effective version (realm custom if present, otherwise platform default);
 /// missing types are skipped. Returns 404 when no type resolves, which signals
 /// a seed-missing deployment anomaly (the platform default templates should
@@ -172,7 +172,7 @@ pub async fn list_agreements(
 
 /// Get the full localized detail of a single agreement type for a realm.
 ///
-/// Public — no `inject_identity`. Unknown `agreementType` → 400; no effective
+/// Public — no Bearer identity. Unknown `agreementType` → 400; no effective
 /// version deployed → 404.
 #[utoipa::path(
     get,
@@ -211,7 +211,7 @@ pub async fn get_agreement(
 
 /// Reconsent gate verdict for the calling user across both agreement types.
 ///
-/// Self-service — requires `inject_identity`. Cross-realm access is rejected
+/// Self-service — requires Bearer identity. Cross-realm access is rejected
 /// with 403 (each user may only inspect their own realm's consent state).
 #[utoipa::path(
     get,
@@ -248,7 +248,7 @@ pub async fn get_consent_status(
 
 /// Record the user's explicit consent to one or more agreement versions.
 ///
-/// Self-service — requires `inject_identity`. Each `version_id` must equal the
+/// Self-service — requires Bearer identity. Each `version_id` must equal the
 /// current effective version for its type (enforced in the service layer,
 /// BE-D04); a stale version surfaces as 409 so the client re-reads the
 /// effective version. Returns 204 on success. The upsert is idempotent on a
@@ -471,7 +471,7 @@ fn admin_actor(
 /// List both agreement types with their source, current effective version, and
 /// version history for the realm.
 ///
-/// Admin — requires `inject_identity` + `settings.view` + `has_access_to_realm`.
+/// Admin — requires first-party Bearer + `settings.view` + `has_access_to_realm`.
 /// `source` is derived per-type from `has_custom` (Custom when a realm custom
 /// version exists, otherwise Default).
 #[utoipa::path(
@@ -549,7 +549,7 @@ pub async fn admin_list_agreements(
 
 /// Get a single published version's full body by id (admin history view).
 ///
-/// Admin — requires `inject_identity` + `settings.view` + `has_access_to_realm`
+/// Admin — requires first-party Bearer + `settings.view` + `has_access_to_realm`
 /// (same gate as `admin_list_agreements`, since this is a read of the same
 /// history the list already exposes). Returns 404 when the id does not resolve.
 /// The `realmId` path segment scopes the permission check; the version itself is
@@ -610,7 +610,7 @@ pub async fn admin_get_version(
 
 /// Publish a new per-realm custom agreement version.
 ///
-/// Admin — requires `inject_identity` + `settings.manage` + `has_access_to_realm`.
+/// Admin — requires first-party Bearer + `settings.manage` + `has_access_to_realm`.
 /// Unknown `agreementType` → 400; non-object/empty `content` → 400 (also
 /// enforced in the service). On success the service records an
 /// `agreement.published` audit event and returns the new version.
@@ -725,7 +725,7 @@ pub async fn admin_publish_custom(
 
 /// Revert a realm's agreement to the platform default.
 ///
-/// Admin — requires `inject_identity` + `settings.manage` + `has_access_to_realm`.
+/// Admin — requires first-party Bearer + `settings.manage` + `has_access_to_realm`.
 /// Implemented as **snapshot semantics** in the service: the current default
 /// body is copied into a brand-new custom version (new `version_id`, monotonic
 /// `version_no`), so existing user consent no longer matches and reconsent is
@@ -797,7 +797,7 @@ pub async fn admin_revert_to_default(
 
 /// Get the staged draft for an agreement type.
 ///
-/// Admin — requires `inject_identity` + `settings.manage` + `has_access_to_realm`.
+/// Admin — requires first-party Bearer + `settings.manage` + `has_access_to_realm`.
 /// Returns 404 when no draft exists for the type (the admin form treats this as
 /// "start a new draft").
 #[utoipa::path(
@@ -864,7 +864,7 @@ pub async fn admin_get_draft(
 
 /// Save (upsert) a draft for an agreement type.
 ///
-/// Admin — requires `inject_identity` + `settings.manage` + `has_access_to_realm`.
+/// Admin — requires first-party Bearer + `settings.manage` + `has_access_to_realm`.
 /// A repeat save overwrites the prior draft. Does NOT publish — the agreement
 /// stays unchanged for end users until POST `/publish`.
 #[utoipa::path(
@@ -953,7 +953,7 @@ pub async fn admin_save_draft(
 
 /// Publish the staged draft as a new effective version.
 ///
-/// Admin — requires `inject_identity` + `settings.manage` + `has_access_to_realm`.
+/// Admin — requires first-party Bearer + `settings.manage` + `has_access_to_realm`.
 /// Reads the draft, creates a new immutable `legal_agreement_version` row
 /// (advancing `version_no`, recording an `agreement.published` audit event),
 /// and clears the draft. Returns 404 when no draft exists for the type. This is
@@ -1034,7 +1034,7 @@ pub async fn admin_publish_from_draft(
 
 /// Discard the staged draft.
 ///
-/// Admin — requires `inject_identity` + `settings.manage` + `has_access_to_realm`.
+/// Admin — requires first-party Bearer + `settings.manage` + `has_access_to_realm`.
 /// Idempotent: discarding a missing draft returns 204. The published version
 /// table is untouched.
 #[utoipa::path(

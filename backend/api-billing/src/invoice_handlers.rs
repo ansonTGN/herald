@@ -8,10 +8,14 @@ use sqlx::PgPool;
 use uuid::Uuid;
 use validator::Validate;
 
-use herald_api_base::application::http::common::auth_utils::require_authenticated_user_in_realm;
+use herald_api_auth::reauth::consume_reauth;
+use herald_api_base::application::http::common::auth_utils::{
+    require_authenticated_user_in_realm_with_token, require_token_scope,
+};
 use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
 use herald_api_base::application::http::state::AppState;
-use herald_core::domain::authentication::Identity;
+use herald_core::domain::authentication::TargetOperation;
+use herald_core::domain::authentication::{CredentialScope, Identity, TokenCredentialContext};
 use herald_core::domain::billing::credit_note::{
     CreditNoteRepository, CreditNoteStatus, NewCreditNote,
 };
@@ -32,7 +36,7 @@ use crate::handlers::require_billing_permission;
 use crate::invoice_eligibility::determine_invoice_apply_route;
 use crate::invoice_types::*;
 
-/// Extract the user ID from an Identity, if it represents a user session.
+/// Extract the user ID from an authenticated user identity.
 fn actor_user_id_from_identity(identity: &Identity) -> Option<Uuid> {
     if identity.is_user() {
         Uuid::parse_str(&identity.user_id()).ok()
@@ -1085,12 +1089,29 @@ pub async fn create_credit_note(
 pub async fn apply_invoice(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
+    Extension(context): Extension<TokenCredentialContext>,
     Json(request): Json<ApplyInvoiceRequest>,
 ) -> Result<(StatusCode, Json<InvoiceDetailResponse>), ApiError> {
     let realm_id = identity.realm_id();
     tracing::info!("User applying for invoice in realm: {}", realm_id);
-    let applicant_user_id =
-        require_authenticated_user_in_realm(&identity, &realm_id, "apply invoices")?;
+    require_token_scope(&identity, &context, CredentialScope::InvoiceApply)?;
+    let applicant_user_id = require_authenticated_user_in_realm_with_token(
+        &identity,
+        &context,
+        &realm_id,
+        "apply invoices",
+    )?;
+
+    // Require a fresh re-authentication ticket for this financial write.
+    consume_reauth(
+        &state,
+        &identity,
+        &context,
+        &request.reauth_token,
+        TargetOperation::ApplyInvoice,
+    )
+    .await?;
+
     request
         .validate()
         .map_err(|e: validator::ValidationErrors| {
@@ -1216,6 +1237,7 @@ pub async fn apply_invoice(
 pub async fn get_invoice_apply_eligibility(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
+    Extension(context): Extension<TokenCredentialContext>,
     Query(query): Query<InvoiceApplyEligibilityQuery>,
 ) -> Result<Json<InvoiceApplyEligibilityResponse>, ApiError> {
     let realm_id = identity.realm_id();
@@ -1225,8 +1247,13 @@ pub async fn get_invoice_apply_eligibility(
         query.reference_type,
         query.reference_id
     );
-    let user_id =
-        require_authenticated_user_in_realm(&identity, &realm_id, "apply invoice eligibility")?;
+    require_token_scope(&identity, &context, CredentialScope::InvoiceRead)?;
+    let user_id = require_authenticated_user_in_realm_with_token(
+        &identity,
+        &context,
+        &realm_id,
+        "apply invoice eligibility",
+    )?;
 
     let resource = match query.reference_type.as_str() {
         "payment_attempt" => OwnedResource::PaymentAttempt,
@@ -1359,11 +1386,18 @@ pub async fn get_invoice_apply_eligibility(
 pub async fn list_my_invoices(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
+    Extension(context): Extension<TokenCredentialContext>,
     Query(query): Query<InvoiceListQuery>,
 ) -> Result<Json<InvoiceListResponse>, ApiError> {
     let realm_id = identity.realm_id();
     tracing::info!("Listing my invoices for realm: {}", realm_id);
-    let user_id = require_authenticated_user_in_realm(&identity, &realm_id, "view invoices")?;
+    require_token_scope(&identity, &context, CredentialScope::InvoiceRead)?;
+    let user_id = require_authenticated_user_in_realm_with_token(
+        &identity,
+        &context,
+        &realm_id,
+        "view invoices",
+    )?;
 
     let filters = query.to_filters();
 
@@ -1396,17 +1430,52 @@ pub async fn list_my_invoices(
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn get_my_invoice(
+pub async fn get_my_invoice_scoped(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
+    Extension(context): Extension<TokenCredentialContext>,
     Path(invoice_id): Path<Uuid>,
 ) -> Result<Json<InvoiceDetailResponse>, ApiError> {
     let realm_id = identity.realm_id();
     tracing::info!("Getting my invoice {} for realm: {}", invoice_id, realm_id);
-    let current_user_id =
-        require_authenticated_user_in_realm(&identity, &realm_id, "view invoices")?;
+    require_token_scope(&identity, &context, CredentialScope::InvoiceRead)?;
+    let current_user_id = require_authenticated_user_in_realm_with_token(
+        &identity,
+        &context,
+        &realm_id,
+        "view invoices",
+    )?;
 
-    let detail = load_detail(&state, &realm_id, invoice_id).await?;
+    get_my_invoice_for_user(&state, &realm_id, current_user_id, invoice_id).await
+}
+
+/// Direct business-handler entry retained for internal callers and tests.
+/// Enforces the same browser token scope as `get_my_invoice_scoped`.
+pub async fn get_my_invoice(
+    State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
+    Extension(context): Extension<TokenCredentialContext>,
+    Path(invoice_id): Path<Uuid>,
+) -> Result<Json<InvoiceDetailResponse>, ApiError> {
+    let realm_id = identity.realm_id();
+    require_token_scope(&identity, &context, CredentialScope::InvoiceRead)?;
+    let current_user_id = require_authenticated_user_in_realm_with_token(
+        &identity,
+        &context,
+        &realm_id,
+        "view invoices",
+    )?;
+
+    get_my_invoice_for_user(&state, &realm_id, current_user_id, invoice_id).await
+}
+
+async fn get_my_invoice_for_user(
+    state: &AppState,
+    realm_id: &str,
+    current_user_id: Uuid,
+    invoice_id: Uuid,
+) -> Result<Json<InvoiceDetailResponse>, ApiError> {
+    let detail = load_detail(state, realm_id, invoice_id).await?;
 
     validate_invoice_ownership(
         &detail,
@@ -1416,7 +1485,7 @@ pub async fn get_my_invoice(
 
     let credit_notes = state
         .credit_note_repository
-        .find_by_invoice_id(&realm_id, invoice_id)
+        .find_by_invoice_id(realm_id, invoice_id)
         .await?;
 
     // Strip Stripe-internal identifiers and admin user IDs so regular users
@@ -1583,6 +1652,7 @@ pub async fn download_invoice_pdf(
 pub async fn download_my_invoice_pdf(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
+    Extension(context): Extension<TokenCredentialContext>,
     Path(invoice_id): Path<Uuid>,
 ) -> Result<Response, ApiError> {
     let realm_id = identity.realm_id();
@@ -1591,8 +1661,13 @@ pub async fn download_my_invoice_pdf(
         invoice_id,
         realm_id
     );
-    let current_user_id =
-        require_authenticated_user_in_realm(&identity, &realm_id, "view invoices")?;
+    require_token_scope(&identity, &context, CredentialScope::InvoiceRead)?;
+    let current_user_id = require_authenticated_user_in_realm_with_token(
+        &identity,
+        &context,
+        &realm_id,
+        "view invoices",
+    )?;
 
     let detail = load_detail(&state, &realm_id, invoice_id).await?;
 
@@ -1621,11 +1696,15 @@ pub async fn download_my_invoice_pdf(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use axum::http::StatusCode;
     use axum::response::IntoResponse;
+    use herald_core::domain::authentication::{CredentialClass, TokenCredentialContext};
     use herald_core::domain::billing::invoice::{
         Invoice, InvoiceDetail, InvoiceProvider, InvoiceSource, InvoiceStatus,
     };
+    use herald_core::domain::user::entities::{User, UserStatus};
 
     use super::*;
 
@@ -1690,6 +1769,44 @@ mod tests {
             line_items: vec![],
             history: vec![],
         }
+    }
+
+    fn identity() -> Identity {
+        Identity::User(User {
+            id: Uuid::now_v7(),
+            realm_id: "realm".to_string(),
+            email: "user@example.com".to_string(),
+            nickname: None,
+            password_hash: None,
+            provider_ids: vec![],
+            status: UserStatus::Normal,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        })
+    }
+
+    #[test]
+    fn browser_scope_invoice_rejects_missing_invoice_read_before_lookup() {
+        let context = TokenCredentialContext {
+            client_app_id: Uuid::now_v7(),
+            family_id: Uuid::now_v7(),
+            credential_class: CredentialClass::CustomUserUi,
+            allowed_scopes: HashSet::new(),
+        };
+
+        assert!(require_token_scope(&identity(), &context, CredentialScope::InvoiceRead).is_err());
+    }
+
+    #[test]
+    fn browser_scope_invoice_rejects_cross_user_detail() {
+        let owner = Uuid::now_v7();
+        let mut detail = make_detail(InvoiceProvider::Manual, None);
+        detail.invoice.account_id = Some(owner);
+        detail.invoice.applicant_user_id = Some(owner);
+
+        assert!(
+            validate_invoice_ownership(&detail, Uuid::now_v7(), "not owned by caller").is_err()
+        );
     }
 
     #[test]

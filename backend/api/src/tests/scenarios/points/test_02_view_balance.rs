@@ -34,7 +34,7 @@ use crate::tests::scenarios::points::fixtures::*;
 use crate::tests::schema_test_context::SchemaTestContext as TestContext;
 use axum::{
     body::Body,
-    http::{Request, StatusCode, header},
+    http::{Request, StatusCode},
 };
 use chrono::{Duration, Utc};
 use serde_json::json;
@@ -107,14 +107,8 @@ async fn test_scenario_user_view_own_balance(ctx: &mut TestContext) {
     assert_eq!(login_response.status(), StatusCode::OK);
 
     // Extract session token
-    let set_cookie = login_response
-        .headers()
-        .get(header::SET_COOKIE)
-        .and_then(|v| v.to_str().ok())
-        .expect("Should return Set-Cookie header");
-
-    let token = crate::tests::extract_set_cookie_token(set_cookie, "X-Auth")
-        .expect("Should extract X-Auth token");
+    let (_response, token) = crate::tests::extract_bearer_token(login_response).await;
+    let token = token.expect("Login should return accessToken");
 
     println!("[Step 2] ✓ User logged in: token={}", token);
 
@@ -123,7 +117,7 @@ async fn test_scenario_user_view_own_balance(ctx: &mut TestContext) {
     let request = Request::builder()
         .method("GET")
         .uri(format!("/api/points/{}/wallets/{}", ctx._realm_id, user_id))
-        .header("cookie", format!("X-Auth={}", token))
+        .header("authorization", format!("Bearer {}", token))
         .body(Body::empty())
         .unwrap();
 
@@ -231,18 +225,13 @@ async fn test_scenario_get_wallet_auto_creates_empty_wallet(ctx: &mut TestContex
     let login_response = app.clone().oneshot(login_request).await.unwrap();
     assert_eq!(login_response.status(), StatusCode::OK);
 
-    let set_cookie = login_response
-        .headers()
-        .get(header::SET_COOKIE)
-        .and_then(|v| v.to_str().ok())
-        .expect("Should return Set-Cookie header");
-    let token = crate::tests::extract_set_cookie_token(set_cookie, "X-Auth")
-        .expect("Should extract X-Auth token");
+    let (_response, token) = crate::tests::extract_bearer_token(login_response).await;
+    let token = token.expect("Login should return accessToken");
 
     let request = Request::builder()
         .method("GET")
         .uri(format!("/api/points/{}/wallets/{}", ctx._realm_id, user_id))
-        .header("cookie", format!("X-Auth={}", token))
+        .header("authorization", format!("Bearer {}", token))
         .body(Body::empty())
         .unwrap();
 
@@ -378,18 +367,13 @@ async fn test_user_balance_excludes_future_effective(ctx: &mut TestContext) {
         .unwrap();
     let login_response = app.clone().oneshot(login_request).await.unwrap();
     assert_eq!(login_response.status(), StatusCode::OK);
-    let set_cookie = login_response
-        .headers()
-        .get(header::SET_COOKIE)
-        .and_then(|v| v.to_str().ok())
-        .expect("Should return Set-Cookie header");
-    let token = crate::tests::extract_set_cookie_token(set_cookie, "X-Auth")
-        .expect("Should extract X-Auth token");
+    let (_response, token) = crate::tests::extract_bearer_token(login_response).await;
+    let token = token.expect("Login should return accessToken");
 
     let request = Request::builder()
         .method("GET")
         .uri(format!("/api/points/{}/wallets/{}", realm_id, user_id))
-        .header("cookie", format!("X-Auth={}", token))
+        .header("authorization", format!("Bearer {}", token))
         .body(Body::empty())
         .unwrap();
     let response = app.clone().oneshot(request).await.unwrap();

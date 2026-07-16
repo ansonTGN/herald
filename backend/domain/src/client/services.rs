@@ -4,8 +4,9 @@ use uuid::Uuid;
 use crate::authentication::Identity;
 use crate::client::{
     entities::ClientApp,
+    normalize_origins,
     ports::{ClientRepository, ClientService},
-    validate_redirect_uris, validate_session_config,
+    validate_redirect_uri, validate_redirect_uris,
     value_objects::{CreateClientAppRequest, UpdateClientAppRequest},
 };
 
@@ -19,6 +20,9 @@ fn validate_redirect_uris_if_needed(redirect_uris: &[String]) -> Result<(), Core
 }
 use crate::common::entities::app_errors::CoreError;
 use crate::common::policies::{ClientPolicy, ensure_policy};
+use crate::security_constants::{
+    BROWSER_REFRESH_ABSOLUTE_TTL_MAX_SECONDS, BROWSER_REFRESH_ABSOLUTE_TTL_MIN_SECONDS,
+};
 
 pub struct ClientServiceImpl<R, P>
 where
@@ -61,7 +65,7 @@ where
     async fn create_client_app(
         &self,
         identity: Identity,
-        request: CreateClientAppRequest,
+        mut request: CreateClientAppRequest,
     ) -> Result<ClientApp, CoreError> {
         // Policy check（使用具体方法 + ensure_policy）
         ensure_policy(
@@ -76,6 +80,13 @@ where
             ));
         }
 
+        // Reserved client IDs are not available to realm admins.
+        if request.client_id == "admin-web-console" {
+            return Err(CoreError::Forbidden(
+                "Reserved client id cannot be used".to_string(),
+            ));
+        }
+
         // Validate redirect URIs if provided
         if let Some(ref redirect_uris) = request.redirect_uris {
             let skip_empty =
@@ -84,12 +95,29 @@ where
                 validate_redirect_uris_if_needed(redirect_uris)?;
             }
         }
-
-        // Validate session configuration
-        let session_ttl = request.session_ttl_seconds.unwrap_or(1800);
-        validate_session_config(session_ttl, request.session_renewal_ttl_seconds).map_err(|e| {
-            CoreError::BadRequest(format!("Session configuration validation failed: {}", e))
-        })?;
+        if let Some(origins) = request.allowed_origins.take() {
+            request.allowed_origins = Some(normalize_origins(&origins)?);
+        }
+        for return_url in [
+            &request.email_verify_return_url,
+            &request.password_reset_return_url,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            validate_redirect_uri(return_url, is_development_env())?;
+        }
+        let ttl = request
+            .browser_refresh_absolute_ttl_seconds
+            .unwrap_or(2_592_000);
+        if !(BROWSER_REFRESH_ABSOLUTE_TTL_MIN_SECONDS..=BROWSER_REFRESH_ABSOLUTE_TTL_MAX_SECONDS)
+            .contains(&ttl)
+        {
+            return Err(CoreError::BadRequest(format!(
+                "Browser refresh absolute TTL must be between {} and {} seconds",
+                BROWSER_REFRESH_ABSOLUTE_TTL_MIN_SECONDS, BROWSER_REFRESH_ABSOLUTE_TTL_MAX_SECONDS
+            )));
+        }
 
         self.client_repository.create_client_app(request).await
     }
@@ -175,7 +203,7 @@ where
         &self,
         identity: Identity,
         id: Uuid,
-        request: UpdateClientAppRequest,
+        mut request: UpdateClientAppRequest,
     ) -> Result<ClientApp, CoreError> {
         // Policy check
         ensure_policy(
@@ -208,15 +236,27 @@ where
         if let Some(ref redirect_uris) = request.redirect_uris {
             validate_redirect_uris_if_needed(redirect_uris)?;
         }
-
-        // Validate session configuration if provided
-        if request.session_ttl_seconds.is_some() || request.session_renewal_ttl_seconds.is_some() {
-            let session_ttl = request.session_ttl_seconds.unwrap_or(1800);
-            validate_session_config(session_ttl, request.session_renewal_ttl_seconds).map_err(
-                |e| {
-                    CoreError::BadRequest(format!("Session configuration validation failed: {}", e))
-                },
-            )?;
+        if let Some(origins) = request.allowed_origins.take() {
+            request.allowed_origins = Some(normalize_origins(&origins)?);
+        }
+        for return_url in [
+            &request.email_verify_return_url,
+            &request.password_reset_return_url,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            validate_redirect_uri(return_url, is_development_env())?;
+        }
+        if let Some(ttl) = request.browser_refresh_absolute_ttl_seconds
+            && !(BROWSER_REFRESH_ABSOLUTE_TTL_MIN_SECONDS
+                ..=BROWSER_REFRESH_ABSOLUTE_TTL_MAX_SECONDS)
+                .contains(&ttl)
+        {
+            return Err(CoreError::BadRequest(format!(
+                "Browser refresh absolute TTL must be between {} and {} seconds",
+                BROWSER_REFRESH_ABSOLUTE_TTL_MIN_SECONDS, BROWSER_REFRESH_ABSOLUTE_TTL_MAX_SECONDS
+            )));
         }
 
         self.client_repository.update_client_app(id, request).await

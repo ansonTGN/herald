@@ -24,7 +24,7 @@ fn authed_request(method: &str, uri: String, token: &str, body: Option<Value>) -
     let mut builder = Request::builder()
         .method(method)
         .uri(uri)
-        .header(header::COOKIE, format!("X-Auth={token}"));
+        .header(header::AUTHORIZATION, format!("Bearer {token}"));
 
     let body = if let Some(body) = body {
         builder = builder.header("content-type", "application/json");
