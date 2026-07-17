@@ -17,11 +17,11 @@ Passkey is a public-key credential that stays on the user's device. The private 
 
 One Passkey credential serves both modes. This is a deliberate design choice: a user who registers a Passkey does not have to think about "is this a login credential or a 2FA credential" — it is both.
 
-**First factor (passwordless).** On the login page, the browser auto-fills any discoverable credential the user has registered on this browser (conditional UI) when the username field is focused, or the user clicks *Use Passkey*. The server issues a fresh assertion challenge, the device signs it, and on success a Session is created directly — no password is ever entered.
+**First factor (passwordless).** On the login page, the browser auto-fills any discoverable credential the user has registered on this browser (conditional UI) when the username field is focused, or the user clicks *Use Passkey*. The server issues a fresh assertion challenge, the device signs it, and on success a Bearer token is issued directly — no password is ever entered.
 
-**Second factor.** The user enters email and password. After the password verifies, if the user has a registered Passkey, Herald offers a Passkey verification step alongside TOTP. The user completes the ceremony and a Session is created. This mode parallels the existing TOTP second-factor flow.
+**Second factor.** The user enters email and password. After the password verifies, if the user has a registered Passkey, Herald offers a Passkey verification step alongside TOTP. The user completes the ceremony and a Bearer token is issued. This mode parallels the existing TOTP second-factor flow.
 
-In both modes the outcome on success is the same Session issuance path TOTP uses.
+In both modes the outcome on success is the same token issuance path TOTP uses.
 
 ## Realm configuration
 
@@ -83,7 +83,7 @@ flowchart LR
         RP[WebAuthn RP<br/>RP_ID + RP_ORIGIN from env]
         CS[(Challenge store<br/>one-time, TTL 300s)]
         DB[(Credential metadata<br/>ID / pubkey / counter / transports)]
-        SESS[Session issuance]
+        SESS[Token issuance]
     end
 
     UV -->|create / get credential| RP

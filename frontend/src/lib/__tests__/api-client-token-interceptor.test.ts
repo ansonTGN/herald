@@ -1,0 +1,276 @@
+/**
+ * Bearer API client interceptor state machine (design §4.4 — FE-D01).
+ *
+ * Exercises `initBearerClient()` end-to-end against MSW, using the REAL auth
+ * store + in-memory `accessTokenHolder` (NOT mocked) so the interceptor's
+ * reads (`getAccessToken`) / writes (`setTokens`) go through the same surfaces
+ * production uses. Network calls go through the generated client (`status`,
+ * `refresh`) — no internal API functions are mocked — and MSW controls every
+ * response, including scripted 401 → 200 sequences for the loop guard.
+ *
+ * Coverage:
+ * - Bearer `Authorization` injection from the in-memory holder
+ * - single 401 → refresh → replay exactly once (new AT/RT swapped in)
+ * - refresh-loop guard (retried request re-401s → no second refresh, 401 surfaces)
+ * - refresh failure (401 reuse/absolute-expiry) → logout path, RT cleared, no retry
+ * - refresh endpoint itself is never Bearer-injected and never auto-refreshed
+ */
+
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { http, HttpResponse } from 'msw'
+import { server } from '@/test/mocks/server'
+import { status } from '@/lib/api-generated'
+import { initBearerClient } from '@/lib/api-client'
+import { useAuthStore, accessTokenHolder } from '@/stores/auth-store'
+import { AUTH_STORAGE_KEY } from '@/lib/constants/auth-constants'
+import {
+  REFRESH_URL,
+  createRefreshSuccessHandler,
+  REFRESH_ERRORS,
+  type CapturedRefreshRequest,
+} from '@/test/mocks/handlers/browser-token'
+import { TOKEN_FIXTURE } from '@/test/fixtures/browser-token'
+
+const API_BASE_URL = 'http://localhost:3000'
+const STATUS_URL = `${API_BASE_URL}/api/auth/status`
+
+/** A representative authenticated /status 200 body. */
+const STATUS_OK_BODY = { authenticated: true, realmId: 'realm-1', userId: 'user-1' }
+
+/** Install the Bearer interceptor once for the whole file (idempotent). */
+initBearerClient()
+
+/**
+ * Reset ALL auth surfaces between tests: the in-memory AT holder, the real
+ * Zustand store state, and any persisted localStorage. Without this the
+ * single-flight / loop-guard module state could leak between cases.
+ */
+function resetAuthSurfaces() {
+  accessTokenHolder.clear()
+  useAuthStore.getState().reset()
+  window.localStorage.removeItem(AUTH_STORAGE_KEY)
+}
+
+/** Seed an authenticated session: AT in memory + RT in the store. */
+function seedSession(accessToken: string = TOKEN_FIXTURE.accessToken) {
+  accessTokenHolder.set(accessToken)
+  useAuthStore.getState().setTokens({
+    accessToken,
+    refreshToken: TOKEN_FIXTURE.refreshToken,
+    clientId: TOKEN_FIXTURE.clientId,
+  })
+}
+
+beforeEach(() => {
+  resetAuthSurfaces()
+})
+
+describe('Bearer request interceptor: Authorization header injection', () => {
+  it('injects Authorization: Bearer {accessToken} from the in-memory holder onto protected requests', async () => {
+    seedSession()
+    let capturedAuth: string | null = null
+    server.use(
+      http.get(STATUS_URL, ({ request }) => {
+        capturedAuth = request.headers.get('Authorization')
+        return HttpResponse.json(STATUS_OK_BODY)
+      })
+    )
+
+    await status()
+
+    expect(capturedAuth).toBe(`Bearer ${TOKEN_FIXTURE.accessToken}`)
+  })
+
+  it('does NOT inject Authorization when no access token is held (e.g. pre-login)', async () => {
+    // No seed → holder empty.
+    let capturedAuth: string | null = '__sentinel__'
+    server.use(
+      http.get(STATUS_URL, ({ request }) => {
+        capturedAuth = request.headers.get('Authorization')
+        return HttpResponse.json(STATUS_OK_BODY)
+      })
+    )
+
+    await status()
+
+    expect(capturedAuth).toBeNull()
+  })
+})
+
+describe('single 401 → refresh → retry exactly once', () => {
+  it('on a 401, refreshes once, swaps AT/RT, and replays the original request with the new AT', async () => {
+    seedSession(TOKEN_FIXTURE.expiredAccessToken)
+
+    // Protected endpoint: 401 once (expired AT), then 200 on the replay.
+    let statusCallCount = 0
+    let replayAuth: string | null = null
+    server.use(
+      http.get(STATUS_URL, ({ request }) => {
+        statusCallCount += 1
+        if (statusCallCount === 1) {
+          return HttpResponse.json({ error: 'token_expired' }, { status: 401 })
+        }
+        replayAuth = request.headers.get('Authorization')
+        return HttpResponse.json(STATUS_OK_BODY)
+      })
+    )
+
+    // Refresh returns a rotated token set.
+    const refreshCapture: CapturedRefreshRequest = { body: undefined, authorization: undefined }
+    server.use(createRefreshSuccessHandler(refreshCapture))
+
+    const result = await status()
+
+    // The original request was issued twice (initial 401 + one replay).
+    expect(statusCallCount).toBe(2)
+    // The replay carried the NEW (rotated) access token.
+    expect(replayAuth).toBe(`Bearer ${TOKEN_FIXTURE.rotatedAccessToken}`)
+    // The caller received the business data, not an error.
+    expect(result.data).toMatchObject({ authenticated: true })
+
+    // Refresh was called with the persisted RT + clientId (NOT the AT).
+    expect(refreshCapture.body).toEqual({
+      refreshToken: TOKEN_FIXTURE.refreshToken,
+      clientId: TOKEN_FIXTURE.clientId,
+    })
+    // The refresh endpoint is skipped by the Bearer injector (RT in body, not header).
+    expect(refreshCapture.authorization).toBeNull()
+
+    // New AT/RT were swapped into the holder / store.
+    expect(accessTokenHolder.get()).toBe(TOKEN_FIXTURE.rotatedAccessToken)
+    expect(useAuthStore.getState().refreshToken).toBe(TOKEN_FIXTURE.rotatedRefreshToken)
+  })
+})
+
+describe('refresh-loop guard: a retried request that 401s again is not refreshed twice', () => {
+  it('surfaces the second 401 instead of refreshing a second time', async () => {
+    seedSession(TOKEN_FIXTURE.expiredAccessToken)
+
+    // Protected endpoint always 401s (even after the replay) → loop guard must
+    // kick in: only ONE refresh, then the second 401 propagates.
+    let statusCallCount = 0
+    server.use(
+      http.get(STATUS_URL, () => {
+        statusCallCount += 1
+        return HttpResponse.json({ error: 'invalid_token' }, { status: 401 })
+      })
+    )
+
+    let refreshCallCount = 0
+    server.use(
+      http.post(REFRESH_URL, () => {
+        refreshCallCount += 1
+        return HttpResponse.json({
+          access_token: TOKEN_FIXTURE.rotatedAccessToken,
+          refresh_token: TOKEN_FIXTURE.rotatedRefreshToken,
+          token_type: 'Bearer',
+          expires_in: 900,
+          refresh_expires_in: 2592000,
+        })
+      })
+    )
+
+    const result = await status()
+
+    // The request fired twice (initial + one replay), refresh fired ONCE.
+    expect(statusCallCount).toBe(2)
+    expect(refreshCallCount).toBe(1)
+    // No business data — the 401 surfaced to the caller as an error envelope.
+    expect(result.error).toBeDefined()
+    expect(result.response?.status).toBe(401)
+  })
+})
+
+describe('refresh failure → force re-login (no infinite retry)', () => {
+  it.each([
+    {
+      label: 'refresh reuse detected (family revoked)',
+      error: REFRESH_ERRORS.reuseDetected,
+    },
+    {
+      label: 'refresh absolute expiry reached',
+      error: REFRESH_ERRORS.absoluteExpiry,
+    },
+    {
+      label: 'refresh token invalid/revoked',
+      error: REFRESH_ERRORS.invalid,
+    },
+  ])(
+    '$label: refresh 401 clears RT + logs out and surfaces 401 (no retry loop)',
+    async ({ error }) => {
+      seedSession(TOKEN_FIXTURE.expiredAccessToken)
+
+      // Protected endpoint 401s once.
+      let statusCallCount = 0
+      server.use(
+        http.get(STATUS_URL, () => {
+          statusCallCount += 1
+          return HttpResponse.json({ error: 'token_expired' }, { status: 401 })
+        })
+      )
+      // Refresh also fails with a distinguishable 401. The handler counts
+      // invocations so the test can assert there is exactly ONE refresh attempt
+      // (no retry loop) when the refresh endpoint itself rejects.
+      let refreshCallCount = 0
+      server.use(
+        http.post(REFRESH_URL, () => {
+          refreshCallCount += 1
+          return HttpResponse.json({ error, error_description: error }, { status: 401 })
+        })
+      )
+
+      const result = await status()
+
+      // The original request fired once; it was NOT replayed (refresh failed).
+      expect(statusCallCount).toBe(1)
+      // Refresh attempted exactly once — no retry loop.
+      expect(refreshCallCount).toBe(1)
+      // The 401 surfaced to the caller.
+      expect(result.error).toBeDefined()
+      expect(result.response?.status).toBe(401)
+
+      // Force-re-login path: RT cleared and in-memory AT cleared.
+      expect(useAuthStore.getState().refreshToken).toBeNull()
+      expect(useAuthStore.getState().refreshClientId).toBeNull()
+      expect(accessTokenHolder.get()).toBeNull()
+      // logout() flips the store into the unauthenticated state.
+      expect(useAuthStore.getState().isAuthenticated).toBe(false)
+    }
+  )
+})
+
+describe('refresh endpoint isolation', () => {
+  it('the refresh call itself is never auto-refreshed on its own 401', async () => {
+    seedSession(TOKEN_FIXTURE.expiredAccessToken)
+
+    // Protected endpoint 401s once → triggers refresh.
+    let statusCallCount = 0
+    server.use(
+      http.get(STATUS_URL, () => {
+        statusCallCount += 1
+        if (statusCallCount === 1) {
+          return HttpResponse.json({ error: 'token_expired' }, { status: 401 })
+        }
+        return HttpResponse.json(STATUS_OK_BODY)
+      })
+    )
+
+    // Refresh returns 401. Because the response interceptor skips the refresh
+    // path entirely, this must NOT recurse into another refresh call.
+    let refreshCallCount = 0
+    server.use(
+      http.post(REFRESH_URL, () => {
+        refreshCallCount += 1
+        return HttpResponse.json(
+          { error: REFRESH_ERRORS.invalid, error_description: REFRESH_ERRORS.invalid },
+          { status: 401 }
+        )
+      })
+    )
+
+    await status()
+
+    // Exactly one refresh attempt — the refresh 401 did not trigger recursion.
+    expect(refreshCallCount).toBe(1)
+  })
+})

@@ -99,7 +99,7 @@
 ### 2.2 不包含功能 (Out of Scope)
 
 - Refresh Token（当前不支持令牌刷新）
-- Token 撤销（当前不支持令牌撤销）
+- Token 撤销：server-side token 当前不支持撤销；浏览器 token 变体支持即时吊销（见 [自建用户 UI](/docs/prd/integration/custom-user-ui.md)）
 - OAuth 2.0 Scope 管理（没有细粒度 scope 授权页面）
 - 用户主动授权/拒绝授权页面（当前授权自动完成，用户无需手动批准）
 - Implicit Flow（已被 OAuth 2.1 废弃）

@@ -25,6 +25,13 @@ pub struct Model {
     pub client_secret: Option<String>,
     pub device_code_grant_enabled: bool,
 
+    // Turnstile (Cloudflare human-verification), delegated to the Client App
+    // (D-PROTECT-01). When `turnstile_enabled` is false the other two columns
+    // are ignored.
+    pub turnstile_enabled: bool,
+    pub turnstile_site_key: Option<String>,
+    pub turnstile_secret_key: Option<String>,
+
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
 }

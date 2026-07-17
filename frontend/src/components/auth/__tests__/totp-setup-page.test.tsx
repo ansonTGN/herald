@@ -9,6 +9,8 @@ import type { EnableTotpResponse, VerifyTotpSetupResponse } from '@/lib/api-gene
 vi.mock('@/lib/api-generated', () => ({
   handleEnableTotp: vi.fn(),
   handleVerifyTotpSetup: vi.fn(),
+  handleBeginReauth: vi.fn(),
+  handleVerifyReauth: vi.fn(),
 }))
 
 // Mock useFormMutation hook
@@ -49,7 +51,12 @@ vi.mock('@/stores/auth-store', () => ({
   useRealmId: () => 'test-realm',
 }))
 
-import { handleEnableTotp, handleVerifyTotpSetup } from '@/lib/api-generated'
+import {
+  handleEnableTotp,
+  handleVerifyTotpSetup,
+  handleBeginReauth,
+  handleVerifyReauth,
+} from '@/lib/api-generated'
 import { useFormMutation } from '@/hooks/use-form-mutation'
 
 describe('TotpSetupPage', () => {
@@ -97,6 +104,16 @@ describe('TotpSetupPage', () => {
 
     vi.mocked(handleVerifyTotpSetup).mockResolvedValue({
       data: mockVerifyTotpResponse,
+      error: undefined,
+    })
+
+    // Mock the reauth flow (bind_authenticator): begin → verify → token.
+    vi.mocked(handleBeginReauth).mockResolvedValue({
+      data: { availableFactors: ['password'] },
+      error: undefined,
+    })
+    vi.mocked(handleVerifyReauth).mockResolvedValue({
+      data: { reauthToken: 'reauth-token-123', expiresIn: 120 },
       error: undefined,
     })
   })
@@ -177,7 +194,7 @@ describe('TotpSetupPage', () => {
 
       await waitFor(() => {
         expect(handleEnableTotp).toHaveBeenCalledWith({
-          body: { password: 'password123' },
+          body: { password: 'password123', reauth_token: 'reauth-token-123' },
         })
       })
     })

@@ -80,12 +80,12 @@ function createClientAppColumns(
       ),
     },
     {
-      id: 'sessionTtlSeconds',
-      header: m['client_apps.table_session_ttl'](),
+      id: 'browserRefreshAbsoluteTtlSeconds',
+      header: m['client_apps.table_refresh_ttl'](),
       cell: ({ row }) => (
-        <span data-testid="client-app-session-ttl">
-          {m['client_apps.session_ttl_minutes']({
-            minutes: Math.floor(row.original.sessionTtlSeconds / 60),
+        <span data-testid="client-app-refresh-ttl">
+          {m['client_apps.refresh_ttl_days']({
+            days: Math.round(row.original.browserRefreshAbsoluteTtlSeconds / 86400),
           })}
         </span>
       ),

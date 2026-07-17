@@ -263,7 +263,7 @@ async fn create_extra_session(ctx: &TestContext, user_id: Uuid) -> String {
         .await
         .expect("Failed to load test client app");
     RedisBrowserTokenService::new(ctx.app_state.redis_manager.clone())
-        .create_first_party_token_family(&user, &client_app)
+        .create_first_party_token_family(&user, &client_app, None, None)
         .await
         .expect("Failed to create extra token family")
         .access_token

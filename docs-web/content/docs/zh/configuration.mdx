@@ -64,7 +64,7 @@ url = "postgresql://herald:herald@db:5432/herald"
 |---|---|---|---|---|---|
 | `url` | string | `redis://127.0.0.1:6379` | `redis://redis:6379` | 否 | Redis 连接地址 |
 
-Redis 用于权限检查缓存和 session 存储。Docker 环境中使用容器名作为主机名。
+Redis 用于权限检查缓存和 access/refresh token 存储。Docker 环境中使用容器名作为主机名。
 
 ```toml
 [redis]

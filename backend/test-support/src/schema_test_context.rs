@@ -272,6 +272,11 @@ impl AsyncTestContext for SchemaTestContext {
                     sea_conn.clone(),
                 ),
             ),
+            Arc::new(
+                herald_core::infrastructure::authentication::RedisBrowserTokenService::new(
+                    redis_manager.clone(),
+                ),
+            ),
         ));
         let role_assignment_service = Arc::new(RoleAssignmentServiceImpl::new(
             user_role_repository.clone(),

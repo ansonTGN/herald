@@ -9,6 +9,7 @@
 // Sub-modules
 pub mod crud;
 pub mod custom_domain_config;
+pub mod email_otp_config;
 pub mod passkey_config;
 pub mod totp_config;
 pub mod validators;
@@ -39,6 +40,8 @@ use axum::Router;
 /// - PUT /api/realms/{realmId}/config/totp - Update realm TOTP configuration
 /// - GET /api/realms/{realmId}/config/passkey - Get realm Passkey configuration
 /// - PUT /api/realms/{realmId}/config/passkey - Update realm Passkey configuration
+/// - GET /api/realms/{realmId}/config/email-otp - Get realm Email OTP configuration
+/// - PUT /api/realms/{realmId}/config/email-otp - Update realm Email OTP configuration
 /// - GET /api/realms/{realmId}/config/white-label - Get white-label configuration state
 /// - PUT /api/realms/{realmId}/config/white-label/draft - Save white-label draft
 /// - DELETE /api/realms/{realmId}/config/white-label/draft - Discard white-label draft
@@ -81,6 +84,15 @@ pub fn realm_router() -> Router<AppState> {
         .route(
             "/{realmId}/config/passkey",
             axum::routing::get(passkey_config::handle_get_realm_passkey_config),
+        )
+        // Email OTP configuration routes
+        .route(
+            "/{realmId}/config/email-otp",
+            axum::routing::put(email_otp_config::handle_update_realm_email_otp_config),
+        )
+        .route(
+            "/{realmId}/config/email-otp",
+            axum::routing::get(email_otp_config::handle_get_realm_email_otp_config),
         )
         // White-label configuration routes
         .route(

@@ -534,7 +534,7 @@ export function LoginPage() {
               <form.Field name="turnstileToken">
                 {(field) => (
                   <TurnstileWidget
-                    siteKey={turnstileStatus.site_key || ''}
+                    siteKey={turnstileStatus.siteKey || ''}
                     onTokenChange={(token) => field.handleChange(token || '')}
                     onError={(error) => console.error('Turnstile error:', error)}
                   />

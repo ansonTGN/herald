@@ -44,7 +44,7 @@ These aren't picked to follow trends. Each choice solves a concrete problem:
 
 - **Axum over actix-web**: native tokio runtime, clean integration with the tower middleware ecosystem, and trait-based handlers that read better than macro-based routing.
 - **SeaORM alongside sqlx**: SeaORM handles routine CRUD (the entity crate is auto-generated), while sqlx deals with complex queries and migrations. Both point at the same PostgreSQL — SeaORM sits on top of sqlx under the hood.
-- **Redis**: session storage, permission caching, rate limiting (Redis Functions), idempotency keys. Wrapped in a custom `RedisConnectionManager` that automatically switches to DB 1 during tests for data isolation.
+- **Redis**: token storage (access/refresh token families), permission caching, rate limiting (Redis Functions), idempotency keys. Wrapped in a custom `RedisConnectionManager` that automatically switches to DB 1 during tests for data isolation.
 - **TanStack Router**: file-based routing with type safety. Path parameters like `$realmId` get their types inferred at compile time. More reliable than react-router's runtime matching.
 - **API type generation**: the backend exports OpenAPI JSON via utoipa, and the frontend generates TypeScript clients and types with `@hey-api/openapi-ts`. When the backend API changes, one command — `npm run generate-api` — brings the frontend types back in sync.
 
@@ -55,7 +55,7 @@ A typical request travels through these layers:
 ```
 HTTP Request
   → Axum Router (route matching)
-  → inject_identity middleware (resolves user identity from session cookie or Bearer token)
+  → inject_identity middleware (resolves user identity from the Authorization: Bearer token)
   → Handler (extracts AppState, parses request body)
   → Domain Service (business logic, calls Repository through a trait)
   → Repository implementation (infra layer, talks to PostgreSQL or Redis)
@@ -132,12 +132,12 @@ Eight crates form the API layer:
 |-------|---------------|-------------|
 | `api` | Main entry: route registration, middleware orchestration, Swagger UI, OpenAPI spec merging, audit log queries | — |
 | `api-base` | `AppState` definition (shared across all api sub-crates) | — |
-| `api-auth` | Registration, login, password reset, email verification | session |
-| `api-admin` | User CRUD, role management, permission definition management | session + inject_identity |
+| `api-auth` | Registration, login, password reset, email verification | Bearer token (public endpoints + token issuance) |
+| `api-admin` | User CRUD, role management, permission definition management | Bearer token (FirstParty) + inject_identity |
 | `api-billing` | Credit account directory, entitlement mappings, subscription projection, payment webhooks (Stripe/Creem), invoices, one-time purchases | mixed |
 | `api-oauth` | OAuth login (GitHub/Google/WeChat), OAuth configuration management | mixed |
 | `api-ext` | Third-party API: permission checks, subscription queries, points balance and consumption, isolated by the API key's bound client app | API Key |
-| `api-points` | Points balance, transaction history, consumption, top-up | session or API Key |
+| `api-points` | Points balance, transaction history, consumption, top-up | Bearer token or API Key |
 
 `api` crate's `create_api_routes()` is the single entry point for route registration. It nests sub-crate routes under unified prefixes and attaches the `inject_identity` middleware. Each sub-crate defines its own `ApiDoc` (utoipa OpenApi spec), which get merged into one complete OpenAPI document in `build_openapi_spec()`.
 

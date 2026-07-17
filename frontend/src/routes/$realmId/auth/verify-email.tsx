@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { verifyEmailConfirm, verifyEmailTrigger } from '@/lib/api-generated'
+import { FIRST_PARTY_CLIENT_ID } from '@/lib/auth-utils'
 import { getErrorMessage } from '@/lib/error-utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -79,7 +80,7 @@ export function VerifyEmailPage() {
     try {
       await verifyEmailTrigger({
         path: { realmId },
-        body: { email, turnstileToken },
+        body: { clientId: FIRST_PARTY_CLIENT_ID, email, turnstileToken },
         throwOnError: true,
       })
 
@@ -162,7 +163,7 @@ export function VerifyEmailPage() {
 
             {canResend && !loadingTurnstile && turnstileStatus?.enabled && (
               <TurnstileWidget
-                siteKey={turnstileStatus.site_key || ''}
+                siteKey={turnstileStatus.siteKey || ''}
                 onTokenChange={setTurnstileToken}
                 onError={(error) => console.error('Turnstile error:', error)}
               />

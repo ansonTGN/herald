@@ -14,6 +14,17 @@ vi.mock('@/lib/api-generated/sdk.gen', async (importOriginal) => {
   }
 })
 
+// Mock the reauth flow (delete_account): begin → verify → token. The index
+// re-exports the sdk functions, so mock them here.
+vi.mock('@/lib/api-generated', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@/lib/api-generated')>()
+  return {
+    ...original,
+    handleBeginReauth: vi.fn(),
+    handleVerifyReauth: vi.fn(),
+  }
+})
+
 vi.mock('@/stores/auth-store', () => {
   const reset = vi.fn()
   return {
@@ -25,11 +36,14 @@ vi.mock('@/stores/auth-store', () => {
 })
 
 import { deleteAccount } from '@/lib/api-generated/sdk.gen'
+import { handleBeginReauth, handleVerifyReauth } from '@/lib/api-generated'
 import { clearAuthStorage, useAuthStore } from '@/stores/auth-store'
 
 const mockDeleteAccount = vi.mocked(deleteAccount)
 const mockClearAuthStorage = vi.mocked(clearAuthStorage)
 const mockReset = vi.mocked(useAuthStore.getState().reset)
+const mockBeginReauth = vi.mocked(handleBeginReauth)
+const mockVerifyReauth = vi.mocked(handleVerifyReauth)
 
 function createTestQueryClient() {
   return new QueryClient({
@@ -62,6 +76,16 @@ describe('DeleteAccountDialog', () => {
     Object.defineProperty(window, 'location', {
       writable: true,
       value: { href: originalHref },
+    })
+
+    // Default reauth flow mocks (delete_account): begin → verify → token.
+    mockBeginReauth.mockResolvedValue({
+      data: { availableFactors: ['password'] },
+      error: undefined,
+    })
+    mockVerifyReauth.mockResolvedValue({
+      data: { reauthToken: 'reauth-token-123', expiresIn: 120 },
+      error: undefined,
     })
   })
 
@@ -118,7 +142,7 @@ describe('DeleteAccountDialog', () => {
 
     await waitFor(() => {
       expect(mockDeleteAccount).toHaveBeenCalledWith({
-        body: { password: 'correct-password' },
+        body: { reauth_token: 'reauth-token-123' },
       })
     })
 

@@ -6,6 +6,13 @@ import { RouterProvider } from '@tanstack/react-router'
 import ReactDOM from 'react-dom/client'
 import { LocaleProvider } from '@/components/shared/locale-provider'
 
+// Initialize the Bearer API client (request + 401-refresh interceptors) BEFORE
+// any module that issues generated-client calls (route loaders, QueryClient).
+// This wires `Authorization: Bearer` from the in-memory access-token holder
+// onto every SDK request and silently refreshes once on a 401 (design §4.4).
+import { initBearerClient } from '@/lib/api-client'
+initBearerClient()
+
 // Import route tree
 import { routeTree } from './routeTree.gen'
 

@@ -351,30 +351,7 @@ impl EmailService {
         action_url: &str,
         locale: &str,
     ) -> anyhow::Result<RenderedEmail> {
-        let realm_name = sqlx::query_scalar::<_, String>("SELECT name FROM realm WHERE id = $1")
-            .bind(realm_id)
-            .fetch_optional(pool)
-            .await?
-            .unwrap_or_else(|| "Herald".to_string());
-        let config = sqlx::query_scalar::<_, String>(
-            "SELECT config_value FROM realm_config
-             WHERE realm_id = $1 AND config_type = 'white_label'
-               AND config_key = 'settings' AND enabled = true",
-        )
-        .bind(realm_id)
-        .fetch_optional(pool)
-        .await?;
-        let brand_name = config
-            .as_deref()
-            .and_then(|value| serde_json::from_str::<serde_json::Value>(value).ok())
-            .and_then(|value| {
-                value
-                    .get("brandName")
-                    .and_then(|name| name.as_str())
-                    .map(str::to_owned)
-            })
-            .filter(|name| !name.trim().is_empty())
-            .unwrap_or(realm_name);
+        let brand_name = resolve_realm_brand(pool, realm_id).await?;
 
         let localized_type = format!("{}:{locale}", kind.as_str());
         let stored = sqlx::query_scalar::<_, String>(
@@ -607,6 +584,38 @@ fn validate_template_variables(template: &str) -> anyhow::Result<()> {
         remainder = &after[end + 2..];
     }
     Ok(())
+}
+
+/// Resolve the display brand name for a realm: the white-label `brandName`
+/// when set and non-empty, else the realm's `name`, else `"Herald"`. Shared by
+/// the templated email renderer and the email-OTP sender (see `api-auth`) so
+/// the two share one source of truth for the brand.
+pub async fn resolve_realm_brand(pool: &PgPool, realm_id: &str) -> anyhow::Result<String> {
+    let realm_name = sqlx::query_scalar::<_, String>("SELECT name FROM realm WHERE id = $1")
+        .bind(realm_id)
+        .fetch_optional(pool)
+        .await?
+        .unwrap_or_else(|| "Herald".to_string());
+    let config = sqlx::query_scalar::<_, String>(
+        "SELECT config_value FROM realm_config
+         WHERE realm_id = $1 AND config_type = 'white_label'
+           AND config_key = 'settings' AND enabled = true",
+    )
+    .bind(realm_id)
+    .fetch_optional(pool)
+    .await?;
+    let brand_name = config
+        .as_deref()
+        .and_then(|value| serde_json::from_str::<serde_json::Value>(value).ok())
+        .and_then(|value| {
+            value
+                .get("brandName")
+                .and_then(|name| name.as_str())
+                .map(str::to_owned)
+        })
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or(realm_name);
+    Ok(brand_name)
 }
 
 fn render_template(template: &str, brand_name: &str, action_url: &str) -> String {

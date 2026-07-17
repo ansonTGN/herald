@@ -2,6 +2,7 @@ import { useAppForm, AppForm } from '@/components/ui/tanstack-form'
 import { z } from 'zod'
 import { register } from '@/lib/api-generated'
 import type { RegisterRequest } from '@/lib/api-generated'
+import { FIRST_PARTY_CLIENT_ID } from '@/lib/auth-utils'
 import { useFormMutation } from '@/hooks/use-form-mutation'
 import { PasswordStrengthMeter } from './password-strength-meter'
 import { TurnstileWidget } from './turnstile-widget'
@@ -68,6 +69,7 @@ export function RegisterForm({ realmId, onSuccess }: RegisterFormProps) {
     mutationFn: async (data: RegisterFormData) => {
       // Transform form data to API request format
       const apiData: RegisterRequest = {
+        clientId: FIRST_PARTY_CLIENT_ID,
         email: data.email,
         password: data.password,
         username: data.nickname || null,
@@ -168,7 +170,7 @@ export function RegisterForm({ realmId, onSuccess }: RegisterFormProps) {
               <div className="space-y-2">
                 <Label>Complete security verification</Label>
                 <TurnstileWidget
-                  siteKey={turnstileStatus.site_key || ''}
+                  siteKey={turnstileStatus.siteKey || ''}
                   onTokenChange={(token) => field.handleChange(token || '')}
                   onError={(error) => {
                     // TanStack Form FieldApi doesn't have setError, so we don't set error

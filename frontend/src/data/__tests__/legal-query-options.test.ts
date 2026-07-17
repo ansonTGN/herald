@@ -27,6 +27,8 @@ vi.mock('@/lib/api-generated/sdk.gen', async (importOriginal) => {
     getConsentStatus: vi.fn(),
     recordConsent: vi.fn(),
     deleteAccount: vi.fn(),
+    handleBeginReauth: vi.fn(),
+    handleVerifyReauth: vi.fn(),
     adminListAgreements: vi.fn(),
     adminGetVersion: vi.fn(),
     adminPublishCustom: vi.fn(),
@@ -44,6 +46,8 @@ import {
   getConsentStatus,
   recordConsent,
   deleteAccount,
+  handleBeginReauth,
+  handleVerifyReauth,
   adminListAgreements,
   adminGetVersion,
   adminPublishCustom,
@@ -321,12 +325,25 @@ describe('deleteAccountMutation', () => {
       data: undefined,
       error: undefined,
     })
+    // Reauth flow (delete_account): begin → verify → single-use ticket.
+    vi.mocked(handleBeginReauth).mockResolvedValue({
+      data: { availableFactors: ['password'] },
+      error: undefined,
+    })
+    vi.mocked(handleVerifyReauth).mockResolvedValue({
+      data: { reauthToken: 'reauth-token-123', expiresIn: 120 },
+      error: undefined,
+    })
   })
 
-  it('calls deleteAccount with password body', async () => {
-    await deleteAccountMutation({ password: 'secret' })
+  it('obtains a reauth ticket then calls deleteAccount with reauth_token body', async () => {
+    await deleteAccountMutation('secret')
 
-    expect(deleteAccount).toHaveBeenCalledWith({ body: { password: 'secret' } })
+    expect(handleBeginReauth).toHaveBeenCalledWith({ body: { targetOperation: 'delete_account' } })
+    expect(handleVerifyReauth).toHaveBeenCalledWith({
+      body: { targetOperation: 'delete_account', factor: 'password', password: 'secret' },
+    })
+    expect(deleteAccount).toHaveBeenCalledWith({ body: { reauth_token: 'reauth-token-123' } })
   })
 
   it('throws when API returns error', async () => {
@@ -335,7 +352,7 @@ describe('deleteAccountMutation', () => {
       error: { message: 'Unauthorized', status: 401 },
     })
 
-    await expect(deleteAccountMutation({ password: 'wrong' })).rejects.toEqual({
+    await expect(deleteAccountMutation('wrong')).rejects.toEqual({
       message: 'Unauthorized',
       status: 401,
     })

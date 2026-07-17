@@ -13,7 +13,7 @@ use uuid::Uuid;
 use validator::Validate;
 
 use herald_api_base::application::http::auth::util::{
-    ClientIp, rate_limit_hit, verify_turnstile_for_realm,
+    ClientIp, rate_limit_hit, user_agent_from_headers, verify_turnstile_for_client_app,
 };
 use herald_api_base::application::http::server::api_entities::ApiError;
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
@@ -37,6 +37,7 @@ use herald_core::infrastructure::user_passkey::{
 
 use crate::browser_token::BrowserTokenResponse;
 use crate::consent_gate::AuthConsentAgreement;
+use crate::mailflow;
 use crate::passkey_rp::resolve_passkey_rp;
 
 const PASSKEY_VERIFY_FAILED: &str = "Passkey 验证失败";
@@ -168,15 +169,17 @@ pub async fn handle_passkey_options(
     ClientIp(client_ip): ClientIp,
     Valid(Json(req)): Valid<Json<PasskeyOptionsRequest>>,
 ) -> Result<impl IntoResponse, ApiError> {
-    verify_turnstile_for_realm(
+    // Resolve the Client App (validates realm/enabled) before Turnstile so the
+    // human-verification check can read its Turnstile config (D-PROTECT-01).
+    let client_app = mailflow::require_enabled_client(&state, &realm_id, &req.client_id).await?;
+    verify_turnstile_for_client_app(
         &state,
-        &realm_id,
+        &client_app,
         req.turnstile_token.as_deref(),
-        Some(&client_ip),
+        &client_ip,
     )
     .await?;
     rate_limit_passkey_start(&state, &client_ip, &req.client_id).await?;
-    ensure_client_exists(&state, &realm_id, &req.client_id).await?;
 
     let login_state = PasskeyLoginState {
         realm_id: realm_id.clone(),
@@ -222,8 +225,10 @@ pub async fn handle_passkey_verify(
     Path(realm_id): Path<String>,
     State(state): State<AppState>,
     ClientIp(client_ip): ClientIp,
+    headers: HeaderMap,
     Valid(Json(req)): Valid<Json<PasskeyVerifyRequest>>,
 ) -> Result<impl IntoResponse, ApiError> {
+    let user_agent = user_agent_from_headers(&headers);
     rate_limit_hit(
         &state,
         format!("rl:passkey:verify:ip:{client_ip}"),
@@ -282,6 +287,7 @@ pub async fn handle_passkey_verify(
         None,
         req.agreements.as_deref(),
         client_ip,
+        user_agent,
     )
     .await
 }
@@ -363,8 +369,10 @@ pub async fn handle_passkey_2fa_verify(
     Path(realm_id): Path<String>,
     State(state): State<AppState>,
     ClientIp(client_ip): ClientIp,
+    headers: HeaderMap,
     Valid(Json(req)): Valid<Json<Passkey2faVerifyRequest>>,
 ) -> Result<impl IntoResponse, ApiError> {
+    let user_agent = user_agent_from_headers(&headers);
     let temp_session = load_temp_session(&state, &req.temp_token, PASSKEY_VERIFY_FAILED).await?;
     if temp_session.realm_id != realm_id {
         return Err(ApiError::unauthorized(PASSKEY_VERIFY_FAILED));
@@ -402,6 +410,7 @@ pub async fn handle_passkey_2fa_verify(
         Some((temp_session.client_app_id, temp_session.flow.as_str())),
         req.agreements.as_deref(),
         client_ip,
+        user_agent,
     )
     .await
 }
@@ -426,6 +435,7 @@ async fn finish_login(
     temp_binding: Option<(Uuid, &str)>,
     agreements: Option<&[AuthConsentAgreement]>,
     client_ip: String,
+    user_agent: Option<String>,
 ) -> Result<Response, ApiError> {
     let client_app = state
         .service
@@ -562,8 +572,8 @@ async fn finish_login(
             target_name: Some(user.email.clone()),
             result: AuditResult::Success,
             details: Some(serde_json::json!({"method": "passkey"})),
-            ip_address: Some(client_ip),
-            user_agent: None,
+            ip_address: Some(client_ip.clone()),
+            user_agent: user_agent.clone(),
             trace_id: None,
         })
         .await
@@ -572,23 +582,9 @@ async fn finish_login(
     }
 
     let tokens = RedisBrowserTokenService::new(state.redis_manager.clone())
-        .create_token_family(&user, &client_app)
+        .create_token_family(&user, &client_app, user_agent, Some(client_ip.clone()))
         .await?;
     Ok(Json(BrowserTokenResponse::from(tokens)).into_response())
-}
-
-async fn ensure_client_exists(
-    state: &AppState,
-    realm_id: &str,
-    client_id: &str,
-) -> Result<(), ApiError> {
-    state
-        .service
-        .client_service()
-        .get_client_app_by_client_id(realm_id, client_id)
-        .await
-        .map(|_| ())
-        .map_err(|_| ApiError::bad_request("Client app not found"))
 }
 
 async fn load_temp_session(

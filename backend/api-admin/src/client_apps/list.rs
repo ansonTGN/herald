@@ -60,26 +60,7 @@ pub async fn list_client_apps(
         })?;
 
     // Convert domain models to API response models
-    let data: Vec<ClientAppItem> = client_apps
-        .into_iter()
-        .map(|app| ClientAppItem {
-            id: app.id,
-            realm_id: app.realm_id,
-            client_id: app.client_id,
-            name: app.name,
-            description: app.description,
-            redirect_uris: app.redirect_uris,
-            allowed_origins: app.allowed_origins,
-            email_verify_return_url: app.email_verify_return_url,
-            password_reset_return_url: app.password_reset_return_url,
-            browser_refresh_absolute_ttl_seconds: app.browser_refresh_absolute_ttl_seconds,
-            is_first_party: app.is_first_party,
-            enabled: app.enabled,
-            icon_url: app.icon_url,
-            client_secret: None,
-            device_code_grant_enabled: app.device_code_grant_enabled,
-        })
-        .collect();
+    let data: Vec<ClientAppItem> = client_apps.into_iter().map(ClientAppItem::from).collect();
 
     Ok(ApiResult::ok(PageResponse {
         items: data,

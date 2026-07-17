@@ -17,11 +17,11 @@ Passkey 是留在用户设备上的公钥凭证：私钥不离开设备，断言
 
 一个 Passkey 凭证同时服务两种模式。这是有意的设计：注册了 Passkey 的用户不用想"这是登录凭证还是 2FA 凭证"——它两者都是。
 
-**第一因素（无密码）。** 登录页上，用户名输入框聚焦时浏览器会自动填充该浏览器上已注册的可发现凭证（conditional UI），或者用户点 *Use Passkey*。服务器签发一次性断言 challenge，设备签名，成功后直接创建 Session——全程不输密码。
+**第一因素（无密码）。** 登录页上，用户名输入框聚焦时浏览器会自动填充该浏览器上已注册的可发现凭证（conditional UI），或者用户点 *Use Passkey*。服务器签发一次性断言 challenge，设备签名，成功后直接签发 Bearer token——全程不输密码。
 
-**第二因素。** 用户输入邮箱和密码。密码验证通过后，如果用户已注册 Passkey，Herald 在 TOTP 旁并列提供一个 Passkey 验证步骤。用户完成 ceremony，创建 Session。这个模式和现有 TOTP 第二因素流程平行。
+**第二因素。** 用户输入邮箱和密码。密码验证通过后，如果用户已注册 Passkey，Herald 在 TOTP 旁并列提供一个 Passkey 验证步骤。用户完成 ceremony，签发 Bearer token。这个模式和现有 TOTP 第二因素流程平行。
 
-两种模式成功后走的是同一条 Session 发放路径，和 TOTP 一致。
+两种模式成功后走的是同一条 token 发放路径，和 TOTP 一致。
 
 ## Realm 配置
 
@@ -83,7 +83,7 @@ flowchart LR
         RP[WebAuthn RP<br/>RP_ID + RP_ORIGIN 来自环境]
         CS[(Challenge 存储<br/>一次性，TTL 300s)]
         DB[(凭证元数据<br/>ID / 公钥 / 计数器 / transports)]
-        SESS[Session 发放]
+        SESS[token 发放]
     end
 
     UV -->|创建 / 获取凭证| RP

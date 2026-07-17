@@ -12,7 +12,7 @@ PRD 文件保留独立主题，便于评审和追踪；规划、排期和端到�
 | 用户生命周期与合规 | 用户从注册、资料维护到协议确认和注销 | [Users](core/users.md)、[合规适配](core/legal-consent-account-deletion.md) |
 | 登录体验与品牌 | 提供统一、可品牌化且可本地化的认证入口 | [OAuth](auth/oauth.md)、[微信 OAuth](auth/wechat-oauth.md)、[White-label](core/ui-custom.md)、[自定义域名](core/realm-custom-domain.md)、[i18n](core/i18n.md) |
 | 强认证 | 配置并完成多因素或无密码认证 | [TOTP](auth/totp.md)、[Passkey](auth/passkey.md)、[Device Code](auth/device-code.md) |
-| 授权与应用接入 | 管理 RBAC、Client App、API Key 与 SDK 接入 | [权限管理](auth/permissions.md)、[Client App](integration/client-app.md)、[API Key 角色](integration/api-key-roles.md)、[SDK](integration/sdk.md) |
+| 授权与应用接入 | 管理 RBAC、Client App、API Key 与 SDK 接入 | [权限管理](auth/permissions.md)、[Client App](integration/client-app.md)、[API Key 角色](integration/api-key-roles.md)、[SDK](integration/sdk.md)、[自建用户 UI](integration/custom-user-ui.md) |
 | 商品、支付与权益履约 | 从商品同步、购买到订阅/权益生效和异常补偿 | [Subscription（含多价格、产品同步与 Webhook 补偿）](billing/subscription.md)、[Stripe 支付](billing/stripe-payment.md)、[Paywall](billing/support-paywall.md) |
 | 余额与财务凭证 | 管理积分账户，以及支付对应的发票和贷记凭证 | [积分](billing/points.md)、[积分账户](billing/credit-bucket.md)、[发票（含支付归属与 Credit Note）](billing/invoice.md) |
 
@@ -81,6 +81,7 @@ docs/
 | [client-app.md](integration/client-app.md) | Client App 管理 | Realm Admin, Third-Party App |
 | [sdk.md](integration/sdk.md) | SDK 资源管理 | Third-Party App |
 | [api-key-roles.md](integration/api-key-roles.md) | API Key 角色绑定 | Realm Admin |
+| [custom-user-ui.md](integration/custom-user-ui.md) | 自建用户 UI（跨域 Bearer token + 双轨凭证类，集成方自建全套终端用户 UI） | Third-Party App, Regular User |
 
 ## 相关文档
 

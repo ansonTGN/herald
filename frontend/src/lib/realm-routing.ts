@@ -52,9 +52,7 @@ export async function resolveRealmContext(pathname: string): Promise<ResolvedRea
     ? `/api/public-config/custom-domain/resolve?host=${encodeURIComponent(host)}`
     : '/api/public-config/custom-domain/resolve'
 
-  const response = await fetch(resolveUrl, {
-    credentials: 'include',
-  })
+  const response = await fetch(resolveUrl)
   if (!response.ok) {
     // Main-domain session routes have no realm prefix. Their realm is loaded
     // from /api/auth/status by the root loader, not from custom-domain DNS.

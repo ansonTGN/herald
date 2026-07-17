@@ -188,7 +188,7 @@ async fn test_update_realm(ctx: &mut RealmTestContext) {
         .await
         .unwrap();
     let realm_admin_token = RedisBrowserTokenService::new(ctx._app_state.redis_manager.clone())
-        .create_first_party_token_family(&realm_admin_user, &first_party_app)
+        .create_first_party_token_family(&realm_admin_user, &first_party_app, None, None)
         .await
         .unwrap()
         .access_token;

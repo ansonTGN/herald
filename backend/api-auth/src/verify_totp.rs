@@ -1,6 +1,7 @@
 use axum::{
     Json,
     extract::{Path, State},
+    http::HeaderMap,
     response::IntoResponse,
 };
 use axum_valid::Valid;
@@ -10,7 +11,9 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 use validator::Validate;
 
-use herald_api_base::application::http::auth::util::{ClientIp, epoch_seconds, rate_limit_hit};
+use herald_api_base::application::http::auth::util::{
+    ClientIp, epoch_seconds, rate_limit_hit, user_agent_from_headers,
+};
 use herald_api_base::application::http::server::api_entities::ApiError;
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
 use herald_api_base::application::http::state::AppState;
@@ -140,8 +143,11 @@ pub async fn handle_verify_totp(
     Path(realm_id): Path<String>,
     State(state): State<AppState>,
     ClientIp(client_ip): ClientIp,
+    headers: HeaderMap,
     Valid(Json(req)): Valid<Json<VerifyTotpRequest>>,
 ) -> Result<impl IntoResponse, ApiError> {
+    let user_agent = user_agent_from_headers(&headers);
+
     // 1. Validate and retrieve temp session from Redis
     let temp_key = format!("totp:temp:{}", req.temp_token);
     let mut conn = state
@@ -480,7 +486,7 @@ pub async fn handle_verify_totp(
     }
 
     let tokens = RedisBrowserTokenService::new(state.redis_manager.clone())
-        .create_token_family(&user, &client_app)
+        .create_token_family(&user, &client_app, user_agent, Some(client_ip.clone()))
         .await?;
     Ok(Json(BrowserTokenResponse::from(tokens)).into_response())
 }

@@ -22,6 +22,11 @@ pub struct CreateClientAppRequest {
     pub enabled: Option<bool>,
     pub icon_url: Option<String>,
     pub device_code_grant_enabled: Option<bool>,
+
+    // Turnstile (D-PROTECT-01): optional on creation, defaults to disabled.
+    pub turnstile_enabled: Option<bool>,
+    pub turnstile_site_key: Option<String>,
+    pub turnstile_secret_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, ToSchema, Validate)]
@@ -40,6 +45,11 @@ pub struct UpdateClientAppRequest {
     pub icon_url: Option<String>,
     pub device_code_grant_enabled: Option<bool>,
     pub regenerate_secret: Option<bool>,
+
+    // Turnstile (D-PROTECT-01): all three optional on update.
+    pub turnstile_enabled: Option<bool>,
+    pub turnstile_site_key: Option<String>,
+    pub turnstile_secret_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
@@ -61,6 +71,11 @@ pub struct ClientAppResponse {
     pub icon_url: Option<String>,
     pub client_secret: Option<String>,
     pub device_code_grant_enabled: bool,
+
+    // Turnstile (D-PROTECT-01). `turnstile_secret_key` is intentionally NOT
+    // echoed in responses.
+    pub turnstile_enabled: bool,
+    pub turnstile_site_key: Option<String>,
 
     pub created_at: String,
     pub updated_at: String,
@@ -84,6 +99,8 @@ impl From<crate::client::entities::ClientApp> for ClientAppResponse {
             icon_url: app.icon_url,
             client_secret: app.client_secret,
             device_code_grant_enabled: app.device_code_grant_enabled,
+            turnstile_enabled: app.turnstile_enabled,
+            turnstile_site_key: app.turnstile_site_key,
             created_at: app.created_at.to_rfc3339(),
             updated_at: app.updated_at.to_rfc3339(),
         }

@@ -298,7 +298,7 @@ pub async fn build_app_state_with_migrations(
         user_repository.clone(),
         user_totp_repository,
         billing_repository.clone(),
-        browser_token_service,
+        browser_token_service.clone(),
         audit_event_repository.clone(),
     ));
     info!("Self-delete service initialized");
@@ -378,6 +378,7 @@ pub async fn build_app_state_with_migrations(
         user_role_repository.clone(),
         permission_checker.clone(),
         audit_event_repository.clone(),
+        browser_token_service.clone(),
     ));
     let role_assignment_service = Arc::new(RoleAssignmentServiceImpl::new(
         user_role_repository.clone(),

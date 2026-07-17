@@ -1,5 +1,5 @@
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
 use rand::{RngCore, rngs::OsRng};
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
@@ -11,8 +11,8 @@ use crate::redis::RedisConnectionManager;
 use herald_domain::authentication::{
     CredentialClass, CredentialScope,
     entities::{
-        BrowserAccessTokenData, BrowserRefreshTokenData, BrowserTokenSet, ReauthResult,
-        RefreshError, TargetOperation,
+        BrowserAccessTokenData, BrowserRefreshTokenData, BrowserTokenSet, FamilyLifecycle,
+        ReauthResult, RefreshError, TargetOperation, UserSessionSummary,
     },
     ports::BrowserTokenService,
 };
@@ -46,6 +46,7 @@ local function revoke_family_data(family_key, client_key, user_key)
   redis.call('SET', family_key, cjson.encode(family), 'KEEPTTL')
   redis.call('SREM', client_key, family.family_id)
   redis.call('SREM', user_key, family.family_id)
+  redis.call('DEL', 'bt:meta:' .. family.family_id)
 end
 
 local function browser_token_create_family(keys, args)
@@ -238,6 +239,18 @@ struct BrowserTokenFamilyData {
     revoked: bool,
 }
 
+// Session metadata index payload, stored at `bt:meta:{familyId}`. Written at
+// login independently of the family record so that session listing (admin) and
+// token verification (hot path) stay decoupled (design kickoff-user §4.1/§5.1).
+// Carries only the listing-only display fields the family record does not.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct BrowserTokenFamilyMeta {
+    client_app_name: Option<String>,
+    user_agent: Option<String>,
+    client_ip: Option<String>,
+    created_at: i64,
+}
+
 pub struct RedisBrowserTokenService {
     manager: RedisConnectionManager,
 }
@@ -260,6 +273,10 @@ impl RedisBrowserTokenService {
 
     fn family_key(family_id: Uuid) -> String {
         format!("bt:fam:{family_id}")
+    }
+
+    fn family_meta_key(family_id: Uuid) -> String {
+        format!("bt:meta:{family_id}")
     }
 
     fn client_families_key(client_app_id: Uuid) -> String {
@@ -339,6 +356,9 @@ impl RedisBrowserTokenService {
         credential_class: CredentialClass,
         allowed_scopes: HashSet<CredentialScope>,
         refresh_absolute_ttl_seconds: u64,
+        client_app_name: Option<String>,
+        user_agent: Option<String>,
+        client_ip: Option<String>,
     ) -> Result<BrowserTokenSet, CoreError> {
         let now = Utc::now();
         let family_id = Uuid::now_v7();
@@ -380,6 +400,12 @@ impl RedisBrowserTokenService {
             refresh_digests: vec![refresh_digest.clone()],
             revoked: false,
         };
+        let meta = BrowserTokenFamilyMeta {
+            client_app_name,
+            user_agent,
+            client_ip,
+            created_at: now.timestamp(),
+        };
 
         let mut connection = self.get_connection().await?;
         let result: String = redis::cmd("FCALL")
@@ -402,6 +428,29 @@ impl RedisBrowserTokenService {
             return Err(CoreError::InternalServerError(
                 "Browser token family creation failed".to_string(),
             ));
+        }
+
+        // Session metadata index (design kickoff-user §5.1). Stored
+        // independently of the family record so the token-verification hot path
+        // stays untouched. Best-effort: the family record is already committed
+        // (FCALL returned OK) and is authoritative for auth; meta is auxiliary
+        // for session listing. A failure here must not break login (which would
+        // orphan the just-created family on caller retry) — listing tolerates
+        // missing meta (legacy families → None fields).
+        if let Err(error) = connection
+            .set_ex::<_, _, ()>(
+                Self::family_meta_key(family_id),
+                serde_json::to_string(&meta)?,
+                refresh_absolute_ttl_seconds,
+            )
+            .await
+        {
+            tracing::warn!(
+                %error,
+                family_id = %family_id,
+                "Failed to write browser token family session metadata; \
+                 login proceeds with missing meta"
+            );
         }
 
         Ok(BrowserTokenSet {
@@ -558,6 +607,8 @@ impl BrowserTokenService for RedisBrowserTokenService {
         &self,
         user: &User,
         client_app: &ClientApp,
+        user_agent: Option<String>,
+        client_ip: Option<String>,
     ) -> Result<BrowserTokenSet, CoreError> {
         self.create_family(
             user.realm_id.clone(),
@@ -566,6 +617,9 @@ impl BrowserTokenService for RedisBrowserTokenService {
             CredentialClass::CustomUserUi,
             Self::custom_user_ui_scopes(),
             client_app.browser_refresh_absolute_ttl_seconds as u64,
+            Some(client_app.name.clone()),
+            user_agent,
+            client_ip,
         )
         .await
     }
@@ -574,6 +628,8 @@ impl BrowserTokenService for RedisBrowserTokenService {
         &self,
         user: &User,
         client_app: &ClientApp,
+        user_agent: Option<String>,
+        client_ip: Option<String>,
     ) -> Result<BrowserTokenSet, CoreError> {
         if !client_app.is_first_party {
             return Err(CoreError::Forbidden(
@@ -587,6 +643,9 @@ impl BrowserTokenService for RedisBrowserTokenService {
             CredentialClass::FirstParty,
             Self::first_party_scopes(),
             client_app.browser_refresh_absolute_ttl_seconds as u64,
+            Some(client_app.name.clone()),
+            user_agent,
+            client_ip,
         )
         .await
     }
@@ -640,6 +699,105 @@ impl BrowserTokenService for RedisBrowserTokenService {
             self.revoke_family(family_id).await?;
         }
         Ok(())
+    }
+
+    async fn list_user_sessions(
+        &self,
+        user_id: &str,
+    ) -> Result<Vec<UserSessionSummary>, CoreError> {
+        let mut connection = self.get_connection().await?;
+        let set_key = Self::user_families_key(user_id);
+        let family_ids: Vec<String> = connection.smembers(&set_key).await?;
+        let now_ts = Utc::now().timestamp();
+
+        let mut summaries = Vec::with_capacity(family_ids.len());
+        for family_id_str in family_ids {
+            let family_id = match Uuid::parse_str(&family_id_str) {
+                Ok(id) => id,
+                Err(error) => {
+                    tracing::warn!(
+                        %error,
+                        raw = %family_id_str,
+                        "Invalid stored token family id in user families set; skipping"
+                    );
+                    let _: usize = connection.srem(&set_key, &family_id_str).await?;
+                    continue;
+                }
+            };
+
+            let family_key = Self::family_key(family_id);
+            let raw: Option<String> = connection.get(&family_key).await?;
+            let Some(raw) = raw else {
+                // Stale entry (family key expired/deleted). Prune and skip.
+                let _: usize = connection.srem(&set_key, family_id_str.as_str()).await?;
+                continue;
+            };
+            let family: BrowserTokenFamilyData = serde_json::from_str(&raw)?;
+            if family.revoked || family.absolute_expires_at_ts <= now_ts {
+                // Filter revoked / expired; opportunistically clean stale set entry.
+                let _: usize = connection.srem(&set_key, family_id_str.as_str()).await?;
+                continue;
+            }
+
+            // meta may be absent for legacy families (pre-index) or if the
+            // best-effort write at login failed. Surface None for those fields.
+            let meta_raw: Option<String> = connection.get(Self::family_meta_key(family_id)).await?;
+            let meta: Option<BrowserTokenFamilyMeta> = match meta_raw {
+                Some(json) => serde_json::from_str(&json).map_err(|error| {
+                    CoreError::InternalServerError(format!(
+                        "Invalid session metadata for family {family_id}: {error}"
+                    ))
+                })?,
+                None => None,
+            };
+
+            let absolute_expires_at =
+                DateTime::<Utc>::from_timestamp(family.absolute_expires_at_ts, 0).ok_or_else(
+                    || {
+                        CoreError::InternalServerError(format!(
+                            "Invalid absolute_expires_at_ts for family {family_id}"
+                        ))
+                    },
+                )?;
+
+            summaries.push(UserSessionSummary {
+                family_id,
+                realm_id: family.realm_id,
+                client_app_id: family.client_app_id,
+                client_app_name: meta.as_ref().and_then(|m| m.client_app_name.clone()),
+                credential_class: family.credential_class,
+                user_agent: meta.as_ref().and_then(|m| m.user_agent.clone()),
+                client_ip: meta.as_ref().and_then(|m| m.client_ip.clone()),
+                created_at: meta
+                    .as_ref()
+                    .and_then(|m| DateTime::<Utc>::from_timestamp(m.created_at, 0)),
+                absolute_expires_at,
+            });
+        }
+        Ok(summaries)
+    }
+
+    /// Read a single family's ownership + lifecycle status directly from
+    /// `bt:fam:{familyId}`, without the active-only filtering applied by
+    /// `list_user_sessions`. Returns `Ok(None)` when the family record is
+    /// absent (caller returns 404). `expired` is computed at read time.
+    async fn get_family_lifecycle(
+        &self,
+        family_id: Uuid,
+    ) -> Result<Option<FamilyLifecycle>, CoreError> {
+        let mut connection = self.get_connection().await?;
+        let raw: Option<String> = connection.get(Self::family_key(family_id)).await?;
+        let Some(raw) = raw else {
+            return Ok(None);
+        };
+        let family: BrowserTokenFamilyData = serde_json::from_str(&raw)?;
+        let now_ts = Utc::now().timestamp();
+        Ok(Some(FamilyLifecycle {
+            user_id: family.user_id,
+            realm_id: family.realm_id,
+            revoked: family.revoked,
+            expired: family.absolute_expires_at_ts <= now_ts,
+        }))
     }
 }
 
@@ -810,6 +968,9 @@ mod browser_token_tests {
                 CredentialClass::CustomUserUi,
                 RedisBrowserTokenService::custom_user_ui_scopes(),
                 absolute_ttl_seconds,
+                Some("Test Client App".to_string()),
+                Some("test-user-agent/1.0".to_string()),
+                Some("203.0.113.7".to_string()),
             )
             .await
             .expect("test token family should be created")
@@ -854,6 +1015,9 @@ mod browser_token_tests {
                 CredentialClass::FirstParty,
                 RedisBrowserTokenService::first_party_scopes(),
                 60,
+                Some("First-Party App".to_string()),
+                Some("test-user-agent/1.0".to_string()),
+                Some("203.0.113.7".to_string()),
             )
             .await
             .expect("first-party token family should be created");
@@ -960,6 +1124,262 @@ mod browser_token_tests {
                 .refresh(&initial.refresh_token, client_app_id)
                 .await
                 .is_ok()
+        );
+    }
+
+    // Helper: create a family bound to a known user_id so list_user_sessions can
+    // enumerate it. Returns the access-token lookup result (to get family_id).
+    async fn create_test_family_for_user(
+        service: &RedisBrowserTokenService,
+        realm_id: String,
+        user_id: String,
+        client_app_id: Uuid,
+        ttl_seconds: u64,
+        user_agent: Option<String>,
+        client_ip: Option<String>,
+    ) -> Uuid {
+        let tokens = service
+            .create_family(
+                realm_id,
+                user_id,
+                client_app_id,
+                CredentialClass::CustomUserUi,
+                RedisBrowserTokenService::custom_user_ui_scopes(),
+                ttl_seconds,
+                Some("Test Client App".to_string()),
+                user_agent,
+                client_ip,
+            )
+            .await
+            .expect("test token family should be created");
+        service
+            .lookup_access_token(&tokens.access_token)
+            .await
+            .expect("access lookup should succeed")
+            .expect("access token should exist")
+            .family_id
+    }
+
+    #[tokio::test]
+    async fn list_user_sessions_returns_active_with_meta() {
+        let service = browser_token_service().await;
+        let client_app_id = Uuid::now_v7();
+        let user_id = format!("list-user-{}", Uuid::now_v7());
+        let family_id = create_test_family_for_user(
+            &service,
+            "list-realm".to_string(),
+            user_id.clone(),
+            client_app_id,
+            60,
+            Some("Mozilla/5.0 UA".to_string()),
+            Some("198.51.100.4".to_string()),
+        )
+        .await;
+
+        let sessions = service
+            .list_user_sessions(&user_id)
+            .await
+            .expect("list should succeed");
+        assert_eq!(sessions.len(), 1, "exactly one active session expected");
+        let session = &sessions[0];
+        assert_eq!(session.family_id, family_id);
+        assert_eq!(session.realm_id, "list-realm");
+        assert_eq!(session.client_app_id, client_app_id);
+        assert_eq!(
+            session.client_app_name.as_deref(),
+            Some("Test Client App"),
+            "meta-driven client_app_name must be populated"
+        );
+        assert_eq!(session.user_agent.as_deref(), Some("Mozilla/5.0 UA"));
+        assert_eq!(session.client_ip.as_deref(), Some("198.51.100.4"));
+        assert!(
+            session.created_at.is_some(),
+            "meta-driven created_at must be populated"
+        );
+    }
+
+    #[tokio::test]
+    async fn list_user_sessions_filters_revoked_and_expired() {
+        let service = browser_token_service().await;
+        let client_app_id = Uuid::now_v7();
+        let user_id = format!("list-filter-user-{}", Uuid::now_v7());
+
+        // Family A: stays active.
+        let _active = create_test_family_for_user(
+            &service,
+            "filter-realm".to_string(),
+            user_id.clone(),
+            client_app_id,
+            60,
+            None,
+            None,
+        )
+        .await;
+        // Family B: gets revoked.
+        let revoked_family = create_test_family_for_user(
+            &service,
+            "filter-realm".to_string(),
+            user_id.clone(),
+            client_app_id,
+            60,
+            None,
+            None,
+        )
+        .await;
+        // Family C: short TTL so it expires.
+        let _expired = create_test_family_for_user(
+            &service,
+            "filter-realm".to_string(),
+            user_id.clone(),
+            client_app_id,
+            1,
+            None,
+            None,
+        )
+        .await;
+
+        service
+            .revoke_family(revoked_family)
+            .await
+            .expect("revocation should succeed");
+
+        // Let the short-TTL family expire.
+        tokio::time::sleep(std::time::Duration::from_millis(1_100)).await;
+
+        let sessions = service
+            .list_user_sessions(&user_id)
+            .await
+            .expect("list should succeed");
+        assert_eq!(
+            sessions.len(),
+            1,
+            "only the non-revoked, non-expired family should remain"
+        );
+        assert_ne!(sessions[0].family_id, revoked_family);
+    }
+
+    #[tokio::test]
+    async fn list_user_sessions_handles_missing_meta_for_legacy_families() {
+        let service = browser_token_service().await;
+        let client_app_id = Uuid::now_v7();
+        let user_id = format!("legacy-user-{}", Uuid::now_v7());
+
+        // Create a real family, then delete its meta to simulate a legacy
+        // session created before the metadata index existed.
+        let family_id = create_test_family_for_user(
+            &service,
+            "legacy-realm".to_string(),
+            user_id.clone(),
+            client_app_id,
+            60,
+            Some("UA".to_string()),
+            None,
+        )
+        .await;
+        {
+            let mut conn = service
+                .manager
+                .get()
+                .await
+                .expect("connection should be available");
+            let _: () = conn
+                .del(RedisBrowserTokenService::family_meta_key(family_id))
+                .await
+                .expect("meta delete should succeed");
+        }
+
+        let sessions = service
+            .list_user_sessions(&user_id)
+            .await
+            .expect("list should succeed");
+        assert_eq!(sessions.len(), 1, "legacy family still listed");
+        let session = &sessions[0];
+        assert_eq!(session.family_id, family_id);
+        assert!(
+            session.client_app_name.is_none(),
+            "missing meta → client_app_name is None"
+        );
+        assert!(session.user_agent.is_none());
+        assert!(session.client_ip.is_none());
+        assert!(session.created_at.is_none());
+    }
+
+    #[tokio::test]
+    async fn revoke_family_also_clears_meta() {
+        let service = browser_token_service().await;
+        let client_app_id = Uuid::now_v7();
+        let user_id = format!("revoke-meta-user-{}", Uuid::now_v7());
+        let family_id = create_test_family_for_user(
+            &service,
+            "revoke-meta-realm".to_string(),
+            user_id,
+            client_app_id,
+            60,
+            Some("UA".to_string()),
+            None,
+        )
+        .await;
+
+        let meta_key = RedisBrowserTokenService::family_meta_key(family_id);
+        {
+            let mut conn = service
+                .manager
+                .get()
+                .await
+                .expect("connection should be available");
+            let exists: bool = conn.exists(&meta_key).await.expect("EXISTS should succeed");
+            assert!(exists, "meta must exist right after family creation");
+        }
+
+        service
+            .revoke_family(family_id)
+            .await
+            .expect("revocation should succeed");
+
+        let mut conn = service
+            .manager
+            .get()
+            .await
+            .expect("connection should be available");
+        let exists: bool = conn.exists(&meta_key).await.expect("EXISTS should succeed");
+        assert!(
+            !exists,
+            "revocation must DEL the session metadata hash as well"
+        );
+    }
+
+    #[tokio::test]
+    async fn create_family_writes_meta_with_ttl() {
+        let service = browser_token_service().await;
+        let client_app_id = Uuid::now_v7();
+        let ttl = 120u64;
+        let family_id = create_test_family_for_user(
+            &service,
+            "meta-ttl-realm".to_string(),
+            format!("meta-ttl-user-{}", Uuid::now_v7()),
+            client_app_id,
+            ttl,
+            Some("UA".to_string()),
+            None,
+        )
+        .await;
+
+        let mut conn = service
+            .manager
+            .get()
+            .await
+            .expect("connection should be available");
+        let meta_key = RedisBrowserTokenService::family_meta_key(family_id);
+        let exists: bool = conn.exists(&meta_key).await.expect("EXISTS should succeed");
+        assert!(exists, "meta must exist right after family creation");
+        let ttl_seconds: i64 = conn.ttl(&meta_key).await.expect("TTL should succeed");
+        assert!(
+            ttl_seconds > 0,
+            "meta TTL must be positive, got {ttl_seconds}"
+        );
+        assert!(
+            ttl_seconds <= ttl as i64,
+            "meta TTL must not exceed refresh_absolute_ttl_seconds ({ttl}), got {ttl_seconds}"
         );
     }
 }

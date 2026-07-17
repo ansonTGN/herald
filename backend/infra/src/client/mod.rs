@@ -42,6 +42,9 @@ impl PostgresClientRepository {
             icon_url: model.icon_url.clone(),
             client_secret: model.client_secret.clone(),
             device_code_grant_enabled: model.device_code_grant_enabled,
+            turnstile_enabled: model.turnstile_enabled,
+            turnstile_site_key: model.turnstile_site_key.clone(),
+            turnstile_secret_key: model.turnstile_secret_key.clone(),
             created_at: model.created_at.into(),
             updated_at: model.updated_at.into(),
         })
@@ -90,6 +93,9 @@ impl ClientRepository for PostgresClientRepository {
             device_code_grant_enabled: sea_orm::Set(
                 request.device_code_grant_enabled.unwrap_or(false),
             ),
+            turnstile_enabled: sea_orm::Set(request.turnstile_enabled.unwrap_or(false)),
+            turnstile_site_key: sea_orm::Set(request.turnstile_site_key),
+            turnstile_secret_key: sea_orm::Set(request.turnstile_secret_key),
             created_at: sea_orm::Set(now.into()),
             updated_at: sea_orm::Set(now.into()),
         };
@@ -217,6 +223,18 @@ impl ClientRepository for PostgresClientRepository {
 
         if let Some(v) = request.device_code_grant_enabled {
             active_model.device_code_grant_enabled = sea_orm::Set(v);
+        }
+
+        // Turnstile (D-PROTECT-01): update only the fields the caller supplied.
+        // An empty string clears the stored key (maps to NULL).
+        if let Some(v) = request.turnstile_enabled {
+            active_model.turnstile_enabled = sea_orm::Set(v);
+        }
+        if let Some(v) = request.turnstile_site_key {
+            active_model.turnstile_site_key = sea_orm::Set(Some(v).filter(|s| !s.is_empty()));
+        }
+        if let Some(v) = request.turnstile_secret_key {
+            active_model.turnstile_secret_key = sea_orm::Set(Some(v).filter(|s| !s.is_empty()));
         }
 
         // Regenerate client secret if requested

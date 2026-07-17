@@ -432,6 +432,8 @@ When 后端再次使用该授权码请求令牌
 Then Herald 返回错误，提示授权码无效
 ```
 
+> **与自建用户 UI 的关系**：本故事描述的是"后端用授权码换令牌、token 不经过用户浏览器"的经典 OAuth 后端换码场景。另存在一条**集成方自建 UI 的浏览器 token 路线**——集成方前端经 `/login` 直接获得进入用户浏览器的 `CustomUserUi` token，用于跨域自建个人中心；该路线不经过授权码换令牌链路。两条路线并存，互不取代。详见 [自建用户 UI PRD](/docs/prd/integration/custom-user-ui.md) 与 [自建用户 UI 用户故事](/docs/user-stories/integration/custom-user-ui.md)。
+
 ---
 
 ## 备注

@@ -4,6 +4,7 @@
 pub mod browser_token;
 pub mod change_email;
 pub mod consent_gate;
+pub mod email_otp;
 pub mod login;
 pub mod logout;
 mod mailflow;
@@ -42,6 +43,9 @@ pub use login::{LoginRequestPayload, LoginResponse};
 pub use browser_token::__path_refresh as __path_browser_token_refresh;
 pub use change_email::__path_confirm as __path_change_email_confirm;
 pub use change_email::__path_request as __path_change_email_request;
+pub use email_otp::__path_send as __path_email_otp_send;
+pub use email_otp::__path_status as __path_email_otp_status;
+pub use email_otp::__path_verify as __path_email_otp_verify;
 pub use login::__path_login;
 pub use logout::__path_logout;
 pub use reauth::{__path_handle_begin_reauth, __path_handle_verify_reauth};
@@ -74,6 +78,9 @@ pub use verify_totp::__path_handle_verify_totp as __path_verify_totp;
     paths(
         crate::login::login,
         crate::browser_token::refresh,
+        crate::email_otp::send,
+        crate::email_otp::verify,
+        crate::email_otp::status,
         crate::register::register,
         crate::reauth::handle_begin_reauth,
         crate::reauth::handle_verify_reauth,
@@ -107,6 +114,11 @@ pub use verify_totp::__path_handle_verify_totp as __path_verify_totp;
         crate::login::LoginResponse,
         crate::browser_token::BrowserTokenResponse,
         crate::browser_token::RefreshBrowserTokenRequest,
+        crate::email_otp::EmailOtpSendRequest,
+        crate::email_otp::EmailOtpSendResponse,
+        crate::email_otp::EmailOtpVerifyRequest,
+        crate::email_otp::EmailOtpStatusResponse,
+        crate::email_otp::EmailOtpConflictResponse,
         crate::register::RegisterRequest,
         crate::register::RegisterResponse,
         crate::reauth::ReauthBeginRequest,
@@ -115,6 +127,7 @@ pub use verify_totp::__path_handle_verify_totp as __path_verify_totp;
         crate::reauth::PasskeyAssertion,
         crate::reauth::ReauthTicket,
         crate::status::StatusResponse,
+        crate::turnstile_status::TurnstileStatusRequest,
         crate::turnstile_status::TurnstileStatusResponse,
         crate::verify_email::VerifyEmailTriggerRequest,
         crate::verify_email::VerifyEmailConfirmResponse,
@@ -159,6 +172,9 @@ pub fn auth_router() -> Router<AppState> {
     Router::new()
         .route("/register", post(register::register))
         .route("/login", post(login::login))
+        .route("/login/email-otp/send", post(email_otp::send))
+        .route("/login/email-otp/verify", post(email_otp::verify))
+        .route("/email-otp/status", get(email_otp::status))
         .route("/login/verify-totp", post(verify_totp::handle_verify_totp))
         .route(
             "/login/passkey/options",
@@ -178,7 +194,7 @@ pub fn auth_router() -> Router<AppState> {
         )
         .route(
             "/turnstile/status",
-            post(turnstile_status::get_turnstile_status),
+            get(turnstile_status::get_turnstile_status),
         )
         .route(
             "/registration/status",

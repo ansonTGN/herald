@@ -26,6 +26,13 @@ pub struct ClientApp {
     pub client_secret: Option<String>,
     pub device_code_grant_enabled: bool,
 
+    // Turnstile (Cloudflare human-verification), delegated to the Client App
+    // (D-PROTECT-01). When `turnstile_enabled` is false the other two fields
+    // are ignored.
+    pub turnstile_enabled: bool,
+    pub turnstile_site_key: Option<String>,
+    pub turnstile_secret_key: Option<String>,
+
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -49,32 +56,4 @@ impl ClientApp {
     pub fn id_as_string(&self) -> String {
         self.id.to_string()
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct CreateClientAppConfig {
-    pub realm_id: String,
-    pub client_id: String,
-    pub name: String,
-    pub description: Option<String>,
-
-    // New fields for Client App settings
-    // redirect_uris is optional during creation (can be added later)
-    pub redirect_uris: Option<Vec<String>>,
-    pub enabled: Option<bool>,
-    pub icon_url: Option<String>,
-    pub device_code_grant_enabled: Option<bool>,
-}
-
-#[derive(Debug, Clone)]
-pub struct UpdateClientAppConfig {
-    pub name: Option<String>,
-    pub description: Option<String>,
-
-    // New fields for Client App settings
-    pub redirect_uris: Option<Vec<String>>,
-    pub enabled: Option<bool>,
-    pub icon_url: Option<String>,
-    pub device_code_grant_enabled: Option<bool>,
-    pub regenerate_secret: bool,
 }

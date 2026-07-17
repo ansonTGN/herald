@@ -8,13 +8,11 @@ use sqlx::PgPool;
 use uuid::Uuid;
 use validator::Validate;
 
-use herald_api_auth::reauth::consume_reauth;
 use herald_api_base::application::http::common::auth_utils::{
     require_authenticated_user_in_realm_with_token, require_token_scope,
 };
 use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
 use herald_api_base::application::http::state::AppState;
-use herald_core::domain::authentication::TargetOperation;
 use herald_core::domain::authentication::{CredentialScope, Identity, TokenCredentialContext};
 use herald_core::domain::billing::credit_note::{
     CreditNoteRepository, CreditNoteStatus, NewCreditNote,
@@ -1101,16 +1099,6 @@ pub async fn apply_invoice(
         &realm_id,
         "apply invoices",
     )?;
-
-    // Require a fresh re-authentication ticket for this financial write.
-    consume_reauth(
-        &state,
-        &identity,
-        &context,
-        &request.reauth_token,
-        TargetOperation::ApplyInvoice,
-    )
-    .await?;
 
     request
         .validate()

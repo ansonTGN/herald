@@ -60,6 +60,9 @@ pub async fn create_client_app(
         enabled: payload.enabled,
         icon_url: payload.icon_url.clone(),
         device_code_grant_enabled: payload.device_code_grant_enabled,
+        turnstile_enabled: payload.turnstile_enabled,
+        turnstile_site_key: payload.turnstile_site_key.clone(),
+        turnstile_secret_key: payload.turnstile_secret_key.clone(),
     };
 
     // Call service layer
@@ -82,24 +85,11 @@ pub async fn create_client_app(
             }
         })?;
 
-    // Convert domain model to API response model
-    let response: ClientAppItem = ClientAppItem {
-        id: client_app.id,
-        realm_id: client_app.realm_id,
-        client_id: client_app.client_id,
-        name: client_app.name,
-        description: client_app.description,
-        redirect_uris: client_app.redirect_uris,
-        allowed_origins: client_app.allowed_origins,
-        email_verify_return_url: client_app.email_verify_return_url,
-        password_reset_return_url: client_app.password_reset_return_url,
-        browser_refresh_absolute_ttl_seconds: client_app.browser_refresh_absolute_ttl_seconds,
-        is_first_party: client_app.is_first_party,
-        enabled: client_app.enabled,
-        icon_url: client_app.icon_url,
-        client_secret: client_app.client_secret,
-        device_code_grant_enabled: client_app.device_code_grant_enabled,
-    };
+    // Convert domain model to API response model. Create is the one path that
+    // echoes the client_secret back to the caller.
+    let client_secret = client_app.client_secret.clone();
+    let mut response: ClientAppItem = client_app.into();
+    response.client_secret = client_secret;
 
     Ok(ApiResult::created(response))
 }

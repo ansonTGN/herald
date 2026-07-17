@@ -10,6 +10,19 @@ const mockSetUserProfile = vi.fn()
 const mockReset = vi.fn()
 const mockSetIsLoading = vi.fn()
 const mockClearAuthStorage = vi.fn()
+const mockSetTokens = vi.fn()
+const mockSetPkceState = vi.fn()
+const mockGetPkceState = vi.fn(() => null)
+const mockGetRefreshToken = vi.fn(() => ({ refreshToken: null, clientId: null }))
+
+// The Herald PKCE bootstrap calls `oauthAuthorize` to seed backend state; stub
+// it so the consent / safe-redirect tests do not hit the network. The legal
+// tests pass credentials WITHOUT an `oauthClientId`, so this path runs; we keep
+// `getPkceState` returning null so no PKCE exchange is attempted on the
+// (absent) redirectTo, preserving the original consent-focused assertions.
+vi.mock('@/lib/api-generated', () => ({
+  oauthAuthorize: vi.fn().mockResolvedValue({ data: {}, error: undefined }),
+}))
 
 vi.mock('@/stores/auth-store', () => ({
   useAuthStore: {
@@ -21,27 +34,42 @@ vi.mock('@/stores/auth-store', () => ({
       setUserProfile: mockSetUserProfile,
       reset: mockReset,
       setIsLoading: mockSetIsLoading,
+      setTokens: mockSetTokens,
+      setPkceState: mockSetPkceState,
+      getPkceState: mockGetPkceState,
+      getRefreshToken: mockGetRefreshToken,
     }),
   },
   clearAuthStorage: () => mockClearAuthStorage(),
+  accessTokenHolder: { get: () => null, set: () => {}, clear: () => {} },
 }))
 
 const mockPerformLogin = vi.fn()
 const mockFetchAuthData = vi.fn()
 const mockPerformLogout = vi.fn()
+const mockPerformPkceTokenExchange = vi.fn()
+const mockRefreshBrowserToken = vi.fn()
 
 vi.mock('@/lib/auth-service', () => ({
   performLogin: (...args: unknown[]) => mockPerformLogin(...args),
   fetchAuthData: (...args: unknown[]) => mockFetchAuthData(...args),
   performLogout: (...args: unknown[]) => mockPerformLogout(...args),
+  performPkceTokenExchange: (...args: unknown[]) => mockPerformPkceTokenExchange(...args),
+  refreshBrowserToken: (...args: unknown[]) => mockRefreshBrowserToken(...args),
 }))
 
-vi.mock('@/lib/constants/auth-constants', () => ({
-  hasAdminPermission: () => false,
-  DEFAULT_USER_REDIRECT: '/user/profile',
-  DEFAULT_ADMIN_REDIRECT: '/manage',
-  getSafeRedirectPath: (path: string | undefined, fallback: string) => path ?? fallback,
-}))
+// Only `hasAdminPermission` needs stubbing for the consent / redirect-path
+// assertions. The real `getSafeRedirectPath` / `DEFAULT_*` MUST run — the
+// `getSafeRedirect` open-redirect-guard tests below assert against the real
+// whitelist, so stubbing them out (a prior version of this mock did) defeated
+// the very assertion it was checking.
+vi.mock('@/lib/constants/auth-constants', async (importActual) => {
+  const actual = await importActual<typeof import('@/lib/constants/auth-constants')>()
+  return {
+    ...actual,
+    hasAdminPermission: () => false,
+  }
+})
 
 function makeLoginResponse(overrides?: Partial<LoginResponse>): LoginResponse {
   return {
@@ -172,5 +200,92 @@ describe('completeLoginAfterTotp consent required handling', () => {
 
     expect(mockFetchAuthData).toHaveBeenCalledWith()
     expect(mockSetAuthStatus).toHaveBeenCalled()
+  })
+})
+
+/**
+ * Token-only flow regression (design §4.4): the consent interlock must still
+ * hold under the Bearer token model — when consent is required, NO Bearer
+ * token material (refresh token, in-memory access token) may be written.
+ *
+ * Note: the PKCE verifier is an OAuth *protocol nonce* that binds the
+ * authorization code, not Bearer-family token material — it grants no access
+ * on its own. loginFlow intentionally seeds it before performLogin() so the
+ * verifier survives the consent detour (beginFirstPartyPkceFlow is idempotent
+ * and reuses the in-flight state on the post-consent re-submit). The real
+ * Bearer guard is therefore setTokens(), asserted below; PKCE seeding is
+ * expected and out of scope for this consent interlock.
+ */
+describe('consent interlock: no token material written under token-only flow', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('loginFlow consent=true does not establish the Bearer token family', async () => {
+    mockPerformLogin.mockResolvedValue(
+      makeLoginResponse({
+        consentRequired: true,
+        agreements: [
+          {
+            agreement_type: 'terms_of_service',
+            version_id: 'tos-v2',
+            version_no: 2,
+            effective_at: '2026-06-30T00:00:00Z',
+            title: 'Terms',
+            summary: null,
+          },
+        ],
+      })
+    )
+
+    await loginFlow('realm-1', { clientId: 'admin-web-console', password: 'secret' })
+
+    // The Bearer family must NOT be established before consent is granted.
+    // (PKCE state MAY be seeded here — it is a protocol nonce, not a token;
+    // see the describe docstring.)
+    expect(mockSetTokens).not.toHaveBeenCalled()
+    expect(mockLogin).not.toHaveBeenCalled()
+    expect(mockFetchAuthData).not.toHaveBeenCalled()
+  })
+
+  it('completeLoginAfterTotp consent=true writes neither refresh token nor PKCE state', async () => {
+    const response = makeVerifyTotpResponse({
+      consentRequired: true,
+      agreements: [
+        {
+          agreement_type: 'privacy_policy',
+          version_id: 'privacy-v3',
+          version_no: 3,
+          effective_at: '2026-06-30T00:00:00Z',
+          title: 'Privacy',
+          summary: null,
+        },
+      ],
+    })
+
+    const result = await completeLoginAfterTotp('realm-1', response)
+
+    expect(result).toEqual({})
+    expect(mockSetTokens).not.toHaveBeenCalled()
+    expect(mockSetPkceState).not.toHaveBeenCalledWith(expect.any(Object))
+    expect(mockSetAuthStatus).not.toHaveBeenCalled()
+    expect(mockFetchAuthData).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * getSafeRedirect under the token-only flow: behaviour is unchanged from the
+ * cookie-session era — only the redirect whitelisting matters, which is
+ * independent of how the session is established.
+ */
+describe('getSafeRedirect unchanged under token-only flow', () => {
+  it('returns a whitelisted relative path verbatim', async () => {
+    const { getSafeRedirect } = await import('@/lib/auth-utils')
+    expect(getSafeRedirect('/user/profile')).toBe('/user/profile')
+  })
+
+  it('falls back when the requested path is not whitelisted (open-redirect guard)', async () => {
+    const { getSafeRedirect } = await import('@/lib/auth-utils')
+    expect(getSafeRedirect('//evil.example.com', '/user/profile')).toBe('/user/profile')
   })
 })

@@ -5,12 +5,13 @@ pub mod list;
 pub mod permissions;
 pub mod reset_password;
 pub mod roles;
+pub mod sessions;
 pub mod types;
 pub mod update;
 
 use axum::{
     Router,
-    routing::{get, post},
+    routing::{delete, get, post},
 };
 use herald_api_base::application::http::state::AppState;
 
@@ -20,6 +21,9 @@ pub use delete::__path_delete_user;
 pub use get::__path_get_user;
 pub use list::__path_list_users;
 pub use reset_password::__path_reset_user_password;
+pub use sessions::__path_list_user_sessions;
+pub use sessions::__path_revoke_all_user_sessions;
+pub use sessions::__path_revoke_user_session;
 pub use update::__path_update_user;
 
 pub fn router() -> Router<AppState> {
@@ -48,5 +52,13 @@ pub fn router() -> Router<AppState> {
         .route(
             "/{userId}/effective-permissions",
             get(permissions::get_effective_permissions),
+        )
+        .route(
+            "/{userId}/sessions",
+            get(sessions::list_user_sessions).delete(sessions::revoke_all_user_sessions),
+        )
+        .route(
+            "/{userId}/sessions/{familyId}",
+            delete(sessions::revoke_user_session),
         )
 }

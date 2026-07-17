@@ -86,6 +86,7 @@ describe('PasskeyRegisterForm', () => {
   let beginBody: unknown
   let finishStatus: number
   let finishBodies: unknown[]
+  let verifyCallCount: number
   let createMock: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
@@ -93,6 +94,7 @@ describe('PasskeyRegisterForm', () => {
     beginBody = undefined
     finishStatus = 200
     finishBodies = []
+    verifyCallCount = 0
     createMock = vi.fn()
 
     stubWebAuthnSupport(true)
@@ -105,6 +107,17 @@ describe('PasskeyRegisterForm', () => {
 
     server.resetHandlers()
     server.use(
+      // Reauth flow (bind_authenticator): begin → verify → single-use ticket.
+      http.post(`${API_BASE_URL}/api/user/reauth`, () =>
+        HttpResponse.json({ availableFactors: ['password'] })
+      ),
+      http.post(`${API_BASE_URL}/api/user/reauth/verify`, () => {
+        verifyCallCount += 1
+        // Each call returns a fresh single-use ticket. The backend consumes the
+        // ticket on BOTH begin and finish, so the form MUST obtain a second,
+        // distinct ticket for finish (regression guard).
+        return HttpResponse.json({ reauthToken: `reauth-token-${verifyCallCount}`, expiresIn: 120 })
+      }),
       http.post(`${API_BASE_URL}/api/user/passkey/registration/begin`, async ({ request }) => {
         beginBody = await request.json()
         if (beginStatus !== 200) {
@@ -146,7 +159,7 @@ describe('PasskeyRegisterForm', () => {
       })
     })
 
-    it('GIVEN user submits valid password WHEN submitting THEN should call begin with password in body', async () => {
+    it('GIVEN user submits valid password WHEN submitting THEN should call begin with reauthToken in body', async () => {
       createMock.mockResolvedValue(makeMockPublicKeyCredential())
       renderForm({ onSuccess: vi.fn(), onCancel: vi.fn() })
 
@@ -154,7 +167,8 @@ describe('PasskeyRegisterForm', () => {
       await user.click(screen.getByTestId('passkey-register-submit-button'))
 
       await waitFor(() => {
-        expect(beginBody).toEqual({ password: 'password123' })
+        // The first verify call returns `reauth-token-1`; begin carries it.
+        expect(beginBody).toEqual({ reauthToken: 'reauth-token-1' })
       })
     })
 
@@ -213,6 +227,7 @@ describe('PasskeyRegisterForm', () => {
           type: string
           response: { clientDataJSON: string; attestationObject: string; transports?: string[] }
         }
+        reauthToken: string
       }
       expect(body.regToken).toBe('reg-token-123')
       // base64url fields are present and unpadded (no '=' padding)
@@ -221,6 +236,12 @@ describe('PasskeyRegisterForm', () => {
       expect(body.attestation.response.clientDataJSON).not.toMatch(/=/)
       expect(body.attestation.response.attestationObject).not.toMatch(/=/)
       expect(body.attestation.response.transports).toEqual(['internal', 'hybrid'])
+      // Regression guard: the backend consumes the reauth ticket on begin AND
+      // finish, so finish must obtain its OWN fresh ticket. Assert the verify
+      // endpoint was hit twice (once for begin, once for finish) and the finish
+      // body carries the second ticket — not the begin ticket.
+      expect(verifyCallCount).toBe(2)
+      expect(body.reauthToken).toBe('reauth-token-2')
     })
 
     it('GIVEN finish succeeds WHEN completing THEN should call onSuccess', async () => {

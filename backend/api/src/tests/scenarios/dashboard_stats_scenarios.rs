@@ -47,7 +47,7 @@ async fn create_first_party_token_for_user(ctx: &TestContext, user_id: &str) -> 
         .await
         .expect("Failed to load FirstParty test client app");
     RedisBrowserTokenService::new(ctx.app_state.redis_manager.clone())
-        .create_first_party_token_family(&user, &client_app)
+        .create_first_party_token_family(&user, &client_app, None, None)
         .await
         .expect("Failed to create FirstParty token family")
         .access_token

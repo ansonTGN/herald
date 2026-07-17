@@ -62,6 +62,13 @@ describe('PasskeyList', () => {
 
     server.resetHandlers()
     server.use(
+      // Reauth flow (remove_authenticator): begin → verify → single-use ticket.
+      http.post(`${API_BASE_URL}/api/user/reauth`, () =>
+        HttpResponse.json({ availableFactors: ['password'] })
+      ),
+      http.post(`${API_BASE_URL}/api/user/reauth/verify`, () =>
+        HttpResponse.json({ reauthToken: 'reauth-token-123', expiresIn: 120 })
+      ),
       http.get(`${API_BASE_URL}/api/user/passkey/credentials`, () => {
         if (listStatus !== 200) {
           return HttpResponse.json({ error: 'list failed' }, { status: listStatus })
@@ -193,6 +200,8 @@ describe('PasskeyList', () => {
       expect(dialog).toBeInTheDocument()
       // Not the last credential → the US-PK-009 last-warning copy must NOT appear.
       expect(dialog).not.toHaveTextContent(/last passkey/i)
+      // Delete now requires re-auth: type the current password, then confirm.
+      await user.type(screen.getByTestId('passkey-delete-password-input'), 'password123')
       await user.click(screen.getByTestId('passkey-delete-confirm-button'))
 
       await waitFor(() => {
@@ -215,6 +224,8 @@ describe('PasskeyList', () => {
       // when the list length is 1. Asserting the warning text surfaces here.
       expect(dialog).toHaveTextContent(/last passkey/i)
 
+      // Delete now requires re-auth: type the current password, then confirm.
+      await user.type(screen.getByTestId('passkey-delete-password-input'), 'password123')
       await user.click(screen.getByTestId('passkey-delete-confirm-button'))
 
       await waitFor(() => {

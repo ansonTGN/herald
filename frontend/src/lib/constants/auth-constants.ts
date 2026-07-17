@@ -135,6 +135,12 @@ export const AUTH_STORAGE_KEY = 'auth-storage'
 export const AUTH_STORE_NAME = 'AuthStore'
 
 /**
+ * The built-in FirstParty OAuth Client App `client_id` for the Herald console.
+ * Bound to the PKCE flow and to refresh-token families issued by the console.
+ */
+export const FIRST_PARTY_CLIENT_ID = 'admin-web-console'
+
+/**
  * Default redirect path for regular users
  */
 export const DEFAULT_USER_REDIRECT = '/user/profile'

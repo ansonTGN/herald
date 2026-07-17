@@ -88,5 +88,16 @@ pub mod legal;
 
 pub mod account_self_delete_scenarios;
 
+// Kickoff User (session management / forced logout) scenarios
+// Authored by BE-T01 (backend-test authoring slot). Covers design
+// `.ai/design/kickoff-user.md` §6.1, US-RA-020 and US-RA-021.
+pub mod user_sessions_scenarios;
+
 // Realm management scenarios
 // (realm_config_update_scenarios and realm_delete_scenarios removed - see .ai/future/backend_test_delete.md)
+
+// Email-OTP login scenarios (design email-otp-login §6.1/§6.3).
+// Authored by BE-T01 (backend-test authoring slot).
+pub mod client_app_turnstile_scenarios;
+pub mod email_otp_send_verify_scenarios;
+pub mod realm_email_otp_config_scenarios;

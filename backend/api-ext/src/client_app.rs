@@ -151,6 +151,9 @@ pub async fn create_client_app(
         enabled: None,
         icon_url: None,
         device_code_grant_enabled: req.device_code_grant_enabled,
+        turnstile_enabled: None,
+        turnstile_site_key: None,
+        turnstile_secret_key: None,
     };
 
     // 6. Call domain service

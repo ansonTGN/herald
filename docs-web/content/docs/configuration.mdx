@@ -64,7 +64,7 @@ Tune `max_connections` based on actual concurrency in production. The pool is im
 |---|---|---|---|---|---|
 | `url` | string | `redis://127.0.0.1:6379` | `redis://redis:6379` | No | Redis connection URL |
 
-Redis is used for permission-check caching and session storage. In Docker, the host is the container name.
+Redis is used for permission-check caching and access/refresh token storage. In Docker, the host is the container name.
 
 ```toml
 [redis]

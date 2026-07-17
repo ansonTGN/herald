@@ -65,7 +65,10 @@ export function DeleteAccountDialog({ realmId, open, onOpenChange }: DeleteAccou
   })
 
   const mutation = useMutation({
-    mutationFn: (data: DeleteAccountFormData) => deleteAccountMutation(data),
+    // The form collects the user's password, which is used to obtain a
+    // single-use delete_account reauth ticket; the request body only carries
+    // the resulting `reauth_token`.
+    mutationFn: (data: DeleteAccountFormData) => deleteAccountMutation(data.password),
     onSuccess: () => {
       // Clear all cached server state and persisted auth data so no authenticated
       // frontend state remains after the account is deleted.

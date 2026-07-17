@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useStore } from '@tanstack/react-form'
 import { toast } from 'sonner'
 import { useAppForm, AppForm } from '@/components/ui/tanstack-form'
 import { Button } from '@/components/ui/button'
@@ -17,6 +18,7 @@ import {
 } from '@/components/ui/dialog'
 import { getFieldErrorMessage } from '@/lib/form-utils'
 import { withTimeout } from '@/lib/totp-utils'
+import { obtainReauthToken } from '@/lib/reauth-flow'
 import { formatDateTimeShort } from '@/lib/date-utils'
 import { passkeyListQueryOptions, queryKeys } from '@/data/query-options'
 import { handleRenamePasskeyCredential, handleDeletePasskeyCredential } from '@/lib/api-generated'
@@ -27,6 +29,10 @@ import type { PasskeyCredentialViewResponse } from '@/lib/api-generated'
 
 const nicknameSchema = z.object({
   nickname: z.string().min(1).max(128),
+})
+
+const deletePasswordSchema = z.object({
+  password: z.string().min(1, m['profile.totp_password_required']()),
 })
 
 interface PasskeyListProps {
@@ -149,13 +155,34 @@ export function PasskeyList({ onAdd }: PasskeyListProps) {
   const isLastCredential = deleteTarget !== null && credentials.length <= 1
 
   const [isDeleting, setIsDeleting] = useState(false)
+  const [deletePasswordError, setDeletePasswordError] = useState<string | null>(null)
 
-  const confirmDelete = async () => {
+  const deleteForm = useAppForm({
+    schema: deletePasswordSchema,
+    defaultValues: { password: '' },
+    onSubmit: async ({ value }) => {
+      await confirmDelete(value.password)
+    },
+  })
+
+  // Subscribe reactively: reading `deleteForm.state.values.password` directly in
+  // render does not re-render on change (TanStack Form v1), so the confirm
+  // button would stay disabled after typing.
+  const deletePasswordValue = useStore(deleteForm.store, (state) => state.values.password)
+
+  const confirmDelete = async (password: string) => {
     if (!deleteTarget) return
     setIsDeleting(true)
+    setDeletePasswordError(null)
     try {
+      // Remove-authenticator reauth: obtain a single-use ticket with the user's
+      // password, then delete the credential with it.
+      const reauthToken = await obtainReauthToken('remove_authenticator', password)
       const response = await withTimeout(
-        handleDeletePasskeyCredential({ path: { credentialId: deleteTarget.credentialId } })
+        handleDeletePasskeyCredential({
+          path: { credentialId: deleteTarget.credentialId },
+          body: { reauthToken },
+        })
       )
       if (response.error) {
         throw response.error
@@ -163,8 +190,17 @@ export function PasskeyList({ onAdd }: PasskeyListProps) {
       await queryClient.invalidateQueries({ queryKey: queryKeys.passkeyList() })
       toast.success(m['profile.passkey_list_delete_success']())
       setDeleteTarget(null)
-    } catch {
-      toast.error(m['profile.passkey_list_delete_failed']())
+    } catch (error) {
+      // Surface reauth-specific failures (wrong password / expired) inline;
+      // other backend errors map to the generic delete-failed toast.
+      const status = (error as { status?: number }).status
+      if (status === 401 || status === 409) {
+        setDeletePasswordError(
+          status === 401 ? m['reauth.wrong_password']() : m['reauth.expired']()
+        )
+      } else {
+        toast.error(m['profile.passkey_list_delete_failed']())
+      }
     } finally {
       setIsDeleting(false)
     }
@@ -269,7 +305,16 @@ export function PasskeyList({ onAdd }: PasskeyListProps) {
       </Dialog>
 
       {/* Delete confirmation (always shown; carries the extra risk copy when last) */}
-      <Dialog open={deleteTarget !== null} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+      <Dialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteTarget(null)
+            setDeletePasswordError(null)
+            deleteForm.reset()
+          }
+        }}
+      >
         <DialogContent data-testid="passkey-delete-confirm-dialog">
           <DialogHeader>
             <DialogTitle>{m['profile.passkey_delete_confirm_title']()}</DialogTitle>
@@ -282,25 +327,70 @@ export function PasskeyList({ onAdd }: PasskeyListProps) {
               {m['profile.passkey_delete_last_warning']()}
             </p>
           )}
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setDeleteTarget(null)}
-              disabled={isDeleting}
+          <AppForm>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                deleteForm.handleSubmit()
+              }}
+              className="space-y-2"
             >
-              {m['profile.passkey_delete_cancel_button']()}
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={confirmDelete}
-              disabled={isDeleting}
-              data-testid="passkey-delete-confirm-button"
-            >
-              {m['profile.passkey_delete_confirm_button']()}
-            </Button>
-          </DialogFooter>
+              <deleteForm.Field name="password">
+                {(field) => (
+                  <div className="space-y-2">
+                    <Label htmlFor="passkey-delete-password">{m['reauth.password_label']()}</Label>
+                    <Input
+                      id="passkey-delete-password"
+                      type="password"
+                      value={field.state.value ?? ''}
+                      onChange={(e) => {
+                        field.handleChange(e.target.value)
+                      }}
+                      data-testid="passkey-delete-password-input"
+                      autoFocus
+                      autoComplete="current-password"
+                    />
+                    {(field.state.meta.isTouched || deleteForm.state.isSubmitted) &&
+                      field.state.meta.errors.length > 0 && (
+                        <p className="text-sm text-red-500">
+                          {getFieldErrorMessage(field.state.meta)}
+                        </p>
+                      )}
+                  </div>
+                )}
+              </deleteForm.Field>
+              {deletePasswordError && (
+                <p className="text-sm text-red-500" data-testid="passkey-delete-password-error">
+                  {deletePasswordError}
+                </p>
+              )}
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setDeleteTarget(null)
+                    setDeletePasswordError(null)
+                    deleteForm.reset()
+                  }}
+                  disabled={isDeleting}
+                >
+                  {m['profile.passkey_delete_cancel_button']()}
+                </Button>
+                <Button
+                  type="submit"
+                  variant="destructive"
+                  disabled={isDeleting || !deletePasswordValue}
+                  data-testid="passkey-delete-confirm-button"
+                >
+                  {isDeleting
+                    ? m['reauth.submitting']()
+                    : m['profile.passkey_delete_confirm_button']()}
+                </Button>
+              </DialogFooter>
+            </form>
+          </AppForm>
         </DialogContent>
       </Dialog>
     </div>

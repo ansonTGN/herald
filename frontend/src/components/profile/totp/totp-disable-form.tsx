@@ -1,5 +1,6 @@
 import { useAppForm, AppForm } from '@/components/ui/tanstack-form'
 import { handleDisableTotp } from '@/lib/api-generated'
+import { obtainReauthToken } from '@/lib/reauth-flow'
 import { useFormMutation } from '@/hooks/use-form-mutation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -28,7 +29,10 @@ function getSubmitButtonText(isSubmitting: boolean): string {
 export function TotpDisableForm({ onSuccess, onCancel, isForceTotpEnabled }: TotpDisableFormProps) {
   const { isSubmitting, mutate } = useFormMutation({
     mutationFn: async (data: { password: string }) => {
-      const response = await withTimeout(handleDisableTotp({ body: data }))
+      // Remove-authenticator reauth: obtain a single-use ticket with the user's
+      // password, then disable TOTP with it.
+      const reauth_token = await obtainReauthToken('remove_authenticator', data.password)
+      const response = await withTimeout(handleDisableTotp({ body: { ...data, reauth_token } }))
       return response.data as DisableTotpResponse
     },
     getSuccessMessage: () => m['profile.totp_disabled_success'](),

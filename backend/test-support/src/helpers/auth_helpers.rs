@@ -95,7 +95,7 @@ pub async fn create_admin_session_with_user(
         .await
         .unwrap();
     let token = RedisBrowserTokenService::new(ctx.app_state.redis_manager.clone())
-        .create_first_party_token_family(&user, &client_app)
+        .create_first_party_token_family(&user, &client_app, None, None)
         .await
         .unwrap()
         .access_token;

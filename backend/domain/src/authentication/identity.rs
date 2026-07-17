@@ -268,6 +268,9 @@ mod tests {
             icon_url: None,
             client_secret: None,
             device_code_grant_enabled: false,
+            turnstile_enabled: false,
+            turnstile_site_key: None,
+            turnstile_secret_key: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };

@@ -226,6 +226,9 @@ where
                         enabled: Some(true),
                         icon_url: None,
                         device_code_grant_enabled: None,
+                        turnstile_enabled: None,
+                        turnstile_site_key: None,
+                        turnstile_secret_key: None,
                     })
                     .await;
 
@@ -313,6 +316,9 @@ where
                         enabled: Some(true),
                         icon_url: None,
                         device_code_grant_enabled: None,
+                        turnstile_enabled: None,
+                        turnstile_site_key: None,
+                        turnstile_secret_key: None,
                     })
                     .await
                 {

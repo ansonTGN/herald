@@ -238,11 +238,17 @@ impl AsyncTestContext for SchemaTestContext {
         let audit_event_repository = Arc::new(
             herald_core::infrastructure::audit::PostgresAuditEventRepository::new(sea_conn.clone()),
         );
+        let admin_token_service = Arc::new(
+            herald_core::infrastructure::authentication::RedisBrowserTokenService::new(
+                (*redis_manager).clone(),
+            ),
+        );
         let admin_user_service = Arc::new(AdminUserServiceImpl::new(
             admin_user_repository.clone(),
             user_role_repository.clone(),
             permission_checker.clone(),
             audit_event_repository.clone(),
+            admin_token_service,
         ));
         let role_assignment_service = Arc::new(RoleAssignmentServiceImpl::new(
             user_role_repository.clone(),

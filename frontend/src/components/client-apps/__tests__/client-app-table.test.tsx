@@ -14,8 +14,8 @@ const mockClientApps: ClientAppItem[] = [
     redirectUris: ['https://app1.example.com/callback'],
     iconUrl: 'https://app1.example.com/icon.png',
     enabled: true,
-    sessionTtlSeconds: 1800,
-    sessionRenewalTtlSeconds: null,
+    browserRefreshAbsoluteTtlSeconds: 2592000,
+    allowedOrigins: ['https://app1.example.com'],
   },
   {
     id: '2',
@@ -26,8 +26,8 @@ const mockClientApps: ClientAppItem[] = [
     redirectUris: ['https://app2.example.com/callback'],
     iconUrl: null,
     enabled: false,
-    sessionTtlSeconds: 3600,
-    sessionRenewalTtlSeconds: 7200,
+    browserRefreshAbsoluteTtlSeconds: 7776000,
+    allowedOrigins: [],
   },
 ]
 
@@ -49,7 +49,7 @@ describe('ClientAppTable', () => {
     expect(screen.getByText('N/A')).toBeInTheDocument()
   })
 
-  it('GIVEN client app WHEN rendering THEN should display session TTL', async () => {
+  it('GIVEN client app WHEN rendering THEN should display refresh TTL', async () => {
     const screen = render(
       <ClientAppTable
         data={[mockClientApps[0]]}
@@ -59,7 +59,7 @@ describe('ClientAppTable', () => {
       />
     )
 
-    expect(screen.getByTestId('client-app-session-ttl')).toHaveTextContent('30 min')
+    expect(screen.getByTestId('client-app-refresh-ttl')).toHaveTextContent('30 days')
   })
 
   it('GIVEN client app is enabled WHEN rendering THEN should display enabled badge', async () => {

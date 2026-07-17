@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { BackupCodesDisplay } from '@/components/profile/totp/backup-codes-display'
 import { handleEnableTotp, handleVerifyTotpSetup } from '@/lib/api-generated'
+import { obtainReauthToken } from '@/lib/reauth-flow'
 import { useFormMutation } from '@/hooks/use-form-mutation'
 import { useAppForm, AppForm } from '@/components/ui/tanstack-form'
 import { getFieldErrorMessage } from '@/lib/form-utils'
@@ -43,7 +44,10 @@ export function TotpSetupPage() {
   // Step 1: Password confirmation to generate TOTP secret
   const generateMutation = useFormMutation<EnableTotpResponse, { password: string }>({
     mutationFn: async (data) => {
-      const response = await withTimeout(handleEnableTotp({ body: data }))
+      // Bind-authenticator reauth: obtain a single-use ticket with the user's
+      // password, then enable TOTP with it.
+      const reauth_token = await obtainReauthToken('bind_authenticator', data.password)
+      const response = await withTimeout(handleEnableTotp({ body: { ...data, reauth_token } }))
       if (response.error) {
         throw response.error
       }

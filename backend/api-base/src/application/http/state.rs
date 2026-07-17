@@ -183,6 +183,7 @@ pub struct AppState {
             PostgresUserRoleRepository,
             RedisPermissionChecker,
             PostgresAuditEventRepository,
+            RedisBrowserTokenService,
         >,
     >,
 

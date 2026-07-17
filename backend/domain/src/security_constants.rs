@@ -8,6 +8,18 @@ pub const DEFAULT_LOGIN_CHALLENGE_TTL_SECONDS: u64 = 300;
 pub const TOTP_MAX_FAILURES: i64 = 5;
 pub const TOTP_LOCKOUT_SECONDS: u64 = 900;
 
+// --- Email OTP (design email-otp-login §4.5) ---
+/// Maximum verification attempts before a code is invalidated and must be
+/// re-sent. Matches `StoredOtp.max_attempts` written by the send handler.
+pub const OTP_MAX_ATTEMPTS: i64 = 5;
+/// TTL of a stored OTP code (seconds). Redis `EX` on `emailotp:{realm}:{email}`.
+pub const OTP_CODE_TTL_SECONDS: u64 = 300;
+// Rate limits: (max_requests, window_seconds) — matches `rate_limit_hit` params.
+pub const OTP_SEND_IP_RATE_LIMIT: (i64, usize) = (5, 60);
+pub const OTP_SEND_EMAIL_RATE_LIMIT: (i64, usize) = (2, 60);
+pub const OTP_VERIFY_IP_RATE_LIMIT: (i64, usize) = (10, 60);
+pub const OTP_VERIFY_EMAIL_RATE_LIMIT: (i64, usize) = (5, 60);
+
 // --- Rate limits: (max_requests, window_seconds) ---
 pub const LOGIN_IP_RATE_LIMIT: (i64, usize) = (10, 60);
 pub const LOGIN_IDENTIFIER_RATE_LIMIT: (i64, usize) = (2, 60);

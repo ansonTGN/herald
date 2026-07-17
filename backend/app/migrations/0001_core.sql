@@ -500,10 +500,10 @@ INSERT INTO realm (id, name)
 VALUES ('admin', 'Admin');
 
 -- Insert default admin client app
-INSERT INTO client_app (id, realm_id, client_id, name, session_renewal_ttl_seconds)
-VALUES (uuidv7(), 'admin', 'admin-web-console', 'Admin Client App', 86400);
+INSERT INTO client_app (id, realm_id, client_id, name, is_first_party)
+VALUES (uuidv7(), 'admin', 'admin-web-console', 'Admin Client App', true);
 
 -- Insert built-in API Key Client App for the admin realm
-INSERT INTO client_app (id, realm_id, client_id, name, description, enabled, redirect_uris, session_ttl_seconds)
-VALUES (uuidv7(), 'admin', 'admin-api-client', 'API Key Client', 'Built-in client for API key authentication', true, '[]'::jsonb, 1800)
+INSERT INTO client_app (id, realm_id, client_id, name, description, enabled, redirect_uris)
+VALUES (uuidv7(), 'admin', 'admin-api-client', 'API Key Client', 'Built-in client for API key authentication', true, '[]'::jsonb)
 ON CONFLICT (realm_id, client_id) DO NOTHING;

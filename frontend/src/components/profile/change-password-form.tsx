@@ -1,6 +1,7 @@
 import { useAppForm, AppForm } from '@/components/ui/tanstack-form'
 import { changePasswordSchema, type ChangePasswordFormData } from '@/lib/schemas/common'
 import { changeUserPassword } from '@/lib/api-generated'
+import { obtainReauthToken } from '@/lib/reauth-flow'
 import { useFormMutation } from '@/hooks/use-form-mutation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -22,10 +23,14 @@ export function ChangePasswordForm() {
   })
 
   const { isSubmitting, mutate } = useFormMutation({
-    mutationFn: (data: ChangePasswordFormData) =>
-      changeUserPassword({
-        body: data,
-      }),
+    mutationFn: async (data: ChangePasswordFormData) => {
+      // High-risk op (change_password): obtain a single-use reauth ticket using
+      // the user's current password, then submit the change with it.
+      const reauthToken = await obtainReauthToken('change_password', data.oldPass)
+      return changeUserPassword({
+        body: { ...data, reauthToken },
+      })
+    },
     getSuccessMessage: () => m['profile.password_changed_success'](),
     invalidateQueries: [queryKeys.profile()],
     onSuccess: () => {

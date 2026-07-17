@@ -126,3 +126,31 @@ pub struct EffectivePermission {
 pub struct EffectivePermissionsResponse {
     pub permissions: Vec<EffectivePermission>,
 }
+
+// ==================== User Session Types ====================
+
+/// A single active session for a user, surfaced for Realm Admin session
+/// management. Time fields are RFC3339 / ISO8601 strings. Fields derived from
+/// the optional session metadata index are `null` for legacy families created
+/// before the index existed.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UserSessionResponse {
+    pub family_id: Uuid,
+    pub client_app_id: Uuid,
+    pub client_app_name: Option<String>,
+    pub credential_class: String,
+    pub user_agent: Option<String>,
+    pub client_ip: Option<String>,
+    /// ISO8601 timestamp. `null` for legacy families without session metadata.
+    pub created_at: Option<String>,
+    /// ISO8601 timestamp. Always present (derived from the family record).
+    pub absolute_expires_at: String,
+}
+
+/// Response payload for one-click revoke-all-sessions.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RevokeAllSessionsResponse {
+    pub revoked_count: i32,
+}

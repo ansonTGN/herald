@@ -11,6 +11,7 @@
     "billing-invoice",
     "billing-credit-note",
     "third-party-integration",
+    "custom-user-ui",
     "auth-passkey",
     "ui-custom",
     "realm-custom-domain",

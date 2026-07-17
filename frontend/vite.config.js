@@ -41,7 +41,6 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:8080',
         changeOrigin: true,
-        withCredentials: true, // 携带 cookies 以支持认证
       },
     },
   },

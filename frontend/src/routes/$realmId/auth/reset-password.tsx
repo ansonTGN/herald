@@ -129,7 +129,7 @@ export function ResetPasswordPage() {
 
             {!loadingTurnstile && turnstileStatus?.enabled && (
               <TurnstileWidget
-                siteKey={turnstileStatus.site_key || ''}
+                siteKey={turnstileStatus.siteKey || ''}
                 onTokenChange={setTurnstileToken}
                 onError={(error) => console.error('Turnstile error:', error)}
               />

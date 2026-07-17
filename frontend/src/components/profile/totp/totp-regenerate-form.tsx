@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useAppForm, AppForm } from '@/components/ui/tanstack-form'
 import { handleRegenerateTotp, handleVerifyTotpSetup } from '@/lib/api-generated'
+import { obtainReauthToken } from '@/lib/reauth-flow'
 import { useFormMutation } from '@/hooks/use-form-mutation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -41,7 +42,10 @@ export function TotpRegenerateForm({ onSuccess, onCancel }: TotpRegenerateFormPr
 
   const regenerateMutation = useFormMutation({
     mutationFn: async (data: { password: string }) => {
-      const response = await withTimeout(handleRegenerateTotp({ body: data }))
+      // Bind-authenticator reauth: obtain a single-use ticket with the user's
+      // password, then regenerate the TOTP secret with it.
+      const reauth_token = await obtainReauthToken('bind_authenticator', data.password)
+      const response = await withTimeout(handleRegenerateTotp({ body: { ...data, reauth_token } }))
       return response.data as RegenerateTotpResponse
     },
     getSuccessMessage: () => m['profile.totp_regenerated_success'](),

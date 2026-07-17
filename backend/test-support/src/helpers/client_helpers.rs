@@ -186,7 +186,7 @@ pub async fn create_test_user_with_permissions(
         .await
         .unwrap();
     let session_token = RedisBrowserTokenService::new(ctx.app_state.redis_manager.clone())
-        .create_first_party_token_family(&user, &client_app)
+        .create_first_party_token_family(&user, &client_app, None, None)
         .await
         .unwrap()
         .access_token;

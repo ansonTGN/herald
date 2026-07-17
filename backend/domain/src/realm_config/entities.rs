@@ -359,6 +359,32 @@ pub enum ConfigType {
     /// }
     /// ```
     InvoicePolicy,
+
+    /// Email OTP login configuration
+    ///
+    /// Per-Realm switches for the email verification-code login flow
+    /// (design email-otp-login §4.3.2 / §5.1). Storage reuses the
+    /// `realm_config` KV table; no DDL is required.
+    ///
+    /// - config_key: `settings` (fixed key for Email OTP configuration)
+    /// - config_value: JSON string with
+    ///   `{"enabled": boolean, "auto_register": boolean}`
+    /// - enabled: boolean (whether the config entry itself is active)
+    /// - is_secret: false
+    /// - metadata: null
+    ///
+    /// Example configuration:
+    /// ```json
+    /// {
+    ///   "config_type": "email_otp",
+    ///   "config_key": "settings",
+    ///   "config_value": "{\"enabled\":true,\"auto_register\":false}",
+    ///   "is_secret": false,
+    ///   "enabled": true,
+    ///   "metadata": null
+    /// }
+    /// ```
+    EmailOtp,
 }
 
 impl From<String> for ConfigType {
@@ -381,6 +407,7 @@ impl ConfigType {
             "stripe" => ConfigType::Stripe,
             "email" => ConfigType::Email,
             "invoice_policy" => ConfigType::InvoicePolicy,
+            "email_otp" => ConfigType::EmailOtp,
             _ => return Err(format!("Invalid config type: {}", s)),
         };
         Ok(config_type)
@@ -401,6 +428,7 @@ impl From<ConfigType> for String {
             ConfigType::Stripe => "stripe".to_string(),
             ConfigType::Email => "email".to_string(),
             ConfigType::InvoicePolicy => "invoice_policy".to_string(),
+            ConfigType::EmailOtp => "email_otp".to_string(),
         }
     }
 }
@@ -419,6 +447,7 @@ impl AsRef<str> for ConfigType {
             ConfigType::Stripe => "stripe",
             ConfigType::Email => "email",
             ConfigType::InvoicePolicy => "invoice_policy",
+            ConfigType::EmailOtp => "email_otp",
         }
     }
 }
@@ -718,6 +747,39 @@ pub fn normalize_and_validate_hostname(raw: &str) -> Result<String, CoreError> {
     }
 
     Ok(without_trailing_dot.to_string())
+}
+
+#[cfg(test)]
+mod config_type_tests {
+    use super::ConfigType;
+
+    #[test]
+    fn email_otp_round_trip() {
+        assert_eq!(ConfigType::EmailOtp.as_ref(), "email_otp");
+        assert_eq!(String::from(ConfigType::EmailOtp), "email_otp");
+        assert_eq!(
+            ConfigType::try_from_str("email_otp").unwrap(),
+            ConfigType::EmailOtp
+        );
+    }
+
+    /// Guards the `From<String> -> ConfigType::Turnstile` fallback quirk:
+    /// `"email_otp"` must resolve to `EmailOtp`, not fall through to the
+    /// default `Turnstile` branch. See design email-otp-login §7 risk table.
+    #[test]
+    fn email_otp_from_string_does_not_fall_back_to_turnstile() {
+        let ct: ConfigType = "email_otp".to_string().into();
+        assert_eq!(ct, ConfigType::EmailOtp);
+        assert_ne!(ct, ConfigType::Turnstile);
+    }
+
+    #[test]
+    fn email_otp_is_case_insensitive() {
+        assert_eq!(
+            ConfigType::try_from_str("EMAIL_OTP").unwrap(),
+            ConfigType::EmailOtp
+        );
+    }
 }
 
 #[cfg(test)]

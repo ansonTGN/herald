@@ -11,7 +11,8 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use herald_api_base::application::http::auth::util::{
-    ClientIp, normalize_email, rate_limit_hit, verify_turnstile_for_realm,
+    ClientIp, normalize_email, rate_limit_hit, user_agent_from_headers,
+    verify_turnstile_for_client_app,
 };
 use herald_api_base::application::http::server::api_entities::ApiError;
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
@@ -21,7 +22,6 @@ use herald_core::domain::audit::{
     NewAuditEvent,
 };
 use herald_core::domain::authentication::BrowserTokenService;
-use herald_core::domain::client::ports::ClientService;
 use herald_core::domain::security_constants::{
     DEFAULT_OAUTH_CODE_TTL_SECONDS, LOGIN_IDENTIFIER_RATE_LIMIT, LOGIN_IP_RATE_LIMIT,
     OAUTH_STATE_TTL_SECONDS,
@@ -36,6 +36,7 @@ use herald_core::infrastructure::user_totp::PostgresUserTotpRepository;
 
 use crate::browser_token::BrowserTokenResponse;
 use crate::consent_gate::AuthConsentAgreement;
+use crate::mailflow;
 use crate::passkey_rp::resolve_passkey_rp;
 
 #[derive(Serialize, Deserialize, ToSchema, validator::Validate)]
@@ -130,10 +131,7 @@ pub async fn login(
     headers: HeaderMap,
     Valid(Json(payload)): Valid<Json<LoginRequestPayload>>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let user_agent = headers
-        .get("user-agent")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string());
+    let user_agent = user_agent_from_headers(&headers);
 
     // Custom validation: ensure at least username or email is provided
     if payload.email.is_none() && payload.username.is_none() {
@@ -155,14 +153,14 @@ pub async fn login(
         "Login attempt"
     );
 
-    // turnstile 校验（根据 realm 配置动态判断）
-    verify_turnstile_for_realm(
-        &state,
-        &realm_id,
-        payload.turnstile_token.as_deref(),
-        Some(&ip),
-    )
-    .await?;
+    // Resolve the Client App before Turnstile so the human-verification check
+    // can read the Client App's Turnstile configuration (D-PROTECT-01).
+    let client_app =
+        mailflow::require_enabled_client(&state, &realm_id, &payload.client_id).await?;
+
+    // turnstile 校验（按 Client App 配置，D-PROTECT-01）
+    verify_turnstile_for_client_app(&state, &client_app, payload.turnstile_token.as_deref(), &ip)
+        .await?;
 
     // ip + identifier 限流
     rate_limit_hit(
@@ -190,33 +188,6 @@ pub async fn login(
             LOGIN_IDENTIFIER_RATE_LIMIT.1,
         )
         .await?;
-    }
-
-    // Verify client exists
-    let client_app = state
-        .service
-        .client_service()
-        .get_client_app_by_client_id(&realm_id, &payload.client_id)
-        .await
-        .map_err(|e| {
-            tracing::error!(
-                realm_id = %realm_id,
-                client_id = %payload.client_id,
-                error = %e,
-                "Client app lookup failed"
-            );
-            match e {
-                herald_core::domain::common::entities::app_errors::CoreError::NotFound => {
-                    ApiError::bad_request(format!(
-                        "Client app with client_id '{}' not found in realm '{}'",
-                        payload.client_id, realm_id
-                    ))
-                }
-                _ => ApiError::internal("Internal server error".to_string()),
-            }
-        })?;
-    if !client_app.enabled {
-        return Err(ApiError::forbidden("client app is disabled"));
     }
 
     // Create login request for service
@@ -623,7 +594,7 @@ pub async fn login(
     }
 
     let tokens = RedisBrowserTokenService::new(state.redis_manager.clone())
-        .create_token_family(&user, &client_app)
+        .create_token_family(&user, &client_app, user_agent.clone(), Some(ip.clone()))
         .await?;
 
     // Record login success audit event

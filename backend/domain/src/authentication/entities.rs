@@ -17,6 +17,50 @@ pub struct BrowserAccessTokenData {
     pub expires_at: DateTime<Utc>,
 }
 
+/// Ownership + lifecycle status of a single browser-token family, surfaced for
+/// the admin "revoke one session" guard (design kickoff-user §4.2.2).
+///
+/// Unlike `list_user_sessions` (which filters out revoked/expired families and
+/// is keyed by user_id), this is read directly from the family record
+/// (`bt:fam:{familyId}`) so the caller can distinguish:
+/// - a family that does **not** belong to the target user/realm (→ 404, prevent
+///   cross-realm existence leakage), from
+/// - a family that belongs to the target user/realm but is already revoked or
+///   past its absolute expiry (→ 204 idempotent no-op).
+///
+/// `expired` is computed by the infra layer at read time from
+/// `absolute_expires_at_ts <= now`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FamilyLifecycle {
+    pub user_id: String,
+    pub realm_id: String,
+    pub revoked: bool,
+    pub expired: bool,
+}
+
+/// Snapshot of a single active session for a user, assembled from the browser
+/// token family record (`bt:fam:{familyId}`) plus the independent session
+/// metadata index (`bt:meta:{familyId}`, written at login). Legacy sessions
+/// created before the meta index existed surface `client_app_name` /
+/// `user_agent` / `client_ip` / `created_at` as `None`.
+//
+// `absolute_expires_at` is non-optional because it is always derivable from the
+// family record's `absolute_expires_at_ts`; the meta-dependent fields above it
+// are optional to tolerate legacy families without meta.
+#[derive(Debug, Clone, Deserialize, Serialize, ToSchema, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct UserSessionSummary {
+    pub family_id: Uuid,
+    pub realm_id: String,
+    pub client_app_id: Uuid,
+    pub client_app_name: Option<String>,
+    pub credential_class: CredentialClass,
+    pub user_agent: Option<String>,
+    pub client_ip: Option<String>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub absolute_expires_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct BrowserRefreshTokenData {
     pub realm_id: String,
@@ -57,7 +101,6 @@ pub enum TargetOperation {
     BindAuthenticator,
     RemoveAuthenticator,
     DeleteAccount,
-    ApplyInvoice,
 }
 
 impl TargetOperation {
@@ -68,7 +111,6 @@ impl TargetOperation {
             Self::BindAuthenticator => "bind_authenticator",
             Self::RemoveAuthenticator => "remove_authenticator",
             Self::DeleteAccount => "delete_account",
-            Self::ApplyInvoice => "apply_invoice",
         }
     }
 }

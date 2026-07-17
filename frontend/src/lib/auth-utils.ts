@@ -4,6 +4,12 @@
  * Helper functions for authentication flows.
  * These functions coordinate between the auth service and Zustand store
  * to provide convenient APIs for authentication operations.
+ *
+ * Herald FirstParty login (design §4.4) follows OAuth Authorization Code + PKCE:
+ *   generate verifier/challenge → seed OAuth state via `/authorize` → submit
+ *   login with the OAuth/clientId params → on `redirectTo` extract the code →
+ *   `oauthToken` PKCE exchange → store AT in memory + RT in store. 2FA detours
+ *   carry the pending PKCE state through. Logout revokes the Bearer family.
  */
 
 import type {
@@ -12,8 +18,14 @@ import type {
   VerifyTotpResponse,
   PasskeyVerifyResponse,
 } from '@/lib/api-generated'
-import { fetchAuthData, performLogin, performLogout } from '@/lib/auth-service'
-import { useAuthStore, clearAuthStorage } from '@/stores/auth-store'
+import {
+  fetchAuthData,
+  performLogin,
+  performLogout,
+  performPkceTokenExchange,
+  refreshBrowserToken,
+} from '@/lib/auth-service'
+import { useAuthStore, clearAuthStorage, accessTokenHolder } from '@/stores/auth-store'
 import {
   hasAdminPermission,
   DEFAULT_USER_REDIRECT,
@@ -21,6 +33,16 @@ import {
   getSafeRedirectPath,
 } from '@/lib/constants/auth-constants'
 import { realmPath, resolvedRealmFromPath } from '@/lib/realm-routing'
+import { generatePkcePair, generateStateToken, extractAuthorizationCode } from '@/lib/pkce-utils'
+import { FIRST_PARTY_CLIENT_ID } from '@/lib/constants/auth-constants'
+
+// Re-exported so existing call sites (`register-form`, `forgot-password`,
+// `verify-email`) keep a single import; the canonical value lives in
+// `auth-constants`, which has no module-cycle with `auth-service`.
+export { FIRST_PARTY_CLIENT_ID }
+
+/** FirstParty OAuth callback path (must match backend `FIRST_PARTY_CALLBACK_PATH`). */
+const FIRST_PARTY_CALLBACK_PATH = '/callback'
 
 /**
  * Result object for login flow
@@ -51,17 +73,136 @@ export function isConsentRequired(response: {
 /**
  * Tracks the realm for which auth data has already been initialized this
  * session. Module-scoped: survives in-app navigation (so the root loader does
- * not re-fetch on every page switch) but resets on a full page reload (F5),
- * which re-runs the module and re-validates the session cookie once.
+ * not re-fetch on every page switch) but resets on a full page reload (F5).
  */
 let initializedRealm: string | null = null
 
 /**
+ * Build the FirstParty OAuth `redirect_uri`. It must exactly equal
+ * `{frontend origin}/callback` to pass backend `validate_first_party_redirect`.
+ */
+function firstPartyRedirectUri(): string {
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost'
+  return `${origin}${FIRST_PARTY_CALLBACK_PATH}`
+}
+
+/**
+ * Bootstrap a FirstParty PKCE flow: generate the verifier/challenge + state,
+ * persist them in the auth store, and seed the backend OAuth state by calling
+ * `/authorize`. Returns the OAuth params to attach to the subsequent login
+ * payload. Idempotent within a flow: if a PKCE state is already active it is
+ * reused (so a re-submit after consent does not regenerate the verifier).
+ *
+ * Returns `null` when PKCE cannot be established (e.g. window unavailable or
+ * the authorize seed call fails); the caller then falls back to a non-PKCE
+ * direct login, which yields a CustomUserUi-scoped token set.
+ */
+export async function beginFirstPartyPkceFlow(realmId: string): Promise<{
+  oauthClientId: string
+  redirectUri: string
+  state: string
+} | null> {
+  const existing = useAuthStore.getState().getPkceState()
+  if (existing) {
+    return {
+      oauthClientId: existing.clientId,
+      redirectUri: existing.redirectUri,
+      state: existing.state,
+    }
+  }
+
+  const { codeVerifier, codeChallenge } = await generatePkcePair()
+  const state = generateStateToken()
+  const redirectUri = firstPartyRedirectUri()
+
+  // Seed the backend OAuth state (stores client_id/realm/redirect_uri/code_
+  // challenge in Redis under `oauth:state:{state}`). The 302 redirect body is
+  // ignored — we are already on the login page.
+  try {
+    const { oauthAuthorize } = await import('@/lib/api-generated')
+    const result = await oauthAuthorize({
+      path: { realmId },
+      query: {
+        client_id: FIRST_PARTY_CLIENT_ID,
+        redirect_uri: redirectUri,
+        state,
+        response_type: 'code',
+        code_challenge: codeChallenge,
+        code_challenge_method: 'S256',
+      },
+    })
+    // A 302 is the success path here; treat a hard error as PKCE-unavailable.
+    if (result.error) {
+      return null
+    }
+  } catch {
+    return null
+  }
+
+  useAuthStore.getState().setPkceState({
+    codeVerifier,
+    clientId: FIRST_PARTY_CLIENT_ID,
+    redirectUri,
+    state,
+  })
+
+  return { oauthClientId: FIRST_PARTY_CLIENT_ID, redirectUri, state }
+}
+
+/**
+ * Complete the PKCE exchange when a login / verify response carries a
+ * `redirectTo` of the form `{redirect_uri}?code={code}&state={state}`.
+ *
+ * On success, stores the AT in memory + RT in the store and returns `true`.
+ * Returns `false` when there is no PKCE state, no code, or the returned `state`
+ * does not match the one sent to /authorize (CSRF) — the caller should then
+ * treat the `redirectTo` as before (e.g. external nav).
+ */
+async function tryCompletePkceExchange(
+  realmId: string,
+  redirectTo: string | null | undefined
+): Promise<boolean> {
+  const pkce = useAuthStore.getState().getPkceState()
+  if (!pkce || !redirectTo) return false
+  const parsed = extractAuthorizationCode(redirectTo)
+  if (!parsed) return false
+  // CSRF guard (RFC 6749 §10.12): the `state` returned with the code MUST equal
+  // the `state` we sent to /authorize. A mismatch means the redirect did not
+  // originate from our authorize call — refuse the exchange and drop PKCE state.
+  if (parsed.state !== pkce.state) {
+    useAuthStore.getState().setPkceState(null)
+    return false
+  }
+  try {
+    const tokenSet = await performPkceTokenExchange(realmId, {
+      code: parsed.code,
+      codeVerifier: pkce.codeVerifier,
+      redirectUri: pkce.redirectUri,
+    })
+    useAuthStore.getState().setTokens({
+      accessToken: tokenSet.accessToken,
+      refreshToken: tokenSet.refreshToken,
+      clientId: pkce.clientId,
+    })
+    // PKCE flow complete — clear the transient state.
+    useAuthStore.getState().setPkceState(null)
+    return true
+  } catch {
+    // Exchange failed (bad verifier / expired code) — force a clean re-login.
+    useAuthStore.getState().logout()
+    useAuthStore.getState().setPkceState(null)
+    throw new Error('PKCE token exchange failed; please sign in again.')
+  }
+}
+
+/**
  * Initialize authentication state
  *
- * Fetches auth data from the API and populates the Zustand store on first call
- * per realm. Subsequent calls for the same realm reuse the store state without
- * hitting the API — auth data is session-scoped, not per-navigation.
+ * Restores the session from a persisted refresh token when present: if a
+ * refresh token exists but no in-memory access token (e.g. after a full page
+ * reload), this refreshes first so the subsequent status call is authenticated.
+ * Then fetches auth data and populates the Zustand store on first call per
+ * realm. Subsequent calls for the same realm reuse the store state.
  *
  * @param realmId - The realm ID to initialize auth for
  * @param forceRefresh - Force a fresh fetch even if already initialized (default: false)
@@ -90,6 +231,30 @@ export async function initializeAuth(
   store.setIsLoading(true)
 
   try {
+    // --- Startup refresh-first restore (design §4.4) ---
+    // If a refresh token is persisted but there is no in-memory access token
+    // (the normal case after a full page reload), refresh before checking
+    // status so the session can be restored instead of appearing logged out.
+    const { refreshToken, clientId } = store.getRefreshToken()
+    if (refreshToken && clientId && !accessTokenHolder.get()) {
+      try {
+        const tokenSet = await refreshBrowserToken(refreshToken, clientId)
+        store.setTokens({
+          accessToken: tokenSet.accessToken,
+          refreshToken: tokenSet.refreshToken,
+          clientId,
+        })
+      } catch {
+        // Refresh failed (reuse/expiry/revocation) → force full re-login.
+        store.logout()
+        initializedRealm = null
+        return {
+          authenticated: false,
+          redirectPath: DEFAULT_USER_REDIRECT,
+        }
+      }
+    }
+
     const { authStatus, userPermissions, userProfile } = await fetchAuthData()
 
     // Update store with fetched data
@@ -122,8 +287,31 @@ export async function initializeAuth(
 }
 
 /**
+ * After a successful authentication (login, 2FA verify, or PKCE exchange),
+ * fetch the authenticated user's status / profile / permissions and hydrate
+ * the store, then mark `realmId` as initialized. Returns the fetched data so
+ * the caller can choose its redirect target.
+ */
+async function hydrateAuthenticatedSession(
+  store: ReturnType<typeof useAuthStore.getState>,
+  realmId: string
+): Promise<Awaited<ReturnType<typeof fetchAuthData>>> {
+  const fetched = await fetchAuthData()
+  store.setAuthStatus(fetched.authStatus.authenticated, fetched.authStatus.realmId || realmId)
+  store.setUserPermissions(fetched.userPermissions.permissions, fetched.userPermissions.roles)
+  store.setUserProfile(fetched.userProfile)
+  initializedRealm = realmId
+  return fetched
+}
+
+/**
  * Login flow
- * Handles the complete login process including API call and state update
+ * Handles the complete login process including API call and state update.
+ *
+ * Herald FirstParty path: bootstraps a PKCE flow, attaches the OAuth params to
+ * the login payload, and on a `redirectTo` response completes the PKCE token
+ * exchange (AT in memory, RT in store) instead of relying on a cookie session.
+ * If PKCE could not be bootstrapped, falls back to a direct login.
  *
  * @param realmId - The realm ID to login to
  * @param credentials - Login credentials
@@ -137,34 +325,63 @@ export async function loginFlow(
   const store = useAuthStore.getState()
 
   try {
+    // Attach FirstParty PKCE OAuth params unless the caller already supplied
+    // an explicit OAuth context (third-party OAuth clients keep their own).
+    let loginCredentials = credentials
+    if (!credentials.oauthClientId) {
+      const pkceParams = await beginFirstPartyPkceFlow(realmId)
+      if (pkceParams) {
+        loginCredentials = {
+          ...credentials,
+          oauthClientId: pkceParams.oauthClientId,
+          redirectUri: pkceParams.redirectUri,
+          state: pkceParams.state,
+        }
+      }
+    }
+
     // Perform login API call
-    const loginResponse = await performLogin(realmId, credentials)
+    const loginResponse = await performLogin(realmId, loginCredentials)
 
     if (loginResponse.requiresTotp) {
+      // 2FA detour: keep the PKCE state so the post-TOTP exchange can complete.
       return { response: loginResponse, redirectPath: DEFAULT_USER_REDIRECT }
     }
 
-    if (
-      loginResponse.consentRequired ||
-      (loginResponse as { consent_required?: boolean | null }).consent_required
-    ) {
+    if (isConsentRequired(loginResponse)) {
       return { response: loginResponse, redirectPath: DEFAULT_USER_REDIRECT }
     }
 
-    // Session is created on the token endpoint, not in the browser
+    // PKCE path: the backend returns `redirectTo = {redirect_uri}?code=...`.
+    // Complete the exchange and store the token set instead of navigating.
     if (loginResponse.redirectTo) {
+      const exchanged = await tryCompletePkceExchange(realmId, loginResponse.redirectTo)
+      if (exchanged) {
+        const userRealmId = loginResponse.realmId || realmId
+        store.login(userRealmId)
+        const { userPermissions } = await hydrateAuthenticatedSession(store, userRealmId)
+
+        const redirectPath = hasAdminPermission(userPermissions.permissions)
+          ? DEFAULT_ADMIN_REDIRECT
+          : DEFAULT_USER_REDIRECT
+        // Return the response with redirectTo nulled so the caller proceeds to
+        // its post-login redirect logic instead of navigating to /callback.
+        return {
+          response: { ...loginResponse, redirectTo: null },
+          redirectPath,
+        }
+      }
+      // PKCE exchange not applicable (no active flow / no code) → preserve the
+      // original redirectTo so the caller can still navigate (e.g. external).
       return { response: loginResponse, redirectPath: DEFAULT_USER_REDIRECT }
     }
 
+    // Direct (non-PKCE) login path: session is established via the token set
+    // returned by the login body; fetch the authenticated user data.
     const userRealmId = loginResponse.realmId || realmId
     store.login(userRealmId)
 
-    const { authStatus, userPermissions, userProfile } = await fetchAuthData()
-    store.setAuthStatus(authStatus.authenticated, authStatus.realmId || userRealmId)
-    store.setUserPermissions(userPermissions.permissions, userPermissions.roles)
-    store.setUserProfile(userProfile)
-
-    initializedRealm = userRealmId
+    const { userPermissions } = await hydrateAuthenticatedSession(store, userRealmId)
 
     const redirectPath = hasAdminPermission(userPermissions.permissions)
       ? DEFAULT_ADMIN_REDIRECT
@@ -180,7 +397,8 @@ export async function loginFlow(
 
 /**
  * Logout flow
- * Handles the complete logout process including API call, state reset, storage cleanup, and navigation
+ * Handles the complete logout process including API call (Bearer family
+ * revocation), state reset, storage cleanup, and navigation.
  *
  * @param realmId - The realm ID to logout from
  */
@@ -189,13 +407,14 @@ export async function logoutFlow(realmId: string): Promise<void> {
   store.setIsLoading(true)
 
   try {
-    // Perform logout API call - this will clear the session cookie
+    // Perform logout API call — revokes the Bearer access/refresh token family.
     await performLogout()
   } catch (error) {
     // Log the error but continue with state cleanup
     console.error('Logout API call failed:', error)
   } finally {
-    // Always reset the store and clear persisted storage
+    // Always reset the store, clear the in-memory access token, and clear
+    // persisted storage (refresh token + PKCE state).
     store.reset()
     initializedRealm = null
     store.setIsLoading(false)
@@ -204,7 +423,7 @@ export async function logoutFlow(realmId: string): Promise<void> {
     clearAuthStorage()
 
     // Navigate to login page - use window.location for simple redirect
-    // since we need to reload the page to properly clear auth state
+    // since we need to reload the page to properly clear in-memory state.
     const realmContext = resolvedRealmFromPath(window.location.pathname)
     window.location.href = realmPath({ ...realmContext, realmId }, '/auth/login')
   }
@@ -251,6 +470,9 @@ export function getSafeRedirect(
 /**
  * Complete login after TOTP verification
  *
+ * Carries the pending PKCE state through the 2FA detour: when the verify
+ * response carries a `redirectTo` with a PKCE code, the exchange completes here.
+ *
  * @param realmId - The realm ID
  * @param verifyResponse - The TOTP verification response from the API
  */
@@ -258,27 +480,26 @@ export async function completeLoginAfterTotp(
   realmId: string,
   verifyResponse: VerifyTotpResponse
 ): Promise<{ redirectPath?: string; redirectTo?: string | null }> {
-  // OAuth flow: when redirectTo is present, return it without updating store
+  // PKCE flow: when redirectTo carries a code, complete the token exchange.
   if (verifyResponse.redirectTo) {
+    const exchanged = await tryCompletePkceExchange(realmId, verifyResponse.redirectTo)
+    if (exchanged) {
+      const store = useAuthStore.getState()
+      await hydrateAuthenticatedSession(store, realmId)
+      return { redirectPath: getRedirectPath() }
+    }
+    // Not a PKCE redirect — return it so the caller can navigate externally.
     return { redirectTo: verifyResponse.redirectTo }
   }
 
-  if (
-    verifyResponse.consentRequired ||
-    (verifyResponse as { consent_required?: boolean | null }).consent_required
-  ) {
+  if (isConsentRequired(verifyResponse)) {
     return {}
   }
 
   const store = useAuthStore.getState()
 
   try {
-    const { authStatus, userPermissions, userProfile } = await fetchAuthData()
-    store.setAuthStatus(authStatus.authenticated, authStatus.realmId || realmId)
-    store.setUserPermissions(userPermissions.permissions, userPermissions.roles)
-    store.setUserProfile(userProfile)
-
-    initializedRealm = realmId
+    await hydrateAuthenticatedSession(store, realmId)
 
     return { redirectPath: getRedirectPath() }
   } catch (error) {
@@ -290,11 +511,12 @@ export async function completeLoginAfterTotp(
 /**
  * Complete login after Passkey verification (first or second factor).
  *
- * Behaviour is identical to `completeLoginAfterTotp`: `PasskeyVerifyResponse`
- * is structurally the same as `VerifyTotpResponse` (camelCase
- * `consentRequired`/`agreements`/`redirectTo`/`token`). Kept as a separate,
- * strongly-typed entry point so call sites don't need an unsafe cast and the
- * consent interlock is applied uniformly across all login paths.
+ * Behaviour mirrors `completeLoginAfterTotp` (PKCE exchange on redirectTo,
+ * otherwise fetch auth data). `PasskeyVerifyResponse` is structurally the same
+ * as `VerifyTotpResponse` (camelCase `consentRequired`/`agreements`/
+ * `redirectTo`/`token`). Kept as a separate, strongly-typed entry point so
+ * call sites don't need an unsafe cast and the consent interlock is applied
+ * uniformly across all login paths.
  *
  * @param realmId - The realm ID
  * @param verifyResponse - The Passkey verification response from the API
@@ -303,8 +525,14 @@ export async function completeLoginAfterPasskey(
   realmId: string,
   verifyResponse: PasskeyVerifyResponse
 ): Promise<{ redirectPath?: string; redirectTo?: string | null }> {
-  // OAuth flow: when redirectTo is present, return it without updating store
+  // PKCE flow: when redirectTo carries a code, complete the token exchange.
   if (verifyResponse.redirectTo) {
+    const exchanged = await tryCompletePkceExchange(realmId, verifyResponse.redirectTo)
+    if (exchanged) {
+      const store = useAuthStore.getState()
+      await hydrateAuthenticatedSession(store, realmId)
+      return { redirectPath: getRedirectPath() }
+    }
     return { redirectTo: verifyResponse.redirectTo }
   }
 
@@ -315,12 +543,7 @@ export async function completeLoginAfterPasskey(
   const store = useAuthStore.getState()
 
   try {
-    const { authStatus, userPermissions, userProfile } = await fetchAuthData()
-    store.setAuthStatus(authStatus.authenticated, authStatus.realmId || realmId)
-    store.setUserPermissions(userPermissions.permissions, userPermissions.roles)
-    store.setUserProfile(userProfile)
-
-    initializedRealm = realmId
+    await hydrateAuthenticatedSession(store, realmId)
 
     return { redirectPath: getRedirectPath() }
   } catch (error) {

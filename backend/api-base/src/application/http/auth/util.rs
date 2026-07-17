@@ -5,9 +5,21 @@ use tokio::time::{Duration, timeout};
 use crate::application::http::server::api_entities::ApiError;
 use crate::application::http::state::AppState;
 use herald_core::domain::authorization::permission_service::PermissionService;
+use herald_core::domain::client::entities::ClientApp;
 
 // Re-export rate limiting functions from the dedicated module
 pub use crate::application::http::rate_limit::rate_limit_hit;
+
+/// Extract the request `User-Agent` header as an owned string, if present.
+///
+/// Handlers that record `user_agent` in audit events or token-family metadata
+/// should call this instead of re-inlining the header lookup.
+pub fn user_agent_from_headers(headers: &axum::http::HeaderMap) -> Option<String> {
+    headers
+        .get("user-agent")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string())
+}
 
 /// Extract client IP from request with three-level fallback:
 /// 1. X-Real-IP header (set by nginx/traefik)
@@ -74,35 +86,37 @@ struct TurnstileSiteVerifyResp {
     success: bool,
 }
 
-/// Verify Turnstile token for a specific realm
+/// Verify a Turnstile token against a Client App's Turnstile configuration.
 ///
-/// If Turnstile is not configured or disabled for the realm, the token is optional and verification is skipped.
-/// If Turnstile is enabled, a valid token is required.
-pub async fn verify_turnstile_for_realm(
+/// Turnstile is fully delegated to the Client App (D-PROTECT-01). If the
+/// client app has `turnstile_enabled == false` the token is optional and
+/// verification is skipped (matching the legacy realm-level "not configured ->
+/// skip" semantics). When enabled, a valid token is required.
+///
+/// This reads only `client_app` fields; it never reads `realm_config`.
+pub async fn verify_turnstile_for_client_app(
     state: &AppState,
-    realm_id: &str,
+    client_app: &ClientApp,
     token: Option<&str>,
-    ip: Option<&str>,
+    ip: &str,
 ) -> Result<(), ApiError> {
-    let turnstile_config = sqlx::query_as::<_, (String,)>(
-        "SELECT config_value FROM realm_config
-         WHERE realm_id = $1 AND config_type = 'turnstile' AND config_key = 'secret_key' AND enabled = true",
-    )
-    .bind(realm_id)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to query turnstile config: {e}");
-        ApiError::internal("Failed to query turnstile config")
-    })?;
-
-    let Some((secret,)) = turnstile_config else {
-        // Turnstile not configured or disabled for this realm
-        // If no token provided, that's fine. If provided, we could still validate but skip for now.
+    if !client_app.turnstile_enabled {
         return Ok(());
-    };
+    }
 
-    // Turnstile is enabled, token is required
+    let secret = client_app
+        .turnstile_secret_key
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .ok_or_else(|| {
+            tracing::error!(
+                client_id = %client_app.client_id,
+                "Turnstile is enabled but secret key is not configured"
+            );
+            ApiError::internal("Turnstile secret key is not configured")
+        })?;
+
+    // Turnstile is enabled, token is required.
     let token = token
         .filter(|t| !t.trim().is_empty())
         .ok_or_else(|| ApiError::bad_request("turnstile token is required"))?;
@@ -113,10 +127,8 @@ pub async fn verify_turnstile_for_realm(
         return Ok(());
     }
 
-    let mut form = vec![("secret", secret.as_str()), ("response", token)];
-    if let Some(ip) = ip
-        && !ip.trim().is_empty()
-    {
+    let mut form = vec![("secret", secret), ("response", token)];
+    if !ip.trim().is_empty() {
         form.push(("remoteip", ip));
     }
 
@@ -229,6 +241,63 @@ pub async fn is_email_configured(state: &AppState, realm_id: &str) -> Result<boo
             })?;
 
     Ok(status.configured)
+}
+
+/// Deserialized shape of the `email_otp` / `settings` config_value JSON
+/// (design email-otp-login §5.1). Both fields default to false when absent
+/// so a partial or legacy payload degrades to "disabled".
+#[derive(serde::Deserialize, Default)]
+#[serde(default)]
+pub struct EmailOtpSettings {
+    pub enabled: bool,
+    pub auto_register: bool,
+}
+
+/// Load the `email_otp` settings JSON for a realm.
+///
+/// Reads `realm_config` where `config_type='email_otp'`,
+/// `config_key='settings'`, and the row is `enabled=true`. Returns the
+/// parsed [`EmailOtpSettings`] (or the disabled default) for the requested
+/// realm; never returns an error for a missing or malformed payload — those
+/// cases simply yield the all-false default. Callers that need both flags
+/// should call this once rather than via the single-flag helpers below, to
+/// avoid reading the same row twice.
+pub async fn load_email_otp_settings(
+    state: &AppState,
+    realm_id: &str,
+) -> Result<EmailOtpSettings, ApiError> {
+    let row = sqlx::query_as::<_, (String,)>(
+        "SELECT config_value FROM realm_config
+         WHERE realm_id = $1 AND config_type = 'email_otp' AND config_key = 'settings' AND enabled = true",
+    )
+    .bind(realm_id)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to query email OTP config: {e}");
+        ApiError::internal("Failed to query email OTP config")
+    })?;
+
+    let Some((raw,)) = row else {
+        return Ok(EmailOtpSettings::default());
+    };
+
+    let settings: EmailOtpSettings = serde_json::from_str(&raw).unwrap_or_else(|e| {
+        tracing::error!("Failed to parse email OTP settings JSON: {e}; using default");
+        EmailOtpSettings::default()
+    });
+
+    Ok(settings)
+}
+
+/// Check if email OTP login is enabled for a realm (design §5.1).
+///
+/// Returns true if the `email_otp` / `settings` config row is active and its
+/// JSON `enabled` field is `true`. Defaults to false when the config is
+/// absent or malformed (opt-in per realm).
+pub async fn is_email_otp_enabled(state: &AppState, realm_id: &str) -> Result<bool, ApiError> {
+    let settings = load_email_otp_settings(state, realm_id).await?;
+    Ok(settings.enabled)
 }
 
 /// Check if a user has a specific permission with timeout

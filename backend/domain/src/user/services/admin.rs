@@ -9,11 +9,13 @@ use crate::audit::{
     ActorType, AuditAction, AuditCategory, AuditEventRepository, AuditResult, AuditTargetType,
     NewAuditEvent,
 };
+use crate::authentication::ports::BrowserTokenService;
 use crate::{
     authentication::Identity,
     authorization::permission_service::PermissionService,
     common::{entities::app_errors::CoreError, policies::ensure_policy},
     security_constants::DEFAULT_BCRYPT_COST,
+    user::entities::UserStatus,
 };
 
 use super::super::{
@@ -57,37 +59,42 @@ async fn require_permission<P: PermissionService>(
 // Admin User Service Implementation
 // ============================================================================
 
-pub struct AdminUserServiceImpl<R, UR, P, AE>
+pub struct AdminUserServiceImpl<R, UR, P, AE, B>
 where
     R: AdminUserRepository,
     UR: UserRoleRepository,
     P: PermissionService,
     AE: AuditEventRepository + 'static,
+    B: BrowserTokenService,
 {
     user_repository: Arc<R>,
     user_role_repository: Arc<UR>,
     permission_checker: Arc<P>,
     pub(crate) audit_event_repository: Arc<AE>,
+    token_service: Arc<B>,
 }
 
-impl<R, UR, P, AE> AdminUserServiceImpl<R, UR, P, AE>
+impl<R, UR, P, AE, B> AdminUserServiceImpl<R, UR, P, AE, B>
 where
     R: AdminUserRepository,
     UR: UserRoleRepository,
     P: PermissionService,
     AE: AuditEventRepository + 'static,
+    B: BrowserTokenService,
 {
     pub fn new(
         user_repository: Arc<R>,
         user_role_repository: Arc<UR>,
         permission_checker: Arc<P>,
         audit_event_repository: Arc<AE>,
+        token_service: Arc<B>,
     ) -> Self {
         Self {
             user_repository,
             user_role_repository,
             permission_checker,
             audit_event_repository,
+            token_service,
         }
     }
 
@@ -131,12 +138,26 @@ where
     }
 }
 
-impl<R, UR, P, AE> AdminUserService for AdminUserServiceImpl<R, UR, P, AE>
+impl<R, UR, P, AE, B> std::fmt::Debug for AdminUserServiceImpl<R, UR, P, AE, B>
 where
     R: AdminUserRepository,
     UR: UserRoleRepository,
     P: PermissionService,
     AE: AuditEventRepository + 'static,
+    B: BrowserTokenService,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AdminUserServiceImpl").finish()
+    }
+}
+
+impl<R, UR, P, AE, B> AdminUserService for AdminUserServiceImpl<R, UR, P, AE, B>
+where
+    R: AdminUserRepository,
+    UR: UserRoleRepository,
+    P: PermissionService,
+    AE: AuditEventRepository + 'static,
+    B: BrowserTokenService,
 {
     async fn create_user_with_roles(
         &self,
@@ -393,6 +414,34 @@ where
             ));
         }
 
+        // Capture old status before write for Forbidden linkage (BE-D02).
+        // Only needed when the request actually changes status: when `status`
+        // is None the linkage branch below cannot fire (new_status is None), so
+        // skip the extra read. A missing user follows the not_found path below.
+        let old_status = if request.status.is_some() {
+            match self.user_repository.get_user_with_profile(user_id).await {
+                Ok(Some(existing)) => Some(UserStatus::from(
+                    i16::try_from(existing.status).unwrap_or(i16::from(UserStatus::Invalid)),
+                )),
+                Ok(None) => None,
+                Err(e) => {
+                    self.record_user_audit(
+                        &identity,
+                        realm_id,
+                        AuditAction::UserUpdate,
+                        user_id.to_string(),
+                        None,
+                        AuditResult::Failure,
+                        Some("fetch_existing_user_failed"),
+                    )
+                    .await;
+                    return Err(e);
+                }
+            }
+        } else {
+            None
+        };
+
         // Update user fields (email is read-only after creation)
         if let Err(e) = self
             .user_repository
@@ -410,6 +459,32 @@ where
             )
             .await;
             return Err(e);
+        }
+
+        // Forbidden linkage (BE-D02 / US-RA-021): when the user transitions
+        // INTO Forbidden, revoke all active sessions within the same logical
+        // boundary. Non-target transitions and idempotent re-forbidding do
+        // not revoke.
+        let new_status = request
+            .status
+            .and_then(|s| i16::try_from(s).ok())
+            .map(UserStatus::from);
+        let mut linkage_triggered = false;
+        if matches!(new_status, Some(UserStatus::Forbidden))
+            && old_status != Some(UserStatus::Forbidden)
+        {
+            self.token_service
+                .revoke_user_families(&user_id.to_string())
+                .await
+                .map_err(|e| {
+                    tracing::error!(
+                        error = %e,
+                        user_id = %user_id,
+                        "forbidden_linkage: revoke sessions failed"
+                    );
+                    UserAdminError::InternalError(format!("failed to revoke sessions: {e}"))
+                })?;
+            linkage_triggered = true;
         }
 
         // Fetch updated user
@@ -452,7 +527,18 @@ where
             created_at: user_entity.created_at.to_rfc3339(),
         };
 
-        // Record audit event (failure does not fail the operation)
+        // Record audit event (failure does not fail the operation). When the
+        // Forbidden linkage fired, annotate the details so the audit trail
+        // records that session revocation was triggered.
+        let audit_details = if linkage_triggered {
+            serde_json::json!({
+                "email": admin_user.email,
+                "trigger": "forbidden_linkage",
+                "scope": "all"
+            })
+        } else {
+            serde_json::json!({ "email": admin_user.email })
+        };
         if let Err(e) = self
             .audit_event_repository
             .create(NewAuditEvent {
@@ -466,7 +552,7 @@ where
                 target_id: admin_user.id.to_string(),
                 target_name: Some(admin_user.email.clone()),
                 result: AuditResult::Success,
-                details: Some(serde_json::json!({"email": admin_user.email})),
+                details: Some(audit_details),
                 ip_address: None,
                 user_agent: None,
                 trace_id: None,
@@ -1531,6 +1617,14 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::audit::{AuditEvent, AuditEventFilters, PaginatedAuditEvents};
+    use crate::authentication::entities::{BrowserAccessTokenData, BrowserTokenSet};
+    use crate::user::admin_entities::AdminUserEntity;
+    use crate::user::{GrantRoleOutcome, RevokeRoleOutcome};
+    use chrono::DateTime;
+    use chrono::Utc;
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     fn has_lowercase(s: &str) -> bool {
         s.chars().any(|c| c.is_ascii_lowercase())
@@ -1583,5 +1677,647 @@ mod tests {
                 assert!(all_chars.contains(&c), "unexpected character: {c}");
             }
         }
+    }
+
+    // ========================================================================
+    // Forbidden linkage (BE-D02) — hand-rolled mock ports.
+    // The port traits return `impl Future` (non-object-safe), so mockall is
+    // unusable. Only the methods exercised by `update_user_admin` return
+    // meaningful values; the rest panic to surface accidental coupling.
+    // ========================================================================
+
+    /// Permission checker that always grants the requested permission.
+    struct AlwaysAllowPermission;
+    impl PermissionService for AlwaysAllowPermission {
+        fn check_permission(
+            &self,
+            _realm_id: &str,
+            _user_id: &str,
+            _resource: &str,
+            _action: &str,
+        ) -> impl Future<Output = Result<bool, CoreError>> + Send {
+            async { Ok(true) }
+        }
+        fn get_user_roles(
+            &self,
+            _realm_id: &str,
+            _user_id: &str,
+        ) -> impl Future<Output = Result<Vec<String>, CoreError>> + Send {
+            async { Ok(vec![]) }
+        }
+        fn get_role_policies(
+            &self,
+            _realm_id: &str,
+            _role_id: &str,
+        ) -> impl Future<Output = Result<Vec<crate::authorization::Policy>, CoreError>> + Send
+        {
+            async { Ok(vec![]) }
+        }
+        fn invalidate_user_role_cache(
+            &self,
+            _realm_id: &str,
+            _user_id: &str,
+        ) -> impl Future<Output = Result<(), CoreError>> + Send {
+            async { Ok(()) }
+        }
+        fn invalidate_role_policy_cache(
+            &self,
+            _realm_id: &str,
+            _role_id: &str,
+        ) -> impl Future<Output = Result<(), CoreError>> + Send {
+            async { Ok(()) }
+        }
+        fn invalidate_realm_cache(
+            &self,
+            _realm_id: &str,
+        ) -> impl Future<Output = Result<(), CoreError>> + Send {
+            async { Ok(()) }
+        }
+        fn get_user_permissions(
+            &self,
+            _realm_id: &str,
+            _user_id: &str,
+        ) -> impl Future<Output = Result<Vec<String>, CoreError>> + Send {
+            async { Ok(vec![]) }
+        }
+        fn check_principal_permission(
+            &self,
+            _realm_id: &str,
+            _principal_type: &str,
+            _principal_id: &str,
+            _resource: &str,
+            _action: &str,
+        ) -> impl Future<Output = Result<bool, CoreError>> + Send {
+            async { Ok(true) }
+        }
+        fn invalidate_principal_role_cache(
+            &self,
+            _realm_id: &str,
+            _principal_type: &str,
+            _principal_id: &str,
+        ) -> impl Future<Output = Result<(), CoreError>> + Send {
+            async { Ok(()) }
+        }
+    }
+
+    /// In-memory admin user repository. Only `get_user_with_profile` and
+    /// `update_user_fields` are exercised by `update_user_admin`.
+    struct MockAdminUserRepo {
+        row: Arc<Mutex<Option<AdminUserEntity>>>,
+        update_calls: Arc<AtomicUsize>,
+    }
+    impl AdminUserRepository for MockAdminUserRepo {
+        fn create_user_with_profile(
+            &self,
+            _realm_id: &str,
+            _email: &str,
+            _password_hash: &str,
+            _nickname: Option<&str>,
+            _status: i32,
+        ) -> impl Future<Output = UserAdminResult<Uuid>> + Send {
+            async { Ok(Uuid::nil()) }
+        }
+        fn update_user_fields(
+            &self,
+            user_id: Uuid,
+            _email: Option<&str>,
+            nickname: Option<&str>,
+            status: Option<i32>,
+        ) -> impl Future<Output = UserAdminResult<()>> + Send {
+            let row = self.row.clone();
+            let calls = self.update_calls.clone();
+            async move {
+                calls.fetch_add(1, Ordering::SeqCst);
+                let mut guard = row.lock().unwrap();
+                if let Some(e) = guard.as_mut() {
+                    if let Some(nick) = nickname {
+                        e.nickname = Some(nick.to_string());
+                    }
+                    if let Some(s) = status {
+                        e.status = s;
+                    }
+                    e.updated_at = Utc::now();
+                }
+                let _ = user_id;
+                Ok(())
+            }
+        }
+        fn get_user_with_profile(
+            &self,
+            _user_id: Uuid,
+        ) -> impl Future<Output = UserAdminResult<Option<AdminUserEntity>>> + Send {
+            let row = self.row.clone();
+            async move { Ok(row.lock().unwrap().clone()) }
+        }
+        fn email_exists(
+            &self,
+            _realm_id: &str,
+            _email: &str,
+        ) -> impl Future<Output = UserAdminResult<bool>> + Send {
+            async { Ok(false) }
+        }
+        fn get_user_by_email(
+            &self,
+            _realm_id: &str,
+            _email: &str,
+        ) -> impl Future<Output = UserAdminResult<Option<AdminUserEntity>>> + Send {
+            async { Ok(None) }
+        }
+        fn delete_user(
+            &self,
+            _user_id: Uuid,
+        ) -> impl Future<Output = UserAdminResult<bool>> + Send {
+            async { Ok(true) }
+        }
+        fn update_user_password(
+            &self,
+            _user_id: Uuid,
+            _password_hash: &str,
+        ) -> impl Future<Output = UserAdminResult<bool>> + Send {
+            async { Ok(true) }
+        }
+    }
+
+    /// Minimal no-op user-role repository. `update_user_admin` does not touch it.
+    struct MockUserRoleRepo;
+    impl UserRoleRepository for MockUserRoleRepo {
+        fn replace_user_roles(
+            &self,
+            _user_id: Uuid,
+            _realm_id: &str,
+            _client_id: &str,
+            _role_ids: &[Uuid],
+        ) -> impl Future<Output = UserAdminResult<()>> + Send {
+            async { Ok(()) }
+        }
+        fn get_user_role_ids(
+            &self,
+            _user_id: Uuid,
+        ) -> impl Future<Output = UserAdminResult<Vec<Uuid>>> + Send {
+            async { Ok(vec![]) }
+        }
+        fn get_user_roles(
+            &self,
+            _user_id: Uuid,
+        ) -> impl Future<Output = UserAdminResult<Vec<crate::user::admin_entities::RoleEntity>>> + Send
+        {
+            async { Ok(vec![]) }
+        }
+        fn add_user_role(
+            &self,
+            _user_id: Uuid,
+            _role_id: Uuid,
+            _realm_id: &str,
+            _client_id: &str,
+        ) -> impl Future<Output = UserAdminResult<()>> + Send {
+            async { Ok(()) }
+        }
+        fn remove_user_role(
+            &self,
+            _user_id: Uuid,
+            _role_id: Uuid,
+            _client_id: &str,
+        ) -> impl Future<Output = UserAdminResult<bool>> + Send {
+            async { Ok(true) }
+        }
+        fn grant_role_by_payment(
+            &self,
+            _realm_id: &str,
+            _user_id: Uuid,
+            _role_id: Uuid,
+            _client_id: Option<&str>,
+            _source_id: &str,
+            _expires_at: Option<DateTime<Utc>>,
+        ) -> impl Future<Output = UserAdminResult<GrantRoleOutcome>> + Send {
+            async { Ok(GrantRoleOutcome::Granted) }
+        }
+        fn revoke_roles_by_payment_source(
+            &self,
+            _realm_id: &str,
+            _user_id: Uuid,
+            _source_id: &str,
+        ) -> impl Future<Output = UserAdminResult<RevokeRoleOutcome>> + Send {
+            async { Ok(RevokeRoleOutcome::NotFound) }
+        }
+        fn user_has_any_role(
+            &self,
+            _realm_id: &str,
+            _user_id: Uuid,
+            _role_ids: &[Uuid],
+        ) -> impl Future<Output = UserAdminResult<bool>> + Send {
+            async { Ok(false) }
+        }
+        fn list_user_roles_by_realm_client(
+            &self,
+            _realm_id: &str,
+            _client_id: &str,
+        ) -> impl Future<Output = UserAdminResult<Vec<(Uuid, Uuid)>>> + Send {
+            async { Ok(vec![]) }
+        }
+        fn replace_api_key_roles(
+            &self,
+            _api_key_id: &str,
+            _realm_id: &str,
+            _client_id: &str,
+            _role_ids: &[Uuid],
+        ) -> impl Future<Output = UserAdminResult<()>> + Send {
+            async { Ok(()) }
+        }
+        fn get_api_key_roles(
+            &self,
+            _api_key_id: &str,
+        ) -> impl Future<Output = UserAdminResult<Vec<crate::user::admin_entities::RoleEntity>>> + Send
+        {
+            async { Ok(vec![]) }
+        }
+        fn get_api_key_role_summaries_batch(
+            &self,
+            _api_key_ids: &[String],
+        ) -> impl Future<Output = UserAdminResult<Vec<(String, Vec<(Uuid, String)>)>>> + Send
+        {
+            async { Ok(vec![]) }
+        }
+    }
+
+    /// Best-effort audit sink that always succeeds. The audit details are not
+    /// asserted here (the Forbidden-linkage details are covered by the
+    /// integration-level test in the test slot); this only needs to not fail.
+    struct MockAuditRepo;
+    impl AuditEventRepository for MockAuditRepo {
+        fn create(
+            &self,
+            event: NewAuditEvent,
+        ) -> impl Future<Output = Result<AuditEvent, CoreError>> + Send {
+            async move {
+                Ok(AuditEvent {
+                    id: Uuid::nil(),
+                    realm_id: event.realm_id,
+                    category: event.category,
+                    action: event.action,
+                    actor_id: event.actor_id,
+                    actor_type: event.actor_type,
+                    actor_name: event.actor_name,
+                    target_type: event.target_type,
+                    target_id: event.target_id,
+                    target_name: event.target_name,
+                    result: event.result,
+                    details: event.details,
+                    ip_address: event.ip_address,
+                    user_agent: event.user_agent,
+                    trace_id: event.trace_id,
+                    created_at: Utc::now(),
+                })
+            }
+        }
+        fn list_paginated(
+            &self,
+            _realm_id: &str,
+            _filters: AuditEventFilters,
+        ) -> impl Future<Output = Result<PaginatedAuditEvents, CoreError>> + Send {
+            async {
+                Ok(PaginatedAuditEvents {
+                    items: vec![],
+                    page: 0,
+                    page_size: 0,
+                    total: 0,
+                })
+            }
+        }
+        fn find_by_id(
+            &self,
+            _realm_id: &str,
+            _event_id: Uuid,
+        ) -> impl Future<Output = Result<Option<AuditEvent>, CoreError>> + Send {
+            async { Ok(None) }
+        }
+    }
+
+    /// Hand-rolled `BrowserTokenService` mock. Counts `revoke_user_families`
+    /// calls; the other trait methods are not exercised by the admin update
+    /// path and return minimal values.
+    struct MockBrowserTokenService {
+        revoke_calls: Arc<AtomicUsize>,
+        revoke_err: Option<CoreError>,
+    }
+    impl BrowserTokenService for MockBrowserTokenService {
+        fn lookup_access_token(
+            &self,
+            _access_token: &str,
+        ) -> impl Future<Output = Result<Option<BrowserAccessTokenData>, CoreError>> + Send
+        {
+            async { Ok(None) }
+        }
+        fn create_token_family(
+            &self,
+            _user: &crate::user::entities::User,
+            _client_app: &crate::client::entities::ClientApp,
+            _user_agent: Option<String>,
+            _client_ip: Option<String>,
+        ) -> impl Future<Output = Result<BrowserTokenSet, CoreError>> + Send {
+            async {
+                Ok(BrowserTokenSet {
+                    access_token: String::new(),
+                    refresh_token: String::new(),
+                    expires_in: 0,
+                    refresh_expires_in: 0,
+                    token_type: "Bearer".to_string(),
+                })
+            }
+        }
+        fn create_first_party_token_family(
+            &self,
+            _user: &crate::user::entities::User,
+            _client_app: &crate::client::entities::ClientApp,
+            _user_agent: Option<String>,
+            _client_ip: Option<String>,
+        ) -> impl Future<Output = Result<BrowserTokenSet, CoreError>> + Send {
+            async {
+                Ok(BrowserTokenSet {
+                    access_token: String::new(),
+                    refresh_token: String::new(),
+                    expires_in: 0,
+                    refresh_expires_in: 0,
+                    token_type: "Bearer".to_string(),
+                })
+            }
+        }
+        fn refresh(
+            &self,
+            _refresh_token: &str,
+            _client_app_id: Uuid,
+        ) -> impl Future<
+            Output = Result<BrowserTokenSet, crate::authentication::entities::RefreshError>,
+        > + Send {
+            async {
+                Ok(BrowserTokenSet {
+                    access_token: String::new(),
+                    refresh_token: String::new(),
+                    expires_in: 0,
+                    refresh_expires_in: 0,
+                    token_type: "Bearer".to_string(),
+                })
+            }
+        }
+        fn revoke_family(
+            &self,
+            _family_id: Uuid,
+        ) -> impl Future<Output = Result<(), CoreError>> + Send {
+            async { Ok(()) }
+        }
+        fn revoke_client_families(
+            &self,
+            _client_app_id: Uuid,
+        ) -> impl Future<Output = Result<(), CoreError>> + Send {
+            async { Ok(()) }
+        }
+        fn revoke_user_families(
+            &self,
+            _user_id: &str,
+        ) -> impl Future<Output = Result<(), CoreError>> + Send {
+            let calls = self.revoke_calls.clone();
+            let err = self.revoke_err.clone();
+            async move {
+                calls.fetch_add(1, Ordering::SeqCst);
+                if let Some(e) = err {
+                    return Err(e);
+                }
+                Ok(())
+            }
+        }
+        fn list_user_sessions(
+            &self,
+            _user_id: &str,
+        ) -> impl Future<
+            Output = Result<Vec<crate::authentication::entities::UserSessionSummary>, CoreError>,
+        > + Send {
+            async { Ok(vec![]) }
+        }
+        fn get_family_lifecycle(
+            &self,
+            _family_id: Uuid,
+        ) -> impl Future<
+            Output = Result<Option<crate::authentication::entities::FamilyLifecycle>, CoreError>,
+        > + Send {
+            async { Ok(None) }
+        }
+    }
+
+    /// Build a test `Identity::User` whose realm matches `realm_id`, so the
+    /// realm-boundary check in `update_user_admin` passes.
+    fn admin_identity(realm_id: &str) -> Identity {
+        Identity::User(crate::user::entities::User {
+            id: Uuid::nil(),
+            realm_id: realm_id.to_string(),
+            email: "admin@example.com".to_string(),
+            nickname: None,
+            password_hash: None,
+            provider_ids: vec![],
+            status: UserStatus::Normal,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        })
+    }
+
+    fn make_service(
+        revoke_calls: Arc<AtomicUsize>,
+        revoke_err: Option<CoreError>,
+        initial_status: i32,
+    ) -> AdminUserServiceImpl<
+        MockAdminUserRepo,
+        MockUserRoleRepo,
+        AlwaysAllowPermission,
+        MockAuditRepo,
+        MockBrowserTokenService,
+    > {
+        let row = AdminUserEntity {
+            id: Uuid::nil(),
+            realm_id: "r".to_string(),
+            email: "target@example.com".to_string(),
+            nickname: None,
+            status: initial_status,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        let repo = MockAdminUserRepo {
+            row: Arc::new(Mutex::new(Some(row))),
+            update_calls: Arc::new(AtomicUsize::new(0)),
+        };
+        let token = MockBrowserTokenService {
+            revoke_calls,
+            revoke_err,
+        };
+        AdminUserServiceImpl::new(
+            Arc::new(repo),
+            Arc::new(MockUserRoleRepo),
+            Arc::new(AlwaysAllowPermission),
+            Arc::new(MockAuditRepo),
+            Arc::new(token),
+        )
+    }
+
+    #[tokio::test]
+    async fn update_user_admin_revokes_sessions_when_forbidden() {
+        // old=Normal(1), request.status=Some(2) -> transition INTO Forbidden
+        // must revoke exactly once.
+        let revoke_calls = Arc::new(AtomicUsize::new(0));
+        let svc = make_service(
+            revoke_calls.clone(),
+            None,
+            i16::from(UserStatus::Normal) as i32,
+        );
+        let res = svc
+            .update_user_admin(
+                admin_identity("r"),
+                "r",
+                Uuid::nil(),
+                UpdateUserAdminRequest {
+                    nickname: None,
+                    status: Some(2),
+                },
+            )
+            .await;
+        assert!(res.is_ok(), "expected Ok, got {:?}", res.err());
+        assert_eq!(
+            revoke_calls.load(Ordering::SeqCst),
+            1,
+            "revoke_user_families must be called once on Forbidden transition"
+        );
+    }
+
+    #[tokio::test]
+    async fn update_user_admin_no_revoke_when_status_unchanged_or_non_forbidden() {
+        // status=None (no change) -> no revoke.
+        let revoke_calls = Arc::new(AtomicUsize::new(0));
+        let svc = make_service(
+            revoke_calls.clone(),
+            None,
+            i16::from(UserStatus::Normal) as i32,
+        );
+        let res = svc
+            .update_user_admin(
+                admin_identity("r"),
+                "r",
+                Uuid::nil(),
+                UpdateUserAdminRequest {
+                    nickname: Some("new".to_string()),
+                    status: None,
+                },
+            )
+            .await;
+        assert!(res.is_ok(), "expected Ok, got {:?}", res.err());
+        assert_eq!(
+            revoke_calls.load(Ordering::SeqCst),
+            0,
+            "no revoke when status is unchanged"
+        );
+
+        // status=Some(1) (NonForbidden) -> no revoke.
+        let revoke_calls2 = Arc::new(AtomicUsize::new(0));
+        let svc2 = make_service(
+            revoke_calls2.clone(),
+            None,
+            i16::from(UserStatus::Normal) as i32,
+        );
+        let res2 = svc2
+            .update_user_admin(
+                admin_identity("r"),
+                "r",
+                Uuid::nil(),
+                UpdateUserAdminRequest {
+                    nickname: None,
+                    status: Some(1),
+                },
+            )
+            .await;
+        assert!(res2.is_ok(), "expected Ok, got {:?}", res2.err());
+        assert_eq!(
+            revoke_calls2.load(Ordering::SeqCst),
+            0,
+            "no revoke when target status is non-Forbidden"
+        );
+
+        // old=Forbidden and status=Some(2) (idempotent re-forbid) -> no revoke.
+        let revoke_calls3 = Arc::new(AtomicUsize::new(0));
+        let svc3 = make_service(
+            revoke_calls3.clone(),
+            None,
+            i16::from(UserStatus::Forbidden) as i32,
+        );
+        let res3 = svc3
+            .update_user_admin(
+                admin_identity("r"),
+                "r",
+                Uuid::nil(),
+                UpdateUserAdminRequest {
+                    nickname: None,
+                    status: Some(2),
+                },
+            )
+            .await;
+        assert!(res3.is_ok(), "expected Ok, got {:?}", res3.err());
+        assert_eq!(
+            revoke_calls3.load(Ordering::SeqCst),
+            0,
+            "no revoke when already Forbidden (idempotent)"
+        );
+    }
+
+    #[tokio::test]
+    async fn update_user_admin_revokes_when_forbidden_combined_with_other_fields() {
+        // status=Some(2) AND nickname changed together -> still revoke once.
+        let revoke_calls = Arc::new(AtomicUsize::new(0));
+        let svc = make_service(
+            revoke_calls.clone(),
+            None,
+            i16::from(UserStatus::Normal) as i32,
+        );
+        let res = svc
+            .update_user_admin(
+                admin_identity("r"),
+                "r",
+                Uuid::nil(),
+                UpdateUserAdminRequest {
+                    nickname: Some("renamed".to_string()),
+                    status: Some(2),
+                },
+            )
+            .await;
+        assert!(res.is_ok(), "expected Ok, got {:?}", res.err());
+        assert_eq!(
+            revoke_calls.load(Ordering::SeqCst),
+            1,
+            "revoke must still fire when Forbidden is combined with other field changes"
+        );
+    }
+
+    #[tokio::test]
+    async fn update_user_admin_revoke_failure_surfaces_internal_error() {
+        // revoke_user_families errors -> operation aborts with InternalError.
+        let revoke_calls = Arc::new(AtomicUsize::new(0));
+        let svc = make_service(
+            revoke_calls.clone(),
+            Some(CoreError::InternalServerError("redis down".to_string())),
+            i16::from(UserStatus::Normal) as i32,
+        );
+        let res = svc
+            .update_user_admin(
+                admin_identity("r"),
+                "r",
+                Uuid::nil(),
+                UpdateUserAdminRequest {
+                    nickname: None,
+                    status: Some(2),
+                },
+            )
+            .await;
+        match res {
+            Err(UserAdminError::InternalError(_)) => {}
+            other => panic!("expected InternalError, got {:?}", other),
+        }
+        assert_eq!(
+            revoke_calls.load(Ordering::SeqCst),
+            1,
+            "revoke must be attempted once even when it errors"
+        );
     }
 }

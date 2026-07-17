@@ -143,10 +143,12 @@ pub async fn issue_callback_token_response(
     let token_service = RedisBrowserTokenService::new(state.redis_manager.clone());
     let tokens = if client_app.is_first_party {
         token_service
-            .create_first_party_token_family(&user, &client_app)
+            .create_first_party_token_family(&user, &client_app, None, None)
             .await
     } else {
-        token_service.create_token_family(&user, &client_app).await
+        token_service
+            .create_token_family(&user, &client_app, None, None)
+            .await
     }
     .map_err(|error| {
         tracing::error!(%error, "Failed to issue browser token family after OAuth callback");

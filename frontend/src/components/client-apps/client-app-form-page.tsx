@@ -2,6 +2,7 @@ import { useAppForm, AppForm } from '@/components/ui/tanstack-form'
 import {
   createClientAppSchema,
   updateClientAppSchema,
+  DEFAULT_BROWSER_REFRESH_TTL_SECONDS,
   type CreateClientAppFormData,
   type UpdateClientAppFormData,
 } from '@/lib/schemas/client-app-forms'
@@ -35,14 +36,14 @@ function transformFromUriItems(items: UriItem[]): string[] {
   return items.filter((item) => item.isValid).map((item) => item.value)
 }
 
-const SESSION_TTL_PRESETS = [
-  { label: '30m', value: 1800 },
-  { label: '1h', value: 3600 },
-  { label: '2h', value: 7200 },
-  { label: '4h', value: 14400 },
-  { label: '8h', value: 28800 },
-  { label: '12h', value: 43200 },
-  { label: '24h', value: 86400 },
+/** Presets for the browser refresh token family absolute TTL (design §4.3.2). */
+const BROWSER_REFRESH_TTL_PRESETS = [
+  { label: '1d', value: 86400 },
+  { label: '7d', value: 604800 },
+  { label: '14d', value: 1209600 },
+  { label: '30d', value: 2592000 },
+  { label: '60d', value: 5184000 },
+  { label: '90d', value: 7776000 },
 ]
 
 interface ClientAppFormPageProps {
@@ -106,8 +107,8 @@ export function ClientAppFormPage({ mode, realmId, clientApp }: ClientAppFormPag
           redirectUris: [],
           iconUrl: '',
           enabled: true,
-          sessionTtlSeconds: 1800,
-          sessionRenewalTtlSeconds: null,
+          browserRefreshAbsoluteTtlSeconds: DEFAULT_BROWSER_REFRESH_TTL_SECONDS,
+          allowedOrigins: [],
           deviceCodeGrantEnabled: false,
         } as CreateClientAppFormData)
       : ({
@@ -116,8 +117,9 @@ export function ClientAppFormPage({ mode, realmId, clientApp }: ClientAppFormPag
           redirectUris: clientApp?.redirectUris ?? [],
           iconUrl: clientApp?.iconUrl ?? '',
           enabled: clientApp?.enabled ?? true,
-          sessionTtlSeconds: clientApp?.sessionTtlSeconds ?? 1800,
-          sessionRenewalTtlSeconds: clientApp?.sessionRenewalTtlSeconds ?? null,
+          browserRefreshAbsoluteTtlSeconds:
+            clientApp?.browserRefreshAbsoluteTtlSeconds ?? DEFAULT_BROWSER_REFRESH_TTL_SECONDS,
+          allowedOrigins: clientApp?.allowedOrigins ?? [],
           deviceCodeGrantEnabled: clientApp?.deviceCodeGrantEnabled ?? false,
           regenerateSecret: false,
         } as UpdateClientAppFormData),
@@ -282,21 +284,24 @@ export function ClientAppFormPage({ mode, realmId, clientApp }: ClientAppFormPag
               />
 
               <form.Field
-                name="sessionTtlSeconds"
+                name="browserRefreshAbsoluteTtlSeconds"
                 children={(field) => (
                   <div className="space-y-2">
-                    <Label htmlFor="session-ttl">{m['client_apps.form_session_ttl_label']()}</Label>
+                    <Label htmlFor="browser-refresh-ttl">
+                      {m['client_apps.form_browser_refresh_ttl_label']()}
+                    </Label>
                     <Input
-                      id="session-ttl"
+                      id="browser-refresh-ttl"
                       type="number"
-                      value={field.state.value ?? 1800}
+                      value={field.state.value ?? DEFAULT_BROWSER_REFRESH_TTL_SECONDS}
                       onChange={(e) => field.handleChange(Number(e.target.value))}
-                      min={60}
-                      max={86400}
-                      data-testid="session-ttl-input"
+                      min={86400}
+                      max={7776000}
+                      placeholder={m['client_apps.form_browser_refresh_ttl_placeholder']()}
+                      data-testid="browser-refresh-ttl-input"
                     />
                     <div className="flex flex-wrap gap-1">
-                      {SESSION_TTL_PRESETS.map((preset) => (
+                      {BROWSER_REFRESH_TTL_PRESETS.map((preset) => (
                         <Button
                           key={preset.value}
                           type="button"
@@ -304,12 +309,15 @@ export function ClientAppFormPage({ mode, realmId, clientApp }: ClientAppFormPag
                           size="sm"
                           className="h-7 text-xs"
                           onClick={() => field.handleChange(preset.value)}
-                          data-testid={`session-ttl-preset-${preset.label}`}
+                          data-testid={`browser-refresh-ttl-preset-${preset.label}`}
                         >
                           {preset.label}
                         </Button>
                       ))}
                     </div>
+                    <p className="text-xs text-muted-foreground">
+                      {m['client_apps.form_browser_refresh_ttl_help']()}
+                    </p>
                     {(field.state.meta.isTouched || form.state.isSubmitted) &&
                       field.state.meta.errors.length > 0 && (
                         <p className="text-sm text-destructive">
@@ -321,24 +329,16 @@ export function ClientAppFormPage({ mode, realmId, clientApp }: ClientAppFormPag
               />
 
               <form.Field
-                name="sessionRenewalTtlSeconds"
+                name="allowedOrigins"
                 children={(field) => (
                   <div className="space-y-2">
-                    <Label htmlFor="session-renewal-ttl">
-                      {m['client_apps.form_session_renewal_ttl_label']()}
-                    </Label>
-                    <Input
-                      id="session-renewal-ttl"
-                      type="number"
-                      value={field.state.value ?? ''}
-                      onChange={(e) => {
-                        const val = e.target.value
-                        field.handleChange(val === '' ? null : Number(val))
-                      }}
-                      placeholder={m['client_apps.form_session_renewal_ttl_placeholder']()}
-                      min={60}
-                      max={604800}
-                      data-testid="session-renewal-ttl-input"
+                    <RedirectUrisInput
+                      value={transformToUriItems(field.state.value ?? [])}
+                      onChange={(items) => field.handleChange(transformFromUriItems(items))}
+                      label={m['client_apps.form_allowed_origins_label']()}
+                      helpText={m['client_apps.form_allowed_origins_help']()}
+                      placeholder="https://app.example.com"
+                      dataTestId="allowed-origins-input"
                     />
                     {(field.state.meta.isTouched || form.state.isSubmitted) &&
                       field.state.meta.errors.length > 0 && (

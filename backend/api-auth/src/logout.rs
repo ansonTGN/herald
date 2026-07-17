@@ -6,7 +6,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use herald_api_base::application::http::auth::util::ClientIp;
+use herald_api_base::application::http::auth::util::{ClientIp, user_agent_from_headers};
 use herald_api_base::application::http::server::api_entities::ApiError;
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::audit::{
@@ -39,10 +39,7 @@ pub async fn logout(
         .revoke_family(context.family_id)
         .await?;
 
-    let user_agent = headers
-        .get("user-agent")
-        .and_then(|value| value.to_str().ok())
-        .map(str::to_owned);
+    let user_agent = user_agent_from_headers(&headers);
     let user = identity
         .as_user()
         .ok_or_else(|| ApiError::forbidden("authenticated user token required"))?;

@@ -1,0 +1,950 @@
+// Email OTP login (design email-otp-login §4.1/§4.2/§5.4).
+//
+// Two-phase unauthenticated flow: `send` issues a one-time code (or signals the
+// consent/email-not-registered branches), `verify` consumes it and either logs
+// an existing user in or auto-registers a new account, issuing a Bearer token
+// family via `RedisBrowserTokenService`. A public `status` endpoint exposes the
+// Realm enablement flag for front-end entry-point visibility.
+//
+// Reuses BE-D01 (`verify_turnstile_for_client_app`) and BE-D02
+// (`ConfigType::EmailOtp` helpers + `security_constants` OTP rates). Per design
+// §4.1 the auto-register consent expression is enforced at `send` time (consent
+// before code issuance); `verify` only records register-as-consent best-effort.
+
+use axum::{
+    Json,
+    extract::{Path, State},
+    http::HeaderMap,
+    response::IntoResponse,
+};
+use axum_valid::Valid;
+use redis::AsyncCommands;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use utoipa::ToSchema;
+use uuid::Uuid;
+use validator::Validate;
+
+use herald_api_base::application::http::auth::util::{
+    ClientIp, is_email_otp_enabled, load_email_otp_settings, normalize_email, rate_limit_hit,
+    user_agent_from_headers, verify_turnstile_for_client_app,
+};
+use herald_api_base::application::http::server::api_entities::ApiError;
+pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
+use herald_api_base::application::http::state::AppState;
+use herald_core::domain::audit::{
+    ActorType, AuditAction, AuditCategory, AuditEventRepository, AuditResult, AuditTargetType,
+    NewAuditEvent,
+};
+use herald_core::domain::authentication::BrowserTokenService;
+use herald_core::domain::common::entities::app_errors::CoreError;
+use herald_core::domain::legal::{AgreementType, AuditActorMeta, ConsentSource};
+use herald_core::domain::security_constants::{
+    OTP_CODE_TTL_SECONDS, OTP_MAX_ATTEMPTS, OTP_SEND_EMAIL_RATE_LIMIT, OTP_SEND_IP_RATE_LIMIT,
+    OTP_VERIFY_EMAIL_RATE_LIMIT, OTP_VERIFY_IP_RATE_LIMIT,
+};
+use herald_core::domain::user::ports::{UserRepository, UserService};
+use herald_core::domain::user::value_objects::CreateUserRequest;
+use herald_core::infrastructure::authentication::RedisBrowserTokenService;
+use herald_core::third::email::EmailService;
+
+use crate::browser_token::BrowserTokenResponse;
+use crate::consent_gate::AuthConsentAgreement;
+use crate::mailflow;
+
+// ---------------------------------------------------------------------------
+// DTOs (design §4.2.2 / §5.4)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize, ToSchema, Validate)]
+#[serde(rename_all = "camelCase")]
+pub struct EmailOtpSendRequest {
+    #[validate(length(min = 1, max = 36))]
+    pub client_id: String,
+    #[validate(email)]
+    pub email: String,
+    #[serde(default)]
+    #[schema(required = false)]
+    pub turnstile_token: Option<String>,
+    #[serde(default)]
+    #[schema(required = false)]
+    pub agreements: Option<Vec<AuthConsentAgreement>>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct EmailOtpSendResponse {
+    pub message: String,
+    pub expires_in_seconds: u64,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct EmailOtpVerifyRequest {
+    pub client_id: String,
+    pub email: String,
+    pub code: String, // 6 ASCII digits, validated below.
+    #[serde(default)]
+    #[schema(required = false)]
+    pub turnstile_token: Option<String>,
+    #[serde(default)]
+    #[schema(required = false)]
+    pub agreements: Option<Vec<AuthConsentAgreement>>,
+}
+
+impl Validate for EmailOtpVerifyRequest {
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        use validator::ValidateEmail;
+        let mut errors = validator::ValidationErrors::new();
+
+        if self.client_id.is_empty() || self.client_id.len() > 36 {
+            errors.add("client_id", validator::ValidationError::new("length"));
+        }
+        if !self.email.validate_email() {
+            errors.add("email", validator::ValidationError::new("email"));
+        }
+        // 6 ASCII digits — matches design §4.2.2 (`code` regex ^[0-9]{6}$).
+        if self.code.len() != 6 || !self.code.bytes().all(|b| b.is_ascii_digit()) {
+            errors.add("code", validator::ValidationError::new("invalid_format"));
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
+    }
+}
+
+/// Shared body for both 409 branches. `consent_required` carries the current
+/// effective agreement summaries + `consent_required=true`; `email_not_registered`
+/// carries a guidance message and no agreements.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct EmailOtpConflictResponse {
+    pub code: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(required = false)]
+    pub consent_required: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(required = false)]
+    pub agreements: Option<Vec<herald_core::domain::legal::LegalAgreementSummary>>,
+    pub message: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct EmailOtpStatusResponse {
+    pub enabled: bool,
+}
+
+// ---------------------------------------------------------------------------
+// Redis storage (design §4.5 / §5.4)
+// ---------------------------------------------------------------------------
+
+/// Stored OTP payload (JSON in Redis). The code is stored as plaintext so the
+/// Demo/E2E flow (which has no readable mailbox) can read it back to complete
+/// the login/auto-register verification — consistent with how the password-reset
+/// code is persisted in plaintext in the `email_verification_code` table. The
+/// session tokens live as plaintext in the *same* Redis, so hashing only this
+/// 300s one-time code would be inconsistent defense-in-depth (design §4.5
+/// amended; see the Handoff in `.ai/task/email-otp-login/demo/`). `attempts`
+/// counts failed verifications; `max_attempts` is snapshotted from constants at
+/// write time.
+#[derive(Serialize, Deserialize)]
+struct StoredOtp {
+    code: String,
+    attempts: i64,
+    max_attempts: i64,
+}
+
+/// `emailotp:{realm_id}:{sha256(email trim+lowercase)}`. The email is normalized
+/// (trimmed + lowercased) before hashing so casing/whitespace variations collapse
+/// to the same key (and thus the same code / attempt counter).
+fn otp_redis_key(realm_id: &str, email: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(normalize_email(email).as_bytes());
+    let digest = hex::encode(hasher.finalize());
+    format!("emailotp:{realm_id}:{digest}")
+}
+
+fn rate_key_send(ip: &str) -> String {
+    format!("rl:otp:send:ip:{ip}")
+}
+fn rate_key_send_email(email: &str) -> String {
+    format!("rl:otp:send:email:{email}")
+}
+fn rate_key_verify(ip: &str) -> String {
+    format!("rl:otp:verify:ip:{ip}")
+}
+fn rate_key_verify_email(email: &str) -> String {
+    format!("rl:otp:verify:email:{email}")
+}
+
+// ---------------------------------------------------------------------------
+// send handler (design §4.1 / §5.4)
+// ---------------------------------------------------------------------------
+
+/// Send an email OTP login code.
+///
+/// Issues a one-time verification code for an existing active user, or — if the
+/// Realm has OTP auto-register enabled — for an unregistered email after consent
+/// is expressed. Enumeration-resistant: a 200 is returned for non-active or
+/// non-existent users (no code sent in those cases), matching the response for
+/// a successful send.
+#[utoipa::path(
+    post,
+    path = "/api/auth/{realmId}/login/email-otp/send",
+    tag = "auth",
+    params(
+        ("realmId" = String, Path, description = "Realm ID")
+    ),
+    request_body = EmailOtpSendRequest,
+    responses(
+        (status = 200, description = "Verification code sent (or enumeration-resistant 200).", body = EmailOtpSendResponse),
+        (status = 400, description = "OTP login not enabled for realm / bad request", body = ErrorResponse),
+        (status = 401, description = "Client App disabled / Turnstile verification failed", body = ErrorResponse),
+        (status = 409, description = "Consent required (auto-register) or email not registered (auto-register off)", body = EmailOtpConflictResponse),
+        (status = 429, description = "Rate limited", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse),
+    )
+)]
+pub async fn send(
+    Path(realm_id): Path<String>,
+    State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
+    Valid(Json(payload)): Valid<Json<EmailOtpSendRequest>>,
+) -> Result<Json<EmailOtpSendResponse>, ApiError> {
+    // 1. Realm must have OTP login enabled. Load the settings row once and
+    //    reuse the `auto_register` flag below (unregistered branch) instead of
+    //    re-reading the same row.
+    let otp_settings = load_email_otp_settings(&state, &realm_id).await?;
+    if !otp_settings.enabled {
+        return Err(ApiError::bad_request(
+            "Email OTP login is not enabled for this realm".to_string(),
+        ));
+    }
+
+    // 2. Resolve + validate the Client App before Turnstile (D-PROTECT-01).
+    let client_app =
+        mailflow::require_enabled_client(&state, &realm_id, &payload.client_id).await?;
+
+    // 3. Client App-level Turnstile.
+    verify_turnstile_for_client_app(&state, &client_app, payload.turnstile_token.as_deref(), &ip)
+        .await?;
+
+    let email = normalize_email(&payload.email);
+
+    // 4. IP + email rate limiting (BE-D02 constants).
+    rate_limit_hit(
+        &state,
+        rate_key_send(&ip),
+        OTP_SEND_IP_RATE_LIMIT.0,
+        OTP_SEND_IP_RATE_LIMIT.1,
+    )
+    .await?;
+    rate_limit_hit(
+        &state,
+        rate_key_send_email(&email),
+        OTP_SEND_EMAIL_RATE_LIMIT.0,
+        OTP_SEND_EMAIL_RATE_LIMIT.1,
+    )
+    .await?;
+
+    // 5. Decide whether a real code should be sent.
+    //
+    // Lookup tolerates NotFound (→ unregistered branch). Any other error is a
+    // genuine failure and must surface as 500 rather than a silent enumeration
+    // 200 (which would mask operational problems).
+    let user_result = state
+        .user_repository
+        .get_user_by_email(&realm_id, &email)
+        .await;
+    let user_opt = match user_result {
+        Ok(user) => Some(user),
+        Err(CoreError::NotFound) => None,
+        Err(e) => {
+            tracing::error!(
+                realm_id = %realm_id,
+                email = %email,
+                error = %e,
+                "Failed to look up user for OTP send"
+            );
+            return Err(ApiError::internal("Internal server error".to_string()));
+        }
+    };
+
+    let should_send = match user_opt.as_ref() {
+        Some(user) if user.is_active() => true,
+        // Existing but non-active: enumeration-resistant 200, no code sent.
+        Some(_) => false,
+        None => {
+            // Unregistered → auto-register path.
+            if !otp_settings.auto_register {
+                return Err(ApiError::conflict_json(EmailOtpConflictResponse {
+                    code: "email_not_registered".to_string(),
+                    consent_required: None,
+                    agreements: None,
+                    message: "This email is not registered. Please sign up first.".to_string(),
+                }));
+            }
+            // Auto-register requires consent expression BEFORE code issuance
+            // (D-CONSENT-01). Missing agreements → 409 with current effective
+            // summaries so the front-end can render the consent checkboxes.
+            if payload.agreements.as_deref().is_none_or(|a| a.is_empty()) {
+                let summaries = current_effective_summaries(&state, &realm_id).await;
+                return Err(ApiError::conflict_json(EmailOtpConflictResponse {
+                    code: "consent_required".to_string(),
+                    consent_required: Some(true),
+                    agreements: Some(summaries),
+                    message: "Consent to the current agreements is required.".to_string(),
+                }));
+            }
+            true
+        }
+    };
+
+    if !should_send {
+        // Enumeration-resistant success: looks identical to a real send.
+        return Ok(Json(EmailOtpSendResponse {
+            message: "验证码已发送".to_string(),
+            expires_in_seconds: OTP_CODE_TTL_SECONDS,
+        }));
+    }
+
+    // 6. Generate 6-digit code and store it with TTL.
+    let code = generate_otp_code();
+    let stored = StoredOtp {
+        code: code.clone(),
+        attempts: 0,
+        max_attempts: OTP_MAX_ATTEMPTS,
+    };
+    let stored_json = serde_json::to_string(&stored)
+        .map_err(|_| ApiError::internal("Failed to serialize OTP state".to_string()))?;
+    let key = otp_redis_key(&realm_id, &email);
+    {
+        let mut conn = state
+            .redis_manager
+            .get()
+            .await
+            .map_err(|_| ApiError::internal("Redis connection error".to_string()))?;
+        let _: () = conn
+            .set_ex(&key, stored_json, OTP_CODE_TTL_SECONDS)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "Failed to store OTP code in Redis");
+                ApiError::internal("Redis operation error".to_string())
+            })?;
+    }
+
+    // 7. Send the email (inline body; no template-engine change, design §4.1).
+    let brand = realm_brand_name(&state, &realm_id).await;
+    let subject = format!("{brand} 登录验证码");
+    let text = format!("您的 {brand} 验证码：{code}");
+    let html = format!("<p>您的 <strong>{brand}</strong> 验证码：<strong>{code}</strong></p>");
+    // Best-effort: send failure is observable but must not leak code state — the
+    // code is already stored in Redis. Design §7 lists email delivery as a P1
+    // observation item; we surface the error as 500 so it is not silently lost.
+    EmailService::send_email(&state.pool, &realm_id, &email, &subject, &text, &html)
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                realm_id = %realm_id,
+                email = %email,
+                error = %e,
+                "Failed to send OTP email"
+            );
+            ApiError::internal("Failed to send verification email".to_string())
+        })?;
+
+    tracing::info!(
+        realm_id = %realm_id,
+        email = %email,
+        is_new_user = user_opt.is_none(),
+        "OTP code sent"
+    );
+
+    Ok(Json(EmailOtpSendResponse {
+        message: "验证码已发送".to_string(),
+        expires_in_seconds: OTP_CODE_TTL_SECONDS,
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// verify handler (design §4.1 / §5.4)
+// ---------------------------------------------------------------------------
+
+/// Verify an email OTP login code and issue a session.
+///
+/// On a matching code: consumes it (one-time), then either logs the existing
+/// user in (login-as-consent gate) or auto-registers a new account
+/// (create-without-password → activate → register-as-consent) and issues a
+/// Bearer token family via `RedisBrowserTokenService`. Returns `BrowserTokenResponse`.
+#[utoipa::path(
+    post,
+    path = "/api/auth/{realmId}/login/email-otp/verify",
+    tag = "auth",
+    params(
+        ("realmId" = String, Path, description = "Realm ID")
+    ),
+    request_body = EmailOtpVerifyRequest,
+    responses(
+        (status = 200, description = "Verification successful", body = BrowserTokenResponse),
+        (status = 400, description = "OTP login not enabled for realm / bad request", body = ErrorResponse),
+        (status = 401, description = "Invalid / expired / exhausted code, or disabled account", body = ErrorResponse),
+        (status = 429, description = "Rate limited", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse),
+    )
+)]
+pub async fn verify(
+    Path(realm_id): Path<String>,
+    State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
+    headers: HeaderMap,
+    Valid(Json(payload)): Valid<Json<EmailOtpVerifyRequest>>,
+) -> Result<impl IntoResponse, ApiError> {
+    let user_agent = user_agent_from_headers(&headers);
+
+    // 1. Realm must have OTP login enabled.
+    if !is_email_otp_enabled(&state, &realm_id).await? {
+        return Err(ApiError::bad_request(
+            "Email OTP login is not enabled for this realm".to_string(),
+        ));
+    }
+
+    let email = normalize_email(&payload.email);
+
+    // 2. IP + email rate limiting.
+    rate_limit_hit(
+        &state,
+        rate_key_verify(&ip),
+        OTP_VERIFY_IP_RATE_LIMIT.0,
+        OTP_VERIFY_IP_RATE_LIMIT.1,
+    )
+    .await?;
+    rate_limit_hit(
+        &state,
+        rate_key_verify_email(&email),
+        OTP_VERIFY_EMAIL_RATE_LIMIT.0,
+        OTP_VERIFY_EMAIL_RATE_LIMIT.1,
+    )
+    .await?;
+
+    // 3. Resolve + validate the Client App (carries the session family binding).
+    let client_app =
+        mailflow::require_enabled_client(&state, &realm_id, &payload.client_id).await?;
+
+    // 4. Client App-level Turnstile.
+    verify_turnstile_for_client_app(&state, &client_app, payload.turnstile_token.as_deref(), &ip)
+        .await?;
+
+    // 5. Load stored code; absent → expired/never-sent → 401.
+    let key = otp_redis_key(&realm_id, &email);
+    let mut conn = state
+        .redis_manager
+        .get()
+        .await
+        .map_err(|_| ApiError::internal("Redis connection error".to_string()))?;
+    let stored_raw: Option<String> = conn.get(&key).await.map_err(|e| {
+        tracing::error!(error = %e, "Failed to read OTP code from Redis");
+        ApiError::internal("Redis operation error".to_string())
+    })?;
+    let stored_json =
+        stored_raw.ok_or_else(|| ApiError::unauthorized("验证码已失效，请重新发送".to_string()))?;
+    let mut stored: StoredOtp = serde_json::from_str(&stored_json).map_err(|e| {
+        tracing::error!(error = %e, "Failed to parse stored OTP JSON");
+        ApiError::internal("Redis operation error".to_string())
+    })?;
+
+    // 6. Constant-time compare of the plaintext code.
+    let matches = constant_time_eq(&payload.code, &stored.code);
+
+    if !matches {
+        stored.attempts += 1;
+        if stored.attempts >= stored.max_attempts {
+            // Exhausted → delete (force re-send), return 401.
+            let _: () = conn.del(&key).await.map_err(|e| {
+                tracing::error!(error = %e, "Failed to delete exhausted OTP code");
+                ApiError::internal("Redis operation error".to_string())
+            })?;
+        } else {
+            // Preserve remaining TTL when rewriting the attempt counter.
+            let remaining_ttl: i64 = conn.ttl(&key).await.map_err(|e| {
+                tracing::error!(error = %e, "Failed to read OTP TTL");
+                ApiError::internal("Redis operation error".to_string())
+            })?;
+            // TTL read can return -1 (no expiry) or -2 (no key) defensively;
+            // only rewrite if a positive TTL remains, otherwise treat as expired.
+            if remaining_ttl > 0 {
+                let updated = serde_json::to_string(&stored)
+                    .map_err(|_| ApiError::internal("Redis operation error".to_string()))?;
+                let _: () = conn
+                    .set_ex(&key, updated, remaining_ttl as u64)
+                    .await
+                    .map_err(|e| {
+                        tracing::error!(error = %e, "Failed to rewrite OTP attempts");
+                        ApiError::internal("Redis operation error".to_string())
+                    })?;
+            } else {
+                let _: () = conn.del(&key).await.map_err(|e| {
+                    tracing::error!(error = %e, "Failed to delete stale OTP code");
+                    ApiError::internal("Redis operation error".to_string())
+                })?;
+            }
+        }
+        record_login_failure(
+            &state,
+            &realm_id,
+            &email,
+            &ip,
+            user_agent.as_deref(),
+            "invalid_code",
+        )
+        .await;
+        return Err(ApiError::unauthorized("验证码错误或已失效".to_string()));
+    }
+
+    // 7. Match → one-time consume (delete before proceeding).
+    let _: () = conn.del(&key).await.map_err(|e| {
+        tracing::error!(error = %e, "Failed to consume OTP code after match");
+        ApiError::internal("Redis operation error".to_string())
+    })?;
+
+    // 8. Resolve the user: existing (login) or auto-register.
+    let user_result = state
+        .user_repository
+        .get_user_by_email(&realm_id, &email)
+        .await;
+    let user = match user_result {
+        Ok(u) => u,
+        Err(CoreError::NotFound) => {
+            // Auto-register path. create_user_without_password starts in
+            // WaitVerified (status 0); activate_user flips it to Normal before
+            // create_token_family (which requires an active user).
+            let created = state
+                .service
+                .user_service()
+                .create_user_without_password(CreateUserRequest {
+                    realm_id: realm_id.clone(),
+                    email: email.clone(),
+                    password: None,
+                    provider_ids: None,
+                })
+                .await
+                .map_err(|e| {
+                    tracing::error!(
+                        realm_id = %realm_id,
+                        email = %email,
+                        error = %e,
+                        "OTP auto-register: create_user_without_password failed"
+                    );
+                    match e {
+                        CoreError::Conflict(msg) => ApiError::conflict(msg),
+                        _ => ApiError::internal("Failed to create user".to_string()),
+                    }
+                })?;
+            state
+                .service
+                .user_service()
+                .activate_user(created.id)
+                .await
+                .map_err(|e| {
+                    tracing::error!(
+                        user_id = %created.id,
+                        error = %e,
+                        "OTP auto-register: activate_user failed"
+                    );
+                    ApiError::internal("Failed to activate user".to_string())
+                })?;
+            // Register-as-consent (best-effort, mirrors register.rs:224-285).
+            record_register_consent(
+                &state,
+                created.id,
+                &realm_id,
+                &email,
+                payload.agreements.as_deref(),
+                &ip,
+            )
+            .await;
+
+            state
+                .user_repository
+                .get_user_by_id(created.id)
+                .await
+                .map_err(|e| {
+                    tracing::error!(
+                        user_id = %created.id,
+                        error = %e,
+                        "OTP auto-register: failed to reload created user"
+                    );
+                    ApiError::internal("Internal server error".to_string())
+                })?
+        }
+        Err(e) => {
+            tracing::error!(
+                realm_id = %realm_id,
+                email = %email,
+                error = %e,
+                "Failed to look up user for OTP verify"
+            );
+            return Err(ApiError::internal("Internal server error".to_string()));
+        }
+    };
+
+    // 9. Disabled accounts cannot log in (auto-register always yields active).
+    if !user.is_active() {
+        record_login_failure(
+            &state,
+            &realm_id,
+            &email,
+            &ip,
+            user_agent.as_deref(),
+            "disabled_account",
+        )
+        .await;
+        return Err(ApiError::unauthorized("账号已被禁用".to_string()));
+    }
+
+    // 10. Login-as-consent gate for existing users. `Some` ⇒ 200 consent_required,
+    // no token issued (mirrors login.rs:433 / verify_totp.rs:353).
+    if let Some(summaries) = crate::consent_gate::evaluate_login_consent_gate(
+        &state,
+        &user,
+        &realm_id,
+        payload.agreements.as_deref(),
+        Some(ip.clone()),
+        user_agent.clone(),
+    )
+    .await
+    {
+        // Build a consent-required 200 body reusing BrowserTokenResponse-like
+        // fields is not appropriate; reuse VerifyTotpResponse-style JSON shape
+        // inline to avoid coupling a token DTO to a non-token response.
+        let body = serde_json::json!({
+            "message": "consent required",
+            "consentRequired": true,
+            "agreements": summaries,
+        });
+        return Ok(Json(body).into_response());
+    }
+
+    // 11. Issue token family + audit success.
+    let tokens = RedisBrowserTokenService::new(state.redis_manager.clone())
+        .create_token_family(&user, &client_app, user_agent.clone(), Some(ip.clone()))
+        .await?;
+
+    if let Err(audit_err) = state
+        .audit_event_repository
+        .create(NewAuditEvent {
+            realm_id: realm_id.clone(),
+            category: AuditCategory::Auth,
+            action: AuditAction::AuthLogin,
+            actor_id: user.id.to_string(),
+            actor_type: Some(ActorType::User),
+            actor_name: Some(user.email.clone()),
+            target_type: AuditTargetType::User,
+            target_id: user.id.to_string(),
+            target_name: Some(user.email.clone()),
+            result: AuditResult::Success,
+            details: Some(serde_json::json!({"method": "email_otp"})),
+            ip_address: Some(ip.clone()),
+            user_agent,
+            trace_id: None,
+        })
+        .await
+    {
+        tracing::warn!(error = %audit_err, "Failed to record OTP login audit event");
+    }
+
+    Ok(Json(BrowserTokenResponse::from(tokens)).into_response())
+}
+
+// ---------------------------------------------------------------------------
+// status handler (design §4.2.2 / §5.4)
+// ---------------------------------------------------------------------------
+
+/// Public OTP-login enablement flag for a Realm.
+///
+/// Reads the `email_otp` / `settings` config row. Returns `{ enabled: false }`
+/// when the config is absent or malformed (opt-in per Realm).
+#[utoipa::path(
+    get,
+    path = "/api/auth/{realmId}/email-otp/status",
+    tag = "auth",
+    params(
+        ("realmId" = String, Path, description = "Realm ID")
+    ),
+    responses(
+        (status = 200, description = "OTP status", body = EmailOtpStatusResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse),
+    )
+)]
+pub async fn status(
+    Path(realm_id): Path<String>,
+    State(state): State<AppState>,
+) -> Result<Json<EmailOtpStatusResponse>, ApiError> {
+    let enabled = is_email_otp_enabled(&state, &realm_id).await?;
+    Ok(Json(EmailOtpStatusResponse { enabled }))
+}
+
+// ---------------------------------------------------------------------------
+// helpers
+// ---------------------------------------------------------------------------
+
+fn generate_otp_code() -> String {
+    // 6-digit zero-padded code derived from the random tail of a UUIDv7 (the
+    // 74 bits of UUIDv7 randomness are more than enough to sample a 6-digit
+    // space). This avoids adding a new RNG dependency to the crate while still
+    // being unpredictable.
+    let id = Uuid::now_v7();
+    let bytes = id.as_bytes();
+    // Use the trailing 8 bytes (the random node-id segment of UUIDv7) as a
+    // little-endian u64, then fold down to 0..1_000_000.
+    let tail = u64::from_le_bytes([
+        bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15],
+    ]);
+    let n = (tail % 1_000_000) as u32;
+    format!("{n:06}")
+}
+
+/// Constant-time byte comparison so timing does not leak hash prefix info.
+fn constant_time_eq(a: &str, b: &str) -> bool {
+    let (a_bytes, b_bytes) = (a.as_bytes(), b.as_bytes());
+    if a_bytes.len() != b_bytes.len() {
+        return false;
+    }
+    let mut diff: u8 = 0;
+    for (x, y) in a_bytes.iter().zip(b_bytes.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
+}
+
+/// Collect current effective ToS + Privacy summaries for the consent-required
+/// 409 body. Missing effective versions (seed anomaly) are skipped.
+async fn current_effective_summaries(
+    state: &AppState,
+    realm_id: &str,
+) -> Vec<herald_core::domain::legal::LegalAgreementSummary> {
+    let mut summaries = Vec::new();
+    for agreement_type in [AgreementType::TermsOfService, AgreementType::PrivacyPolicy] {
+        match state
+            .legal_service
+            .current_effective(realm_id, agreement_type.clone())
+            .await
+        {
+            Ok(Some(version)) => {
+                summaries.push(herald_core::domain::legal::LegalAgreementSummary {
+                    agreement_type: agreement_type.as_str().to_string(),
+                    version_id: version.id,
+                    version_no: version.version_no,
+                    effective_at: version.published_at,
+                    title: None,
+                    summary: None,
+                    mode: version.mode,
+                    external_url: version.external_url,
+                })
+            }
+            Ok(None) => tracing::warn!(
+                realm_id = %realm_id,
+                agreement_type = %agreement_type.as_ref(),
+                "No effective agreement version deployed; skipping from OTP consent list"
+            ),
+            Err(e) => tracing::warn!(
+                realm_id = %realm_id,
+                agreement_type = %agreement_type.as_ref(),
+                error = %e,
+                "current_effective lookup failed during OTP send"
+            ),
+        }
+    }
+    summaries
+}
+
+/// Best-effort register-as-consent recording (mirrors register.rs:224-285).
+/// Failures are logged and do NOT block account creation / login.
+async fn record_register_consent(
+    state: &AppState,
+    user_id: Uuid,
+    realm_id: &str,
+    email: &str,
+    agreements: Option<&[AuthConsentAgreement]>,
+    ip: &str,
+) {
+    // Prefer explicitly expressed agreements if provided; otherwise record the
+    // current effective ToS + Privacy (the send-phase consent gate guarantees
+    // expression happened, but the verifier payload may omit them on retry).
+    let mut items: Vec<(AgreementType, Uuid)> = Vec::new();
+    if let Some(agreements) = agreements
+        && !agreements.is_empty()
+    {
+        for item in agreements {
+            let Ok(agreement_type) = AgreementType::try_from(item.agreement_type.as_str()) else {
+                tracing::warn!(
+                    user_id = %user_id,
+                    realm_id = %realm_id,
+                    agreement_type = %item.agreement_type,
+                    "Invalid agreement type in OTP register-consent payload"
+                );
+                continue;
+            };
+            items.push((agreement_type, item.version_id));
+        }
+    } else {
+        for agreement_type in [AgreementType::TermsOfService, AgreementType::PrivacyPolicy] {
+            match state
+                .legal_service
+                .current_effective(realm_id, agreement_type.clone())
+                .await
+            {
+                Ok(Some(version)) => items.push((agreement_type, version.id)),
+                Ok(None) => tracing::warn!(
+                    realm_id = %realm_id,
+                    agreement_type = %agreement_type.as_ref(),
+                    user_id = %user_id,
+                    "No effective agreement version; skipping OTP register-consent"
+                ),
+                Err(e) => tracing::warn!(
+                    realm_id = %realm_id,
+                    agreement_type = %agreement_type.as_ref(),
+                    user_id = %user_id,
+                    error = %e,
+                    "current_effective failed during OTP register-consent"
+                ),
+            }
+        }
+    }
+
+    if items.is_empty() {
+        return;
+    }
+
+    let actor_meta = AuditActorMeta {
+        actor_id: user_id.to_string(),
+        actor_type: ActorType::User,
+        actor_name: Some(email.to_string()),
+        ip_address: Some(ip.to_string()),
+        user_agent: None,
+        trace_id: None,
+    };
+    if let Err(e) = state
+        .legal_service
+        .record_consent(
+            user_id,
+            realm_id,
+            items,
+            ConsentSource::Register,
+            actor_meta,
+        )
+        .await
+    {
+        tracing::warn!(
+            realm_id = %realm_id,
+            user_id = %user_id,
+            error = %e,
+            "record_consent(Register) failed during OTP auto-register; login proceeds"
+        );
+    }
+}
+
+/// Best-effort login-failure audit event.
+async fn record_login_failure(
+    state: &AppState,
+    realm_id: &str,
+    email: &str,
+    ip: &str,
+    user_agent: Option<&str>,
+    reason: &str,
+) {
+    if let Err(audit_err) = state
+        .audit_event_repository
+        .create(NewAuditEvent {
+            realm_id: realm_id.to_string(),
+            category: AuditCategory::Auth,
+            action: AuditAction::AuthLoginFailed,
+            actor_id: email.to_string(),
+            actor_type: None,
+            actor_name: None,
+            target_type: AuditTargetType::User,
+            target_id: email.to_string(),
+            target_name: None,
+            result: AuditResult::Failure,
+            details: Some(serde_json::json!({
+                "method": "email_otp",
+                "reason": reason
+            })),
+            ip_address: Some(ip.to_string()),
+            user_agent: user_agent.map(|s| s.to_string()),
+            trace_id: None,
+        })
+        .await
+    {
+        tracing::warn!(error = %audit_err, "Failed to record OTP login-failed audit event");
+    }
+}
+
+/// Resolve the realm brand name for the OTP email body via the shared helper
+/// in `core::third::email`. Failures degrade to the default rather than
+/// failing the request.
+async fn realm_brand_name(state: &AppState, realm_id: &str) -> String {
+    herald_core::third::email::resolve_realm_brand(&state.pool, realm_id)
+        .await
+        .unwrap_or_else(|_| "Herald".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn otp_redis_key_normalizes_case_and_whitespace() {
+        // Same logical email must collapse to one key so casing/whitespace
+        // variations cannot fragment the code store or the attempt counter.
+        let upper = otp_redis_key("realm-1", "  Alice@Example.COM ");
+        let lower = otp_redis_key("realm-1", "alice@example.com");
+        assert_eq!(upper, lower);
+        assert!(
+            upper.starts_with("emailotp:realm-1:"),
+            "key must keep the realm prefix; got {upper}"
+        );
+        // SHA-256 hex digest is 64 chars after the prefix.
+        let digest = upper.strip_prefix("emailotp:realm-1:").unwrap();
+        assert_eq!(digest.len(), 64, "expected sha256 hex digest");
+        assert!(digest.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn otp_redis_key_is_realm_scoped() {
+        let a = otp_redis_key("realm-a", "alice@example.com");
+        let b = otp_redis_key("realm-b", "alice@example.com");
+        assert_ne!(a, b, "different realms must not share OTP keys");
+    }
+
+    #[test]
+    fn stored_otp_round_trips_plaintext_code() {
+        // The code is persisted as plaintext (not hashed) so the Demo/E2E flow
+        // can read it back from Redis. Serialization must preserve the exact
+        // code and the attempt counters unchanged.
+        let stored = StoredOtp {
+            code: "123456".to_string(),
+            attempts: 0,
+            max_attempts: OTP_MAX_ATTEMPTS,
+        };
+        let json = serde_json::to_string(&stored).unwrap();
+        assert!(
+            json.contains("\"code\":\"123456\""),
+            "stored JSON must carry the plaintext code; got {json}"
+        );
+        let back: StoredOtp = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.code, "123456");
+        assert_eq!(back.max_attempts, OTP_MAX_ATTEMPTS);
+    }
+
+    #[test]
+    fn constant_time_eq_matches_equality() {
+        assert!(constant_time_eq("abc", "abc"));
+        assert!(!constant_time_eq("abc", "abd"));
+        assert!(!constant_time_eq("abc", "abcd"));
+        assert!(constant_time_eq("", ""));
+    }
+}

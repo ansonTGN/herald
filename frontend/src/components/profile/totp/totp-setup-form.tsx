@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react'
 import { useAppForm, AppForm } from '@/components/ui/tanstack-form'
 import { QRCodeCanvas } from 'qrcode.react'
 import { handleEnableTotp, handleVerifyTotpSetup } from '@/lib/api-generated'
+import { obtainReauthToken } from '@/lib/reauth-flow'
 import { useFormMutation } from '@/hooks/use-form-mutation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -44,7 +45,10 @@ export function TotpSetupForm({ onSuccess, onCancel }: TotpSetupFormProps) {
 
   const generateMutation = useFormMutation({
     mutationFn: async (data: { password: string }) => {
-      const response = await withTimeout(handleEnableTotp({ body: data }))
+      // Bind-authenticator reauth: obtain a single-use ticket with the user's
+      // password, then enable TOTP with it.
+      const reauth_token = await obtainReauthToken('bind_authenticator', data.password)
+      const response = await withTimeout(handleEnableTotp({ body: { ...data, reauth_token } }))
       if (response.error) {
         throw response.error
       }

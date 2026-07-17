@@ -1,3 +1,4 @@
+use herald_core::domain::client::ClientApp;
 use serde::{Deserialize, Serialize};
 use sqlx::types::Json;
 use utoipa::ToSchema;
@@ -70,6 +71,16 @@ pub struct ClientAppCreateRequest {
     pub icon_url: Option<String>,
 
     pub device_code_grant_enabled: Option<bool>,
+
+    /// Enable Cloudflare Turnstile human-verification for this Client App
+    /// (D-PROTECT-01). Defaults to false.
+    pub turnstile_enabled: Option<bool>,
+    /// Cloudflare Turnstile site key (public). Optional; only used when
+    /// Turnstile is enabled.
+    pub turnstile_site_key: Option<String>,
+    /// Cloudflare Turnstile secret key (server-side, sensitive). Write-only:
+    /// never echoed back in responses.
+    pub turnstile_secret_key: Option<String>,
 }
 
 // Client ID regex: alphanumeric only
@@ -129,10 +140,18 @@ pub struct ClientAppUpdateRequest {
     pub regenerate_secret: Option<bool>,
 
     pub device_code_grant_enabled: Option<bool>,
+
+    /// Enable/disable Cloudflare Turnstile for this Client App (D-PROTECT-01).
+    pub turnstile_enabled: Option<bool>,
+    /// Update the Cloudflare Turnstile site key (public).
+    pub turnstile_site_key: Option<String>,
+    /// Update the Cloudflare Turnstile secret key (server-side, sensitive).
+    /// Write-only: never echoed back in responses.
+    pub turnstile_secret_key: Option<String>,
 }
 
 // Database model (used with sqlx::FromRow)
-#[derive(Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Deserialize, sqlx::FromRow)]
 #[serde(rename_all = "camelCase")]
 pub struct ClientAppDbModel {
     pub id: Uuid,
@@ -152,6 +171,11 @@ pub struct ClientAppDbModel {
     pub icon_url: Option<String>,
     pub client_secret: Option<String>,
     pub device_code_grant_enabled: bool,
+
+    // Turnstile (D-PROTECT-01). DB row carries all three columns.
+    pub turnstile_enabled: bool,
+    pub turnstile_site_key: Option<String>,
+    pub turnstile_secret_key: Option<String>,
 }
 
 // API response model (used for OpenAPI documentation)
@@ -221,6 +245,40 @@ pub struct ClientAppItem {
     pub client_secret: Option<String>,
 
     pub device_code_grant_enabled: bool,
+
+    /// Whether Cloudflare Turnstile human-verification is enforced for this
+    /// Client App (D-PROTECT-01).
+    pub turnstile_enabled: bool,
+    /// Cloudflare Turnstile site key (public), shown to the client widget.
+    /// `None` when Turnstile is disabled.
+    pub turnstile_site_key: Option<String>,
+}
+
+// Conversion from the domain entity to API response model. `client_secret`
+// defaults to None: it is write-only and must never be echoed unless a handler
+// explicitly overrides it (create / secret-regenerate paths).
+impl From<ClientApp> for ClientAppItem {
+    fn from(app: ClientApp) -> Self {
+        Self {
+            id: app.id,
+            realm_id: app.realm_id,
+            client_id: app.client_id,
+            name: app.name,
+            description: app.description,
+            redirect_uris: app.redirect_uris,
+            allowed_origins: app.allowed_origins,
+            email_verify_return_url: app.email_verify_return_url,
+            password_reset_return_url: app.password_reset_return_url,
+            browser_refresh_absolute_ttl_seconds: app.browser_refresh_absolute_ttl_seconds,
+            is_first_party: app.is_first_party,
+            enabled: app.enabled,
+            icon_url: app.icon_url,
+            client_secret: None,
+            device_code_grant_enabled: app.device_code_grant_enabled,
+            turnstile_enabled: app.turnstile_enabled,
+            turnstile_site_key: app.turnstile_site_key,
+        }
+    }
 }
 
 // Conversion from DB model to API response model
@@ -242,6 +300,9 @@ impl From<ClientAppDbModel> for ClientAppItem {
             icon_url: db_model.icon_url,
             client_secret: db_model.client_secret,
             device_code_grant_enabled: db_model.device_code_grant_enabled,
+            // turnstile_secret_key is intentionally NOT echoed in responses.
+            turnstile_enabled: db_model.turnstile_enabled,
+            turnstile_site_key: db_model.turnstile_site_key,
         }
     }
 }

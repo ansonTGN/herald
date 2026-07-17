@@ -3,7 +3,7 @@ import {
   listInvoices,
   getInvoice,
   listMyInvoices,
-  getMyInvoice,
+  getMyInvoiceScoped,
   getSellerConfig,
   listRealmConfigsByType,
   getInvoiceApplyEligibility,
@@ -137,7 +137,7 @@ export function myInvoiceDetailQueryOptions(realmId: string, invoiceId: string) 
   return queryOptions({
     queryKey: invoiceKeys.myDetail(realmId, invoiceId),
     queryFn: async () => {
-      const response = await getMyInvoice({ path: { invoiceId } })
+      const response = await getMyInvoiceScoped({ path: { invoiceId } })
       if (response.error) throw response.error
       return response.data as InvoiceDetailResponse
     },

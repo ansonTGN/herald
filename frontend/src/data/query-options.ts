@@ -65,6 +65,8 @@ import {
 } from '@/lib/api-generated'
 import { handleApiResponse } from '@/lib/api-utils'
 import { ApiResponseError, resolveApiError } from '@/lib/error-utils'
+import { obtainReauthToken } from '@/lib/reauth-flow'
+import { FIRST_PARTY_CLIENT_ID } from '@/lib/constants/auth-constants'
 import type {
   OAuthConfigResponse,
   PaymentAttemptStatusResponse,
@@ -83,7 +85,6 @@ import type {
   LegalAgreementSummary,
   ConsentStatusItem,
   RecordConsentRequest,
-  DeleteAccountRequest,
   PublishCustomRequest,
   PublishVersionResponse,
   LegalAgreementDraftResponse,
@@ -549,7 +550,10 @@ export const turnstileStatusQueryOptions = (realmId: string) =>
   queryOptions({
     queryKey: queryKeys.turnstileStatus(realmId),
     queryFn: async () => {
-      const response = await getTurnstileStatus({ path: { realmId } })
+      const response = await getTurnstileStatus({
+        path: { realmId },
+        query: { clientId: FIRST_PARTY_CLIENT_ID },
+      })
       if (response.error) throw response.error
       return response.data
     },
@@ -1334,8 +1338,11 @@ export const recordConsentMutation = async (
   if (response.error) throw response.error
 }
 
-export const deleteAccountMutation = async (data: DeleteAccountRequest): Promise<void> => {
-  const response = await deleteAccount({ body: data })
+export const deleteAccountMutation = async (password: string): Promise<void> => {
+  // High-risk op (delete_account): obtain a single-use reauth ticket using the
+  // user's password, then submit account deletion with it.
+  const reauth_token = await obtainReauthToken('delete_account', password)
+  const response = await deleteAccount({ body: { reauth_token } })
   if (response.error) throw response.error
 }
 

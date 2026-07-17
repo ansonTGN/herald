@@ -14,6 +14,7 @@ import {
   handleBeginPasskeyRegistration,
   handleFinishPasskeyRegistration,
 } from '@/lib/api-generated'
+import { obtainReauthToken } from '@/lib/reauth-flow'
 import type { BeginRegistrationResponse } from '@/lib/api-generated'
 import { useFormMutation } from '@/hooks/use-form-mutation'
 import { queryKeys } from '@/data/query-options'
@@ -53,10 +54,20 @@ export function PasskeyRegisterForm({ onSuccess, onCancel }: PasskeyRegisterForm
   const [step, setStep] = useState<RegisterStep>('confirm')
   const [regToken, setRegToken] = useState<string>('')
   const [attestation, setAttestation] = useState<unknown>(null)
+  // The user's current password is carried from the confirm step to the name
+  // step so the finish call can obtain its OWN single-use reauth ticket. The
+  // backend consumes the ticket on BOTH begin and finish (one ticket each), so
+  // a ticket obtained for begin CANNOT be reused for finish (design §4.2.2).
+  const [password, setPassword] = useState<string>('')
 
   const beginMutation = useFormMutation({
     mutationFn: async (data: { password: string }) => {
-      const response = await withTimeout(handleBeginPasskeyRegistration({ body: data }))
+      // Bind-authenticator reauth: obtain a single-use ticket with the user's
+      // password, then begin passkey registration with it.
+      const token = await obtainReauthToken('bind_authenticator', data.password)
+      const response = await withTimeout(
+        handleBeginPasskeyRegistration({ body: { reauthToken: token } })
+      )
       if (response.error) {
         // Map every backend failure (401 bad password, 422, 409, …) to a single
         // generic message — never surface backend details.
@@ -86,7 +97,14 @@ export function PasskeyRegisterForm({ onSuccess, onCancel }: PasskeyRegisterForm
 
   const finishMutation = useFormMutation({
     mutationFn: async (data: { regToken: string; attestation: unknown }) => {
-      const response = await withTimeout(handleFinishPasskeyRegistration({ body: data }))
+      // Finish obtains its OWN fresh single-use ticket — the begin ticket was
+      // already consumed by the backend's begin handler.
+      const token = await obtainReauthToken('bind_authenticator', password)
+      const response = await withTimeout(
+        handleFinishPasskeyRegistration({
+          body: { regToken: data.regToken, attestation: data.attestation, reauthToken: token },
+        })
+      )
       if (response.error) {
         throw new Error(m['profile.passkey_register_failed']())
       }
@@ -103,6 +121,7 @@ export function PasskeyRegisterForm({ onSuccess, onCancel }: PasskeyRegisterForm
     schema: step1Schema,
     defaultValues: { password: '' },
     onSubmit: async ({ value }) => {
+      setPassword(value.password)
       void beginMutation.mutate(value)
     },
   })

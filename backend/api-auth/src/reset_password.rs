@@ -10,7 +10,7 @@ use utoipa::ToSchema;
 use validator::Validate;
 
 use herald_api_base::application::http::auth::util::{
-    ClientIp, normalize_email, rate_limit_hit, verify_turnstile_for_realm,
+    ClientIp, normalize_email, rate_limit_hit, verify_turnstile_for_client_app,
 };
 use herald_api_base::application::http::common::public_helper::realm_public_url;
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
@@ -68,16 +68,14 @@ pub async fn request(
 ) -> Result<ApiResult<ResetPasswordRequestResponse>, ApiError> {
     let email = normalize_email(&payload.email);
 
-    mailflow::require_enabled_client(&state, &realm_id, &payload.client_id).await?;
+    // Resolve the Client App (validates realm/enabled) before Turnstile so the
+    // human-verification check can read its Turnstile config (D-PROTECT-01).
+    let client_app =
+        mailflow::require_enabled_client(&state, &realm_id, &payload.client_id).await?;
 
-    // turnstile 校验（根据 realm 配置动态判断）
-    verify_turnstile_for_realm(
-        &state,
-        &realm_id,
-        payload.turnstile_token.as_deref(),
-        Some(&ip),
-    )
-    .await?;
+    // turnstile 校验（按 Client App 配置，D-PROTECT-01）
+    verify_turnstile_for_client_app(&state, &client_app, payload.turnstile_token.as_deref(), &ip)
+        .await?;
 
     // ip + email 限流
     rate_limit_hit(
@@ -181,17 +179,14 @@ pub async fn confirm(
     Path((realm_id, code)): Path<(String, String)>,
     Valid(Json(payload)): Valid<Json<ResetPasswordConfirmRequest>>,
 ) -> Result<Response, ApiError> {
-    // turnstile 校验（根据 realm 配置动态判断）
-    verify_turnstile_for_realm(
-        &state,
-        &realm_id,
-        payload.turnstile_token.as_deref(),
-        Some(&ip),
-    )
-    .await?;
-
+    // Resolve the Client App via the mailflow code before Turnstile so the
+    // human-verification check can read its Turnstile config (D-PROTECT-01).
     let client =
         mailflow::load_client(&state, &code, &realm_id, MailflowType::ResetPassword).await?;
+
+    // turnstile 校验（按 Client App 配置，D-PROTECT-01）
+    verify_turnstile_for_client_app(&state, &client, payload.turnstile_token.as_deref(), &ip)
+        .await?;
 
     rate_limit_hit(
         &state,

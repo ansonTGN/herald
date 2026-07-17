@@ -44,7 +44,7 @@ docker/                  # Dockerfile
 
 - **Axum** 而不是 actix-web：tokio 原生，和 tower 中间件生态无缝衔接，trait-based handler 写起来更干净。
 - **SeaORM + sqlx 并存**：SeaORM 处理常规 CRUD（entity crate 自动生成），sqlx 处理复杂查询和迁移。两套连接池指向同一个 PostgreSQL，SeaORM 底层用的就是 sqlx。
-- **Redis**：session 存储、权限缓存、限流（Redis Functions）、幂等键。用自建的 `RedisConnectionManager` 包装，测试时自动切到 DB 1 隔离数据。
+- **Redis**：token 存储（access/refresh token 家族）、权限缓存、限流（Redis Functions）、幂等键。用自建的 `RedisConnectionManager` 包装，测试时自动切到 DB 1 隔离数据。
 - **TanStack Router**：类型安全的文件路由，`$realmId` 这类路径参数直接推导类型。比 react-router 的运行时匹配靠谱。
 - **API 类型生成**：后端用 utoipa 导出 OpenAPI JSON，前端用 `@hey-api/openapi-ts` 生成 TypeScript client 和类型。后端接口变了，`npm run generate-api` 一条命令同步。
 
@@ -55,7 +55,7 @@ docker/                  # Dockerfile
 ```
 HTTP Request
   → Axum Router（路由匹配）
-  → inject_identity 中间件（从 session cookie 或 Bearer token 解析用户身份）
+  → inject_identity 中间件（从 Authorization: Bearer token 解析用户身份）
   → Handler（提取 AppState、解析请求体）
   → Domain Service（业务逻辑，通过 trait 调用 Repository）
   → Repository 实现（infra 层，操作 PostgreSQL 或 Redis）
@@ -133,12 +133,12 @@ domain 层 trait 的具体实现。`PostgresXxxRepository` 命名，一个 trait
 |-------|------|---------|
 | `api` | 主入口：路由注册、中间件编排、Swagger UI、OpenAPI spec 合并、审计日志查询、用户协议/隐私政策与同意记录 | — |
 | `api-base` | `AppState` 定义（共享给所有 api 子 crate） | — |
-| `api-auth` | 注册、登录、密码重置、邮箱验证 | session |
-| `api-admin` | 用户 CRUD、角色管理、权限定义管理 | session + inject_identity |
+| `api-auth` | 注册、登录、密码重置、邮箱验证 | Bearer token（公开端点 + 签发 token） |
+| `api-admin` | 用户 CRUD、角色管理、权限定义管理 | Bearer token（FirstParty）+ inject_identity |
 | `api-billing` | 积分账户目录、Entitlement 映射、订阅投影、支付 webhook（Stripe/Creem）、发票、一次性购买 | 混合 |
 | `api-oauth` | OAuth 登录（GitHub/Google/微信）、Device Code Grant（RFC 8628）、OAuth 配置管理 | 混合 |
 | `api-ext` | 第三方 API：权限检查、订阅查询、积分余额和消费，按 API Key 绑定的 Client App 隔离 | API Key |
-| `api-points` | 积分余额、交易历史、消费、充值 | session 或 API Key |
+| `api-points` | 积分余额、交易历史、消费、充值 | Bearer token 或 API Key |
 
 `api` crate 的 `create_api_routes()` 是路由注册的唯一入口。它把子 crate 的路由 `nest` 到统一前缀下，挂上 `inject_identity` 中间件。每个子 crate 独立定义自己的 `ApiDoc`（utoipa OpenApi spec），最后在 `build_openapi_spec()` 里 merge 成一份完整的 OpenAPI 文档。
 
