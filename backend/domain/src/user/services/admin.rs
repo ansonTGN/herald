@@ -1689,74 +1689,70 @@ mod tests {
     /// Permission checker that always grants the requested permission.
     struct AlwaysAllowPermission;
     impl PermissionService for AlwaysAllowPermission {
-        fn check_permission(
+        async fn check_permission(
             &self,
             _realm_id: &str,
             _user_id: &str,
             _resource: &str,
             _action: &str,
-        ) -> impl Future<Output = Result<bool, CoreError>> + Send {
-            async { Ok(true) }
+        ) -> Result<bool, CoreError> {
+            Ok(true)
         }
-        fn get_user_roles(
+        async fn get_user_roles(
             &self,
             _realm_id: &str,
             _user_id: &str,
-        ) -> impl Future<Output = Result<Vec<String>, CoreError>> + Send {
-            async { Ok(vec![]) }
+        ) -> Result<Vec<String>, CoreError> {
+            Ok(vec![])
         }
-        fn get_role_policies(
+        async fn get_role_policies(
             &self,
             _realm_id: &str,
             _role_id: &str,
-        ) -> impl Future<Output = Result<Vec<crate::authorization::Policy>, CoreError>> + Send
-        {
-            async { Ok(vec![]) }
+        ) -> Result<Vec<crate::authorization::Policy>, CoreError> {
+            Ok(vec![])
         }
-        fn invalidate_user_role_cache(
+        async fn invalidate_user_role_cache(
             &self,
             _realm_id: &str,
             _user_id: &str,
-        ) -> impl Future<Output = Result<(), CoreError>> + Send {
-            async { Ok(()) }
+        ) -> Result<(), CoreError> {
+            Ok(())
         }
-        fn invalidate_role_policy_cache(
+        async fn invalidate_role_policy_cache(
             &self,
             _realm_id: &str,
             _role_id: &str,
-        ) -> impl Future<Output = Result<(), CoreError>> + Send {
-            async { Ok(()) }
+        ) -> Result<(), CoreError> {
+            Ok(())
         }
-        fn invalidate_realm_cache(
-            &self,
-            _realm_id: &str,
-        ) -> impl Future<Output = Result<(), CoreError>> + Send {
-            async { Ok(()) }
+        async fn invalidate_realm_cache(&self, _realm_id: &str) -> Result<(), CoreError> {
+            Ok(())
         }
-        fn get_user_permissions(
+        async fn get_user_permissions(
             &self,
             _realm_id: &str,
             _user_id: &str,
-        ) -> impl Future<Output = Result<Vec<String>, CoreError>> + Send {
-            async { Ok(vec![]) }
+        ) -> Result<Vec<String>, CoreError> {
+            Ok(vec![])
         }
-        fn check_principal_permission(
+        async fn check_principal_permission(
             &self,
             _realm_id: &str,
             _principal_type: &str,
             _principal_id: &str,
             _resource: &str,
             _action: &str,
-        ) -> impl Future<Output = Result<bool, CoreError>> + Send {
-            async { Ok(true) }
+        ) -> Result<bool, CoreError> {
+            Ok(true)
         }
-        fn invalidate_principal_role_cache(
+        async fn invalidate_principal_role_cache(
             &self,
             _realm_id: &str,
             _principal_type: &str,
             _principal_id: &str,
-        ) -> impl Future<Output = Result<(), CoreError>> + Send {
-            async { Ok(()) }
+        ) -> Result<(), CoreError> {
+            Ok(())
         }
     }
 
@@ -1767,120 +1763,107 @@ mod tests {
         update_calls: Arc<AtomicUsize>,
     }
     impl AdminUserRepository for MockAdminUserRepo {
-        fn create_user_with_profile(
+        async fn create_user_with_profile(
             &self,
             _realm_id: &str,
             _email: &str,
             _password_hash: &str,
             _nickname: Option<&str>,
             _status: i32,
-        ) -> impl Future<Output = UserAdminResult<Uuid>> + Send {
-            async { Ok(Uuid::nil()) }
+        ) -> UserAdminResult<Uuid> {
+            Ok(Uuid::nil())
         }
-        fn update_user_fields(
+        async fn update_user_fields(
             &self,
             user_id: Uuid,
             _email: Option<&str>,
             nickname: Option<&str>,
             status: Option<i32>,
-        ) -> impl Future<Output = UserAdminResult<()>> + Send {
+        ) -> UserAdminResult<()> {
             let row = self.row.clone();
             let calls = self.update_calls.clone();
-            async move {
-                calls.fetch_add(1, Ordering::SeqCst);
-                let mut guard = row.lock().unwrap();
-                if let Some(e) = guard.as_mut() {
-                    if let Some(nick) = nickname {
-                        e.nickname = Some(nick.to_string());
-                    }
-                    if let Some(s) = status {
-                        e.status = s;
-                    }
-                    e.updated_at = Utc::now();
+            calls.fetch_add(1, Ordering::SeqCst);
+            let mut guard = row.lock().unwrap();
+            if let Some(e) = guard.as_mut() {
+                if let Some(nick) = nickname {
+                    e.nickname = Some(nick.to_string());
                 }
-                let _ = user_id;
-                Ok(())
+                if let Some(s) = status {
+                    e.status = s;
+                }
+                e.updated_at = Utc::now();
             }
+            let _ = user_id;
+            Ok(())
         }
-        fn get_user_with_profile(
+        async fn get_user_with_profile(
             &self,
             _user_id: Uuid,
-        ) -> impl Future<Output = UserAdminResult<Option<AdminUserEntity>>> + Send {
+        ) -> UserAdminResult<Option<AdminUserEntity>> {
             let row = self.row.clone();
-            async move { Ok(row.lock().unwrap().clone()) }
+            Ok(row.lock().unwrap().clone())
         }
-        fn email_exists(
+        async fn email_exists(&self, _realm_id: &str, _email: &str) -> UserAdminResult<bool> {
+            Ok(false)
+        }
+        async fn get_user_by_email(
             &self,
             _realm_id: &str,
             _email: &str,
-        ) -> impl Future<Output = UserAdminResult<bool>> + Send {
-            async { Ok(false) }
+        ) -> UserAdminResult<Option<AdminUserEntity>> {
+            Ok(None)
         }
-        fn get_user_by_email(
-            &self,
-            _realm_id: &str,
-            _email: &str,
-        ) -> impl Future<Output = UserAdminResult<Option<AdminUserEntity>>> + Send {
-            async { Ok(None) }
+        async fn delete_user(&self, _user_id: Uuid) -> UserAdminResult<bool> {
+            Ok(true)
         }
-        fn delete_user(
-            &self,
-            _user_id: Uuid,
-        ) -> impl Future<Output = UserAdminResult<bool>> + Send {
-            async { Ok(true) }
-        }
-        fn update_user_password(
+        async fn update_user_password(
             &self,
             _user_id: Uuid,
             _password_hash: &str,
-        ) -> impl Future<Output = UserAdminResult<bool>> + Send {
-            async { Ok(true) }
+        ) -> UserAdminResult<bool> {
+            Ok(true)
         }
     }
 
     /// Minimal no-op user-role repository. `update_user_admin` does not touch it.
     struct MockUserRoleRepo;
     impl UserRoleRepository for MockUserRoleRepo {
-        fn replace_user_roles(
+        async fn replace_user_roles(
             &self,
             _user_id: Uuid,
             _realm_id: &str,
             _client_id: &str,
             _role_ids: &[Uuid],
-        ) -> impl Future<Output = UserAdminResult<()>> + Send {
-            async { Ok(()) }
+        ) -> UserAdminResult<()> {
+            Ok(())
         }
-        fn get_user_role_ids(
+        async fn get_user_role_ids(&self, _user_id: Uuid) -> UserAdminResult<Vec<Uuid>> {
+            Ok(vec![])
+        }
+        async fn get_user_roles(
             &self,
             _user_id: Uuid,
-        ) -> impl Future<Output = UserAdminResult<Vec<Uuid>>> + Send {
-            async { Ok(vec![]) }
+        ) -> UserAdminResult<Vec<crate::user::admin_entities::RoleEntity>> {
+            Ok(vec![])
         }
-        fn get_user_roles(
-            &self,
-            _user_id: Uuid,
-        ) -> impl Future<Output = UserAdminResult<Vec<crate::user::admin_entities::RoleEntity>>> + Send
-        {
-            async { Ok(vec![]) }
-        }
-        fn add_user_role(
+        async fn add_user_role(
             &self,
             _user_id: Uuid,
             _role_id: Uuid,
             _realm_id: &str,
             _client_id: &str,
-        ) -> impl Future<Output = UserAdminResult<()>> + Send {
-            async { Ok(()) }
+        ) -> UserAdminResult<()> {
+            Ok(())
         }
-        fn remove_user_role(
+        async fn remove_user_role(
             &self,
             _user_id: Uuid,
             _role_id: Uuid,
             _client_id: &str,
-        ) -> impl Future<Output = UserAdminResult<bool>> + Send {
-            async { Ok(true) }
+        ) -> UserAdminResult<bool> {
+            Ok(true)
         }
-        fn grant_role_by_payment(
+        async fn grant_role_by_payment(
             &self,
             _realm_id: &str,
             _user_id: Uuid,
@@ -1888,54 +1871,52 @@ mod tests {
             _client_id: Option<&str>,
             _source_id: &str,
             _expires_at: Option<DateTime<Utc>>,
-        ) -> impl Future<Output = UserAdminResult<GrantRoleOutcome>> + Send {
-            async { Ok(GrantRoleOutcome::Granted) }
+        ) -> UserAdminResult<GrantRoleOutcome> {
+            Ok(GrantRoleOutcome::Granted)
         }
-        fn revoke_roles_by_payment_source(
+        async fn revoke_roles_by_payment_source(
             &self,
             _realm_id: &str,
             _user_id: Uuid,
             _source_id: &str,
-        ) -> impl Future<Output = UserAdminResult<RevokeRoleOutcome>> + Send {
-            async { Ok(RevokeRoleOutcome::NotFound) }
+        ) -> UserAdminResult<RevokeRoleOutcome> {
+            Ok(RevokeRoleOutcome::NotFound)
         }
-        fn user_has_any_role(
+        async fn user_has_any_role(
             &self,
             _realm_id: &str,
             _user_id: Uuid,
             _role_ids: &[Uuid],
-        ) -> impl Future<Output = UserAdminResult<bool>> + Send {
-            async { Ok(false) }
+        ) -> UserAdminResult<bool> {
+            Ok(false)
         }
-        fn list_user_roles_by_realm_client(
+        async fn list_user_roles_by_realm_client(
             &self,
             _realm_id: &str,
             _client_id: &str,
-        ) -> impl Future<Output = UserAdminResult<Vec<(Uuid, Uuid)>>> + Send {
-            async { Ok(vec![]) }
+        ) -> UserAdminResult<Vec<(Uuid, Uuid)>> {
+            Ok(vec![])
         }
-        fn replace_api_key_roles(
+        async fn replace_api_key_roles(
             &self,
             _api_key_id: &str,
             _realm_id: &str,
             _client_id: &str,
             _role_ids: &[Uuid],
-        ) -> impl Future<Output = UserAdminResult<()>> + Send {
-            async { Ok(()) }
+        ) -> UserAdminResult<()> {
+            Ok(())
         }
-        fn get_api_key_roles(
+        async fn get_api_key_roles(
             &self,
             _api_key_id: &str,
-        ) -> impl Future<Output = UserAdminResult<Vec<crate::user::admin_entities::RoleEntity>>> + Send
-        {
-            async { Ok(vec![]) }
+        ) -> UserAdminResult<Vec<crate::user::admin_entities::RoleEntity>> {
+            Ok(vec![])
         }
-        fn get_api_key_role_summaries_batch(
+        async fn get_api_key_role_summaries_batch(
             &self,
             _api_key_ids: &[String],
-        ) -> impl Future<Output = UserAdminResult<Vec<(String, Vec<(Uuid, String)>)>>> + Send
-        {
-            async { Ok(vec![]) }
+        ) -> UserAdminResult<Vec<(String, Vec<(Uuid, String)>)>> {
+            Ok(vec![])
         }
     }
 
@@ -1944,51 +1925,44 @@ mod tests {
     /// integration-level test in the test slot); this only needs to not fail.
     struct MockAuditRepo;
     impl AuditEventRepository for MockAuditRepo {
-        fn create(
-            &self,
-            event: NewAuditEvent,
-        ) -> impl Future<Output = Result<AuditEvent, CoreError>> + Send {
-            async move {
-                Ok(AuditEvent {
-                    id: Uuid::nil(),
-                    realm_id: event.realm_id,
-                    category: event.category,
-                    action: event.action,
-                    actor_id: event.actor_id,
-                    actor_type: event.actor_type,
-                    actor_name: event.actor_name,
-                    target_type: event.target_type,
-                    target_id: event.target_id,
-                    target_name: event.target_name,
-                    result: event.result,
-                    details: event.details,
-                    ip_address: event.ip_address,
-                    user_agent: event.user_agent,
-                    trace_id: event.trace_id,
-                    created_at: Utc::now(),
-                })
-            }
+        async fn create(&self, event: NewAuditEvent) -> Result<AuditEvent, CoreError> {
+            Ok(AuditEvent {
+                id: Uuid::nil(),
+                realm_id: event.realm_id,
+                category: event.category,
+                action: event.action,
+                actor_id: event.actor_id,
+                actor_type: event.actor_type,
+                actor_name: event.actor_name,
+                target_type: event.target_type,
+                target_id: event.target_id,
+                target_name: event.target_name,
+                result: event.result,
+                details: event.details,
+                ip_address: event.ip_address,
+                user_agent: event.user_agent,
+                trace_id: event.trace_id,
+                created_at: Utc::now(),
+            })
         }
-        fn list_paginated(
+        async fn list_paginated(
             &self,
             _realm_id: &str,
             _filters: AuditEventFilters,
-        ) -> impl Future<Output = Result<PaginatedAuditEvents, CoreError>> + Send {
-            async {
-                Ok(PaginatedAuditEvents {
-                    items: vec![],
-                    page: 0,
-                    page_size: 0,
-                    total: 0,
-                })
-            }
+        ) -> Result<PaginatedAuditEvents, CoreError> {
+            Ok(PaginatedAuditEvents {
+                items: vec![],
+                page: 0,
+                page_size: 0,
+                total: 0,
+            })
         }
-        fn find_by_id(
+        async fn find_by_id(
             &self,
             _realm_id: &str,
             _event_id: Uuid,
-        ) -> impl Future<Output = Result<Option<AuditEvent>, CoreError>> + Send {
-            async { Ok(None) }
+        ) -> Result<Option<AuditEvent>, CoreError> {
+            Ok(None)
         }
     }
 
@@ -2000,105 +1974,81 @@ mod tests {
         revoke_err: Option<CoreError>,
     }
     impl BrowserTokenService for MockBrowserTokenService {
-        fn lookup_access_token(
+        async fn lookup_access_token(
             &self,
             _access_token: &str,
-        ) -> impl Future<Output = Result<Option<BrowserAccessTokenData>, CoreError>> + Send
-        {
-            async { Ok(None) }
+        ) -> Result<Option<BrowserAccessTokenData>, CoreError> {
+            Ok(None)
         }
-        fn create_token_family(
+        async fn create_token_family(
             &self,
             _user: &crate::user::entities::User,
             _client_app: &crate::client::entities::ClientApp,
             _user_agent: Option<String>,
             _client_ip: Option<String>,
-        ) -> impl Future<Output = Result<BrowserTokenSet, CoreError>> + Send {
-            async {
-                Ok(BrowserTokenSet {
-                    access_token: String::new(),
-                    refresh_token: String::new(),
-                    expires_in: 0,
-                    refresh_expires_in: 0,
-                    token_type: "Bearer".to_string(),
-                })
-            }
+        ) -> Result<BrowserTokenSet, CoreError> {
+            Ok(BrowserTokenSet {
+                access_token: String::new(),
+                refresh_token: String::new(),
+                expires_in: 0,
+                refresh_expires_in: 0,
+                token_type: "Bearer".to_string(),
+            })
         }
-        fn create_first_party_token_family(
+        async fn create_first_party_token_family(
             &self,
             _user: &crate::user::entities::User,
             _client_app: &crate::client::entities::ClientApp,
             _user_agent: Option<String>,
             _client_ip: Option<String>,
-        ) -> impl Future<Output = Result<BrowserTokenSet, CoreError>> + Send {
-            async {
-                Ok(BrowserTokenSet {
-                    access_token: String::new(),
-                    refresh_token: String::new(),
-                    expires_in: 0,
-                    refresh_expires_in: 0,
-                    token_type: "Bearer".to_string(),
-                })
-            }
+        ) -> Result<BrowserTokenSet, CoreError> {
+            Ok(BrowserTokenSet {
+                access_token: String::new(),
+                refresh_token: String::new(),
+                expires_in: 0,
+                refresh_expires_in: 0,
+                token_type: "Bearer".to_string(),
+            })
         }
-        fn refresh(
+        async fn refresh(
             &self,
             _refresh_token: &str,
             _client_app_id: Uuid,
-        ) -> impl Future<
-            Output = Result<BrowserTokenSet, crate::authentication::entities::RefreshError>,
-        > + Send {
-            async {
-                Ok(BrowserTokenSet {
-                    access_token: String::new(),
-                    refresh_token: String::new(),
-                    expires_in: 0,
-                    refresh_expires_in: 0,
-                    token_type: "Bearer".to_string(),
-                })
-            }
+        ) -> Result<BrowserTokenSet, crate::authentication::entities::RefreshError> {
+            Ok(BrowserTokenSet {
+                access_token: String::new(),
+                refresh_token: String::new(),
+                expires_in: 0,
+                refresh_expires_in: 0,
+                token_type: "Bearer".to_string(),
+            })
         }
-        fn revoke_family(
-            &self,
-            _family_id: Uuid,
-        ) -> impl Future<Output = Result<(), CoreError>> + Send {
-            async { Ok(()) }
+        async fn revoke_family(&self, _family_id: Uuid) -> Result<(), CoreError> {
+            Ok(())
         }
-        fn revoke_client_families(
-            &self,
-            _client_app_id: Uuid,
-        ) -> impl Future<Output = Result<(), CoreError>> + Send {
-            async { Ok(()) }
+        async fn revoke_client_families(&self, _client_app_id: Uuid) -> Result<(), CoreError> {
+            Ok(())
         }
-        fn revoke_user_families(
-            &self,
-            _user_id: &str,
-        ) -> impl Future<Output = Result<(), CoreError>> + Send {
+        async fn revoke_user_families(&self, _user_id: &str) -> Result<(), CoreError> {
             let calls = self.revoke_calls.clone();
             let err = self.revoke_err.clone();
-            async move {
-                calls.fetch_add(1, Ordering::SeqCst);
-                if let Some(e) = err {
-                    return Err(e);
-                }
-                Ok(())
+            calls.fetch_add(1, Ordering::SeqCst);
+            if let Some(e) = err {
+                return Err(e);
             }
+            Ok(())
         }
-        fn list_user_sessions(
+        async fn list_user_sessions(
             &self,
             _user_id: &str,
-        ) -> impl Future<
-            Output = Result<Vec<crate::authentication::entities::UserSessionSummary>, CoreError>,
-        > + Send {
-            async { Ok(vec![]) }
+        ) -> Result<Vec<crate::authentication::entities::UserSessionSummary>, CoreError> {
+            Ok(vec![])
         }
-        fn get_family_lifecycle(
+        async fn get_family_lifecycle(
             &self,
             _family_id: Uuid,
-        ) -> impl Future<
-            Output = Result<Option<crate::authentication::entities::FamilyLifecycle>, CoreError>,
-        > + Send {
-            async { Ok(None) }
+        ) -> Result<Option<crate::authentication::entities::FamilyLifecycle>, CoreError> {
+            Ok(None)
         }
     }
 

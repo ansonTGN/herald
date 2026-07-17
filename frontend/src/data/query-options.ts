@@ -20,10 +20,12 @@ import {
   getOauthConfig,
   getPublicConfig,
   getTurnstileStatus,
+  status2 as emailOtpStatus,
   getProfile,
   handleGetTotpStatus,
   handleListPasskeyCredentials,
   handleGetRealmPasskeyConfig,
+  handleGetRealmEmailOtpConfig,
   handleGetWhiteLabelConfig,
   handleGetCustomDomainConfig,
   getSubscriptionForClientApp,
@@ -105,10 +107,6 @@ import type { InvoiceEligibilitySummary } from '@/lib/api-generated'
 
 // ==================== Enhanced Error Handling ====================
 
-/**
- * Enhanced error handler for API responses with specific HTTP status code handling
- * Provides user-friendly error messages based on HTTP status codes
- */
 function handleApiErrorWithStatus(error: unknown): never {
   throw error instanceof ApiResponseError ? error : new ApiResponseError(error)
 }
@@ -162,11 +160,14 @@ export const queryKeys = {
   totpStatus: () => [QUERY_KEYS.TOTP_STATUS] as const,
   passkeyList: () => [QUERY_KEYS.PASSKEY_LIST] as const,
   passkeyRealmConfig: (realmId: string) => [QUERY_KEYS.PASSKEY_REALM_CONFIG, realmId] as const,
+  emailOtpRealmConfig: (realmId: string) => [QUERY_KEYS.EMAIL_OTP_REALM_CONFIG, realmId] as const,
   whiteLabelRealmConfig: (realmId: string) =>
     [QUERY_KEYS.WHITE_LABEL_REALM_CONFIG, realmId] as const,
   customDomainRealmConfig: (realmId: string) =>
     [QUERY_KEYS.CUSTOM_DOMAIN_REALM_CONFIG, realmId] as const,
-  turnstileStatus: (realmId: string) => [QUERY_KEYS.TURNSTILE_STATUS, realmId] as const,
+  turnstileStatus: (realmId: string, clientId: string) =>
+    [QUERY_KEYS.TURNSTILE_STATUS, realmId, clientId] as const,
+  emailOtpStatus: (realmId: string) => [QUERY_KEYS.EMAIL_OTP_STATUS, realmId] as const,
   subscription: (realmId: string, clientAppId: string) =>
     [QUERY_KEYS.SUBSCRIPTION, realmId, clientAppId] as const,
   subscriptionDetails: (realmId: string, subscriptionId: string) =>
@@ -247,8 +248,8 @@ export const publicConfigQueryOptions = (realmId: string) =>
       return response.data
     },
     retry: RETRY_COUNT,
-    staleTime: 0, // Changed from STALE_TIME_5_MIN to always fetch fresh data
-    refetchOnMount: 'always', // Force refetch on every mount
+    staleTime: 0,
+    refetchOnMount: 'always',
     refetchOnWindowFocus: true,
     gcTime: GC_TIME_10_MIN,
   })
@@ -561,19 +562,44 @@ export const profileQueryOptions = queryOptions({
 
 export const currentUserProfileQueryOptions = profileQueryOptions
 
-export const turnstileStatusQueryOptions = (realmId: string) =>
+// `clientId` defaults to the first-party Client App: every non-login auth page
+// (register/forgot-password/reset-password/verify-email) targets it, so they
+// call this with a single `realmId` arg. Only `login.tsx` passes a resolved
+// per-request clientId.
+export const turnstileStatusQueryOptions = (
+  realmId: string,
+  clientId: string = FIRST_PARTY_CLIENT_ID
+) =>
   queryOptions({
-    queryKey: queryKeys.turnstileStatus(realmId),
+    queryKey: queryKeys.turnstileStatus(realmId, clientId),
     queryFn: async () => {
       const response = await getTurnstileStatus({
         path: { realmId },
-        query: { clientId: FIRST_PARTY_CLIENT_ID },
+        query: { clientId },
       })
       if (response.error) throw response.error
       return response.data
     },
     retry: RETRY_COUNT,
     staleTime: STALE_TIME_2_MIN,
+  })
+
+// ==================== Email OTP Status (public) ====================
+//
+// Reads the Realm's OTP-login enablement flag
+// (`GET /api/auth/{realmId}/email-otp/status`). Public; consumed by the login
+// route to gate the "Email code" entry visibility (design §4.4.1).
+export const emailOtpStatusQueryOptions = (realmId: string) =>
+  queryOptions({
+    queryKey: queryKeys.emailOtpStatus(realmId),
+    queryFn: async () => {
+      const response = await emailOtpStatus({ path: { realmId } })
+      if (response.error) throw response.error
+      return response.data
+    },
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_2_MIN,
+    gcTime: GC_TIME_5_MIN,
   })
 
 // ==================== TOTP Status ====================
@@ -615,6 +641,25 @@ export const passkeyRealmConfigQueryOptions = (realmId: string) =>
     queryKey: queryKeys.passkeyRealmConfig(realmId),
     queryFn: async () => {
       const response = await handleGetRealmPasskeyConfig({ path: { realmId } })
+      if (response.error) throw response.error
+      return response.data
+    },
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_2_MIN,
+    gcTime: GC_TIME_5_MIN,
+  })
+
+// ==================== Email-OTP Realm Config (admin) ====================
+//
+// Reads a realm's Email-OTP configuration (`GET /api/realms/{realmId}/config/email-otp`):
+// the login enablement flag and the auto-registration toggle. Requires
+// `settings.view`; used by the admin Settings → Security "Email code" tab
+// (design §4.2 admin config, §5.5).
+export const emailOtpRealmConfigQueryOptions = (realmId: string) =>
+  queryOptions({
+    queryKey: queryKeys.emailOtpRealmConfig(realmId),
+    queryFn: async () => {
+      const response = await handleGetRealmEmailOtpConfig({ path: { realmId } })
       if (response.error) throw response.error
       return response.data
     },
@@ -943,7 +988,7 @@ export const paymentAttemptStatusQueryOptions = (realmId: string, attemptId: str
       if (status && (status.status === 'Pending' || status.status === 'RequiresAction')) {
         return TIME_CONSTANTS.ONE_MINUTE
       }
-      return false // Stop polling for completed/failed payments
+      return false
     },
   })
 

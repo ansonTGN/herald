@@ -12,7 +12,6 @@ import { m } from '@/paraglide/messages'
 const MASKED_SECRET = '••••••••'
 
 interface TurnstileConfigFormProps {
-  realmId: string
   initialConfig?: TurnstileConfigFormValues
   onSave: (config: TurnstileConfigFormValues) => Promise<void>
   isLoading?: boolean
@@ -20,7 +19,6 @@ interface TurnstileConfigFormProps {
 }
 
 export function TurnstileConfigForm({
-  realmId: _realmId,
   initialConfig,
   onSave,
   isLoading,
@@ -35,16 +33,6 @@ export function TurnstileConfigForm({
       secretKey: '',
     },
     onSubmit: async ({ value }) => {
-      if (disabled) {
-        throw new Error(
-          'Form is disabled. You do not have permission to modify this configuration.'
-        )
-      }
-
-      if (isSubmitting) {
-        return
-      }
-
       setIsSubmitting(true)
       try {
         await onSave(value)

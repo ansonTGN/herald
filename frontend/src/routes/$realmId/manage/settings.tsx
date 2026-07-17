@@ -5,6 +5,7 @@ import {
   batchUpsertRealmConfigs,
   updateRealm,
   handleUpdateRealmPasskeyConfig,
+  handleUpdateRealmEmailOtpConfig,
   handleSaveWhiteLabelDraft,
   handlePublishWhiteLabelConfig,
   handleDiscardWhiteLabelDraft,
@@ -14,6 +15,7 @@ import {
 import type { UpsertRealmConfigRequest } from '@/lib/api-generated/types.gen'
 import { TOTPConfigForm as TOTPConfigFormComponent } from '@/components/realm-config/totp-config-form'
 import { PasskeyConfigForm as PasskeyConfigFormComponent } from '@/components/realm-config/passkey-config-form'
+import { EmailOtpConfigForm as EmailOtpConfigFormComponent } from '@/components/realm-config/email-otp-config-form'
 import { RegistrationConfigForm as RegistrationConfigFormComponent } from '@/components/realm-config/registration-config-form'
 import { EmailConfigForm as EmailConfigFormComponent } from '@/components/realm-config/email-config-form'
 import { TurnstileConfigForm as TurnstileConfigFormComponent } from '@/components/realm-config/turnstile-config-form'
@@ -31,6 +33,7 @@ import type {
   EmailConfigForm,
   TurnstileConfigForm,
   PasskeyConfigForm,
+  EmailOtpConfigForm,
   WhiteLabelConfigForm as WhiteLabelConfigFormValues,
   CustomDomainConfigForm as CustomDomainConfigFormValues,
 } from '@/lib/schemas/realm-config'
@@ -55,6 +58,7 @@ import {
   realmQueryOptions,
   emailStatusQueryOptions,
   passkeyRealmConfigQueryOptions,
+  emailOtpRealmConfigQueryOptions,
   whiteLabelRealmConfigQueryOptions,
   customDomainRealmConfigQueryOptions,
 } from '@/data/query-options'
@@ -180,11 +184,9 @@ export function SettingsPage() {
   const auth = useAuth()
   const [activeTab, setActiveTab] = useState('general')
 
-  // Permission checks
   const canViewConfig = auth.permissions?.includes(PERMISSION.SETTINGS_VIEW) ?? false
   const canUpdateConfig = auth.permissions?.includes(PERMISSION.SETTINGS_MANAGE) ?? false
 
-  // Get realm configuration list
   const {
     data: configs = [],
     isLoading,
@@ -201,7 +203,6 @@ export function SettingsPage() {
     enabled: !!realmId && canViewConfig,
   })
 
-  // Get email configuration status
   const { data: emailStatusData, error: emailStatusQueryError } = useQuery({
     ...emailStatusQueryOptions(realmId),
     enabled: !!realmId && canViewConfig,
@@ -210,6 +211,14 @@ export function SettingsPage() {
   // Passkey Realm config via dedicated endpoint (GET /api/realms/{realmId}/config/passkey)
   const { data: passkeyConfigData } = useQuery({
     ...passkeyRealmConfigQueryOptions(realmId),
+    enabled: !!realmId && canViewConfig,
+  })
+
+  // Email-OTP Realm config via dedicated endpoint
+  // (GET /api/realms/{realmId}/config/email-otp). Requires `settings.view`;
+  // consumed by the Settings → Security "Email code" tab (design §4.2, §5.5).
+  const { data: emailOtpConfigData } = useQuery({
+    ...emailOtpRealmConfigQueryOptions(realmId),
     enabled: !!realmId && canViewConfig,
   })
 
@@ -232,7 +241,6 @@ export function SettingsPage() {
     enabled: !!realmId && canViewConfig,
   })
 
-  // Batch update configuration
   const mutation = useMutation({
     mutationFn: (configs: UpsertRealmConfigRequest[]) =>
       batchUpsertRealmConfigs({
@@ -281,6 +289,40 @@ export function SettingsPage() {
     },
     onError: (error: unknown) => {
       console.error('Failed to save passkey config:', error)
+
+      const status = resolveApiError(error).status
+      const errorMessage =
+        status === 401
+          ? m['settings.config_save_unauthorized']()
+          : status === 403
+            ? m['settings.config_save_forbidden']()
+            : resolveErrorMessage(error, m['settings.config_save_failed']())
+
+      toast.error(errorMessage)
+    },
+  })
+
+  // Dedicated Email-OTP config mutation (PUT /api/realms/{realmId}/config/email-otp).
+  // Email-OTP uses its own camelCase endpoint (see emailOtpConfigSchema), distinct
+  // from the generic snake_case realm_configs store used by TOTP/Turnstile/etc.
+  const emailOtpMutation = useMutation({
+    mutationFn: (config: EmailOtpConfigForm) =>
+      handleUpdateRealmEmailOtpConfig({
+        path: { realmId },
+        body: {
+          enabled: config.enabled,
+          autoRegister: config.autoRegister,
+        },
+      }).then((response) => {
+        if (response.error) throw response.error
+        return response.data
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.emailOtpRealmConfig(realmId) })
+      toast.success(m['settings.config_saved_success']())
+    },
+    onError: (error: unknown) => {
+      console.error('Failed to save email-otp config:', error)
 
       const status = resolveApiError(error).status
       const errorMessage =
@@ -415,7 +457,6 @@ export function SettingsPage() {
     return <AccessDenied message={m['settings.config_access_denied']()} />
   }
 
-  // Handle loading and error states
   if (isLoading) {
     return <div>{m['settings.config_loading']()}</div>
   }
@@ -426,7 +467,6 @@ export function SettingsPage() {
     return <div>{m['settings.config_error_loading']()}</div>
   }
 
-  // Parse configuration data
   const totpConfig = parseTOTPConfig(configs || [])
   const turnstileConfig = parseTurnstileConfig(configs || [])
   const registrationConfig = parseRegistrationConfig(configs || [])
@@ -445,7 +485,6 @@ export function SettingsPage() {
       }
     : undefined
 
-  // Save TOTP configuration
   async function saveTOTPConfig(config: TOTPConfigForm) {
     if (!canUpdateConfig) {
       toast.error(m['settings.config_modify_denied']())
@@ -459,7 +498,6 @@ export function SettingsPage() {
     await mutation.mutateAsync([buildTOTPConfigRequest(config)]).catch(() => {})
   }
 
-  // Save Turnstile configuration
   async function saveTurnstileConfig(config: TurnstileConfigForm) {
     if (!canUpdateConfig) {
       toast.error(m['settings.config_modify_denied']())
@@ -469,7 +507,6 @@ export function SettingsPage() {
     await mutation.mutateAsync(buildTurnstileConfigRequest(config)).catch(() => {})
   }
 
-  // Save Registration configuration
   async function saveRegistrationConfig(config: RegistrationConfigForm) {
     if (!canUpdateConfig) {
       toast.error(m['settings.config_modify_denied']())
@@ -479,7 +516,6 @@ export function SettingsPage() {
     await mutation.mutateAsync(buildRegistrationConfigRequest(config)).catch(() => {})
   }
 
-  // Save Email configuration
   async function saveEmailConfig(config: EmailConfigForm) {
     if (!canUpdateConfig) {
       toast.error(m['settings.config_modify_denied']())
@@ -490,7 +526,6 @@ export function SettingsPage() {
     queryClient.invalidateQueries({ queryKey: queryKeys.emailStatus(realmId) })
   }
 
-  // Save Passkey configuration (dedicated endpoint).
   async function savePasskeyConfig(config: PasskeyConfigForm) {
     if (!canUpdateConfig) {
       toast.error(m['settings.config_modify_denied']())
@@ -498,6 +533,15 @@ export function SettingsPage() {
     }
 
     await passkeyMutation.mutateAsync(config).catch(() => {})
+  }
+
+  async function saveEmailOtpConfig(config: EmailOtpConfigForm) {
+    if (!canUpdateConfig) {
+      toast.error(m['settings.config_modify_denied']())
+      return
+    }
+
+    await emailOtpMutation.mutateAsync(config).catch(() => {})
   }
 
   // --- White-label action wrappers --------------------------------------------
@@ -566,6 +610,9 @@ export function SettingsPage() {
           <TabsTrigger value="passkey" data-testid="passkey-tab">
             {m['settings.tab_passkey']()}
           </TabsTrigger>
+          <TabsTrigger value="email-otp" data-testid="email-otp-tab">
+            {m['settings.tab_email_otp']()}
+          </TabsTrigger>
           <TabsTrigger value="turnstile" data-testid="turnstile-tab">
             {m['settings.tab_turnstile']()}
           </TabsTrigger>
@@ -595,7 +642,6 @@ export function SettingsPage() {
 
         <TabsContent value="totp">
           <TOTPConfigFormComponent
-            realmId={realmId}
             initialConfig={totpConfig}
             onSave={saveTOTPConfig}
             isLoading={isLoading}
@@ -605,7 +651,6 @@ export function SettingsPage() {
 
         <TabsContent value="passkey">
           <PasskeyConfigFormComponent
-            realmId={realmId}
             initialConfig={passkeyInitialConfig}
             onSave={savePasskeyConfig}
             isLoading={isLoading}
@@ -613,9 +658,17 @@ export function SettingsPage() {
           />
         </TabsContent>
 
+        <TabsContent value="email-otp">
+          <EmailOtpConfigFormComponent
+            initialConfig={emailOtpConfigData ?? undefined}
+            onSave={saveEmailOtpConfig}
+            isLoading={isLoading}
+            disabled={!canUpdateConfig}
+          />
+        </TabsContent>
+
         <TabsContent value="turnstile">
           <TurnstileConfigFormComponent
-            realmId={realmId}
             initialConfig={turnstileConfig}
             onSave={saveTurnstileConfig}
             isLoading={isLoading}
@@ -625,7 +678,6 @@ export function SettingsPage() {
 
         <TabsContent value="registration">
           <RegistrationConfigFormComponent
-            realmId={realmId}
             initialConfig={registrationConfig}
             onSave={saveRegistrationConfig}
             isLoading={isLoading}
@@ -674,7 +726,6 @@ export function SettingsPage() {
 
             return (
               <WhiteLabelConfigFormComponent
-                realmId={realmId}
                 initialConfig={initialConfig}
                 hasDraft={hasDraft}
                 hasPrevious={hasPrevious}
@@ -709,7 +760,6 @@ export function SettingsPage() {
 
             return (
               <CustomDomainConfigFormComponent
-                realmId={realmId}
                 initialConfig={initialConfig}
                 disabled={!canUpdateConfig}
                 cnameTarget={cnameTarget}

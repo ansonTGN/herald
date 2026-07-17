@@ -57,10 +57,16 @@ export async function resolveRealmContext(pathname: string): Promise<ResolvedRea
     // Main-domain session routes have no realm prefix. Their realm is loaded
     // from /api/auth/status by the root loader, not from custom-domain DNS.
     if (pathname === '/' || SESSION_SCOPED_ROOT_SEGMENTS.has(firstPathSegment(pathname) ?? '')) {
-      return {
+      // Cache the fallback so subsequent renders/loads don't re-fetch the same
+      // 404ing resolve endpoint on every navigation (the host is stable within
+      // a page session; a non-custom-domain host deterministically 404s). Without
+      // this cache, `resolveRealmContext` would re-fire on every render and drive
+      // the root loader + session-scoped routes into a fetch loop.
+      cachedCustomDomainContext = {
         realmId: getLegacyRealmId(pathname),
         isCustomDomain: false,
       }
+      return cachedCustomDomainContext
     }
     throw new Error('Unable to resolve custom-domain realm')
   }

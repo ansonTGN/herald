@@ -21,6 +21,16 @@ export const passkeyConfigSchema = z.object({
   crossPlatformAuthenticator: z.boolean().default(true), // P1：是否要求跨平台 authenticator
 })
 
+// Email-OTP 配置 Schema
+// ✅ camelCase：对齐后端 `GetRealmEmailOtpConfigResponse` /
+//    `UpdateRealmEmailOtpConfigRequest`（均为 camelCase 线传输）。
+//    实测字段：enabled（是否启用邮箱验证码登录）/
+//    autoRegister（未注册邮箱验证成功后是否自动注册并激活账户）。
+export const emailOtpConfigSchema = z.object({
+  enabled: z.boolean(), // Realm 是否启用邮箱验证码登录
+  autoRegister: z.boolean(), // ✅ camelCase：未注册邮箱是否自动注册
+})
+
 // Registration 配置 Schema
 export const registrationConfigSchema = z.object({
   enabled: z.boolean(), // 是否允许注册
@@ -83,6 +93,7 @@ export const customDomainConfigSchema = z.object({
 // 类型导出
 export type TOTPConfigForm = z.infer<typeof totpConfigSchema>
 export type PasskeyConfigForm = z.infer<typeof passkeyConfigSchema>
+export type EmailOtpConfigForm = z.infer<typeof emailOtpConfigSchema>
 export type RegistrationConfigForm = z.infer<typeof registrationConfigSchema>
 export type TurnstileConfigForm = z.infer<typeof turnstileConfigSchema>
 export type EmailConfigForm = z.infer<typeof emailConfigSchema>

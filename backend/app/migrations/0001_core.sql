@@ -141,6 +141,12 @@ CREATE TABLE client_app (
     icon_url text,
     client_secret text,
     device_code_grant_enabled boolean NOT NULL DEFAULT false,
+    -- Turnstile (Cloudflare human-verification), delegated to the Client App.
+    -- `turnstile_enabled` defaults to false so existing Client
+    -- Apps keep the "not configured -> skip" behaviour until enabled.
+    turnstile_enabled boolean NOT NULL DEFAULT false,
+    turnstile_site_key text,
+    turnstile_secret_key text,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamptz DEFAULT now(),
     CONSTRAINT client_app_realm_client_idx UNIQUE (realm_id, client_id),
@@ -157,6 +163,12 @@ CREATE INDEX idx_client_app_realm_enabled ON client_app(realm_id, enabled);
 CREATE UNIQUE INDEX uniq_client_app_first_party_realm
     ON client_app(realm_id) WHERE is_first_party;
 COMMENT ON TABLE client_app IS 'OAuth client applications';
+COMMENT ON COLUMN client_app.turnstile_enabled IS
+    'Whether Cloudflare Turnstile human-verification is enforced for this Client App';
+COMMENT ON COLUMN client_app.turnstile_site_key IS
+    'Cloudflare Turnstile site key (public) shown to the client widget; NULL when Turnstile is disabled';
+COMMENT ON COLUMN client_app.turnstile_secret_key IS
+    'Cloudflare Turnstile secret key (server-side, sensitive); NULL when Turnstile is disabled';
 COMMENT ON COLUMN client_app.id IS 'Internal UUID primary key (UUID v7)';
 COMMENT ON COLUMN client_app.client_id IS 'External client identifier for API usage (alphanumeric, 3-36 chars)';
 COMMENT ON COLUMN client_app.redirect_uris IS 'Redirect URI whitelist, JSON array format, must contain at least one valid HTTPS address (HTTP allowed in dev)';
@@ -431,7 +443,19 @@ CREATE TABLE email_templates (
     updated_at timestamp DEFAULT now()
 );
 
+-- One effective template per scope and type keeps locale/realm fallback deterministic.
+CREATE UNIQUE INDEX uq_email_templates_realm_type
+    ON email_templates (realm_id, type)
+    WHERE realm_id IS NOT NULL;
+CREATE UNIQUE INDEX uq_email_templates_global_type
+    ON email_templates (type)
+    WHERE realm_id IS NULL;
+
 COMMENT ON TABLE email_templates IS 'Email templates for different types of emails';
+COMMENT ON COLUMN email_templates.type IS
+    'Template kind with optional locale suffix, e.g. verify_email or verify_email:zh-CN';
+COMMENT ON COLUMN email_templates.content IS
+    'JSON object with subject, text and html fields; allowed variables: brand_name and action_url';
 
 -- Email verification codes
 CREATE TABLE email_verification_code (

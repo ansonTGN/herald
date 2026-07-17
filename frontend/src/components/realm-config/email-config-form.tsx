@@ -50,7 +50,7 @@ export function EmailConfigForm({
   const [saveError, setSaveError] = React.useState<string | null>(null)
   const [testRecipient, setTestRecipient] = React.useState('')
 
-  const { handleSubmit, isSubmitting } = useFormSubmit(onSave, disabled)
+  const { handleSubmit, isSubmitting } = useFormSubmit(onSave)
 
   const form = useAppForm({
     schema: emailConfigSchema,

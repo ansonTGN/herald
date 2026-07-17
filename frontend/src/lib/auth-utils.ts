@@ -17,6 +17,7 @@ import type {
   LoginResponse,
   VerifyTotpResponse,
   PasskeyVerifyResponse,
+  BrowserTokenResponse,
 } from '@/lib/api-generated'
 import {
   fetchAuthData,
@@ -44,9 +45,6 @@ export { FIRST_PARTY_CLIENT_ID }
 /** FirstParty OAuth callback path (must match backend `FIRST_PARTY_CALLBACK_PATH`). */
 const FIRST_PARTY_CALLBACK_PATH = '/callback'
 
-/**
- * Result object for login flow
- */
 export interface LoginFlowResult {
   response: LoginResponse
   redirectPath: string
@@ -184,7 +182,6 @@ async function tryCompletePkceExchange(
       refreshToken: tokenSet.refreshToken,
       clientId: pkce.clientId,
     })
-    // PKCE flow complete — clear the transient state.
     useAuthStore.getState().setPkceState(null)
     return true
   } catch {
@@ -257,14 +254,12 @@ export async function initializeAuth(
 
     const { authStatus, userPermissions, userProfile } = await fetchAuthData()
 
-    // Update store with fetched data
     store.setAuthStatus(authStatus.authenticated, authStatus.realmId || realmId)
     store.setUserPermissions(userPermissions.permissions, userPermissions.roles)
     store.setUserProfile(userProfile)
 
     initializedRealm = realmId
 
-    // Determine redirect path based on permissions
     const redirectPath = hasAdminPermission(userPermissions.permissions)
       ? DEFAULT_ADMIN_REDIRECT
       : DEFAULT_USER_REDIRECT
@@ -274,7 +269,6 @@ export async function initializeAuth(
       redirectPath,
     }
   } catch {
-    // On error, clear auth state
     store.reset()
     initializedRealm = null
     return {
@@ -340,7 +334,6 @@ export async function loginFlow(
       }
     }
 
-    // Perform login API call
     const loginResponse = await performLogin(realmId, loginCredentials)
 
     if (loginResponse.requiresTotp) {
@@ -389,7 +382,6 @@ export async function loginFlow(
 
     return { response: loginResponse, redirectPath }
   } catch (error) {
-    // On error, ensure store is in clean state
     store.logout()
     throw error
   }
@@ -419,7 +411,6 @@ export async function logoutFlow(realmId: string): Promise<void> {
     initializedRealm = null
     store.setIsLoading(false)
 
-    // Clear localStorage to ensure all auth data is removed
     clearAuthStorage()
 
     // Navigate to login page - use window.location for simple redirect
@@ -429,23 +420,11 @@ export async function logoutFlow(realmId: string): Promise<void> {
   }
 }
 
-/**
- * Check if user has admin permission
- * Uses the current state from the Zustand store
- *
- * @returns true if user has admin permission
- */
 export function checkAdminPermission(): boolean {
   const { permissions } = useAuthStore.getState()
   return hasAdminPermission(permissions)
 }
 
-/**
- * Get redirect path based on current permissions
- * Uses the current state from the Zustand store
- *
- * @returns The appropriate redirect path
- */
 export function getRedirectPath(): string {
   const hasAdmin = checkAdminPermission()
   const redirectPath = hasAdmin ? DEFAULT_ADMIN_REDIRECT : DEFAULT_USER_REDIRECT
@@ -543,6 +522,54 @@ export async function completeLoginAfterPasskey(
   const store = useAuthStore.getState()
 
   try {
+    await hydrateAuthenticatedSession(store, realmId)
+
+    return { redirectPath: getRedirectPath() }
+  } catch (error) {
+    store.logout()
+    throw error
+  }
+}
+
+/**
+ * Complete login after an Email-OTP verify that returned a direct
+ * `BrowserTokenResponse`.
+ *
+ * OTP login does NOT go through PKCE/OAuth (design §4.1 boundary) and the
+ * verify response carries no `redirectTo` and no consent step (the send-phase
+ * consent gate is the only consent for auto-register; login-as-consent for
+ * existing users is enforced server-side). This therefore mirrors only the
+ * non-PKCE branch of `completeLoginAfterPasskey`: persist the token set via the
+ * shared store helper, mark the realm initialized via the shared
+ * `hydrateAuthenticatedSession`, and return the safe redirect path. Token
+ * storage is reused (`store.setTokens`) — never duplicated.
+ *
+ * `clientId` is the Client App the OTP code was issued for (the send/verify
+ * request `clientId`). It is persisted alongside the refresh token so a later
+ * refresh can rebind to the same Client App, exactly as the PKCE path persists
+ * `FIRST_PARTY_CLIENT_ID`. The `BrowserTokenResponse` body itself does not
+ * carry `clientId`, so the caller (which owns the resolved Client App id) must
+ * supply it.
+ *
+ * @param realmId - The realm ID
+ * @param tokenResponse - The direct `BrowserTokenResponse` from OTP verify
+ * @param clientId - The Client App id used for send/verify
+ */
+export async function completeLoginAfterEmailOtp(
+  realmId: string,
+  tokenResponse: BrowserTokenResponse,
+  clientId: string
+): Promise<{ redirectPath: string }> {
+  const store = useAuthStore.getState()
+
+  try {
+    store.setTokens({
+      accessToken: tokenResponse.accessToken,
+      refreshToken: tokenResponse.refreshToken,
+      clientId,
+    })
+    store.login(realmId)
+
     await hydrateAuthenticatedSession(store, realmId)
 
     return { redirectPath: getRedirectPath() }

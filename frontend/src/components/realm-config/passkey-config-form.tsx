@@ -18,7 +18,6 @@ import { ConfigSwitchField } from './config-switch-field'
 import { m } from '@/paraglide/messages'
 
 interface PasskeyConfigFormProps {
-  realmId: string // For future use
   initialConfig?: PasskeyConfigFormValues
   onSave: (config: PasskeyConfigFormValues) => Promise<void>
   isLoading?: boolean
@@ -26,7 +25,6 @@ interface PasskeyConfigFormProps {
 }
 
 export function PasskeyConfigForm({
-  realmId: _realmId, // Renamed for clarity, unused in current implementation
   initialConfig,
   onSave,
   isLoading,
@@ -43,19 +41,6 @@ export function PasskeyConfigForm({
       crossPlatformAuthenticator: true,
     },
     onSubmit: async ({ value }) => {
-      // Check if form is disabled
-      if (disabled) {
-        throw new Error(
-          'Form is disabled. You do not have permission to modify this configuration.'
-        )
-      }
-
-      // Prevent duplicate submissions
-      if (isSubmitting) {
-        console.log('Form is already submitting, ignoring duplicate submission')
-        return
-      }
-
       setIsSubmitting(true)
       try {
         await onSave(value)

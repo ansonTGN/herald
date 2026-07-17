@@ -111,6 +111,47 @@ export const SELECTORS = {
     copyButton: '[data-testid="copy-password-button"]',
   },
 
+  /**
+   * User Sessions Dialog Selectors (US-RA-020)
+   *
+   * Triggered from: /{realmId}/manage/users (user table row "Manage Sessions"
+   * button). Every selector below is sourced verbatim from
+   * `frontend/src/components/users/user-sessions-dialog.tsx` (line numbers cited).
+   *
+   * Empty-state GAP: `user-sessions-dialog.tsx:114` is a bare `<p>` rendering
+   * `m['users.sessions.empty']()` with NO `data-testid`. Do NOT invent a testid.
+   * Assert empty state via `expectRevokeAllButtonAbsent` (the revoke-all button
+   * only renders when the list is non-empty — `:84` `{hasSessions && ...}`).
+   * This is locale-independent and stable.
+   *
+   * The per-row entry button lives on the user table row (NOT this dialog) at
+   * `frontend/src/components/users/user-table.tsx:131` and uses a dynamic testid
+   * `user-table-${row.index}-sessions-button`; the POM resolves it via a
+   * row-relative suffix-match locator (`[data-testid$="-sessions-button"]`).
+   */
+  userSessions: {
+    // DialogContent root — user-sessions-dialog.tsx:77/84
+    dialog: '[data-testid="user-sessions-dialog"]',
+    // Rendered ONLY when the session list is non-empty — :89/99
+    revokeAllButton: '[data-testid="user-sessions-revoke-all-button"]',
+    // Error-state retry — :108/118
+    retryButton: '[data-testid="user-sessions-retry-button"]',
+    // Per-row revoke button — :149/159 (dynamic index)
+    revokeRowButton: (index: number) =>
+      `[data-testid="user-sessions-table-${index}-revoke-button"]`,
+    // Revoke-one ConfirmDialog props — user-sessions-dialog.tsx:180-182
+    revokeConfirmDialog: '[data-testid="user-sessions-revoke-confirm-dialog"]',
+    revokeCancelButton: '[data-testid="user-sessions-revoke-cancel-button"]',
+    revokeConfirmButton: '[data-testid="user-sessions-revoke-confirm-button"]',
+    // Revoke-all ConfirmDialog props — :194-196
+    revokeAllConfirmDialog:
+      '[data-testid="user-sessions-revoke-all-confirm-dialog"]',
+    revokeAllCancelButton:
+      '[data-testid="user-sessions-revoke-all-cancel-button"]',
+    revokeAllConfirmButton:
+      '[data-testid="user-sessions-revoke-all-confirm-button"]',
+  },
+
   roles: {
     container: '[data-testid="roles-page"]',
     heading: '[data-testid="roles-heading"]',

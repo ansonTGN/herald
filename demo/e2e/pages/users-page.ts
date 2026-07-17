@@ -59,6 +59,17 @@ export class UsersPage extends BasePage {
   readonly resetPasswordNewPasswordText: Locator
   readonly resetPasswordCopyButton: Locator
 
+  // User sessions selectors (US-RA-020)
+  readonly sessionsDialog: Locator
+  readonly sessionsRevokeAllButton: Locator
+  readonly sessionsRetryButton: Locator
+  readonly revokeConfirmDialog: Locator
+  readonly revokeConfirmButton: Locator
+  readonly revokeCancelButton: Locator
+  readonly revokeAllConfirmDialog: Locator
+  readonly revokeAllConfirmButton: Locator
+  readonly revokeAllCancelButton: Locator
+
   constructor(page: Page, logger?: UnifiedLogger) {
     super(page, logger)
     this.container = page.locator(SELECTORS.users.container)
@@ -87,6 +98,17 @@ export class UsersPage extends BasePage {
     this.resetPasswordResultDialog = page.locator(SELECTORS.resetPassword.resultDialog)
     this.resetPasswordNewPasswordText = page.locator(SELECTORS.resetPassword.newPasswordText)
     this.resetPasswordCopyButton = page.locator(SELECTORS.resetPassword.copyButton)
+
+    // User sessions selectors (US-RA-020)
+    this.sessionsDialog = page.locator(SELECTORS.userSessions.dialog)
+    this.sessionsRevokeAllButton = page.locator(SELECTORS.userSessions.revokeAllButton)
+    this.sessionsRetryButton = page.locator(SELECTORS.userSessions.retryButton)
+    this.revokeConfirmDialog = page.locator(SELECTORS.userSessions.revokeConfirmDialog)
+    this.revokeConfirmButton = page.locator(SELECTORS.userSessions.revokeConfirmButton)
+    this.revokeCancelButton = page.locator(SELECTORS.userSessions.revokeCancelButton)
+    this.revokeAllConfirmDialog = page.locator(SELECTORS.userSessions.revokeAllConfirmDialog)
+    this.revokeAllConfirmButton = page.locator(SELECTORS.userSessions.revokeAllConfirmButton)
+    this.revokeAllCancelButton = page.locator(SELECTORS.userSessions.revokeAllCancelButton)
   }
 
   /**
@@ -100,7 +122,6 @@ export class UsersPage extends BasePage {
     const usersMenuLink = this.page.locator(SELECTORS.sidebar.menuUsers)
     await this.smartClick(usersMenuLink)
 
-    // 等待页面加载完成
     await this.waitForReady()
   }
 
@@ -169,7 +190,6 @@ export class UsersPage extends BasePage {
   async submitUserForm(): Promise<string> {
     console.log('[UsersPage] Starting form submission...')
 
-    // Verify dialog is visible before proceeding
     const dialogVisible = await this.isVisible(this.dialog)
     if (!dialogVisible) {
       throw new Error('Cannot submit form: Dialog is not visible')
@@ -512,5 +532,119 @@ export class UsersPage extends BasePage {
     await this.clickResetPassword(email)
     await this.confirmResetPassword()
     return await this.waitForResetPasswordResult()
+  }
+
+  // ─── User Sessions Methods (US-RA-020) ───────────────────────────────
+
+  /**
+   * Click the "Manage Sessions" entry button on the row identified by email.
+   *
+   * Mirrors the proven `clickResetPassword` pattern: find the row, then use a
+   * row-relative suffix-match locator. The row testid is
+   * `user-table-${row.index}-sessions-button` (user-table.tsx:131), but the
+   * row.index is not known to the caller, so we suffix-match on
+   * `[data-testid$="-sessions-button"]` scoped to the row.
+   *
+   * Waits for the sessions dialog to become visible.
+   *
+   * @param email User email whose sessions to manage.
+   */
+  async clickManageSessions(email: string): Promise<void> {
+    const row = this.findUserRow(email)
+    await expect(row).toBeVisible()
+
+    const sessionsButton = row
+      .locator('[data-testid$="-sessions-button"]')
+      .first()
+    await this.smartClick(sessionsButton)
+
+    await expect(this.sessionsDialog).toBeVisible()
+  }
+
+  /**
+   * Assert the user-sessions dialog is open (visible).
+   */
+  async expectSessionsDialogOpen(): Promise<void> {
+    await expect(this.sessionsDialog).toBeVisible()
+  }
+
+  /**
+   * Close the sessions dialog by clicking the footer Close button.
+   *
+   * The footer renders `<Button>{m['common.close']()}</Button>`
+   * (user-sessions-dialog.tsx:162-166). Located by accessible name `close`
+   * (i18n-independent via the role name, which Playwright matches against the
+   * rendered label) inside the dialog, then awaited hidden.
+   */
+  async closeSessionsDialog(): Promise<void> {
+    const closeButton = this.sessionsDialog
+      .getByRole('button', { name: /close/i })
+      .first()
+    await this.smartClick(closeButton)
+    await expect(this.sessionsDialog).toBeHidden({ timeout: 5000 })
+  }
+
+  /**
+   * Count the session rows currently rendered in the dialog.
+   *
+   * Counts `[data-testid^="user-sessions-table-"][data-testid$="-revoke-button"]`
+   * inside the dialog — one per non-empty session row. This is locale-independent
+   * (does not depend on any localized cell text).
+   *
+   * @returns The number of session rows in the dialog.
+   */
+  async getSessionRowCount(): Promise<number> {
+    return await this.sessionsDialog
+      .locator(
+        '[data-testid^="user-sessions-table-"][data-testid$="-revoke-button"]'
+      )
+      .count()
+  }
+
+  /**
+   * Revoke a single session by zero-based row index.
+   *
+   * Clicks the per-row revoke button
+   * (`SELECTORS.userSessions.revokeRowButton(index)`), waits for the
+   * revoke-one ConfirmDialog to appear, confirms, then waits for the confirm
+   * dialog to disappear. Uses a 5s ceiling consistent with `confirmResetPassword`.
+   *
+   * @param index Zero-based session row index.
+   */
+  async revokeSessionByIndex(index: number): Promise<void> {
+    const revokeButton = this.page.locator(
+      SELECTORS.userSessions.revokeRowButton(index)
+    )
+    await this.smartClick(revokeButton)
+    await expect(this.revokeConfirmDialog).toBeVisible({ timeout: 5000 })
+
+    await this.smartClick(this.revokeConfirmButton)
+    await expect(this.revokeConfirmDialog).toBeHidden({ timeout: 5000 })
+  }
+
+  /**
+   * Revoke all sessions for the user via the "Revoke All" button.
+   *
+   * Clicks `sessionsRevokeAllButton`, waits for the revoke-all ConfirmDialog,
+   * confirms, then waits for that confirm dialog to disappear.
+   */
+  async revokeAllSessions(): Promise<void> {
+    await this.smartClick(this.sessionsRevokeAllButton)
+    await expect(this.revokeAllConfirmDialog).toBeVisible({ timeout: 5000 })
+
+    await this.smartClick(this.revokeAllConfirmButton)
+    await expect(this.revokeAllConfirmDialog).toBeHidden({ timeout: 5000 })
+  }
+
+  /**
+   * Assert the revoke-all button is absent (empty-state proxy).
+   *
+   * `user-sessions-dialog.tsx:84` renders the revoke-all button ONLY when the
+   * session list is non-empty (`{hasSessions && ...}`). A count of 0 is the
+   * stable, locale-independent proof the list is empty — there is no dedicated
+   * empty-state testid to assert on.
+   */
+  async expectRevokeAllButtonAbsent(): Promise<void> {
+    await expect(this.sessionsRevokeAllButton).toHaveCount(0)
   }
 }

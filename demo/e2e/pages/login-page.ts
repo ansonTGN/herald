@@ -127,7 +127,7 @@ export class LoginPage extends BasePage {
     await this.fillLoginForm(credentials)
     await this.submit()
 
-    // Wait for login API response to ensure the authentication cookie is set
+    // Wait for the login API response so the Bearer token is stored before proceeding.
     const loginResponse = await this.page.waitForResponse(
       response => response.url().includes('/login') && response.request().method() === 'POST',
       { timeout: 10000 }
@@ -194,15 +194,18 @@ export class LoginPage extends BasePage {
     // Match either /admin/ for admin realm or /{realmId} for new realms
     await this.page.waitForURL(new RegExp(`.*${realmId}`), { timeout: 15000 })
 
-    // Verify cookie was created
-    const cookiesAfterLogin = await this.page.context().cookies()
-    const xAuthCookieAfterLogin = cookiesAfterLogin.find(c => c.name === 'X-Auth')
-
-    if (!xAuthCookieAfterLogin) {
-      throw new Error(`[LoginPage] Login failed: X-Auth cookie not found after login`)
+    // Verify the browser-token session was established. Since commit f3b8d48a
+    // replaced the X-Auth session cookie with the browser Bearer token model,
+    // there is no cookie to check; the rotating refresh token is persisted in
+    // localStorage under `auth-storage` (frontend Zustand `persist` store,
+    // auth-store.ts:203 / auth-constants.ts:130). Its presence is the persistent
+    // proof that the frontend completed login + PKCE token exchange.
+    const authStorage = await this.page.evaluate(() => window.localStorage.getItem('auth-storage'))
+    if (!authStorage) {
+      throw new Error(`[LoginPage] Login failed: auth-storage not found in localStorage after login`)
     }
 
-    console.log(`[LoginPage] X-Auth cookie found: ${xAuthCookieAfterLogin.value.substring(0, 20)}...`)
+    console.log(`[LoginPage] auth-storage persisted (length=${authStorage.length})`)
 
     // Verify successful login - should be redirected to admin page
     await expect(this.page).toHaveURL(new RegExp(`^http://localhost:3000/${realmId}(/|$)`))
@@ -240,16 +243,16 @@ export class LoginPage extends BasePage {
       { timeout: 15000 }
     )
 
-    const cookiesAfterLogin = await this.page.context().cookies()
-    const xAuthCookieAfterLogin = cookiesAfterLogin.find(c => c.name === 'X-Auth')
-
-    if (!xAuthCookieAfterLogin) {
-      throw new Error(`[LoginPage] User login failed: X-Auth cookie not found after login`)
+    // Browser Bearer token model (commit f3b8d48a): no X-Auth cookie. The
+    // rotating refresh token is persisted in localStorage under `auth-storage`
+    // (frontend Zustand `persist` store). Its presence proves the session was
+    // established. See loginAsAdmin for the full rationale.
+    const authStorage = await this.page.evaluate(() => window.localStorage.getItem('auth-storage'))
+    if (!authStorage) {
+      throw new Error(`[LoginPage] User login failed: auth-storage not found in localStorage after login`)
     }
 
-    console.log(
-      `[LoginPage] User login successful, X-Auth cookie found: ${xAuthCookieAfterLogin.value.substring(0, 20)}...`
-    )
+    console.log(`[LoginPage] User login successful, auth-storage persisted (length=${authStorage.length})`)
   }
 
   /**

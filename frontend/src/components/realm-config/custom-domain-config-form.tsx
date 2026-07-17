@@ -14,8 +14,6 @@ import { formatDateTimeShort } from '@/lib/date-utils'
 import { m } from '@/paraglide/messages'
 
 export interface CustomDomainConfigFormProps {
-  /** Realm the config belongs to (passed through for logging/query keys). */
-  realmId: string
   /** Initial form values. Use `emptyCustomDomainConfig()` when nothing is configured yet. */
   initialConfig: CustomDomainConfigFormValues
   /** Disables all inputs + action buttons (e.g. missing `settings.manage`). */
@@ -43,7 +41,6 @@ export interface CustomDomainConfigFormProps {
 }
 
 export function CustomDomainConfigForm({
-  realmId: _realmId,
   initialConfig,
   disabled = false,
   cnameTarget,

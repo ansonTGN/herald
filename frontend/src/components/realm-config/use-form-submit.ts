@@ -1,28 +1,21 @@
 import { useState } from 'react'
 
 /**
- * Custom hook for handling form submission with duplicate prevention.
- * Encapsulates the standard form submission pattern used across config forms.
+ * Custom hook for handling form submission state. Encapsulates the standard
+ * isSubmitting pattern used across config forms: tracks in-flight state and
+ * logs (then re-throws) errors so the caller can surface them.
+ *
+ * Duplicate-submission / disabled-form guards are intentionally NOT here —
+ * every config form disables its submit button while `isSubmitting`/`disabled`,
+ * so those guards were unreachable.
  *
  * @param onSave - The async save function to call
- * @param disabled - Whether the form is disabled
  * @returns Object containing submit function and submitting state
  */
-export function useFormSubmit<T>(onSave: (values: T) => Promise<void>, disabled?: boolean) {
+export function useFormSubmit<T>(onSave: (values: T) => Promise<void>) {
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   async function handleSubmit(values: T) {
-    // Check if form is disabled
-    if (disabled) {
-      throw new Error('Form is disabled. You do not have permission to modify this configuration.')
-    }
-
-    // Prevent duplicate submissions
-    if (isSubmitting) {
-      console.log('Form is already submitting, ignoring duplicate submission')
-      return
-    }
-
     setIsSubmitting(true)
     try {
       await onSave(values)

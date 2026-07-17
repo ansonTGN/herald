@@ -65,17 +65,39 @@ export function ClientAppFormPage({ mode, realmId, clientApp }: ClientAppFormPag
   const { isSubmitting, mutate } = useFormMutation({
     mutationFn: (data: CreateClientAppFormData | UpdateClientAppFormData) => {
       if (isCreate) {
+        const createData = data as CreateClientAppFormData
+        // turnstileSecretKey is write-only. Omit it from the payload when empty
+        // so create leaves the server-side secret unset (the generated client
+        // drops undefined fields during serialization).
+        const { turnstileSecretKey: _createSecret, ...createRest } = createData
+        const createBody: CreateClientAppFormData = {
+          ...createRest,
+          ...(createData.turnstileSecretKey && createData.turnstileSecretKey.length > 0
+            ? { turnstileSecretKey: createData.turnstileSecretKey }
+            : {}),
+        }
         return createClientApp({
           path: { realmId },
-          body: data as CreateClientAppFormData,
+          body: createBody,
         }).then((response) => {
           if (response.error) throw response.error
           return response.data
         })
       }
+      const updateData = data as UpdateClientAppFormData
+      // turnstileSecretKey is write-only and never echoed back. On update, an
+      // empty value means "leave the stored secret untouched" — omit it from
+      // the payload; a non-empty value replaces it.
+      const { turnstileSecretKey: _updateSecret, ...updateRest } = updateData
+      const updateBody: UpdateClientAppFormData = {
+        ...updateRest,
+        ...(updateData.turnstileSecretKey && updateData.turnstileSecretKey.length > 0
+          ? { turnstileSecretKey: updateData.turnstileSecretKey }
+          : {}),
+      }
       return updateClientApp({
         path: { realmId, clientAppId: clientApp!.id },
-        body: data as UpdateClientAppFormData,
+        body: updateBody,
       }).then((response) => {
         if (response.error) throw response.error
         return response.data
@@ -110,6 +132,9 @@ export function ClientAppFormPage({ mode, realmId, clientApp }: ClientAppFormPag
           browserRefreshAbsoluteTtlSeconds: DEFAULT_BROWSER_REFRESH_TTL_SECONDS,
           allowedOrigins: [],
           deviceCodeGrantEnabled: false,
+          turnstileEnabled: false,
+          turnstileSiteKey: '',
+          turnstileSecretKey: '',
         } as CreateClientAppFormData)
       : ({
           name: clientApp?.name ?? '',
@@ -122,6 +147,12 @@ export function ClientAppFormPage({ mode, realmId, clientApp }: ClientAppFormPag
           allowedOrigins: clientApp?.allowedOrigins ?? [],
           deviceCodeGrantEnabled: clientApp?.deviceCodeGrantEnabled ?? false,
           regenerateSecret: false,
+          turnstileEnabled: clientApp?.turnstileEnabled ?? false,
+          turnstileSiteKey: clientApp?.turnstileSiteKey ?? '',
+          // NEVER pre-fill the secret: ClientAppItem intentionally omits
+          // turnstileSecretKey (write-only). Empty means "leave stored secret
+          // untouched" on update.
+          turnstileSecretKey: '',
         } as UpdateClientAppFormData),
     onSubmit: async ({ value }) => {
       await mutate(value)
@@ -365,6 +396,98 @@ export function ClientAppFormPage({ mode, realmId, clientApp }: ClientAppFormPag
                     />
                   </div>
                 )}
+              />
+
+              <form.Field
+                name="turnstileEnabled"
+                children={(field) => (
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label htmlFor="app-turnstile-enabled">
+                        {m['client_apps.form_turnstile_enabled_label']()}
+                      </Label>
+                      <p className="text-xs text-muted-foreground">
+                        {m['client_apps.form_turnstile_enabled_hint']()}
+                      </p>
+                    </div>
+                    <Switch
+                      id="app-turnstile-enabled"
+                      checked={field.state.value ?? false}
+                      onCheckedChange={field.handleChange}
+                      data-testid="client-app-turnstile-enabled-switch"
+                    />
+                  </div>
+                )}
+              />
+
+              <form.Subscribe
+                selector={(state) => state.values.turnstileEnabled}
+                children={(turnstileEnabled) =>
+                  turnstileEnabled ? (
+                    <>
+                      <form.Field
+                        name="turnstileSiteKey"
+                        children={(field) => (
+                          <div className="space-y-2">
+                            <Label htmlFor="app-turnstile-site-key">
+                              {m['client_apps.form_turnstile_site_key_label']()}
+                            </Label>
+                            <Input
+                              id="app-turnstile-site-key"
+                              value={field.state.value ?? ''}
+                              onChange={(e) => field.handleChange(e.target.value)}
+                              placeholder={m['client_apps.form_turnstile_site_key_placeholder']()}
+                              data-testid="client-app-turnstile-site-key-input"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              {m['client_apps.form_turnstile_site_key_hint']()}
+                            </p>
+                            {(field.state.meta.isTouched || form.state.isSubmitted) &&
+                              field.state.meta.errors.length > 0 && (
+                                <p className="text-sm text-destructive">
+                                  {getFieldErrorMessage(field.state.meta)}
+                                </p>
+                              )}
+                          </div>
+                        )}
+                      />
+
+                      <form.Field
+                        name="turnstileSecretKey"
+                        children={(field) => (
+                          <div className="space-y-2">
+                            <Label htmlFor="app-turnstile-secret-key">
+                              {m['client_apps.form_turnstile_secret_key_label']()}
+                            </Label>
+                            <Input
+                              id="app-turnstile-secret-key"
+                              type="password"
+                              value={field.state.value ?? ''}
+                              onChange={(e) => field.handleChange(e.target.value)}
+                              placeholder={
+                                isCreate
+                                  ? ''
+                                  : m['client_apps.form_turnstile_secret_key_placeholder']()
+                              }
+                              data-testid="client-app-turnstile-secret-key-input"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              {isCreate
+                                ? m['client_apps.form_turnstile_secret_key_hint_create']()
+                                : m['client_apps.form_turnstile_secret_key_hint_edit']()}
+                            </p>
+                            {(field.state.meta.isTouched || form.state.isSubmitted) &&
+                              field.state.meta.errors.length > 0 && (
+                                <p className="text-sm text-destructive">
+                                  {getFieldErrorMessage(field.state.meta)}
+                                </p>
+                              )}
+                          </div>
+                        )}
+                      />
+                    </>
+                  ) : null
+                }
               />
 
               {!isCreate && (

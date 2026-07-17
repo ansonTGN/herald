@@ -1,42 +1,40 @@
 import React from 'react'
 import { useAppForm, AppForm } from '@/components/ui/tanstack-form'
 import {
-  totpConfigSchema,
-  type TOTPConfigForm as TOTPConfigFormValues,
+  emailOtpConfigSchema,
+  type EmailOtpConfigForm as EmailOtpConfigFormValues,
 } from '@/lib/schemas/realm-config'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ConfigSwitchField } from './config-switch-field'
 import { m } from '@/paraglide/messages'
 
-interface TOTPConfigFormProps {
-  initialConfig?: TOTPConfigFormValues
-  onSave: (config: TOTPConfigFormValues) => Promise<void>
+interface EmailOtpConfigFormProps {
+  initialConfig?: EmailOtpConfigFormValues
+  onSave: (config: EmailOtpConfigFormValues) => Promise<void>
   isLoading?: boolean
   disabled?: boolean
 }
 
-export function TOTPConfigForm({
+export function EmailOtpConfigForm({
   initialConfig,
   onSave,
   isLoading,
   disabled,
-}: TOTPConfigFormProps) {
+}: EmailOtpConfigFormProps) {
   const [isSubmitting, setIsSubmitting] = React.useState(false)
 
   const form = useAppForm({
-    schema: totpConfigSchema,
+    schema: emailOtpConfigSchema,
     defaultValues: initialConfig || {
       enabled: false,
-      forceEnabled: false,
+      autoRegister: false,
     },
     onSubmit: async ({ value }) => {
       setIsSubmitting(true)
       try {
         await onSave(value)
       } catch (error) {
-        // Log error for visibility but don't re-throw
-        // The parent component should handle display of error messages
         console.error('Failed to save configuration:', error)
       } finally {
         setIsSubmitting(false)
@@ -47,8 +45,8 @@ export function TOTPConfigForm({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{m['realm_config.totp_title']()}</CardTitle>
-        <CardDescription>{m['realm_config.totp_description']()}</CardDescription>
+        <CardTitle>{m['realm_config.email_otp_title']()}</CardTitle>
+        <CardDescription>{m['realm_config.email_otp_description']()}</CardDescription>
       </CardHeader>
       <CardContent>
         <AppForm>
@@ -59,34 +57,34 @@ export function TOTPConfigForm({
             }}
             className="space-y-4"
           >
-            {/* Enable TOTP */}
+            {/* Enable Email-OTP login */}
             <form.Field
               name="enabled"
               children={(field) => (
                 <ConfigSwitchField
                   field={field}
                   form={form}
-                  id="totp-enabled"
-                  label={m['realm_config.totp_enable_label']()}
-                  description={m['realm_config.totp_enable_description']()}
+                  id="email-otp-enabled"
+                  label={m['realm_config.email_otp_enable_label']()}
+                  description={m['realm_config.email_otp_enable_description']()}
                   disabled={disabled}
-                  errorTestId="totp-enabled-error"
+                  errorTestId="email-otp-enabled-error"
                 />
               )}
             />
 
-            {/* Force TOTP */}
+            {/* Auto-register unverified emails on successful verification */}
             <form.Field
-              name="forceEnabled"
+              name="autoRegister"
               children={(field) => (
                 <ConfigSwitchField
                   field={field}
                   form={form}
-                  id="totp-force-enabled"
-                  label={m['realm_config.totp_force_label']()}
-                  description={m['realm_config.totp_force_description']()}
+                  id="email-otp-auto-register"
+                  label={m['realm_config.email_otp_auto_register_label']()}
+                  description={m['realm_config.email_otp_auto_register_description']()}
                   disabled={disabled}
-                  errorTestId="totp-force-enabled-error"
+                  errorTestId="email-otp-auto-register-error"
                 />
               )}
             />
@@ -95,7 +93,7 @@ export function TOTPConfigForm({
               <Button
                 type="submit"
                 disabled={isLoading || isSubmitting || disabled}
-                data-testid="totp-save-button"
+                data-testid="email-otp-save-button"
               >
                 {isSubmitting ? m['realm_config.saving']() : m['realm_config.save']()}
               </Button>

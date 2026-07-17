@@ -50,8 +50,6 @@ type BackgroundTypeOption =
   | typeof BACKGROUND_GRADIENT
 
 export interface WhiteLabelConfigFormProps {
-  /** Realm the config belongs to (passed through for logging/query keys). */
-  realmId: string
   /** Initial form values. Use `emptyWhiteLabelConfig()` when nothing is configured yet. */
   initialConfig: WhiteLabelConfigFormValues
   /** Whether an unpublished draft exists on the backend (shows the draft notice). */
@@ -117,7 +115,6 @@ function backgroundTypeOption(background: WhiteLabelBackgroundForm | null): Back
 }
 
 export function WhiteLabelConfigForm({
-  realmId: _realmId,
   initialConfig,
   hasDraft = false,
   hasPrevious = false,

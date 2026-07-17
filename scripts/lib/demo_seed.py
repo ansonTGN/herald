@@ -43,10 +43,13 @@ Subscription History:
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
+import secrets
 import urllib.error
+import urllib.parse
 import urllib.request
-from http.cookiejar import CookieJar
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -65,6 +68,11 @@ ADMIN_REALM = "admin"
 ADMIN_EMAIL = "admin@cas.com"
 ADMIN_PASSWORD = "password"
 ADMIN_CLIENT_ID = "admin-web-console"
+
+# FirstParty OAuth callback. Must equal `{backend config [frontend].url}/callback`
+# to pass `validate_first_party_redirect` (token.rs:233). Demo `backend/config/demo.toml`
+# sets `[frontend].url = http://localhost:3000`; backend `FIRST_PARTY_CALLBACK_PATH = /callback`.
+FIRST_PARTY_REDIRECT_URI = "http://localhost:3000/callback"
 
 POINTS_REALM_ID = "realm-001"
 POINTS_REALM_NAME = "Realm 001"
@@ -90,8 +98,8 @@ def ensure_demo_seed_data(logger: "Logger | None" = None) -> bool:
         _info(logger, "Ensuring demo seed data for realm-001...")
         # Pre-establish admin@cas.com legal consent BEFORE logging in. When the
         # admin realm has global legal-agreement versions, login returns
-        # consentRequired=true and never sets the X-Auth cookie, so the seed
-        # _login below fails (chicken-and-egg). This is pure SQL — the admin
+        # consentRequired=true and never issues a browser access token, so the
+        # seed _login below fails (chicken-and-egg). This is pure SQL — the admin
         # account is created by backend migration, so it already exists here.
         _ensure_current_legal_consent(ADMIN_REALM, ADMIN_EMAIL, logger)
         admin_opener = _login(ADMIN_REALM, ADMIN_EMAIL, ADMIN_PASSWORD)
@@ -150,26 +158,78 @@ def ensure_demo_seed_data(logger: "Logger | None" = None) -> bool:
 
 
 def _login(realm_id: str, email: str, password: str) -> urllib.request.OpenerDirector:
+    """Log in as `email` and return an opener carrying a FirstParty Bearer token.
+
+    Performs the full FirstParty OAuth Authorization Code + PKCE flow so the
+    issued token passes `require_first_party_token` on admin routes
+    (`/api/realms`, `/api/users`, billing admin, …). Direct password login
+    (`POST /api/auth/{realm}/login`) only issues a CustomUserUi-scoped token,
+    which the first-party middleware rejects with 403.
+
+    Flow (mirrors frontend `auth-utils.ts beginFirstPartyPkceFlow` +
+    `tryCompletePkceExchange`):
+      1. Generate a PKCE verifier + S256 challenge and a random `state`.
+      2. `GET /api/oauth/{realm}/authorize?...` to seed OAuth state in Redis.
+         The 302 response body is irrelevant; only the Redis side-effect matters.
+      3. `POST /api/auth/{realm}/login` with the OAuth params attached → the
+         response carries `redirectTo = {redirect_uri}?code=...&state=...`.
+      4. `POST /api/oauth/{realm}/token` (code + verifier) → FirstParty
+         `{access_token, refresh_token, ...}`.
+    """
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+    # 1. PKCE pair + state (RFC 7636).
+    code_verifier = secrets.token_urlsafe(64)
+    code_challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(code_verifier.encode("ascii")).digest()
+    ).rstrip(b"=").decode("ascii")
+    state = secrets.token_hex(16)
+
+    # 2. Seed backend OAuth state (Redis). A 302 is the success path; we must
+    # not follow the redirect — we are not a browser.
+    authorize_qs = urllib.parse.urlencode({
+        "client_id": ADMIN_CLIENT_ID,
+        "redirect_uri": FIRST_PARTY_REDIRECT_URI,
+        "state": state,
+        "response_type": "code",
+        "code_challenge": code_challenge,
+        "code_challenge_method": "S256",
+    })
+    authorize_request = urllib.request.Request(
+        _backend_url(f"/api/oauth/{realm_id}/authorize?{authorize_qs}"),
+        method="GET",
+    )
+    try:
+        opener.open(authorize_request, timeout=15).close()
+    except urllib.error.HTTPError as exc:
+        error_body = exc.read().decode("utf-8", errors="replace")
+        raise SeedError(
+            f"HTTP {exc.code} for /api/oauth/{realm_id}/authorize: {error_body}"
+        ) from exc
+    except urllib.error.URLError as exc:
+        raise SeedError(f"authorize request failed for {realm_id}: {exc}") from exc
+
+    # 3. Password login with the OAuth context attached. The OAuth-flow branch
+    # in login.rs returns `redirectTo` instead of a token body.
     payload = {
         "clientId": ADMIN_CLIENT_ID,
         "email": email,
         "password": password,
+        "oauthClientId": ADMIN_CLIENT_ID,
+        "redirectUri": FIRST_PARTY_REDIRECT_URI,
+        "state": state,
     }
     data = json.dumps(payload).encode("utf-8")
-    request = urllib.request.Request(
+    login_request = urllib.request.Request(
         _backend_url(f"/api/auth/{realm_id}/login"),
         data=data,
         headers={"Content-Type": "application/json"},
         method="POST",
     )
     try:
-        with opener.open(request, timeout=15) as response:
+        with opener.open(login_request, timeout=15) as response:
             body_text = response.read().decode("utf-8")
             body = json.loads(body_text) if body_text else {}
-            token = _extract_cookie_token(response.headers.get("Set-Cookie", ""), "X-Auth")
-            if response.status != 200:
-                raise SeedError(f"Login failed for {email} in {realm_id}: status={response.status}")
     except urllib.error.HTTPError as exc:
         error_body = exc.read().decode("utf-8", errors="replace")
         raise SeedError(f"HTTP {exc.code} for login {email} in {realm_id}: {error_body}") from exc
@@ -178,10 +238,61 @@ def _login(realm_id: str, email: str, password: str) -> urllib.request.OpenerDir
 
     if body.get("requiresTotp") is True:
         raise SeedError(f"Login for {email} in {realm_id} unexpectedly requires TOTP")
-    if not token:
-        raise SeedError(f"Login for {email} in {realm_id} did not return X-Auth cookie")
+    redirect_to = body.get("redirectTo")
+    if not redirect_to:
+        raise SeedError(
+            f"Login for {email} in {realm_id} did not return an OAuth redirectTo "
+            "(expected FirstParty PKCE flow)"
+        )
 
-    opener.addheaders = [("Cookie", f"X-Auth={token}")]
+    # Parse `?code=...&state=...` off the redirect; verify state (CSRF, RFC 6749 §10.12).
+    parsed = urllib.parse.urlparse(redirect_to)
+    qs = urllib.parse.parse_qs(parsed.query)
+    auth_code = (qs.get("code") or [None])[0]
+    returned_state = (qs.get("state") or [None])[0]
+    if not auth_code:
+        raise SeedError(f"Login redirect for {email} in {realm_id} has no code: {redirect_to}")
+    if returned_state != state:
+        raise SeedError(
+            f"OAuth state mismatch for {email} in {realm_id}: "
+            f"sent {state}, got {returned_state}"
+        )
+
+    # 4. Exchange the code for a FirstParty token set. Field names are
+    # snake_case per OAuth 2.0 (TokenResponse in token.rs:44-52).
+    token_payload = {
+        "grant_type": "authorization_code",
+        "code": auth_code,
+        "redirect_uri": FIRST_PARTY_REDIRECT_URI,
+        "client_id": ADMIN_CLIENT_ID,
+        "code_verifier": code_verifier,
+    }
+    token_data = json.dumps(token_payload).encode("utf-8")
+    token_request = urllib.request.Request(
+        _backend_url(f"/api/oauth/{realm_id}/token"),
+        data=token_data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with opener.open(token_request, timeout=15) as response:
+            token_body_text = response.read().decode("utf-8")
+            token_body = json.loads(token_body_text) if token_body_text else {}
+    except urllib.error.HTTPError as exc:
+        error_body = exc.read().decode("utf-8", errors="replace")
+        raise SeedError(
+            f"HTTP {exc.code} for token exchange {email} in {realm_id}: {error_body}"
+        ) from exc
+    except urllib.error.URLError as exc:
+        raise SeedError(f"token exchange failed for {email} in {realm_id}: {exc}") from exc
+
+    access_token = token_body.get("access_token")
+    if not access_token:
+        raise SeedError(
+            f"Token exchange for {email} in {realm_id} did not return an access_token"
+        )
+
+    opener.addheaders = [("Authorization", f"Bearer {access_token}")]
     return opener
 
 
@@ -436,7 +547,7 @@ DECLARE
     v_tx_consume_2 UUID := uuidv7();
 BEGIN
     INSERT INTO client_app (
-        id, realm_id, client_id, name, description, redirect_uris, enabled, session_ttl_seconds
+        id, realm_id, client_id, name, description, redirect_uris, enabled, browser_refresh_absolute_ttl_seconds
     ) VALUES (
         uuidv7(),
         '{POINTS_REALM_ID}',
@@ -445,14 +556,14 @@ BEGIN
         'Client app used by realm-001 points demo data',
         '["http://localhost:3000/callback"]'::jsonb,
         TRUE,
-        1800
+        2592000
     )
     ON CONFLICT (realm_id, client_id) DO UPDATE
         SET name = EXCLUDED.name,
             description = EXCLUDED.description,
             redirect_uris = EXCLUDED.redirect_uris,
             enabled = TRUE,
-            session_ttl_seconds = EXCLUDED.session_ttl_seconds
+            browser_refresh_absolute_ttl_seconds = EXCLUDED.browser_refresh_absolute_ttl_seconds
     RETURNING id INTO v_client_app_id;
 
     DELETE FROM points_consumption_allocations WHERE user_id = v_user_id;
@@ -1193,16 +1304,6 @@ def _backend_url(path: str) -> str:
     return f"http://localhost:{BACKEND_PORT}{path}"
 
 
-def _extract_cookie_token(set_cookie_header: str, name: str) -> str | None:
-    if not set_cookie_header:
-        return None
-    first_part = set_cookie_header.split(';', 1)[0].strip()
-    prefix = f"{name}="
-    if not first_part.startswith(prefix):
-        return None
-    return first_part[len(prefix):]
-
-
 def _safe_json_loads(value: str) -> dict[str, Any]:
     try:
         parsed = json.loads(value)
@@ -1212,7 +1313,6 @@ def _safe_json_loads(value: str) -> dict[str, Any]:
 
 
 def _info(logger: "Logger | None", message: str) -> None:
-    # Changed to verbose_info to reduce noise in normal output
     if logger:
         logger.verbose_info(message)
 

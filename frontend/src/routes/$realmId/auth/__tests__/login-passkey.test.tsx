@@ -65,6 +65,7 @@ vi.mock('@/lib/auth-utils', () => ({
   getSafeRedirect: (path: string | undefined) => path ?? '/user/profile',
   checkAdminPermission: () => false,
   validateOAuthParams: () => ({ oauthParams: null, hasPartialOAuth: false }),
+  FIRST_PARTY_CLIENT_ID: 'admin-web-console',
 }))
 
 vi.mock('@/hooks/use-oauth-login', () => ({
@@ -85,6 +86,10 @@ vi.mock('@/data/query-options', () => ({
   turnstileStatusQueryOptions: () => ({
     queryKey: ['turnstile-status', 'test-realm'],
     queryFn: () => Promise.resolve({ enabled: false, site_key: null }),
+  }),
+  emailOtpStatusQueryOptions: () => ({
+    queryKey: ['email-otp-status', 'test-realm'],
+    queryFn: () => Promise.resolve({ enabled: false }),
   }),
   toAuthConsentAgreements: (agreements: LegalAgreementSummary[]) =>
     agreements.map((agreement) => ({

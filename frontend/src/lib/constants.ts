@@ -57,6 +57,8 @@ export const QUERY_KEYS = {
   WHITE_LABEL_REALM_CONFIG: 'white-label-realm-config',
   CUSTOM_DOMAIN_REALM_CONFIG: 'custom-domain-realm-config',
   TURNSTILE_STATUS: 'turnstile-status',
+  EMAIL_OTP_STATUS: 'email-otp-status',
+  EMAIL_OTP_REALM_CONFIG: 'email-otp-realm-config',
   USER_SUBSCRIPTIONS: 'user-subscriptions',
   SUBSCRIPTION_DETAILS: 'subscription-details',
   SUBSCRIPTION: 'subscription',

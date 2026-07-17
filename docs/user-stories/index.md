@@ -58,6 +58,8 @@
 | US-RA-017 | 创建 API Key 时绑定角色 | Realm Admin | P0 | [core/realm-admin](core/realm-admin.md#故事-17创建-api-key-时绑定角色-us-ra-017) |
 | US-RA-018 | API Key 按 Client App 隔离 | Realm Admin | P0 | [core/realm-admin](core/realm-admin.md#故事-18api-key-按-client-app-隔离-us-ra-018) |
 | US-RA-019 | 管理本 Realm 的用户协议与隐私政策 | Realm Admin | P1 | [core/legal-consent-account-deletion](core/legal-consent-account-deletion.md#故事-19管理本-realm-的用户协议与隐私政策-us-ra-019) |
+| US-RA-020 | 查看并撤销指定用户的活跃会话 | Realm Admin | P1 | [core/realm-admin](core/realm-admin.md#故事-19查看并撤销指定用户的活跃会话-us-ra-020) |
+| US-RA-021 | 禁用用户时即时撤销其全部活跃会话 | Realm Admin | P1 | [core/realm-admin](core/realm-admin.md#故事-20禁用用户时即时撤销其全部活跃会话-us-ra-021) |
 | US-RU-001 | 账号注册 | Regular User | P0 | [core/regular-user](core/regular-user.md#故事-1账号注册-us-ru-001) |
 | US-RU-002 | 账号登录 | Regular User | P0 | [core/regular-user](core/regular-user.md#故事-2账号登录-us-ru-002) |
 | US-RU-003 | OAuth 第三方登录 | Regular User | P0 | [core/regular-user](core/regular-user.md#故事-3oauth-第三方登录-us-ru-003) |

@@ -44,6 +44,10 @@ const browserRefreshTtlSchema = z
   .min(86400, { error: () => m['client_apps.validation_browser_refresh_ttl_min']() })
   .max(7776000, { error: () => m['client_apps.validation_browser_refresh_ttl_max']() })
 
+// Cloudflare Turnstile public site key (D-PROTECT-01). Shared by the create
+// and update schemas.
+const turnstileSiteKeySchema = z.string().trim().optional().or(z.literal(''))
+
 /** Default browser refresh token family absolute TTL: 30 days (design §4.3.2). */
 export const DEFAULT_BROWSER_REFRESH_TTL_SECONDS = 2592000
 
@@ -75,6 +79,11 @@ export const createClientAppSchema = z.object({
   ),
   allowedOrigins: z.array(allowedOriginSchema).default([]),
   deviceCodeGrantEnabled: z.boolean().default(false),
+  // Cloudflare Turnstile (D-PROTECT-01): per-Client-App human-verification.
+  // The secret is write-only: an empty value means "do not set" on create.
+  turnstileEnabled: z.boolean().default(false),
+  turnstileSiteKey: turnstileSiteKeySchema,
+  turnstileSecretKey: z.string().optional(),
 })
 
 export const updateClientAppSchema = z.object({
@@ -99,6 +108,14 @@ export const updateClientAppSchema = z.object({
   allowedOrigins: z.array(allowedOriginSchema),
   deviceCodeGrantEnabled: z.boolean(),
   regenerateSecret: z.boolean().default(false),
+  // Cloudflare Turnstile (D-PROTECT-01): per-Client-App human-verification.
+  // The secret is write-only and NEVER echoed back (ClientAppItem omits it),
+  // so an empty/omitted value here means "leave the stored secret untouched";
+  // a non-empty value replaces it. Mirrors how `regenerateSecret` and the
+  // OAuth mutation (`oauth-mutations.ts`) treat `clientSecret`.
+  turnstileEnabled: z.boolean().default(false),
+  turnstileSiteKey: turnstileSiteKeySchema,
+  turnstileSecretKey: z.string().optional(),
 })
 
 export type CreateClientAppFormData = z.infer<typeof createClientAppSchema>

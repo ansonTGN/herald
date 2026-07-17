@@ -10,7 +10,6 @@ import { ConfigSwitchField } from './config-switch-field'
 import { m } from '@/paraglide/messages'
 
 interface RegistrationConfigFormProps {
-  realmId: string // For future use
   initialConfig?: RegistrationConfigFormValues
   onSave: (config: RegistrationConfigFormValues) => Promise<void>
   isLoading?: boolean
@@ -19,7 +18,6 @@ interface RegistrationConfigFormProps {
 }
 
 export function RegistrationConfigForm({
-  realmId: _realmId, // Renamed for clarity, unused in current implementation
   initialConfig,
   onSave,
   isLoading,
@@ -35,19 +33,6 @@ export function RegistrationConfigForm({
       requireEmailVerification: true,
     },
     onSubmit: async ({ value }) => {
-      // Check if form is disabled
-      if (disabled) {
-        throw new Error(
-          'Form is disabled. You do not have permission to modify this configuration.'
-        )
-      }
-
-      // Prevent duplicate submissions
-      if (isSubmitting) {
-        console.log('Form is already submitting, ignoring duplicate submission')
-        return
-      }
-
       setIsSubmitting(true)
       try {
         await onSave(value)
