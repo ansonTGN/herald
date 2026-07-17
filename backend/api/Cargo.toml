@@ -100,3 +100,6 @@ rand = { workspace = true }
 # webauthn-rs-core). p256 (ES256) is the dominant passkey algorithm.
 p256 = { version = "0.13", features = ["ecdsa"] }
 ciborium = "0.2"
+# Google One Tap scenario tests sign test OIDC ID Tokens (RS256 JWT) with the
+# `rsa` keypair above.
+jsonwebtoken = { workspace = true }

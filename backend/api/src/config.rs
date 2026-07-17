@@ -20,6 +20,8 @@ pub struct ApiConfig {
     pub custom_domain: CustomDomainSettingsConfig,
     #[serde(default)]
     pub observability: ObservabilityConfig,
+    #[serde(default)]
+    pub google_oauth: GoogleOAuthConfig,
 }
 
 #[derive(serde::Deserialize, Clone)]
@@ -106,6 +108,27 @@ pub struct CustomDomainSettingsConfig {
     /// so a single coordinated config section holds both keys.
     #[serde(default)]
     pub ask_key: String,
+}
+
+/// Google OAuth global settings parsed from the `[google_oauth]` config
+/// section. Read from AppState (not the DB / per-realm config) so scenario
+/// tests can override it on the test AppState to point at a wiremock JWKS.
+#[derive(serde::Deserialize, Clone)]
+pub struct GoogleOAuthConfig {
+    #[serde(default = "default_google_jwks_url")]
+    pub jwks_url: String,
+}
+
+fn default_google_jwks_url() -> String {
+    herald_core::infrastructure::oauth::google::GoogleOAuthProvider::GOOGLE_JWKS_URL.to_string()
+}
+
+impl Default for GoogleOAuthConfig {
+    fn default() -> Self {
+        Self {
+            jwks_url: default_google_jwks_url(),
+        }
+    }
 }
 
 #[derive(serde::Deserialize, Clone)]

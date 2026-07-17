@@ -563,7 +563,32 @@
     "user_updated": "用户 \"{email}\" 更新成功",
     "user_deleted": "用户删除成功",
     "delete_failed": "删除用户失败",
-    "reset_password_failed": "重置密码失败"
+    "reset_password_failed": "重置密码失败",
+    "sessions": {
+      "entry_button": "会话管理",
+      "title": "活跃会话 — {email}",
+      "description": "该用户的活跃浏览器令牌会话。",
+      "table_client_app": "Client App",
+      "table_user_agent": "设备 / UA",
+      "table_client_ip": "登录 IP",
+      "table_created_at": "登录时间",
+      "table_actions": "操作",
+      "revoke_button": "撤销",
+      "revoke_all_button": "撤销全部会话",
+      "revoke_title": "撤销会话",
+      "revoke_description": "该会话将立即失效；该用户的下一次请求将被视为已退出。",
+      "revoke_confirm": "撤销",
+      "revoke_all_title": "撤销全部会话",
+      "revoke_all_description": "所有活跃会话将立即失效。",
+      "revoke_all_confirm": "全部撤销",
+      "revoke_success": "会话已撤销。",
+      "revoke_all_success": "已撤销 {count} 个会话。",
+      "revoke_failed": "撤销会话失败。",
+      "revoke_all_failed": "撤销全部会话失败。",
+      "empty": "没有活跃会话。",
+      "error": "加载会话失败。",
+      "retry": "重试"
+    }
   },
   "api_keys": {
     "page_title": "API 密钥",

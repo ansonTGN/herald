@@ -101,3 +101,6 @@ pub mod user_sessions_scenarios;
 pub mod client_app_turnstile_scenarios;
 pub mod email_otp_send_verify_scenarios;
 pub mod realm_email_otp_config_scenarios;
+
+// Google One Tap login scenarios.
+pub mod google_one_tap_scenarios;

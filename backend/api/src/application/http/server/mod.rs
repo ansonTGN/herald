@@ -552,6 +552,11 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
             "/api/oauth/{realmId}/wechat-miniprogram/login",
             post(oauth::wechat_miniprogram_login),
         )
+        // Google One Tap (GIS ID Token) login — no redirect, direct POST.
+        .route(
+            "/api/oauth/{realmId}/google/one-tap",
+            post(oauth::google_one_tap),
+        )
         // Device code authorization
         .route(
             "/api/device/{realmId}/authorize",

@@ -39,3 +39,9 @@ secret = "change-me-in-production"
 [custom_domain]
 ask_key = "change-me-in-production"
 cname_target = "custom.example.com"
+
+# [google_oauth] — Google One Tap (GIS ID Token) login JWKS source. Override
+# only if routing through a corporate JWKS cache/proxy; otherwise the real
+# Google endpoint is correct.
+[google_oauth]
+jwks_url = "https://www.googleapis.com/oauth2/v3/certs"

@@ -307,4 +307,10 @@ pub struct AppState {
     /// `custom_domain_cname_target` since the ask handler reads it per request
     /// without a service-layer indirection.
     pub custom_domain_ask_key: String,
+
+    /// Google JWKS endpoint used to validate Google One Tap ID Token
+    /// signatures. Read from AppState (not an env var) so scenario tests can
+    /// override it on a private AppState copy to point at a wiremock JWKS
+    /// without process-wide mutation.
+    pub google_jwks_url: String,
 }

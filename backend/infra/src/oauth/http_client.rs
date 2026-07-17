@@ -42,6 +42,13 @@ impl ReqwestHttpClient {
 
         Ok(Self { client })
     }
+
+    /// Wrap an existing pooled `reqwest::Client` (e.g. `AppState.http_client`)
+    /// rather than building a fresh one, so handlers reuse the shared
+    /// connection pool instead of allocating a new one per request.
+    pub fn from_client(client: reqwest::Client) -> Self {
+        Self { client }
+    }
 }
 
 impl HttpClient for ReqwestHttpClient {

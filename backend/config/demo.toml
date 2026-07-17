@@ -29,3 +29,9 @@ secret = "YWJjZGVmZ2hpamtsbW5vcHFydXN0dXZ3eHl6MDEyMzQ1Njc4OTA="
 [custom_domain]
 ask_key = "demo-custom-domain-ask-key"
 cname_target = "custom.demo.herald.local"
+
+# [google_oauth] — Google One Tap (GIS ID Token) login JWKS source. Read via
+# AppState.google_jwks_url by `verify_google_id_token` to validate One Tap ID
+# Token signatures.
+[google_oauth]
+jwks_url = "https://www.googleapis.com/oauth2/v3/certs"

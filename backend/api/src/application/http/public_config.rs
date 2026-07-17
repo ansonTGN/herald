@@ -30,6 +30,13 @@ pub struct OAuthProviderInfo {
     pub name: String,
     pub display_name: String,
     pub enabled: bool,
+    /// Provider `client_id` (e.g. Google One Tap / GIS initialization). Not a
+    /// secret — the redirect-style `/login` flow already surfaces it in the
+    /// auth URL. `client_secret` is never exposed here. Omitted from the
+    /// serialized payload when absent to keep the response stable for existing
+    /// consumers that only read `name`/`displayName`/`enabled`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_id: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize, ToSchema)]
@@ -262,6 +269,7 @@ async fn load_public_config(
             name: config.provider_type.as_str().to_string(),
             display_name: config.provider_type.display_name().to_string(),
             enabled: config.enabled,
+            client_id: Some(config.client_id.clone()),
         })
         .collect();
 

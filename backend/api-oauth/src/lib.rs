@@ -8,6 +8,7 @@ pub mod device_authorize;
 pub mod device_confirm;
 pub mod device_token;
 pub mod device_verify;
+pub mod google_one_tap;
 pub mod helper;
 pub mod login;
 pub mod token;
@@ -21,6 +22,7 @@ pub use device_authorize::*;
 pub use device_confirm::*;
 pub use device_token::*;
 pub use device_verify::*;
+pub use google_one_tap::*;
 pub use login::*;
 pub use token::*;
 pub use wechat::*;
@@ -41,6 +43,7 @@ pub use wechat_miniprogram::*;
         crate::wechat::wechat_login,
         crate::wechat::wechat_callback,
         crate::wechat_miniprogram::wechat_miniprogram_login,
+        crate::google_one_tap::google_one_tap,
         crate::device_authorize::device_authorize,
         crate::device_token::device_token,
         crate::device_verify::device_verify,
@@ -58,6 +61,9 @@ pub use wechat_miniprogram::*;
         crate::wechat::WeChatAuthUrlResponse,
         crate::wechat_miniprogram::WeChatMiniProgramLoginRequest,
         crate::wechat_miniprogram::WeChatMiniProgramLoginResponse,
+        crate::google_one_tap::OneTapRequest,
+        crate::google_one_tap::OneTapDirectResponse,
+        crate::google_one_tap::OneTapCodeResponse,
         crate::device_authorize::DeviceAuthorizationRequest,
         crate::device_authorize::DeviceAuthorizationResponse,
         crate::device_authorize::DeviceAuthorizationErrorResponse,

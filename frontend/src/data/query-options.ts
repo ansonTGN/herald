@@ -54,6 +54,7 @@ import {
   getConsentStatus,
   recordConsent,
   deleteAccount,
+  listUserSessions,
   adminListAgreements,
   adminPublishCustom,
   adminRevertToDefault,
@@ -91,6 +92,7 @@ import type {
   SaveDraftRequest,
   WhiteLabelConfigStateResponse,
   CustomDomainConfigStateResponse,
+  UserSessionResponse,
 } from '@/lib/api-generated'
 import type {
   HistoryFilters,
@@ -147,6 +149,8 @@ export const queryKeys = {
     [QUERY_KEYS.ROLE_PERMISSIONS, realmId, roleId] as const,
   adminUserRoles: (realmId: string, userId: string) =>
     [QUERY_KEYS.ADMIN_USER_ROLES, realmId, userId] as const,
+  userSessions: (realmId: string, userId: string) =>
+    [QUERY_KEYS.USER_SESSIONS, realmId, userId] as const,
   clientApps: (realmId: string, filters: Record<string, unknown>) =>
     [QUERY_KEYS.CLIENT_APPS, realmId, filters] as const,
   clientAppsList: (realmId: string) => [QUERY_KEYS.CLIENT_APPS, realmId] as const,
@@ -464,6 +468,17 @@ export const adminUserRolesQueryOptions = (realmId: string, userId: string) =>
       adminGetUserRoles({
         path: { realmId, userId },
       }),
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_2_MIN,
+  })
+
+export const userSessionsQueryOptions = (realmId: string, userId: string) =>
+  queryOptions({
+    queryKey: queryKeys.userSessions(realmId, userId),
+    queryFn: async () =>
+      handleApiResponse(
+        await listUserSessions({ path: { realmId, userId } })
+      ) as UserSessionResponse[],
     retry: RETRY_COUNT,
     staleTime: STALE_TIME_2_MIN,
   })

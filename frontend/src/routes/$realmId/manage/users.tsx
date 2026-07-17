@@ -17,9 +17,12 @@ import type { UserResponse } from '@/lib/api-generated'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ConfirmDialog, PageHeader } from '@/components/shared'
 import { ResetPasswordResultDialog } from '@/components/users/reset-password-result-dialog'
+import { UserSessionsDialog } from '@/components/users/user-sessions-dialog'
 import { m } from '@/paraglide/messages'
 import { useCurrentSearch } from '@/lib/realm-routing'
 import { getErrorMessage } from '@/lib/error-utils'
+import { usePermission } from '@/hooks/use-permission'
+import { PERMISSION } from '@/lib/constants/auth-constants'
 
 export const Route = createFileRoute('/$realmId/manage/users')({
   component: UsersPage,
@@ -53,7 +56,10 @@ export function UsersPage() {
   const deleteDialog = useDialogManager<UserResponse>()
   const rolesDialog = useDialogManager<UserResponse>()
   const resetPasswordDialog = useDialogManager<UserResponse>()
+  const sessionsDialog = useDialogManager<UserResponse>()
   const [resetPasswordResult, setResetPasswordResult] = useState<string | null>(null)
+  const { hasPermission } = usePermission()
+  const canManage = hasPermission(PERMISSION.USERS_MANAGE)
 
   const { data, isLoading, error } = useQuery(
     usersQueryOptions(realmId, {
@@ -117,6 +123,10 @@ export function UsersPage() {
     resetPasswordDialog.open(user)
   }
 
+  function handleManageSessions(user: UserResponse) {
+    sessionsDialog.open(user)
+  }
+
   function handleSearchChange(email: string | undefined) {
     navigate({ search: (prev) => ({ ...prev, email, page: 0 }) })
   }
@@ -164,6 +174,7 @@ export function UsersPage() {
               onDelete={handleDelete}
               onManageRoles={handleManageRoles}
               onResetPassword={handleResetPassword}
+              onManageSessions={canManage ? handleManageSessions : undefined}
             />
           )}
         </CardContent>
@@ -247,6 +258,15 @@ export function UsersPage() {
         }}
         newPassword={resetPasswordResult ?? ''}
       />
+
+      {sessionsDialog.selectedItem && (
+        <UserSessionsDialog
+          open={sessionsDialog.isOpen}
+          onOpenChange={sessionsDialog.onOpenChange}
+          realmId={realmId}
+          user={sessionsDialog.selectedItem}
+        />
+      )}
     </div>
   )
 }

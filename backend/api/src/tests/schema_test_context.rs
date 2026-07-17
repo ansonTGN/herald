@@ -499,6 +499,9 @@ impl AsyncTestContext for SchemaTestContext {
             // runtime mismatch path (any caller → 401) exercised without
             // forcing every fixture to configure a key.
             custom_domain_ask_key: String::new(),
+            // Production default; scenarios that exercise the One Tap handler
+            // override this via `create_unified_test_router_with_state`.
+            google_jwks_url: herald_core::infrastructure::oauth::google::GoogleOAuthProvider::GOOGLE_JWKS_URL.to_string(),
         });
 
         // 13. 初始化 Redis Functions（只运行一次）
@@ -611,6 +614,26 @@ impl SchemaTestContext {
         let api_routes =
             crate::application::http::server::create_api_routes(self.app_state.clone());
 
+        api_routes.with_state(state)
+    }
+
+    /// Like [`create_unified_test_router`](Self::create_unified_test_router),
+    /// but applies `override_state` to a private owned copy of the AppState
+    /// that backs `with_state`.
+    ///
+    /// The shared `self.app_state: Arc<AppState>` is untouched, so other
+    /// scenarios and other calls to `create_unified_test_router` are
+    /// unaffected — no global/process-wide mutation, safe under parallel
+    /// nextest runs. Intended for per-test config injection such as pointing
+    /// the One Tap handler's JWKS fetch at a wiremock URL.
+    pub fn create_unified_test_router_with_state(
+        &self,
+        override_state: impl FnOnce(&mut AppState),
+    ) -> axum::Router {
+        let mut state = (*self.app_state).clone();
+        override_state(&mut state);
+        let api_routes =
+            crate::application::http::server::create_api_routes(self.app_state.clone());
         api_routes.with_state(state)
     }
 

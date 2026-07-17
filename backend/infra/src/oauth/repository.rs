@@ -72,9 +72,9 @@ impl OAuthRepository for PostgresOAuthRepository {
     ) -> Result<OAuthProvider, CoreError> {
         let (id, realm, provider, open_id, union_id, email, user_id, created_at, updated_at): OAuthProviderRow =
             sqlx::query_as(
-                "SELECT id, realm_id, provider_type, open_id, union_id, email, user_id, created_at, updated_at
+                "SELECT id, realm_id, type, open_id, union_id, email, user_id, created_at, updated_at
                  FROM provider
-                 WHERE realm_id = $1 AND provider_type = $2 AND open_id = $3",
+                 WHERE realm_id = $1 AND type = $2 AND open_id = $3",
             )
             .bind(realm_id)
             .bind(provider_type)
@@ -102,7 +102,7 @@ impl OAuthRepository for PostgresOAuthRepository {
     ) -> Result<OAuthProvider, CoreError> {
         let (id, realm, provider, open_id, union_id, email, user_id, created_at, updated_at): OAuthProviderRow =
             sqlx::query_as(
-                "SELECT id, realm_id, provider_type, open_id, union_id, email, user_id, created_at, updated_at
+                "SELECT id, realm_id, type, open_id, union_id, email, user_id, created_at, updated_at
                  FROM provider
                  WHERE realm_id = $1 AND union_id = $2",
             )
@@ -126,7 +126,7 @@ impl OAuthRepository for PostgresOAuthRepository {
 
     async fn find_by_user_id(&self, user_id: Uuid) -> Result<Vec<OAuthProvider>, CoreError> {
         let rows: Vec<OAuthProviderRow> = sqlx::query_as(
-            "SELECT id, realm_id, provider_type, open_id, union_id, email, user_id, created_at, updated_at
+            "SELECT id, realm_id, type, open_id, union_id, email, user_id, created_at, updated_at
              FROM provider
              WHERE user_id = $1",
         )
@@ -159,9 +159,9 @@ impl OAuthRepository for PostgresOAuthRepository {
 
     async fn create_provider(&self, provider: OAuthProvider) -> Result<OAuthProvider, CoreError> {
         let rec: OAuthProviderRow = sqlx::query_as(
-                "INSERT INTO provider (id, realm_id, provider_type, open_id, union_id, email, user_id, created_at, updated_at)
+                "INSERT INTO provider (id, realm_id, type, open_id, union_id, email, user_id, created_at, updated_at)
                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                 RETURNING id, realm_id, provider_type, open_id, union_id, email, user_id, created_at, updated_at",
+                 RETURNING id, realm_id, type, open_id, union_id, email, user_id, created_at, updated_at",
             )
             .bind(provider.id)
             .bind(&provider.realm_id)

@@ -46,6 +46,7 @@ export const QUERY_KEYS = {
   ROLE_PERMISSIONS: 'role-permissions',
   ADMIN_USER_ROLES: 'admin-user-roles',
   USER_ROLES: 'user-roles',
+  USER_SESSIONS: 'user-sessions',
   CLIENT_APPS: 'client-apps',
   CLIENT_APP: 'client-app',
   OAUTH_CONFIGS: 'oauth-configs',

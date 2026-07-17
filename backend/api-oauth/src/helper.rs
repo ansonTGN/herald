@@ -403,7 +403,9 @@ pub async fn find_or_create_user(
     realm_id: &str,
     user_info: &OAuthUserInfo,
 ) -> Result<Uuid, AuthError> {
-    // Three-level matching strategy: union_id -> open_id -> email -> create
+    // Four-level matching strategy: union_id -> open_id -> email -> create.
+    // Google providers set union_id = None, so they effectively traverse
+    // open_id -> email -> create.
 
     // Priority 1: Match by union_id if available (cross-app matching)
     if let Some(union_id) = &user_info.union_id {
@@ -717,7 +719,7 @@ pub async fn handle_oauth_callback(
     })
 }
 
-async fn issue_downstream_authorization_code(
+pub async fn issue_downstream_authorization_code(
     state: &AppState,
     realm_id: &str,
     user_id: Uuid,

@@ -7,6 +7,7 @@ use herald_domain::oauth::{
     ports::OAuthProviderHandler,
     value_objects::{OAuthConfig, OAuthUserInfo},
 };
+use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header};
 use oauth2::{
     AuthUrl, AuthorizationCode, ClientId, ClientSecret, RedirectUrl, Scope, TokenResponse,
     TokenUrl, basic::BasicClient,
@@ -19,6 +20,54 @@ impl GoogleOAuthProvider {
     const AUTH_URL: &'static str = "https://accounts.google.com/o/oauth2/auth";
     const TOKEN_URL: &'static str = "https://accounts.google.com/o/oauth2/token";
     const USER_INFO_URL: &'static str = "https://www.googleapis.com/oauth2/v1/userinfo";
+
+    /// Production Google JWKS endpoint. Public so handlers in other crates
+    /// can inject it as the `jwks_url` argument to
+    /// [`verify_google_id_token`]. Tests inject a wiremock URL instead.
+    pub const GOOGLE_JWKS_URL: &'static str = "https://www.googleapis.com/oauth2/v3/certs";
+
+    /// Accepted Google ID Token issuers (Google OIDC serves both forms).
+    const ISSUERS: [&'static str; 2] = ["accounts.google.com", "https://accounts.google.com"];
+}
+
+// `pub` (not `pub(crate)`) because this is the return type of the cross-crate
+// `pub async fn verify_google_id_token`; `pub(crate)` would trigger E0446
+// (private type in public interface).
+#[derive(Debug, Deserialize)]
+pub struct GoogleIdTokenClaims {
+    pub sub: String,
+    pub iss: String,
+    /// Must equal the Realm's Google `client_id`; enforced via `Validation::set_audience`.
+    pub aud: String,
+    pub exp: u64,
+    pub email: Option<String>,
+    /// Google may serialize this as `true`/`false` (bool) or `"true"`/`"false"` (string).
+    pub email_verified: Option<StringOrBool>,
+    pub name: Option<String>,
+    pub picture: Option<String>,
+}
+
+/// Untagged enum to tolerate Google's `email_verified` being either a bool or
+/// a string. Public because the handler pattern-matches its variants across
+/// crates.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum StringOrBool {
+    Bool(bool),
+    Str(String),
+}
+
+// JWKS response types; private, only used inside `verify_google_id_token`.
+#[derive(Debug, Deserialize)]
+struct GoogleJwks {
+    keys: Vec<GoogleJwk>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GoogleJwk {
+    kid: String,
+    n: String,
+    e: String,
 }
 
 #[derive(Deserialize)]
@@ -131,4 +180,64 @@ impl OAuthProviderHandler for GoogleOAuthProvider {
             })
         }
     }
+}
+
+/// Verify a Google ID Token (JWT) issued by Google One Tap / GIS.
+///
+/// Verifies signature (via Google JWKS), `aud` (must equal `client_id`),
+/// `iss` (one of [`GoogleOAuthProvider::ISSUERS`]) and `exp`. Returns the
+/// decoded claims on success. `email_verified` judgement is left to the
+/// caller (handler) — this function does not hardcode a "reject unverified"
+/// policy.
+///
+/// `jwks_url` is a parameter so tests can inject a wiremock URL; production
+/// callers pass [`GoogleOAuthProvider::GOOGLE_JWKS_URL`].
+pub async fn verify_google_id_token<H>(
+    id_token: &str,
+    client_id: &str,
+    http_client: &H,
+    jwks_url: &str,
+) -> Result<GoogleIdTokenClaims, CoreError>
+where
+    H: HttpClient + Send + Sync,
+{
+    let header = decode_header(id_token)
+        .map_err(|e| CoreError::BadRequest(format!("Invalid Google id_token header: {}", e)))?;
+
+    let kid = header
+        .kid
+        .ok_or_else(|| CoreError::BadRequest("Google id_token missing kid".to_string()))?;
+
+    let keys_response = http_client.get(jwks_url).await?;
+    if !keys_response.is_success() {
+        let status_code = keys_response.status_code;
+        let response_body = keys_response.body_as_string().unwrap_or_default();
+        return Err(CoreError::InternalServerError(format!(
+            "Failed to get Google public keys: status={}, body={}",
+            status_code, response_body
+        )));
+    }
+
+    let keys_body = keys_response.body_as_string()?;
+    let jwks: GoogleJwks = serde_json::from_str(&keys_body).map_err(|e| {
+        CoreError::InternalServerError(format!("Failed to parse Google public keys: {}", e))
+    })?;
+
+    let jwk = jwks
+        .keys
+        .into_iter()
+        .find(|key| key.kid == kid)
+        .ok_or_else(|| CoreError::BadRequest("No matching Google public key".to_string()))?;
+
+    let decoding_key = DecodingKey::from_rsa_components(&jwk.n, &jwk.e)
+        .map_err(|e| CoreError::InternalServerError(format!("Invalid Google public key: {}", e)))?;
+
+    let mut validation = Validation::new(Algorithm::RS256);
+    validation.set_audience(&[client_id]);
+    validation.set_issuer(&GoogleOAuthProvider::ISSUERS);
+
+    let token_data = decode::<GoogleIdTokenClaims>(id_token, &decoding_key, &validation)
+        .map_err(|e| CoreError::BadRequest(format!("Invalid Google id_token: {}", e)))?;
+
+    Ok(token_data.claims)
 }

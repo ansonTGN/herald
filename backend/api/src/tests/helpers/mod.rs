@@ -46,6 +46,12 @@ pub mod webhook_helpers;
 #[cfg(test)]
 pub mod otp_helpers;
 
+// Google One Tap test-only helpers (RSA keypair fixture + test ID Token mint
+// + wiremock JWKS). Not exported via `pub use` — imported explicitly by
+// `google_one_tap_scenarios.rs`, mirroring the `otp_helpers` pattern.
+#[cfg(test)]
+pub mod google_one_tap_helpers;
+
 // 重新导出常用函数
 pub use auth_helpers::*;
 pub use billing_helpers::*;

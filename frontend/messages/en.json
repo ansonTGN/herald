@@ -563,7 +563,32 @@
     "user_updated": "User \"{email}\" updated successfully",
     "user_deleted": "User deleted successfully",
     "delete_failed": "Failed to delete user",
-    "reset_password_failed": "Failed to reset password"
+    "reset_password_failed": "Failed to reset password",
+    "sessions": {
+      "entry_button": "Sessions",
+      "title": "Active sessions — {email}",
+      "description": "Active browser-token sessions for this user.",
+      "table_client_app": "Client App",
+      "table_user_agent": "Device / UA",
+      "table_client_ip": "Login IP",
+      "table_created_at": "Login time",
+      "table_actions": "Actions",
+      "revoke_button": "Revoke",
+      "revoke_all_button": "Revoke all sessions",
+      "revoke_title": "Revoke session",
+      "revoke_description": "This session will be invalidated immediately; the user's next request will be treated as signed out.",
+      "revoke_confirm": "Revoke",
+      "revoke_all_title": "Revoke all sessions",
+      "revoke_all_description": "All active sessions will be invalidated.",
+      "revoke_all_confirm": "Revoke all",
+      "revoke_success": "Session revoked.",
+      "revoke_all_success": "{count} session(s) revoked.",
+      "revoke_failed": "Failed to revoke session.",
+      "revoke_all_failed": "Failed to revoke all sessions.",
+      "empty": "No active sessions.",
+      "error": "Failed to load sessions.",
+      "retry": "Retry"
+    }
   },
   "api_keys": {
     "page_title": "API Keys",

@@ -29,13 +29,15 @@ interface UserTableProps {
   onDelete?: (user: UserWithRoles) => void
   onManageRoles?: (user: UserWithRoles) => void
   onResetPassword?: (user: UserWithRoles) => void
+  onManageSessions?: (user: UserWithRoles) => void
 }
 
 function createUserColumns(
   onEdit?: (user: UserWithRoles) => void,
   onDelete?: (user: UserWithRoles) => void,
   onManageRoles?: (user: UserWithRoles) => void,
-  onResetPassword?: (user: UserWithRoles) => void
+  onResetPassword?: (user: UserWithRoles) => void,
+  onManageSessions?: (user: UserWithRoles) => void
 ): ColumnDef<UserWithRoles>[] {
   return [
     {
@@ -122,6 +124,15 @@ function createUserColumns(
               {m['users.table_roles']()}
             </button>
           )}
+          {onManageSessions && (
+            <button
+              onClick={() => onManageSessions(row.original)}
+              className="text-sm text-primary hover:text-primary/80"
+              data-testid={`user-table-${row.index}-sessions-button`}
+            >
+              {m['users.sessions.entry_button']()}
+            </button>
+          )}
           {onResetPassword && (
             <button
               onClick={() => onResetPassword(row.original)}
@@ -163,8 +174,15 @@ export function UserTable({
   onDelete,
   onManageRoles,
   onResetPassword,
+  onManageSessions,
 }: UserTableProps) {
-  const columns = createUserColumns(onEdit, onDelete, onManageRoles, onResetPassword)
+  const columns = createUserColumns(
+    onEdit,
+    onDelete,
+    onManageRoles,
+    onResetPassword,
+    onManageSessions
+  )
 
   const table = useReactTable({
     data: data ?? [],
