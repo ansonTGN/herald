@@ -682,6 +682,102 @@ export function handle401(): void {
 
 如果你用 axios 之类的客户端而不是 `fetch` 包装，把同样的逻辑接进它的请求拦截器（注入 `Authorization: Bearer`）和响应拦截器（401 时刷新一次、重试一次，否则 `handle401`）。
 
+### Google One Tap
+
+Google One Tap 让已登录 Google 的用户在你自己的页面上一键登录，全程不跳转到 Herald 或 Google 登录页。Herald 在服务端校验 Google ID Token（签名、签发者、受众、过期时间），并签发与跳转式登录完全一致的 Bearer token 家族，因此 One Tap 与跳转式登录会落到同一个 Herald 账号上。集成分六步：
+
+1. 从 `GET /api/public-config/{realmId}` 读取 Google 的 `clientId`——在 `oauthProviders` 数组里取 `name === "google"` 的条目，使用其 `clientId`。如果你的页面已经为登录表单加载了 public-config，直接复用其中缓存的 `clientId`，不必再次请求。
+2. 加载 GIS SDK（`https://accounts.google.com/gsi/client`），调用 `google.accounts.id.initialize({ client_id: clientId, callback })`。
+3. 调用 `google.accounts.id.prompt()` 弹出浮层。
+4. 用户选择账号后，Google 调用 `callback` 并传入 `credential` 字段（即 ID Token JWT）。
+5. `POST /api/oauth/{realmId}/google/one-tap`，body 为 `{ credential, clientId, downstreamState? }`。注意 `realmId` 是路径参数，不在 body 中。
+6. 按响应分支处理：
+   - **直接会话模式**（不带 `downstreamState`）：响应是 Bearer token 集合。用 [Token 存储](#token-存储) 里的 `storeTokens` 写入——响应用的是 camelCase 键（`accessToken`、…），需适配成 helper 期望的 snake_case `TokenSet`（见下方代码）。
+   - **下游授权码模式**（带 `downstreamState`）：响应为 `{ redirectUri }`，含 `?code=ac_...&state=...`。按第 2 节的 Code+PKCE 流程继续（`oauth_callback` / `exchange_oauth_code`）。
+
+```typescript
+// 1. 从 Herald 公共配置中读取 Google clientId。
+async function getGoogleClientId(realmId: string): Promise<string> {
+  const res = await fetch(`/api/public-config/${realmId}`)
+  const config = await res.json()
+  const google = config.oauthProviders.find(
+    (p: { name: string; clientId?: string }) => p.name === 'google',
+  )
+  if (!google?.clientId) throw new Error('Google provider not configured')
+  return google.clientId
+}
+
+// GIS SDK 形态（由下面的 <script> 标签加载）。
+declare const google: {
+  accounts: {
+    id: {
+      initialize: (config: {
+        client_id: string
+        callback: (response: { credential: string }) => void
+      }) => void
+      prompt: () => void
+    }
+  }
+}
+
+// 2-4. 初始化 SDK 并弹出 One Tap 浮层。
+export function startGoogleOneTap(
+  realmId: string,
+  clientId: string,
+  downstreamState?: string,
+): void {
+  google.accounts.id.initialize({
+    client_id: clientId,
+    callback: (response) => {
+      // 5-6. 把 ID Token 发给 Herald 并处理响应。
+      void sendOneTapCredential(realmId, clientId, response.credential, downstreamState)
+    },
+  })
+  google.accounts.id.prompt() // 3. 弹出浮层
+}
+
+async function sendOneTapCredential(
+  realmId: string,
+  clientId: string,
+  credential: string,
+  downstreamState?: string,
+): Promise<void> {
+  const res = await fetch(`/api/oauth/${realmId}/google/one-tap`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ credential, clientId, downstreamState }),
+  })
+  if (!res.ok) throw new Error('Google One Tap login failed')
+
+  const data = await res.json()
+  if (data.redirectUri) {
+    // 下游授权码模式：交给 Code+PKCE 流程继续处理。
+    window.location.href = data.redirectUri as string
+  } else {
+    // 直接会话模式：把 camelCase 的 One Tap 响应适配为 snake_case 的 TokenSet。
+    storeTokens({
+      access_token: data.accessToken,
+      refresh_token: data.refreshToken,
+      token_type: data.tokenType,
+      expires_in: data.expiresIn,
+    })
+  }
+}
+```
+
+加载 SDK 只需一个 script 标签（GIS 不是 npm 包）：
+
+```html
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+```
+
+**集成方职责与降级：**
+
+- 在 Google Cloud Console 的 OAuth 客户端 _Authorized JavaScript origins_ 中登记每一个运行此代码的源。不登记的话 GIS SDK 会拒绝加载、浮层不弹出——这是集成方的职责，不由 Herald 负责。
+- 如果用户未登录 Google 或源未授权，浮层不会出现。这是正常降级——始终保留一个常规登录入口（OAuth 跳转流程）与 One Tap 并存。
+- token 持有方式与本节其余部分一致：access token 存内存，refresh token 存 `localStorage`，`authedFetch` 负责附加 Bearer 头并在 401 时刷新。One Tap 只是换了一个获取首份 token 集合的入口。
+- 实际响应形态以后端 OpenAPI 为准。不带 `downstreamState` 时后端返回直接会话 token 集合（`accessToken` / `refreshToken` / `userId` / `expiresIn` / `refreshExpiresIn` / `tokenType`，对应 `OneTapDirectResponse`）；带 `downstreamState` 时返回 `{ redirectUri }`（`OneTapCodeResponse`）。请以 OpenAPI 文档中端点声明的实际 200 响应为准。
+
 ## 4. 通过 SDK 管理资源
 
 API Key 在 Herald 中也是一种 Principal（主体），跟用户一样可以分配角色和权限。你给 API Key 分配了什么权限，通过这个 Key 发出的 SDK 调用就能做什么。权限受 Client App 范围限制。

@@ -680,6 +680,102 @@ export function handle401(): void {
 
 If you use an axios-style client instead of the `fetch` wrapper, wire the same logic into its request interceptor (inject `Authorization: Bearer`) and response interceptor (on 401, refresh once, retry once, else `handle401`).
 
+### Google One Tap
+
+Google One Tap lets a signed-in Google user log into your app from your own page, with no redirect to a Herald or Google login screen. Herald verifies the Google ID Token server-side (signature, issuer, audience, expiry) and issues the same Bearer token family as the redirect flow, so One Tap and the redirect flow resolve to the same Herald account. The integration has six steps:
+
+1. Read the Google `clientId` from `GET /api/public-config/{realmId}` — take the entry whose `name === "google"` in the `oauthProviders` array and use its `clientId`. If your page already loads public-config for the login form, reuse that cached `clientId` instead of fetching again.
+2. Load the GIS SDK from `https://accounts.google.com/gsi/client` and call `google.accounts.id.initialize({ client_id: clientId, callback })`.
+3. Call `google.accounts.id.prompt()` to show the overlay.
+4. When the user chooses an account, Google invokes `callback` with a `credential` field (the ID Token JWT).
+5. `POST /api/oauth/{realmId}/google/one-tap` with body `{ credential, clientId, downstreamState? }`. Note that `realmId` is a path parameter, not part of the body.
+6. Branch on the response:
+   - **Direct session mode** (no `downstreamState`): the response is a Bearer token set. Store it with `storeTokens` from [Token Storage](#token-storage) — the response uses camelCase keys (`accessToken`, …), so adapt them to the snake_case `TokenSet` the helper expects (see the snippet below).
+   - **Downstream authorization-code mode** (`downstreamState` present): the response is `{ redirectUri }` containing `?code=ac_...&state=...`. Continue with the Code+PKCE flow from section 2 (`oauth_callback` / `exchange_oauth_code`).
+
+```typescript
+// 1. Resolve the Google clientId from Herald public config.
+async function getGoogleClientId(realmId: string): Promise<string> {
+  const res = await fetch(`/api/public-config/${realmId}`)
+  const config = await res.json()
+  const google = config.oauthProviders.find(
+    (p: { name: string; clientId?: string }) => p.name === 'google',
+  )
+  if (!google?.clientId) throw new Error('Google provider not configured')
+  return google.clientId
+}
+
+// GIS SDK shape (loaded by the <script> tag below).
+declare const google: {
+  accounts: {
+    id: {
+      initialize: (config: {
+        client_id: string
+        callback: (response: { credential: string }) => void
+      }) => void
+      prompt: () => void
+    }
+  }
+}
+
+// 2-4. Initialize the SDK and show the One Tap overlay.
+export function startGoogleOneTap(
+  realmId: string,
+  clientId: string,
+  downstreamState?: string,
+): void {
+  google.accounts.id.initialize({
+    client_id: clientId,
+    callback: (response) => {
+      // 5-6. Forward the ID Token to Herald and handle the response.
+      void sendOneTapCredential(realmId, clientId, response.credential, downstreamState)
+    },
+  })
+  google.accounts.id.prompt() // 3. show overlay
+}
+
+async function sendOneTapCredential(
+  realmId: string,
+  clientId: string,
+  credential: string,
+  downstreamState?: string,
+): Promise<void> {
+  const res = await fetch(`/api/oauth/${realmId}/google/one-tap`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ credential, clientId, downstreamState }),
+  })
+  if (!res.ok) throw new Error('Google One Tap login failed')
+
+  const data = await res.json()
+  if (data.redirectUri) {
+    // Downstream authorization-code mode: hand off to the Code+PKCE flow.
+    window.location.href = data.redirectUri as string
+  } else {
+    // Direct session mode: adapt the camelCase One Tap response to the snake_case TokenSet.
+    storeTokens({
+      access_token: data.accessToken,
+      refresh_token: data.refreshToken,
+      token_type: data.tokenType,
+      expires_in: data.expiresIn,
+    })
+  }
+}
+```
+
+Load the SDK with a single script tag (GIS is not an npm package):
+
+```html
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+```
+
+**Integrator responsibilities and degradation:**
+
+- Register every origin that runs this code in Google Cloud Console under the OAuth client's _Authorized JavaScript origins_. Without this the GIS SDK refuses to load and the overlay never appears — this is the integrator's responsibility, not Herald's.
+- If the user is not signed into Google, or the origin is not authorized, the overlay does not appear. This is normal degradation — always keep a regular login entry (the OAuth redirect flow) alongside One Tap.
+- Token handling is identical to the rest of this section: access token in memory, refresh token in `localStorage`, and `authedFetch` attaches the Bearer header and refreshes on 401. One Tap only changes how you obtain the first token set.
+- The actual response shape follows the backend OpenAPI spec. When `downstreamState` is omitted the backend returns the direct-session token set (`accessToken` / `refreshToken` / `userId` / `expiresIn` / `refreshExpiresIn` / `tokenType`, matching `OneTapDirectResponse`); when present it returns `{ redirectUri }` (`OneTapCodeResponse`). Confirm the live 200 response declared on the endpoint against the OpenAPI document.
+
 ## 4. Resource Management via SDK
 
 API keys are principals in Herald's RBAC system. Assign roles and permissions to a key, and SDK calls through that key can perform the corresponding operations. Roles don't bypass client app scope.
