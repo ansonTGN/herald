@@ -418,6 +418,7 @@ async fn test_scenario_is_email_verification_required_returns_false_without_conf
     // When: register with valid email/password (Turnstile skipped in test)
     let email = "auto-disable-verif@test.com";
     let payload = json!({
+        "clientId": ctx._client_id,
         "email": email,
         "password": "password123",
         "turnstileToken": "dummy"
@@ -487,6 +488,7 @@ async fn test_scenario_registration_without_email_config_succeeds(ctx: &mut Test
     // When: register with valid email/password
     let email = "regression-reg@test.com";
     let payload = json!({
+        "clientId": ctx._client_id,
         "email": email,
         "password": "password123",
         "turnstileToken": "dummy"
@@ -551,6 +553,7 @@ async fn test_scenario_password_reset_without_email_config_does_not_error(ctx: &
 
     let email = "reset-no-email@test.com";
     let register_payload = json!({
+        "clientId": ctx._client_id,
         "email": email,
         "password": "password123",
         "turnstileToken": "dummy"
@@ -573,6 +576,7 @@ async fn test_scenario_password_reset_without_email_config_does_not_error(ctx: &
 
     // When: POST reset_password/request with the user's email
     let reset_payload = json!({
+        "clientId": ctx._client_id,
         "email": email,
         "turnstileToken": "dummy"
     });

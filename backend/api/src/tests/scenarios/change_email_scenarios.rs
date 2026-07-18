@@ -1,3 +1,4 @@
+use crate::tests::helpers::auth_helpers::obtain_reauth_token;
 use crate::tests::helpers::test_setup_helpers::*;
 use crate::tests::schema_test_context::SchemaTestContext as TestContext;
 use axum::body::Body;
@@ -17,9 +18,11 @@ async fn test_scenario_change_email_flow(ctx: &mut TestContext) {
     let password = "password123";
     let (_user_id, _token) = create_user_and_login(ctx, email, password).await;
 
-    // Step 2: Request email change
+    // Step 2: Request email change (requires a fresh reauth ticket)
+    let reauth_token = obtain_reauth_token(ctx, &_token, "change_email", password).await;
     let request_payload = json!({
-        "newEmail": "newemail@cas.com"
+        "newEmail": "newemail@cas.com",
+        "reauthToken": reauth_token
     });
 
     let request_req = Request::builder()
@@ -57,8 +60,10 @@ async fn test_scenario_change_email_confirm_requires_same_authenticated_user(
     let (_user_b_id, token_b) =
         create_user_and_login(ctx, "change-attacker@cas.com", "password123").await;
 
+    let reauth_token = obtain_reauth_token(ctx, &token_a, "change_email", "password123").await;
     let request_payload = json!({
-        "newEmail": "owner-new@cas.com"
+        "newEmail": "owner-new@cas.com",
+        "reauthToken": reauth_token
     });
 
     let request_req = Request::builder()

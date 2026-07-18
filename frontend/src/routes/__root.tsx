@@ -17,7 +17,12 @@ import {
   queryKeys,
 } from '@/data/query-options'
 import { lazy, Suspense } from 'react'
-import { realmPath, resolveRealmContext, resolvedRealmFromPath } from '@/lib/realm-routing'
+import {
+  realmPath,
+  resolveRealmContext,
+  resolvedRealmFromPath,
+  isSessionScopedPath,
+} from '@/lib/realm-routing'
 
 const Devtools = import.meta.env.DEV
   ? lazy(() => import('@/components/devtools').then((m) => ({ default: m.Devtools })))
@@ -41,7 +46,16 @@ export const Route = createRootRouteWithContext<RouterContext>()({
     const routePath = realmContext.isCustomDomain
       ? pathname
       : pathname.replace(new RegExp(`^/${realmId}`), '') || '/'
-    const isRealmRootPath = !realmContext.isCustomDomain && pathname.match(/^\/[^/]+\/?$/)
+    // A "realm root" is a single-segment realm-prefixed URL like `/admin` or
+    // `/realm-001/` — authenticated users there are redirected to their home.
+    // Session-scoped paths (`/manage`, `/user`, `/subscription`) carry no realm
+    // in the URL and are valid landing targets, so they must be excluded:
+    // otherwise `/manage` would match the single-segment pattern and the admin
+    // redirect would target `/manage` again → infinite self-redirect loop.
+    const isRealmRootPath =
+      !realmContext.isCustomDomain &&
+      !isSessionScopedPath(pathname) &&
+      !!pathname.match(/^\/[^/]+\/?$/)
     const isAuthRoute = routePath.match(/^\/auth\//)
     const isLegalRoute = routePath.match(/^\/legal\//)
     const isManageRoute = routePath.match(/^\/manage/)
@@ -146,7 +160,10 @@ function RootComponent() {
   const routePath = realmContext.isCustomDomain
     ? pathname
     : pathname.replace(new RegExp(`^/${realmId}`), '') || '/'
-  const isRealmRootPath = !realmContext.isCustomDomain && /^\/[^/]+\/?$/.test(pathname)
+  // Mirror the loader's definition: session-scoped paths (`/manage`, `/user`,
+  // `/subscription`) are valid landing routes, not realm roots.
+  const isRealmRootPath =
+    !realmContext.isCustomDomain && !isSessionScopedPath(pathname) && /^\/[^/]+\/?$/.test(pathname)
   const isAuthRoute = /^\/auth\//.test(routePath)
   const isLegalRoute = /^\/legal\//.test(routePath)
 

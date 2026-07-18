@@ -103,6 +103,7 @@ async fn test_scenario_user_register_duplicate_email(ctx: &mut TestContext) {
     let email = "duplicate@cas.com";
 
     let payload = json!({
+        "clientId": ctx._client_id,
         "email": email,
         "password": "password123",
         "turnstileToken": "dummy"
@@ -210,6 +211,7 @@ async fn test_scenario_user_register_disabled(ctx: &mut TestContext) {
     // ============================================================================
     println!("[Step 2] 尝试注册（注册功能未启用）");
     let payload = json!({
+        "clientId": ctx._client_id,
         "email": "disabled@cas.com",
         "password": "password123",
         "turnstileToken": "dummy"
@@ -321,6 +323,7 @@ async fn test_scenario_user_register_without_verification_required(ctx: &mut Tes
     let password = "password123";
 
     let payload = json!({
+        "clientId": ctx._client_id,
         "email": email,
         "password": password,
         "turnstileToken": "dummy"
@@ -472,6 +475,7 @@ async fn test_scenario_resend_verification_email(ctx: &mut TestContext) {
     let password = "password123";
 
     let payload = json!({
+        "clientId": ctx._client_id,
         "email": email,
         "password": password,
         "turnstileToken": "dummy"
@@ -510,6 +514,7 @@ async fn test_scenario_resend_verification_email(ctx: &mut TestContext) {
     // ============================================================================
     println!("[Step 4] 调用重新发送验证邮件 API");
     let resend_payload = json!({
+        "clientId": ctx._client_id,
         "email": email,
         "turnstileToken": "dummy"
     });

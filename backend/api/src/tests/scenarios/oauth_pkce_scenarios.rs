@@ -17,7 +17,9 @@
 //
 // =============================================================================
 
-use crate::tests::helpers::auth_helpers::{create_admin_session_with_user, grant_realm_admin_role};
+use crate::tests::helpers::auth_helpers::{
+    create_admin_session_with_user, grant_realm_admin_role, obtain_reauth_token,
+};
 use crate::tests::helpers::oauth_pkce_helpers::*;
 use crate::tests::helpers::test_setup_helpers::{create_test_user, login_user};
 use crate::tests::response_json;
@@ -100,6 +102,11 @@ async fn enable_totp_for_user(
 ) -> String {
     let app = ctx.create_unified_test_router();
 
+    // TOTP setup is a high-assurance operation: exchange the password for a
+    // single-use reauth ticket (targetOperation = bind_authenticator) first.
+    let reauth_token =
+        obtain_reauth_token(ctx, session_token, "bind_authenticator", password).await;
+
     // Start TOTP setup
     let enable_request = axum::http::Request::builder()
         .method("POST")
@@ -107,7 +114,7 @@ async fn enable_totp_for_user(
         .header("content-type", "application/json")
         .header("authorization", format!("Bearer {}", session_token))
         .body(axum::body::Body::from(
-            serde_json::json!({ "password": password }).to_string(),
+            serde_json::json!({ "reauth_token": reauth_token }).to_string(),
         ))
         .unwrap();
 
@@ -309,7 +316,7 @@ async fn test_scenario_oauth_pkce_full_flow_success(ctx: &mut SchemaTestContext)
     let access_token = token_json["access_token"].as_str().unwrap();
     let app = ctx.create_unified_test_router();
     let status_request = axum::http::Request::builder()
-        .uri(format!("/api/auth/{}/status", realm_id))
+        .uri("/api/auth/status")
         .header("authorization", format!("Bearer {}", access_token))
         .body(axum::body::Body::empty())
         .unwrap();

@@ -1106,6 +1106,67 @@ export const SELECTORS = {
     deleteAccountErrorAlert: '[data-testid="delete-account-error-alert"]',
     deleteAccountErrorMessage: '[data-testid="delete-account-error-message"]',
   },
+
+  /**
+   * Email-OTP Login Selectors
+   *
+   * SHIPPED `data-testid` values (frontend phase is `completed`). Verified
+   * against:
+   * - `frontend/src/routes/$realmId/auth/login.tsx` (`email-otp-toggle` — the
+   *   login-route OTP entry toggle; note it is `email-otp-toggle`, NOT
+   *   `email-otp-login-toggle` which does not exist)
+   * - `frontend/src/components/auth/email-otp-login-form.tsx` (every user-side
+   *   form testid below)
+   * - `frontend/src/routes/$realmId/manage/settings.tsx` (`email-otp-tab`)
+   * - `frontend/src/components/realm-config/email-otp-config-form.tsx` + shared
+   *   `frontend/src/components/realm-config/config-switch-field.tsx`
+   *   (`config-switch-field` emits `data-testid={`${id}-switch`}`, yielding
+   *   `email-otp-enabled-switch` / `email-otp-auto-register-switch`)
+   *
+   * The per-digit code input testids are `email-otp-code-digit-0` …
+   * `email-otp-code-digit-5` (6 digits). There is NO consent checkbox —
+   * consent for auto-register is expressed by clicking
+   * `email-otp-agree-and-continue-button`.
+   *
+   * User stories: US-EO-001 / US-EO-002 (login flow), US-EO-003 (admin config).
+   */
+  emailOtp: {
+    // --- Login route (end-user) ----------------------------------------------
+    // Toggle on the password login route that switches into the OTP form.
+    loginRouteToggle: '[data-testid="email-otp-toggle"]',
+
+    // --- OTP login form (user side) ------------------------------------------
+    form: '[data-testid="email-otp-login-form"]',
+    emailInput: '[data-testid="email-otp-email-input"]',
+    sendButton: '[data-testid="email-otp-send-btn"]',
+    // Wrapper around the 6 `<input>` digits; per-digit inputs resolved below.
+    codeInput: '[data-testid="email-otp-code-input"]',
+    codeDigit: (index: number) => `[data-testid="email-otp-code-digit-${index}"]`,
+    verifyButton: '[data-testid="email-otp-verify-btn"]',
+    resendButton: '[data-testid="email-otp-resend-btn"]',
+    resendCountdown: '[data-testid="email-otp-resend-countdown"]',
+    // "use password instead" — back to password login (email step).
+    backButton: '[data-testid="email-otp-back-button"]',
+    // Back to email step from the code step.
+    backToEmailButton: '[data-testid="email-otp-back-to-email-button"]',
+    // Consent gate (auto-register): NO checkbox — consent is expressed by
+    // clicking this button.
+    agreeAndContinueButton: '[data-testid="email-otp-agree-and-continue-button"]',
+    agreementBackButton: '[data-testid="email-otp-agreement-back-button"]',
+    errorMessage: '[data-testid="email-otp-error-message"]',
+    // 409 email_not_registered guidance (auto-register off).
+    notRegisteredMessage: '[data-testid="email-otp-not-registered-message"]',
+    registerLink: '[data-testid="email-otp-register-link"]',
+    backAfterConflictButton: '[data-testid="email-otp-back-after-conflict-button"]',
+
+    // --- Admin Settings → Security Email-OTP tab -----------------------------
+    // The tab + the two config switches (enabled / autoRegister) + save button.
+    // Switches carry `data-testid` via `config-switch-field.tsx`.
+    tab: '[data-testid="email-otp-tab"]',
+    enabledSwitch: '[data-testid="email-otp-enabled-switch"]',
+    autoRegisterSwitch: '[data-testid="email-otp-auto-register-switch"]',
+    saveButton: '[data-testid="email-otp-save-button"]',
+  },
 };
 
 /**

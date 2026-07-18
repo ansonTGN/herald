@@ -89,8 +89,6 @@ pub enum RefreshError {
     Invalid,
     #[error("refresh token reuse detected; family revoked")]
     ReuseDetected,
-    #[error("client mismatch")]
-    ClientMismatch,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, ToSchema, PartialEq, Eq)]

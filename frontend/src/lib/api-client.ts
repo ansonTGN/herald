@@ -43,17 +43,16 @@ let refreshInFlight: Promise<boolean> | null = null
  */
 function refreshOnce(): Promise<boolean> {
   if (refreshInFlight) return refreshInFlight
-  const { refreshToken, clientId } = useAuthStore.getState().getRefreshToken()
-  if (!refreshToken || !clientId) {
+  const { refreshToken } = useAuthStore.getState().getRefreshToken()
+  if (!refreshToken) {
     return Promise.resolve(false)
   }
   refreshInFlight = (async () => {
     try {
-      const tokenSet = await refreshBrowserToken(refreshToken, clientId)
+      const tokenSet = await refreshBrowserToken(refreshToken)
       useAuthStore.getState().setTokens({
         accessToken: tokenSet.accessToken,
         refreshToken: tokenSet.refreshToken,
-        clientId,
       })
       return true
     } catch {

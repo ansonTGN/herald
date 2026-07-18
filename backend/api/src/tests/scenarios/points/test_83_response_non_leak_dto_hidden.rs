@@ -244,7 +244,7 @@ async fn test_user_transaction_response_hides_effective_at_for_view(ctx: &mut Te
     let token = login(ctx, "3.3.4.1", email, password).await;
     let request = Request::builder()
         .method("GET")
-        .uri(format!("/api/points/{}/transactions", realm_id))
+        .uri("/api/user/transactions")
         .header("authorization", format!("Bearer {}", token))
         .body(Body::empty())
         .unwrap();

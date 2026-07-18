@@ -18,7 +18,7 @@
 #[cfg(test)]
 mod tests {
     use crate::tests::helpers::billing_helpers::{
-        setup_billing_admin_session, setup_test_entitlement_mapping_full,
+        setup_billing_admin_session_with_user, setup_test_entitlement_mapping_full,
         setup_test_entitlement_mapping_with_points,
     };
     use crate::tests::helpers::points_helpers::{
@@ -26,8 +26,8 @@ mod tests {
         verify_points_granted_for_entitlement,
     };
     use crate::tests::helpers::subscription_test_helpers::{
-        count_subscriptions_by_entitlement_key, create_test_subscription_with_entitlement_key,
-        verify_subscription_entitlement_key,
+        count_subscriptions_by_entitlement_key, create_test_subscription_for_user,
+        create_test_subscription_with_entitlement_key, verify_subscription_entitlement_key,
     };
     use crate::tests::helpers::webhook_helpers::*;
     use crate::tests::schema_test_context::SchemaTestContext;
@@ -942,15 +942,16 @@ mod tests {
     #[tokio::test]
     async fn test_sdk_subscription_query_returns_entitlement_key(ctx: &mut SpTestContext) {
         let app = ctx.create_unified_test_router();
-        let token = setup_billing_admin_session(ctx, "sdk-ek@test.com").await;
+        let (token, user_id) = setup_billing_admin_session_with_user(ctx, "sdk-ek@test.com").await;
         let realm_id = ctx._realm_id.clone();
         let client_app_id = Uuid::parse_str(&ctx._client_app_id).unwrap();
 
-        // Create a subscription with entitlement_key
-        create_test_subscription_with_entitlement_key(
+        // Create a subscription with entitlement_key bound to the session user
+        create_test_subscription_for_user(
             ctx,
             &realm_id,
             client_app_id,
+            user_id,
             "sdk-pro-plan",
             "price_sdk_123",
             "stripe",
@@ -958,7 +959,7 @@ mod tests {
         )
         .await;
 
-        // Query via the billing admin endpoint (same handler logic as SDK)
+        // Query via the self-service subscription endpoint (same handler logic as SDK)
         let response = app
             .clone()
             .oneshot(auth_request(
@@ -989,14 +990,16 @@ mod tests {
     #[tokio::test]
     async fn test_sdk_subscription_query_no_plan_fields(ctx: &mut SpTestContext) {
         let app = ctx.create_unified_test_router();
-        let token = setup_billing_admin_session(ctx, "sdk-no-plan@test.com").await;
+        let (token, user_id) =
+            setup_billing_admin_session_with_user(ctx, "sdk-no-plan@test.com").await;
         let realm_id = ctx._realm_id.clone();
         let client_app_id = Uuid::parse_str(&ctx._client_app_id).unwrap();
 
-        create_test_subscription_with_entitlement_key(
+        create_test_subscription_for_user(
             ctx,
             &realm_id,
             client_app_id,
+            user_id,
             "no-plan-fields-plan",
             "price_no_plan",
             "creem",
@@ -1044,15 +1047,18 @@ mod tests {
     #[tokio::test]
     async fn test_sdk_subscription_query_matches_user_entitlement_key(ctx: &mut SpTestContext) {
         let app = ctx.create_unified_test_router();
-        let token = setup_billing_admin_session(ctx, "sdk-match-ek@test.com").await;
+        let (token, user_id) =
+            setup_billing_admin_session_with_user(ctx, "sdk-match-ek@test.com").await;
         let realm_id = ctx._realm_id.clone();
         let client_app_id = Uuid::parse_str(&ctx._client_app_id).unwrap();
 
-        // Create subscription with specific entitlement_key "pro-plan"
-        create_test_subscription_with_entitlement_key(
+        // Create subscription with specific entitlement_key "pro-plan" bound to
+        // the session user
+        create_test_subscription_for_user(
             ctx,
             &realm_id,
             client_app_id,
+            user_id,
             "pro-plan",
             "price_pro_match",
             "stripe",

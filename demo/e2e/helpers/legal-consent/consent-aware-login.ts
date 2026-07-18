@@ -36,10 +36,16 @@ export async function loginAsAdminWithConsent(
   } else {
     console.log('[ConsentAwareLogin] No re-consent gate; already past consent')
 
-    // Ensure we end up on the admin dashboard for the realm when there is no
-    // re-consent view. The caller may rely on being inside the admin console.
-    const currentUrl = page.url()
-    if (!currentUrl.includes(`/${realmId}/manage`)) {
+    // loginAsAdmin was called with waitNavigation:false, so the SPA navigation
+    // to the admin dashboard may still be in flight when we reach here. Wait
+    // for the URL to settle on /manage (session-scoped, no realm prefix, per
+    // DEFAULT_ADMIN_REDIRECT) before returning — otherwise the caller's next
+    // step (e.g. clicking a sidebar entry) races the route loader and fails.
+    try {
+      await page.waitForURL('**/manage**', { timeout: 15000 })
+    } catch {
+      // Fallback: force-navigate to the realm-prefixed dashboard if the SPA
+      // redirect did not land on /manage in time.
       await page.goto(`${BASE_URL}/${realmId}/manage`, { waitUntil: 'domcontentloaded' })
     }
   }

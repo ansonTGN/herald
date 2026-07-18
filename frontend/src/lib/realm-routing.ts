@@ -12,6 +12,18 @@ export interface ResolvedRealmContext {
   publicConfig?: PublicConfigResponse
 }
 
+/**
+ * Whether `pathname` is a session-scoped root (e.g. `/manage`, `/user/profile`).
+ *
+ * Session-scoped routes carry no realm in the URL — their realm is read from
+ * the session store. The root loader must NOT treat these as "realm root"
+ * paths (which would redirect an authenticated admin back to `/manage`,
+ * creating a self-redirect loop). See `.ai/future/f1.md`.
+ */
+export function isSessionScopedPath(pathname: string): boolean {
+  return SESSION_SCOPED_ROOT_SEGMENTS.has(firstPathSegment(pathname) ?? '')
+}
+
 let cachedCustomDomainContext: ResolvedRealmContext | null = null
 
 function firstPathSegment(pathname: string): string | null {

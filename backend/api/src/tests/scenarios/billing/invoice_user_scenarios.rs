@@ -458,8 +458,8 @@ mod tests {
 
         assert_eq!(
             response.status(),
-            StatusCode::NOT_FOUND,
-            "Cross-realm resources must not be visible through the self-service endpoint"
+            StatusCode::BAD_REQUEST,
+            "Cross-realm resources are rejected as not found on the self-service write path"
         );
     }
 
@@ -638,8 +638,8 @@ mod tests {
             body["message"]
                 .as_str()
                 .unwrap()
-                .contains("authenticated user session required"),
-            "Expected authenticated user session error, got: {}",
+                .contains("authenticated user token required"),
+            "Expected authenticated user token error, got: {}",
             body
         );
     }

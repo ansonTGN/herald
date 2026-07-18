@@ -69,6 +69,7 @@
 - 会话配置（session_ttl_seconds、session_renewal_ttl_seconds）
 - 滑动会话续期（中间件在受保护 API 请求时自动续期）
 - 应用外观配置（icon_url）
+- Client App 级人机验证（Turnstile）配置（启用开关、site_key、secret_key）——人机验证配置归属 Client App 级，不再由 Realm 承载（见 [docs/prd/core/realm-settings.md](../core/realm-settings.md) §3.1）
 - Client Secret 重新生成
 - Client App 快速切换（启用/禁用）
 - Client App 作为 API Key 的作用域边界：绑定到该 App 的 API Key 可随 App 禁用而失效
@@ -122,6 +123,8 @@ Client App 采用双 ID 系统：
 - 会话续期策略在 Session 创建时固化（写入 SessionData），后续配置修改只影响新创建的 Session
 - 禁用 Client App 会使绑定到该 App 的 API Key 在外部 API 认证中不可用
 - 删除 Client App 后，历史 API Key 的 Client App 关联可为空；空关联仅用于兼容旧数据，不应作为新建默认
+- **人机验证（Turnstile）配置归属 Client App 级**：每个 Client App 配置自己的 Turnstile 启用开关、site_key 与 secret_key；未认证身份端点（注册/登录/找回密码/重置密码/邮箱验证/邮箱验证码登录）的人机验证按当前请求绑定的 Client App 的配置执行，未启用 Turnstile 的 Client App 不强制人机验证
+- **Turnstile secret 不回显**：Turnstile secret_key 属敏感凭证，读取 Client App 详情时不返回；仅在创建/编辑时接受明文
 - 内置管理控制台 Client App（client_id 固定为 `admin-web-console`）不允许被删除，防止 Realm 管理入口不可用
 - `device_code_grant_enabled` 字段控制是否启用 Device Code Grant 流程，默认 false；启用后允许该 Client App 参与 Device Code 授权流程
 
@@ -158,6 +161,10 @@ Client App 采用双 ID 系统：
 4. **应用外观配置** (P1)
    - 配置应用图标 URL
 
+5. **人机验证（Turnstile）配置**
+   - 每个 Client App 可单独配置 Turnstile 启用开关、site_key 与 secret_key
+   - 未认证身份端点的人机验证按当前请求绑定的 Client App 的配置执行
+
 ### 5.2 验收目标
 
 - Client App 全部 CRUD 操作可正常执行
@@ -175,7 +182,7 @@ Client App 采用双 ID 系统：
 
 - 接口能力范围：Client App 的创建、查询列表、查询详情、更新、删除，以及 OAuth 2.0 和会话配置管理
 - 访问控制：所有操作需 Realm Admin 权限，遵守 Realm 隔离原则
-- 凭证脱敏：Client Secret 不在列表和详情查询中返回，仅在创建/重新生成时展示
+- 凭证脱敏：Client Secret 不在列表和详情查询中返回，仅在创建/重新生成时展示；Turnstile secret_key 同属敏感凭证，读取时不回显，仅在创建/编辑时接受明文
 - 详细接口契约、认证方式和错误模型应下沉到技术设计文档
 - Client App 的 `enabled` 状态会被 API Key 认证链路读取，用于统一禁用其下 API Key
 - ext API（`/api/ext/realms/{realmId}/client-apps`）通过 API Key 认证提供第三方集成接口，支持创建、列表和详情查询；创建时 `client_id` 由系统自动生成（UUID v7），不允许自定义
@@ -208,6 +215,7 @@ Client App 采用双 ID 系统：
 - **管理控制台删除保护**：内置管理控制台 Client App（`admin-web-console`）禁止删除
 - **ext API 自动生成 client_id**：ext API 创建 Client App 时使用 UUID v7 自动生成 client_id，不允许自定义；admin API 允许自定义 client_id
 - **Device Code Grant 开关**：通过 `device_code_grant_enabled` 字段控制，默认关闭
+- **人机验证配置归属 Client App 级（D-PROTECT-01）**：Turnstile 配置（启用开关、site_key、secret_key）归属 Client App 级，不再由 Realm 承载；未认证身份端点的人机验证按当前请求绑定的 Client App 的配置执行。该决策与 Realm Settings PRD、自建用户 UI PRD 的 Turnstile 表述同步（见 [docs/prd/core/realm-settings.md](../core/realm-settings.md) §8、[docs/prd/integration/custom-user-ui.md](custom-user-ui.md) D-PROTECT-01）
 
 ---
 

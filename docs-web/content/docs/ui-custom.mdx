@@ -34,7 +34,7 @@ Logos and backgrounds are URL references, not uploads. The tenant hosts the asse
 
 ## Realm configuration
 
-Realm Admins configure branding under *Settings → White-label*. The tab sits next to the existing General / TOTP / Passkey / Registration / Email tabs, and reuses the same Realm-config storage, so the permission model is the same one the rest of Settings uses: reading requires `settings.view`, and saving requires `settings.manage`.
+Realm Admins configure branding under *Settings → White-label*. The tab sits next to the existing General / TOTP / Passkey / Registration / Email / Email code tabs, and reuses the same Realm-config storage, so the permission model is the same one the rest of Settings uses: reading requires `settings.view`, and saving requires `settings.manage`.
 
 The form has the six fields above plus a live preview. The preview renders the actual `AuthPageWrapper` component with the current form values, so what you see in the preview is exactly what end users will see after publish — same logo, same accent, same fallback rules. There is a tab to flip the preview between the login layout and the register layout, because the two consume different copy fields.
 

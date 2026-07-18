@@ -50,9 +50,10 @@ CORS **不是**认证边界。它只决定哪些浏览器 origin 可以带着 Be
 
 1. **允许的 origin**——列出你的前端实际托管的精确 HTTPS origin（如 `https://app.example.com`）。不支持通配，精确匹配。不在清单内的 origin 发起的跨域请求，在 auth 端点和 user 端点上都会被拒绝。
 2. **预注册的跳转目标**——一个邮箱验证结果页 URL，一个密码重置结果页 URL。公开的邮箱验证和密码重置端点只会跳转到这两个目标；任意跳转 URL 都会被拒绝。
-3. **已启用**——该 Client App 必须处于启用状态。后续禁用会使它的浏览器 token 家族失效。
+3. **Turnstile（按 Client App 配置）**——Cloudflare Turnstile 配置在 Client App 上，不是全局配置。开启 `turnstile_enabled` 后，前端必须渲染组件、完成挑战，并在 `/login`、`/register`、邮箱验证、密码重置以及邮箱验证码 send 请求里带上生成的 `turnstileToken`。Turnstile 状态按 `clientId` 查询，所以每个 Client App 可以用自己的 site key，也可以各自关闭 Turnstile。
+4. **已启用**——该 Client App 必须处于启用状态。后续禁用会使它的浏览器 token 家族失效。
 
-Realm 还必须启用注册和登录。Turnstile 和按 IP 的限速对所有公开端点（`/login`、`/register`、邮箱验证、密码重置）生效，因此前端在提交这些表单前必须先完成 Turnstile 挑战。
+Realm 还必须启用注册和登录。按 IP 的限速对所有公开端点生效，与是否开启 Turnstile 无关。
 
 ## 端到端流程
 
@@ -290,7 +291,7 @@ CORS 是浏览器层面的可达性检查，**不是**认证边界。权限上�
 - **Passkey RP 隔离。** 已批准的 Client App HTTPS origin 以自身主机作为 WebAuthn RP ID。Passkey 凭证按 RP 隔离；既有的 Herald-RP passkey 不与 Custom User UI origin 共享。
 - **安全跳转。** 邮箱验证和密码重置都绑定到 Client App，只会跳转到预注册的目标；任意跳转 URL 都会被拒绝。
 - **Client App 禁用级联。** 禁用一个 Client App 会使它的浏览器 token 家族失效；既有的 access 和 refresh token 立即失效。
-- **公开端点的 Turnstile + 限速。** `/login`、`/register`、邮箱验证、密码重置均受 Turnstile 保护并按 IP 限速。
+- **公开端点的 Turnstile + 限速。** `/login`、`/register`、邮箱验证、密码重置、邮箱验证码 send 在 Client App 开启 `turnstile_enabled` 时受 Turnstile 保护，并无论是否开启 Turnstile 都按 IP 限速。Turnstile 按 Client App 配置，每个应用可以有自己的 site key。
 
 ## 相关文档
 

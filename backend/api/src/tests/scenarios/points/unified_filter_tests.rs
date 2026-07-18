@@ -264,6 +264,44 @@ async fn make_authenticated_get_request(
     serde_json::from_slice(&body_bytes).expect("Failed to parse JSON")
 }
 
+/// Helper function to make authenticated GET request with query parameters
+/// against the current-user endpoints (`/api/user/...`)
+async fn make_authenticated_user_get_request(
+    ctx: &mut TestContext,
+    token: &str,
+    path: &str,
+    query_params: Option<&str>,
+) -> serde_json::Value {
+    let uri = if let Some(params) = query_params {
+        format!("/api/user/{}?{}", path, params)
+    } else {
+        format!("/api/user/{}", path)
+    };
+
+    println!("[Request] GET {}", uri);
+
+    let request = Request::builder()
+        .method("GET")
+        .uri(&uri)
+        .header("authorization", format!("Bearer {}", token))
+        .body(Body::empty())
+        .unwrap();
+
+    let response = ctx
+        .create_unified_test_router()
+        .oneshot(request)
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK, "Request should succeed");
+
+    let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("Failed to read response body");
+
+    serde_json::from_slice(&body_bytes).expect("Failed to parse JSON")
+}
+
 // =============================================================================
 // Test Data Setup Functions
 // =============================================================================
@@ -640,10 +678,10 @@ async fn execute_filter_test_case(ctx: &mut TestContext, test_case: FilterTestCa
 
             // When: User filters by transaction type
             println!("[Step 2] When: User filters by transaction type");
-            let response = make_authenticated_get_request(
+            let response = make_authenticated_user_get_request(
                 ctx,
                 &token,
-                &format!("{}/transactions", ctx._realm_id),
+                "transactions",
                 Some(&format!("transactionType={}", transaction_type)),
             )
             .await;
@@ -802,10 +840,10 @@ async fn execute_filter_test_case(ctx: &mut TestContext, test_case: FilterTestCa
                 "[Step 2] When: User requests page {} with pageSize={}",
                 page, page_size
             );
-            let response = make_authenticated_get_request(
+            let response = make_authenticated_user_get_request(
                 ctx,
                 &token,
-                &format!("{}/transactions", ctx._realm_id),
+                "transactions",
                 Some(&format!("page={}&pageSize={}", page, page_size)),
             )
             .await;

@@ -43,7 +43,7 @@ async fn create_first_party_token_for_user(ctx: &TestContext, user_id: &str) -> 
         .app_state
         .service
         .client_service()
-        .get_client_app_by_client_id(&ctx._realm_id, &ctx._client_id)
+        .get_client_app_by_client_id(&user.realm_id, &ctx._client_id)
         .await
         .expect("Failed to load FirstParty test client app");
     RedisBrowserTokenService::new(ctx.app_state.redis_manager.clone())
@@ -316,6 +316,16 @@ async fn test_scenario_dashboard_stats_empty_realm_returns_zeros(ctx: &mut TestC
     let empty_realm_id = format!("empty-realm-{}", uuid::Uuid::now_v7());
     seed_realm(ctx, &empty_realm_id, "Empty Test Realm").await;
 
+    // First-party token minting requires a first-party client app in the user's realm.
+    sqlx::query(
+        "INSERT INTO client_app (realm_id, client_id, name, is_first_party, enabled)
+         VALUES ($1, 'admin-web-console', 'Admin Console', true, true)",
+    )
+    .bind(&empty_realm_id)
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("Failed to seed first-party client app in empty realm");
+
     // Create a user directly in the empty realm (identity.realm_id comes from DB, not session)
     let now = chrono::Utc::now();
     let empty_admin_id = seed_user(ctx, &empty_realm_id, "dashboard-empty@test.com", &now).await;
@@ -465,6 +475,16 @@ async fn test_scenario_dashboard_stats_realm_isolation_no_leakage(ctx: &mut Test
     // --- Setup Realm B (with only admin user, no events) ---
     let realm_b_id = format!("isolated-realm-{}", uuid::Uuid::now_v7());
     seed_realm(ctx, &realm_b_id, "Isolated Realm B").await;
+
+    // First-party token minting requires a first-party client app in the user's realm.
+    sqlx::query(
+        "INSERT INTO client_app (realm_id, client_id, name, is_first_party, enabled)
+         VALUES ($1, 'admin-web-console', 'Admin Console', true, true)",
+    )
+    .bind(&realm_b_id)
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("Failed to seed first-party client app in Realm B");
 
     // Create a user directly in Realm B (identity.realm_id comes from DB, not session)
     let realm_b_admin_id = seed_user(ctx, &realm_b_id, "realm-b-admin@test.com", &now).await;

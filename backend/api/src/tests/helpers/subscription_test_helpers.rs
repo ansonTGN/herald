@@ -14,6 +14,60 @@ use crate::tests::schema_test_context::SchemaTestContext;
 use sqlx::Row;
 use uuid::Uuid;
 
+/// Create a test subscription bound to an existing user via direct SQL insertion.
+///
+/// Unlike `create_test_subscription_with_entitlement_key` below, no owner
+/// account is created; the subscription is bound to the given `user_id`
+/// (used by self-service endpoints that enforce subscription ownership).
+///
+/// Returns the subscription ID.
+#[allow(clippy::too_many_arguments)]
+pub async fn create_test_subscription_for_user(
+    ctx: &mut SchemaTestContext,
+    realm_id: &str,
+    client_app_id: Uuid,
+    user_id: Uuid,
+    entitlement_key: &str,
+    external_price_id: &str,
+    payment_provider: &str,
+    status: &str,
+) -> Uuid {
+    let subscription_id = Uuid::now_v7();
+    let external_subscription_id = format!("sub_test_{}", subscription_id);
+    let external_product_id = format!("prod_{}", entitlement_key);
+
+    // subscription.bucket_id is NOT NULL (eager binding); bind the realm's
+    // default test bucket so direct-SQL inserts satisfy the constraint.
+    let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, realm_id).await;
+
+    sqlx::query(
+        "INSERT INTO subscription
+            (id, realm_id, user_id, client_app_id, status, entitlement_key, external_price_id,
+             external_subscription_id, external_product_id, payment_provider,
+             current_period_start, current_period_end,
+             cancel_at_period_end, created_at, updated_at, bucket_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7,
+                 $8, $9, $10, NOW(), NOW() + INTERVAL '30 days',
+                 false, NOW(), NOW(), $11)",
+    )
+    .bind(subscription_id)
+    .bind(realm_id)
+    .bind(user_id)
+    .bind(client_app_id)
+    .bind(status)
+    .bind(entitlement_key)
+    .bind(external_price_id)
+    .bind(&external_subscription_id)
+    .bind(&external_product_id)
+    .bind(payment_provider)
+    .bind(bucket_id)
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("Failed to create test subscription for user");
+
+    subscription_id
+}
+
 /// Create a test subscription with all new fields via direct SQL insertion.
 ///
 /// Returns the subscription ID.

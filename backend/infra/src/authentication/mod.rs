@@ -62,7 +62,6 @@ local function browser_token_refresh(keys, args)
   local raw = redis.call('GET', keys[1])
   if not raw then return 'INVALID' end
   local current = cjson.decode(raw)
-  if current.client_app_id ~= args[1] then return 'CLIENT_MISMATCH' end
 
   local raw_family = redis.call('GET', keys[2])
   if not raw_family then return 'INVALID' end
@@ -71,20 +70,20 @@ local function browser_token_refresh(keys, args)
     revoke_family_data(keys[2], keys[5], keys[6])
     return 'REUSE'
   end
-  if current.revoked or family.revoked or tonumber(args[2]) >= family.absolute_expires_at_ts then
+  if current.revoked or family.revoked or tonumber(args[1]) >= family.absolute_expires_at_ts then
     return 'INVALID'
   end
 
-  current.successor_digest = args[3]
+  current.successor_digest = args[2]
   current.revoked = true
   if redis.call('TTL', keys[1]) <= 0 or redis.call('TTL', keys[2]) <= 0 then
     return 'INVALID'
   end
   redis.call('SET', keys[1], cjson.encode(current), 'KEEPTTL')
-  redis.call('SETEX', keys[3], args[4], args[5])
-  redis.call('SETEX', keys[4], args[6], args[7])
-  table.insert(family.access_digests, args[8])
-  table.insert(family.refresh_digests, args[3])
+  redis.call('SETEX', keys[3], args[3], args[4])
+  redis.call('SETEX', keys[4], args[5], args[6])
+  table.insert(family.access_digests, args[7])
+  table.insert(family.refresh_digests, args[2])
   redis.call('SET', keys[2], cjson.encode(family), 'KEEPTTL')
   return 'OK'
 end
@@ -462,11 +461,7 @@ impl RedisBrowserTokenService {
         })
     }
 
-    async fn refresh_inner(
-        &self,
-        refresh_token: &str,
-        client_app_id: Uuid,
-    ) -> Result<BrowserTokenSet, RefreshError> {
+    async fn refresh_inner(&self, refresh_token: &str) -> Result<BrowserTokenSet, RefreshError> {
         let old_digest = Self::token_digest(refresh_token);
         let old_key = Self::token_key("rt", &old_digest);
         let mut connection = self.get_connection().await.map_err(|error| {
@@ -534,7 +529,6 @@ impl RedisBrowserTokenService {
             .arg(Self::token_key("rt", &refresh_digest))
             .arg(Self::client_families_key(current.client_app_id))
             .arg(Self::user_families_key(&current.user_id))
-            .arg(client_app_id.to_string())
             .arg(now.timestamp())
             .arg(&refresh_digest)
             .arg(access_ttl)
@@ -558,7 +552,6 @@ impl RedisBrowserTokenService {
                 token_type: "Bearer".to_string(),
             }),
             "REUSE" => Err(RefreshError::ReuseDetected),
-            "CLIENT_MISMATCH" => Err(RefreshError::ClientMismatch),
             _ => Err(RefreshError::Invalid),
         }
     }
@@ -650,12 +643,8 @@ impl BrowserTokenService for RedisBrowserTokenService {
         .await
     }
 
-    async fn refresh(
-        &self,
-        refresh_token: &str,
-        client_app_id: Uuid,
-    ) -> Result<BrowserTokenSet, RefreshError> {
-        self.refresh_inner(refresh_token, client_app_id).await
+    async fn refresh(&self, refresh_token: &str) -> Result<BrowserTokenSet, RefreshError> {
+        self.refresh_inner(refresh_token).await
     }
 
     async fn revoke_family(&self, family_id: Uuid) -> Result<(), CoreError> {
@@ -1041,11 +1030,11 @@ mod browser_token_tests {
         let initial = create_test_family(&service, client_app_id, 60).await;
 
         let rotated = service
-            .refresh(&initial.refresh_token, client_app_id)
+            .refresh(&initial.refresh_token)
             .await
             .expect("current refresh token should rotate");
         let rotated_again = service
-            .refresh(&rotated.refresh_token, client_app_id)
+            .refresh(&rotated.refresh_token)
             .await
             .expect("successor refresh token should rotate");
 
@@ -1062,8 +1051,8 @@ mod browser_token_tests {
         let initial = create_test_family(&service, client_app_id, 60).await;
 
         let (first, second) = tokio::join!(
-            service.refresh(&initial.refresh_token, client_app_id),
-            service.refresh(&initial.refresh_token, client_app_id)
+            service.refresh(&initial.refresh_token),
+            service.refresh(&initial.refresh_token)
         );
 
         assert_eq!(usize::from(first.is_ok()) + usize::from(second.is_ok()), 1);
@@ -1079,16 +1068,16 @@ mod browser_token_tests {
         let client_app_id = Uuid::now_v7();
         let initial = create_test_family(&service, client_app_id, 60).await;
         let rotated = service
-            .refresh(&initial.refresh_token, client_app_id)
+            .refresh(&initial.refresh_token)
             .await
             .expect("first use should rotate");
 
         assert_eq!(
-            service.refresh(&initial.refresh_token, client_app_id).await,
+            service.refresh(&initial.refresh_token).await,
             Err(RefreshError::ReuseDetected)
         );
         assert_eq!(
-            service.refresh(&rotated.refresh_token, client_app_id).await,
+            service.refresh(&rotated.refresh_token).await,
             Err(RefreshError::Invalid)
         );
     }
@@ -1102,28 +1091,8 @@ mod browser_token_tests {
         tokio::time::sleep(std::time::Duration::from_millis(1_100)).await;
 
         assert_eq!(
-            service.refresh(&initial.refresh_token, client_app_id).await,
+            service.refresh(&initial.refresh_token).await,
             Err(RefreshError::Invalid)
-        );
-    }
-
-    #[tokio::test]
-    async fn browser_token_client_mismatch_does_not_consume_refresh_token() {
-        let service = browser_token_service().await;
-        let client_app_id = Uuid::now_v7();
-        let initial = create_test_family(&service, client_app_id, 60).await;
-
-        assert_eq!(
-            service
-                .refresh(&initial.refresh_token, Uuid::now_v7())
-                .await,
-            Err(RefreshError::ClientMismatch)
-        );
-        assert!(
-            service
-                .refresh(&initial.refresh_token, client_app_id)
-                .await
-                .is_ok()
         );
     }
 

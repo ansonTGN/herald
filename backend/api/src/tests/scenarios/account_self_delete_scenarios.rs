@@ -1,6 +1,7 @@
 // End-to-end tests for DELETE /api/user (BE-D07).
 // Covers design §6.1「账户注销」and US-RU-014.
 
+use crate::tests::helpers::auth_helpers::{attempt_reauth_verify, obtain_reauth_token};
 use crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm;
 use crate::tests::schema_test_context::SchemaTestContext as TestContext;
 use axum::{
@@ -234,7 +235,7 @@ async fn call_delete_account(
     reauth_token: &str,
 ) -> axum::response::Response {
     let app = ctx.create_unified_test_router();
-    let payload = json!({ "reauthToken": reauth_token });
+    let payload = json!({ "reauth_token": reauth_token });
 
     let req = Request::builder()
         .method("DELETE")
@@ -371,7 +372,10 @@ async fn test_delete_account_wrong_password_returns_401(ctx: &mut TestContext) {
 
     let before = read_account_row(ctx, user_id).await;
 
-    let resp = call_delete_account(ctx, &token, "wrong-password").await;
+    // Under the reauth-ticket model a wrong password is rejected at the
+    // reauth/verify stage: no delete_account ticket is issued, so the account
+    // must stay untouched.
+    let resp = attempt_reauth_verify(ctx, &token, "delete_account", "wrong-password").await;
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 
     let after = read_account_row(ctx, user_id).await;
@@ -405,10 +409,14 @@ async fn test_delete_account_already_deleted_returns_401(ctx: &mut TestContext) 
     let (user_id, email) = seed_normal_user_with_password(ctx, &realm_id, password).await;
     let token = login_and_get_token(ctx, &realm_id, &email, password).await;
 
-    let first = call_delete_account(ctx, &token, password).await;
+    let reauth_token = obtain_reauth_token(ctx, &token, "delete_account", password).await;
+    let first = call_delete_account(ctx, &token, &reauth_token).await;
     assert_eq!(first.status(), StatusCode::NO_CONTENT);
 
-    let second = call_delete_account(ctx, &token, password).await;
+    // The reauth ticket is one-time and the first delete revokes the session,
+    // so the second attempt (reusing the spent ticket) must be rejected by the
+    // auth layer before reauth is even checked.
+    let second = call_delete_account(ctx, &token, &reauth_token).await;
     assert_eq!(
         second.status(),
         StatusCode::UNAUTHORIZED,
@@ -433,7 +441,8 @@ async fn test_delete_account_success_anonymizes_pii(ctx: &mut TestContext) {
     let (user_id, email) = seed_normal_user_with_password(ctx, &realm_id, password).await;
     let token = login_and_get_token(ctx, &realm_id, &email, password).await;
 
-    let resp = call_delete_account(ctx, &token, password).await;
+    let reauth_token = obtain_reauth_token(ctx, &token, "delete_account", password).await;
+    let resp = call_delete_account(ctx, &token, &reauth_token).await;
     assert_eq!(resp.status(), StatusCode::NO_CONTENT);
 
     let (status, email_after, password_after, username_after, provider_ids_after) =
@@ -473,7 +482,8 @@ async fn test_delete_account_deletes_totp(ctx: &mut TestContext) {
     // flow with TOTP enabled (which is explicitly out of scope for the consent
     // gate item and would return `requires_totp` without a session cookie).
     let token = create_extra_session(ctx, user_id).await;
-    let resp = call_delete_account(ctx, &token, password).await;
+    let reauth_token = obtain_reauth_token(ctx, &token, "delete_account", password).await;
+    let resp = call_delete_account(ctx, &token, &reauth_token).await;
     assert_eq!(resp.status(), StatusCode::NO_CONTENT);
 
     assert!(
@@ -497,7 +507,8 @@ async fn test_delete_account_cancels_active_subscriptions(ctx: &mut TestContext)
     let trialing_sub = seed_active_subscription(ctx, &realm_id, user_id, "trialing").await;
 
     let token = login_and_get_token(ctx, &realm_id, &email, password).await;
-    let resp = call_delete_account(ctx, &token, password).await;
+    let reauth_token = obtain_reauth_token(ctx, &token, "delete_account", password).await;
+    let resp = call_delete_account(ctx, &token, &reauth_token).await;
     assert_eq!(resp.status(), StatusCode::NO_CONTENT);
 
     assert_eq!(
@@ -537,7 +548,8 @@ async fn test_delete_account_revokes_all_sessions(ctx: &mut TestContext) {
         StatusCode::OK
     );
 
-    let resp = call_delete_account(ctx, &current_token, password).await;
+    let reauth_token = obtain_reauth_token(ctx, &current_token, "delete_account", password).await;
+    let resp = call_delete_account(ctx, &current_token, &reauth_token).await;
     assert_eq!(resp.status(), StatusCode::NO_CONTENT);
 
     assert_eq!(
@@ -565,7 +577,8 @@ async fn test_delete_account_writes_audit_self_service(ctx: &mut TestContext) {
     let (user_id, email) = seed_normal_user_with_password(ctx, &realm_id, password).await;
     let token = login_and_get_token(ctx, &realm_id, &email, password).await;
 
-    let resp = call_delete_account(ctx, &token, password).await;
+    let reauth_token = obtain_reauth_token(ctx, &token, "delete_account", password).await;
+    let resp = call_delete_account(ctx, &token, &reauth_token).await;
     assert_eq!(resp.status(), StatusCode::NO_CONTENT);
 
     let events = read_audit_events_for(ctx, user_id).await;
@@ -595,7 +608,8 @@ async fn test_login_fails_after_delete(ctx: &mut TestContext) {
     let (user_id, email) = seed_normal_user_with_password(ctx, &realm_id, password).await;
     let token = login_and_get_token(ctx, &realm_id, &email, password).await;
 
-    let resp = call_delete_account(ctx, &token, password).await;
+    let reauth_token = obtain_reauth_token(ctx, &token, "delete_account", password).await;
+    let resp = call_delete_account(ctx, &token, &reauth_token).await;
     assert_eq!(resp.status(), StatusCode::NO_CONTENT);
 
     let login_resp = login_with_credentials(ctx, &realm_id, &email, password).await;
@@ -623,7 +637,8 @@ async fn test_delete_account_does_not_refund_one_time_purchase(ctx: &mut TestCon
     let attempt_id = seed_one_time_purchase(ctx, &realm_id, user_id).await;
 
     let token = login_and_get_token(ctx, &realm_id, &email, password).await;
-    let resp = call_delete_account(ctx, &token, password).await;
+    let reauth_token = obtain_reauth_token(ctx, &token, "delete_account", password).await;
+    let resp = call_delete_account(ctx, &token, &reauth_token).await;
     assert_eq!(resp.status(), StatusCode::NO_CONTENT);
 
     // No refund-related audit event should be recorded for this user.

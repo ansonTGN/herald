@@ -80,7 +80,7 @@ async fn scenario_valid_api_key_with_cache_hit(ctx: &mut SchemaTestContext) {
         "/api/ext/permission/check",
         &api_key,
         Some(json!({
-            "sessionToken": session_token,
+            "accessToken": session_token,
             "rules": [{"resource": "article", "action": "read"}]
         })),
     );
@@ -94,7 +94,7 @@ async fn scenario_valid_api_key_with_cache_hit(ctx: &mut SchemaTestContext) {
         "/api/ext/permission/check",
         &api_key,
         Some(json!({
-            "sessionToken": session_token,
+            "accessToken": session_token,
             "rules": [{"resource": "article", "action": "write"}]
         })),
     );
@@ -146,7 +146,7 @@ async fn scenario_valid_api_key_with_cache_miss(ctx: &mut SchemaTestContext) {
         "/api/ext/permission/check",
         &api_key,
         Some(json!({
-            "sessionToken": session_token,
+            "accessToken": session_token,
             "rules": [{"resource": "article", "action": "read"}]
         })),
     );
@@ -171,7 +171,7 @@ async fn scenario_valid_api_key_with_cache_miss(ctx: &mut SchemaTestContext) {
         "/api/ext/permission/check",
         &api_key,
         Some(json!({
-            "sessionToken": session_token,
+            "accessToken": session_token,
             "rules": [{"resource": "article", "action": "read"}]
         })),
     );
@@ -195,7 +195,7 @@ async fn scenario_invalid_api_key(ctx: &mut SchemaTestContext) {
         "/api/ext/permission/check",
         "invalid-api-key-12345",
         Some(json!({
-            "sessionToken": "some-token",
+            "accessToken": "some-token",
             "rules": [{"resource": "article", "action": "read"}]
         })),
     );
@@ -226,7 +226,7 @@ async fn scenario_missing_api_key(ctx: &mut SchemaTestContext) {
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(
             json!({
-                "sessionToken": "some-token",
+                "accessToken": "some-token",
                 "rules": [{"resource": "article", "action": "read"}]
             })
             .to_string(),
@@ -447,7 +447,7 @@ async fn scenario_throttled_last_used_update(ctx: &mut SchemaTestContext) {
             "/api/ext/permission/check",
             &api_key,
             Some(json!({
-                "sessionToken": token,
+                "accessToken": token,
                 "rules": [{"resource": "article", "action": "read"}]
             })),
         )
@@ -526,7 +526,7 @@ async fn scenario_redis_cache_invalidation(ctx: &mut SchemaTestContext) {
         "/api/ext/permission/check",
         &api_key,
         Some(json!({
-            "sessionToken": "some-token",
+            "accessToken": "some-token",
             "rules": []
         })),
     );
@@ -543,7 +543,7 @@ async fn scenario_redis_cache_invalidation(ctx: &mut SchemaTestContext) {
         "/api/ext/permission/check",
         &api_key,
         Some(json!({
-            "sessionToken": "some-token",
+            "accessToken": "some-token",
             "rules": []
         })),
     );

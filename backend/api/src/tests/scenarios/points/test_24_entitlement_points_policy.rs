@@ -23,6 +23,7 @@
 //
 // =============================================================================
 
+use crate::tests::helpers::create_admin_session_with_user;
 use crate::tests::helpers::test_setup_helpers::record_test_user_consent;
 use crate::tests::scenarios::points::fixtures::*;
 use crate::tests::schema_test_context::SchemaTestContext as TestContext;
@@ -42,7 +43,6 @@ async fn test_scenario_admin_update_entitlement_points_policy(ctx: &mut TestCont
     println!("[Step 1] Create admin and entitlement mapping");
 
     let admin_email = "admin24@example.com";
-    let admin_password = "admin123";
     let admin_user_id = create_test_admin(&ctx._app_state.pool, &ctx._realm_id, admin_email).await;
     record_test_user_consent(&ctx._app_state.pool, admin_user_id, &ctx._realm_id).await;
 
@@ -52,30 +52,11 @@ async fn test_scenario_admin_update_entitlement_points_policy(ctx: &mut TestCont
 
     println!("[Step 1] ✓ Created admin and entitlement mapping");
 
-    println!("[Step 2] Admin logs in");
+    println!("[Step 2] Create admin session (FirstParty token)");
 
-    let login_payload = json!({
-        "clientId": ctx._client_id,
-        "email": admin_email,
-        "password": admin_password,
-        "turnstileToken": "dummy"
-    });
+    let (token, _) = create_admin_session_with_user(ctx, admin_email, 1800).await;
 
-    let login_request = Request::builder()
-        .method("POST")
-        .uri(format!("/api/auth/{}/login", ctx._realm_id))
-        .header("content-type", "application/json")
-        .header("x-forwarded-for", "3.3.3.3")
-        .body(Body::from(login_payload.to_string()))
-        .unwrap();
-
-    let login_response = app.clone().oneshot(login_request).await.unwrap();
-    assert_eq!(login_response.status(), StatusCode::OK);
-
-    let (_response, token) = crate::tests::extract_bearer_token(login_response).await;
-    let token = token.expect("Login should return accessToken");
-
-    println!("[Step 2] ✓ Admin logged in");
+    println!("[Step 2] ✓ Admin session created");
 
     println!("[Step 3] Admin updates entitlement mapping points policy");
 

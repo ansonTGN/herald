@@ -32,6 +32,10 @@ use axum::{
     body::Body,
     http::{Request, StatusCode, header},
 };
+use herald_core::domain::{
+    authentication::BrowserTokenService, client::ports::ClientService, user::UserRepository,
+};
+use herald_core::infrastructure::authentication::RedisBrowserTokenService;
 use serde_json::json;
 use test_context::test_context;
 use tower::ServiceExt;
@@ -159,35 +163,48 @@ async fn test_scenario_create_multiple_realms_and_access_users(ctx: &mut TestCon
     record_consent_for_email(ctx, realm2_admin_email, &realm2_id).await;
 
     // ============================================================================
-    // Step 3: Login as realm1 admin and access realm1 users
+    // Step 3: Mint a FirstParty token for the realm1 admin and access realm1 users
     // ============================================================================
-    println!("[Step 3] realm1 管理员登录并访问 realm1 用户列表");
+    println!("[Step 3] 为 realm1 管理员铸造 FirstParty token 并访问 realm1 用户列表");
 
-    let login_payload = json!({
-        "clientId": "admin-web-console",
-        "email": realm1_admin_email,
-        "password": realm1_admin_password,
-        "turnstileToken": "dummy"
-    });
+    // /api/users/{realmId} 路由要求 FirstParty token；领域服务 create_realm 已把
+    // admin-web-console 置为 first-party，此处防御性再确认一次（幂等）。
+    sqlx::query(
+        "UPDATE client_app SET is_first_party = true WHERE realm_id = $1 AND client_id = 'admin-web-console'",
+    )
+    .bind(&realm1_id)
+    .execute(&ctx._app_state.pool)
+    .await
+    .expect("Failed to mark realm1 admin-web-console as first-party");
 
-    let login_req = Request::builder()
-        .method("POST")
-        .uri(format!("/api/auth/{}/login", realm1_id))
-        .header(header::CONTENT_TYPE, "application/json")
-        .header("x-forwarded-for", "3.3.3.3")
-        .body(Body::from(serde_json::to_string(&login_payload).unwrap()))
-        .unwrap();
+    let realm1_admin_user_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT id FROM account WHERE email = $1 AND realm_id = $2",
+    )
+    .bind(realm1_admin_email)
+    .bind(&realm1_id)
+    .fetch_one(&ctx._app_state.pool)
+    .await
+    .expect("Failed to find realm1 admin user");
 
-    let login_resp = app.clone().oneshot(login_req).await.unwrap();
-    assert_eq!(
-        login_resp.status(),
-        StatusCode::OK,
-        "realm1 管理员登录应成功"
-    );
-
-    let (_login_resp, realm1_admin_token) = crate::tests::extract_bearer_token(login_resp).await;
-    let realm1_admin_token = realm1_admin_token.expect("Login should return accessToken");
-    println!("[Step 3] ✓ realm1 管理员登录成功");
+    let realm1_admin_user = ctx
+        ._app_state
+        .user_repository
+        .get_user_by_id(realm1_admin_user_id)
+        .await
+        .expect("Failed to load realm1 admin user");
+    let realm1_client_app = ctx
+        ._app_state
+        .service
+        .client_service()
+        .get_client_app_by_client_id(&realm1_id, "admin-web-console")
+        .await
+        .expect("Failed to load realm1 admin-web-console client app");
+    let realm1_admin_token = RedisBrowserTokenService::new(ctx._app_state.redis_manager.clone())
+        .create_first_party_token_family(&realm1_admin_user, &realm1_client_app, None, None)
+        .await
+        .expect("Failed to create FirstParty token family")
+        .access_token;
+    println!("[Step 3] ✓ realm1 管理员 FirstParty token 铸造成功");
 
     // Access realm1 users
     let req = Request::builder()

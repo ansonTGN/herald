@@ -13,7 +13,7 @@
 
 - `[US-RA-008]` 配置 Realm 设置 (P0)，来源 `docs/user-stories/core/realm-admin.md`
   - 角色：Realm Admin
-  - 摘要：作为 Realm Admin，配置 Realm 设置（Turnstile、注册策略、OAuth Provider），管理本 Realm 的安全和访问控制
+  - 摘要：作为 Realm Admin，配置 Realm 设置（注册策略、OAuth Provider、邮件服务），管理本 Realm 的安全和访问控制
 
 - `[US-RA-013]` 配置 Realm 邮件服务 (P0)，来源 `docs/user-stories/core/realm-admin.md`
   - 角色：Realm Admin
@@ -41,7 +41,7 @@
 
 ### 2.1 包含功能
 
-- Realm Config 管理（Turnstile、Registration、Email、TOTP、TotpKey、Creem、Stripe）
+- Realm Config 管理（Registration、Email、TOTP、TotpKey、Creem、Stripe；Turnstile 仅遗留兼容，见 §8）
 - OAuth Provider 配置管理（独立系统，不在 Realm Config 中管理）
 - Email 邮件服务配置（Per-Realm，支持 Resend / SMTP）
 - 邮件依赖功能开关前置验证
@@ -69,11 +69,13 @@
 
 ### 3.1 功能描述
 
-在 Herald 管理后台提供 Realm Settings 功能，允许 Realm Admin 管理本 Realm 的各类配置项，包括 Turnstile 验证码配置、用户注册配置、OAuth Provider 配置和邮件服务配置。Settings 页面通过多 Tab 布局组织不同配置类型，每个 Tab 包含独立的配置表单。
+在 Herald 管理后台提供 Realm Settings 功能，允许 Realm Admin 管理本 Realm 的各类配置项，包括用户注册配置、OAuth Provider 配置和邮件服务配置。Settings 页面通过多 Tab 布局组织不同配置类型，每个 Tab 包含独立的配置表单。
+
+> **人机验证（Turnstile）配置位置**：Turnstile 配置**已下放到 Client App 级别**（每个 Client App 配置自己的 Turnstile site_key/secret_key 与启用开关），不再作为 Realm 级配置管理。Realm Config 中的 `turnstile` 配置类型仅保留遗留兼容，新的人机验证配置入口在 Client App（见 [docs/prd/integration/client-app.md](../integration/client-app.md)）。
 
 ### 3.2 关键特性
 
-- 分 Tab 布局管理多种配置类型（Turnstile、Registration、OAuth、Email 等）
+- 分 Tab 布局管理多种配置类型（Registration、OAuth、Email 等）
 - 每种配置类型独立启用/禁用，支持保存和重置
 - 支持单个配置项 Upsert、批量 Upsert（batch_upsert）和删除（delete）
 - 邮件服务支持 Resend API 和 SMTP 两种 Provider
@@ -89,7 +91,7 @@
 
 - **Realm 隔离**：所有配置项属于 Realm 级别，不同 Realm 的配置相互独立
 - **权限要求**：仅 Realm Admin 角色可查看和修改 Realm Settings
-- **敏感信息脱敏**：密码、密钥类字段（Turnstile site_secret、Resend API Key、SMTP 密码）在展示时必须脱敏，编辑时才暴露为输入框
+- **敏感信息脱敏**：密码、密钥类字段（Resend API Key、SMTP 密码等）在展示时必须脱敏，编辑时才暴露为输入框
 - **邮件配置完整性定义**：provider + from_address + 对应 provider 的必填字段均已填写（不检查 enabled 标志，仅检查字段非空）
 - **功能开关前置验证**：`require_email_verification` 开关仅在邮件配置完整时可开启；未配置邮件时，该开关显示为禁用状态，提示 "Email verification requires email configuration"
 - **OAuth 配置独立**：OAuth Provider 有独立配置系统，不在 Realm Config 中管理
@@ -112,7 +114,6 @@
 
 ### 5.1 核心需求
 
-- **Turnstile 配置**：管理 Turnstile 验证码的 site_key / secret_key，用于人机验证
 - **Registration 配置**：管理用户注册策略，包括是否开放注册（allowed）、是否需要邮箱验证（require_email_verification）、允许的邮箱域名（allowed_domains）
 - **Email 配置**：管理邮件服务（Resend 或 SMTP），包括发件人地址、Provider 特定参数
 - **OAuth 配置**：通过独立系统管理 OAuth Provider（不在本页面详细定义）
@@ -121,9 +122,11 @@
 - **支付提供商配置**：Creem、Stripe 的 API Key / Webhook Secret 等配置（已迁移到独立 Payment Providers 页面，此处仅保留遗留兼容）
 - **Settings 页面**：多 Tab 布局，每个配置类型对应一个 Tab，包含启用/禁用开关、配置表单、保存/重置按钮
 
+> 人机验证（Turnstile）配置不在此页面管理，见 §3.1 Client App 级配置说明。
+
 ### 5.2 验收目标
 
-- Realm Admin 能通过 Settings 页面成功配置 Turnstile、Registration、Email 各项参数
+- Realm Admin 能通过 Settings 页面成功配置 Registration、Email 各项参数
 - 邮件服务配置保存后，可通过测试邮件功能验证配置正确性
 - 未配置邮件时，邮箱验证开关处于禁用状态并有明确提示
 - 敏感字段在页面展示时脱敏，仅在编辑时可见
@@ -137,7 +140,7 @@
 
 **适用性**: 适用
 
-- 接口能力范围：Realm Config 的查询、单个 Upsert、批量 Upsert（batch_upsert）、删除（delete），涵盖 turnstile、registration、email、totp、totp_key、creem、stripe 配置类型，以及 OAuth Provider 的独立配置管理
+- 接口能力范围：Realm Config 的查询、单个 Upsert、批量 Upsert（batch_upsert）、删除（delete），涵盖 registration、email、totp、totp_key、creem、stripe 配置类型，以及 OAuth Provider 的独立配置管理。`turnstile` 配置类型仅保留遗留兼容，不再承载有效配置（见 §3.1、§8）
 - 访问控制原则：所有接口要求 Realm Admin 权限，操作需通过 Realm 归属校验
 - 数据边界原则：配置数据按 Realm 隔离，不同 Realm 之间不可交叉访问
 - 敏感信息处理：密码、密钥等敏感字段在读取时脱敏返回（is_secret=true 时 config_value 返回 null），仅在写入时接受明文
@@ -152,7 +155,7 @@
 **适用性**: 适用
 
 - **页面入口**：管理后台左侧导航栏 Settings 菜单项，realmId 从 UI 上下文获取
-- **页面布局**：多 Tab 布局，每个配置类型对应一个 Tab（Turnstile、Registration、OAuth、Email）
+- **页面布局**：多 Tab 布局，每个配置类型对应一个 Tab（Registration、OAuth、Email 等；Turnstile 不在此页面，见 §3.1）
 - **每个 Tab 包含**：配置标题、启用/禁用开关、配置项表单、保存/重置按钮
 - **敏感字段交互**：密码/密钥类字段展示脱敏占位符，点击编辑后变为输入框
 - **Email Provider 切换**：切换 Provider 时动态隐藏/显示对应字段
@@ -170,6 +173,7 @@
 - 邮件服务配置纳入 Realm Config 管理，使用 `email` 配置类型
 - Settings 页面使用多 Tab 布局而非分组卡片布局
 - 支付提供商配置（Creem/Stripe）已迁移到独立的 Payment Providers 页面管理，不再通过 Realm Config 管理。Realm Config 中的 creem/stripe 配置类型仅用于遗留兼容，新功能应在 Payment Providers 页面操作
+- 人机验证（Turnstile）配置已下放到 Client App 级别（每个 Client App 配置自己的 Turnstile site_key/secret_key 与启用开关），不再作为 Realm 级配置管理。Realm Config 中的 `turnstile` 配置类型仅保留遗留兼容，新的人机验证配置入口在 Client App（见 [docs/prd/integration/client-app.md](../integration/client-app.md)）
 
 ### 8.2 已知限制
 

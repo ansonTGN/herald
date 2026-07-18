@@ -127,16 +127,19 @@ export async function performLogout(): Promise<void> {
  * refresh`). The refresh token rotates: the returned set contains a NEW
  * access token AND a NEW refresh token which must replace the stored one.
  *
+ * The refresh token is an opaque secret bound at issuance to a single
+ * Client App (stored server-side in the token family). The server recovers
+ * the bound Client App from the token itself, so the request body carries
+ * only the refresh token — no client identifier. (Earlier revisions required
+ * a `clientId` UUID in the body, but the frontend only ever had the slug,
+ * which 422'd; the invariant check was redundant with the family binding.)
+ *
  * @param refreshToken - The current (about-to-be-rotated) refresh token.
- * @param clientId     - The Client App `client_id` the token was issued for.
  * @returns The new access + refresh token set.
  */
-export async function refreshBrowserToken(
-  refreshToken: string,
-  clientId: string
-): Promise<BrowserTokenResponse> {
+export async function refreshBrowserToken(refreshToken: string): Promise<BrowserTokenResponse> {
   const { data, error } = await refresh({
-    body: { refreshToken, clientId },
+    body: { refreshToken },
   })
   if (error) {
     throw error

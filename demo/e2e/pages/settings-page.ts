@@ -99,6 +99,19 @@ export interface CustomDomainFormValues {
 }
 
 /**
+ * Email-OTP Configuration Data
+ *
+ * Mirrors the frontend `EmailOtpConfigForm` schema (see
+ * frontend/src/lib/schemas/realm-config.ts and the form component
+ * email-otp-config-form.tsx). Field names use snake_case to match the existing
+ * `TOTPConfigData` convention even though the wire schema is camelCase.
+ */
+export interface EmailOtpConfigData {
+  enabled: boolean       // Whether Email-OTP login is enabled for the realm
+  auto_register: boolean // Whether to auto-register unverified emails on success
+}
+
+/**
  * Settings Page Object
  *
  * Represents Settings page at /admin/settings
@@ -195,6 +208,12 @@ export class SettingsPage extends BasePage {
   readonly customDomainRefreshStatusButton: Locator
   readonly customDomainSaveButton: Locator
 
+  // Email-OTP Configuration elements
+  readonly emailOtpTab: Locator
+  readonly emailOtpEnabledSwitch: Locator
+  readonly emailOtpAutoRegisterSwitch: Locator
+  readonly emailOtpSaveButton: Locator
+
   constructor(page: Page, logger?: UnifiedLogger, realmId: string = 'admin') {
     super(page, logger)
     this.realmId = realmId
@@ -286,6 +305,14 @@ export class SettingsPage extends BasePage {
     this.customDomainStatusTls = page.getByTestId('custom-domain-status-tls')
     this.customDomainRefreshStatusButton = page.getByTestId('custom-domain-refresh-status')
     this.customDomainSaveButton = page.getByTestId('custom-domain-save')
+
+    // Email-OTP Configuration - using data-testid selectors (mirrors the TOTP
+    // block, which locates elements with page.getByTestId(...) directly rather
+    // than via selectors.totp.*).
+    this.emailOtpTab = page.getByTestId('email-otp-tab')
+    this.emailOtpEnabledSwitch = page.getByTestId('email-otp-enabled-switch')
+    this.emailOtpAutoRegisterSwitch = page.getByTestId('email-otp-auto-register-switch')
+    this.emailOtpSaveButton = page.getByTestId('email-otp-save-button')
   }
 
   /**
@@ -1238,6 +1265,107 @@ export class SettingsPage extends BasePage {
     } catch (error) {
       // Teardown must never hard-fail the test run; log and continue.
       console.warn(`[SettingsPage] resetCustomDomainConfig failed for realm "${this.realmId}":`, error)
+    }
+  }
+
+  // ============================================================================
+  // Email-OTP Configuration Methods
+  //
+  // Mirrors the TOTP block (switchToTOTPTab / enableTOTP / disableTOTP /
+  // saveTOTPConfig / getTOTPConfig). Drives the email-otp-config-form
+  // (frontend/src/components/realm-config/email-otp-config-form.tsx); the two
+  // switches carry `data-testid` via the shared config-switch-field.tsx.
+  // @see .ai/design/email-otp-login.md
+  // ============================================================================
+
+  /**
+   * Switch to Email-OTP Tab.
+   *
+   * Mirrors switchToTOTPTab: clicks the tab, waits for the save button to
+   * confirm tab content is fully loaded (10s timeout for re-login timing),
+   * then networkidle.
+   */
+  async switchToEmailOtpTab(): Promise<void> {
+    await this.smartClick(this.emailOtpTab)
+
+    // Wait for tab content to be visible with longer timeout
+    // Account for: navigation, API loading, React Query cache update, re-rendering
+    await expect(this.emailOtpSaveButton).toBeVisible({ timeout: 10000 })
+
+    // Additional wait to ensure React state is fully settled
+    await this.page.waitForLoadState('networkidle')
+  }
+
+  /**
+   * Enable Email-OTP login for the realm.
+   */
+  async enableEmailOtp(): Promise<void> {
+    await this.setCheckbox(this.emailOtpEnabledSwitch, true)
+  }
+
+  /**
+   * Disable Email-OTP login for the realm.
+   */
+  async disableEmailOtp(): Promise<void> {
+    await this.setCheckbox(this.emailOtpEnabledSwitch, false)
+  }
+
+  /**
+   * Enable auto-registration of unverified emails on successful OTP verify.
+   */
+  async enableAutoRegister(): Promise<void> {
+    await this.setCheckbox(this.emailOtpAutoRegisterSwitch, true)
+  }
+
+  /**
+   * Disable auto-registration of unverified emails.
+   */
+  async disableAutoRegister(): Promise<void> {
+    await this.setCheckbox(this.emailOtpAutoRegisterSwitch, false)
+  }
+
+  /**
+   * Save Email-OTP Configuration.
+   *
+   * Mirrors saveTOTPConfig: clicks the save button and waits for the button
+   * text to return to 'Save' (indicates the PUT settled).
+   */
+  async saveEmailOtpConfig(): Promise<void> {
+    await this.smartClick(this.emailOtpSaveButton)
+
+    // Wait for button text to return to "Save" (indicates save completed)
+    await expect(async () => {
+      const buttonText = await this.emailOtpSaveButton.textContent()
+      expect(buttonText).toBe('Save')
+    }).toPass({ timeout: 15000 }) // Increased timeout for API processing
+  }
+
+  /**
+   * Get current Email-OTP Configuration state.
+   */
+  async getEmailOtpConfig(): Promise<EmailOtpConfigData> {
+    const enabled = await this.emailOtpEnabledSwitch.isChecked()
+    const auto_register = await this.emailOtpAutoRegisterSwitch.isChecked()
+
+    return { enabled, auto_register }
+  }
+
+  /**
+   * Best-effort teardown of the Email-OTP config for the current realm.
+   *
+   * Disables both switches and saves, mirroring resetWhiteLabelConfig's
+   * try/catch so teardown never hard-fails the test run. Callers must already
+   * be logged in as the realm's admin and navigated to the Settings page.
+   */
+  async resetEmailOtpConfig(): Promise<void> {
+    try {
+      await this.switchToEmailOtpTab()
+      await this.disableEmailOtp()
+      await this.disableAutoRegister()
+      await this.saveEmailOtpConfig()
+    } catch (error) {
+      // Teardown must never hard-fail the test run; log and continue.
+      console.warn(`[SettingsPage] resetEmailOtpConfig failed for realm "${this.realmId}":`, error)
     }
   }
 

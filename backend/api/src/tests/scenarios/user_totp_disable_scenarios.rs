@@ -88,8 +88,10 @@ async fn test_scenario_user_disables_totp_successfully(ctx: &mut TestContext) {
     // ============================================================================
     println!("[Step 2] Disable TOTP");
 
+    let reauth_token =
+        obtain_reauth_token(ctx, &token, "remove_authenticator", "Password123!").await;
     let disable_request = json!({
-        "password": "Password123!"
+        "reauth_token": reauth_token
     });
 
     let req = Request::builder()

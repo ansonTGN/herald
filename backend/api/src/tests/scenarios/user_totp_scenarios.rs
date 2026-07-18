@@ -18,6 +18,7 @@
 //
 // =============================================================================
 
+use crate::tests::helpers::auth_helpers::{attempt_reauth_verify, obtain_reauth_token};
 use crate::tests::helpers::test_setup_helpers::record_test_user_consent;
 use crate::tests::schema_test_context::SchemaTestContext as TestContext;
 use axum::{
@@ -317,7 +318,8 @@ async fn test_scenario_totp_full_enable_flow(ctx: &mut TestContext) {
     // Step 4: POST /api/user/totp - 启动 TOTP setup
     // ============================================================================
     println!("[Step 4] 启动 TOTP setup");
-    let enable_payload = json!({ "password": password });
+    let reauth_token = obtain_reauth_token(ctx, &login_token, "bind_authenticator", password).await;
+    let enable_payload = json!({ "reauth_token": reauth_token });
     let enable_request = Request::builder()
         .method("POST")
         .uri("/api/user/totp")
@@ -532,7 +534,8 @@ async fn test_scenario_totp_restart_unverified_setup(ctx: &mut TestContext) {
     // Step 4: 第一次启动 TOTP setup（不验证）
     // ============================================================================
     println!("[Step 4] 第一次启动 TOTP setup");
-    let enable_payload = json!({ "password": password });
+    let reauth_token = obtain_reauth_token(ctx, &login_token, "bind_authenticator", password).await;
+    let enable_payload = json!({ "reauth_token": reauth_token });
     let enable_request = Request::builder()
         .method("POST")
         .uri("/api/user/totp")
@@ -577,12 +580,15 @@ async fn test_scenario_totp_restart_unverified_setup(ctx: &mut TestContext) {
     // Step 5: 第二次启动 TOTP setup（应删除旧记录）
     // ============================================================================
     println!("[Step 5] 第二次启动 TOTP setup（应该删除旧记录）");
+    let reauth_token2 =
+        obtain_reauth_token(ctx, &login_token, "bind_authenticator", password).await;
+    let enable_payload2 = json!({ "reauth_token": reauth_token2 });
     let enable_request2 = Request::builder()
         .method("POST")
         .uri("/api/user/totp")
         .header("content-type", "application/json")
         .header("authorization", format!("Bearer {}", login_token))
-        .body(Body::from(enable_payload.to_string()))
+        .body(Body::from(enable_payload2.to_string()))
         .unwrap();
 
     let enable_response2 = app.clone().oneshot(enable_request2).await.unwrap();
@@ -738,7 +744,8 @@ async fn test_scenario_totp_disable(ctx: &mut TestContext) {
     // Step 1-2: 启用并验证 TOTP
     // ============================================================================
     println!("[Step 1] 启用 TOTP setup");
-    let enable_payload = json!({ "password": password });
+    let reauth_token = obtain_reauth_token(ctx, &login_token, "bind_authenticator", password).await;
+    let enable_payload = json!({ "reauth_token": reauth_token });
     let enable_request = Request::builder()
         .method("POST")
         .uri("/api/user/totp")
@@ -782,7 +789,9 @@ async fn test_scenario_totp_disable(ctx: &mut TestContext) {
     // Step 3: 禁用 TOTP
     // ============================================================================
     println!("[Step 3] 禁用 TOTP");
-    let disable_payload = json!({ "password": password });
+    let reauth_token =
+        obtain_reauth_token(ctx, &login_token, "remove_authenticator", password).await;
+    let disable_payload = json!({ "reauth_token": reauth_token });
     let disable_request = Request::builder()
         .method("DELETE")
         .uri("/api/user/totp")
@@ -922,7 +931,8 @@ async fn test_scenario_totp_regenerate_secret(ctx: &mut TestContext) {
     // Step 1-2: 启用并验证 TOTP
     // ============================================================================
     println!("[Step 1] 启用 TOTP setup");
-    let enable_payload = json!({ "password": password });
+    let reauth_token = obtain_reauth_token(ctx, &login_token, "bind_authenticator", password).await;
+    let enable_payload = json!({ "reauth_token": reauth_token });
     let enable_request = Request::builder()
         .method("POST")
         .uri("/api/user/totp")
@@ -966,7 +976,8 @@ async fn test_scenario_totp_regenerate_secret(ctx: &mut TestContext) {
     // Step 3: 重新生成 TOTP secret
     // ============================================================================
     println!("[Step 3] 重新生成 TOTP secret");
-    let regenerate_payload = json!({ "password": password });
+    let reauth_token = obtain_reauth_token(ctx, &login_token, "bind_authenticator", password).await;
+    let regenerate_payload = json!({ "reauth_token": reauth_token });
     let regenerate_request = Request::builder()
         .method("POST")
         .uri("/api/user/totp/regenerate")
@@ -1102,7 +1113,8 @@ async fn test_scenario_totp_backup_codes_stats(ctx: &mut TestContext) {
     // Step 1-2: 启用并验证 TOTP
     // ============================================================================
     println!("[Step 1] 启用 TOTP setup");
-    let enable_payload = json!({ "password": password });
+    let reauth_token = obtain_reauth_token(ctx, &login_token, "bind_authenticator", password).await;
+    let enable_payload = json!({ "reauth_token": reauth_token });
     let enable_request = Request::builder()
         .method("POST")
         .uri("/api/user/totp")
@@ -1229,7 +1241,7 @@ async fn test_scenario_totp_backup_codes_stats(ctx: &mut TestContext) {
 ///
 /// **验收标准**：
 /// - 返回 200 状态码
-/// - session_token 格式正确
+/// - 签发的 Bearer token 可访问受保护端点
 /// - 数据库中 last_updated 时间已更新
 ///
 /// **运行方式**：
@@ -1274,7 +1286,8 @@ async fn test_scenario_totp_login_success(ctx: &mut TestContext) {
     let login_token = login_token.expect("Login should return accessToken");
 
     // Enable TOTP
-    let enable_payload = json!({ "password": password });
+    let reauth_token = obtain_reauth_token(ctx, &login_token, "bind_authenticator", password).await;
+    let enable_payload = json!({ "reauth_token": reauth_token });
     let enable_request = Request::builder()
         .method("POST")
         .uri("/api/user/totp")
@@ -1342,18 +1355,20 @@ async fn test_scenario_totp_login_success(ctx: &mut TestContext) {
     println!("[Step 3] ✓ 登录成功, session_token: {}", session_token);
 
     // ============================================================================
-    // Step 4: 验证 session_token 格式
+    // Step 4: 验证签发的 Bearer token 可访问受保护端点
     // ============================================================================
-    println!("[Step 4] 验证 session_token 格式");
-    assert!(
-        session_token.contains(&realm_id),
-        "Session token should contain realm_id"
-    );
-    assert!(
-        session_token.contains(&user_id),
-        "Session token should contain user_id"
-    );
-    println!("[Step 4] ✓ Session token 格式正确");
+    println!("[Step 4] 验证 session_token 可访问受保护端点");
+    let profile_request = Request::builder()
+        .method("GET")
+        .uri("/api/user/profile")
+        .header("authorization", format!("Bearer {}", session_token))
+        .body(Body::empty())
+        .unwrap();
+    let profile_response = app.clone().oneshot(profile_request).await.unwrap();
+    assert_eq!(profile_response.status(), StatusCode::OK);
+    let profile_body: serde_json::Value = crate::tests::response_json(profile_response).await;
+    assert_eq!(profile_body["id"], json!(user_id));
+    println!("[Step 4] ✓ Bearer token 有效");
 
     // ============================================================================
     // Step 5: 验证 TOTP last_used 时间更新
@@ -1444,7 +1459,8 @@ async fn test_scenario_totp_login_expired_code_failure(ctx: &mut TestContext) {
     let (_response, login_token) = crate::tests::extract_bearer_token(login_response).await;
     let login_token = login_token.expect("Login should return accessToken");
 
-    let enable_payload = json!({ "password": password });
+    let reauth_token = obtain_reauth_token(ctx, &login_token, "bind_authenticator", password).await;
+    let enable_payload = json!({ "reauth_token": reauth_token });
     let enable_request = Request::builder()
         .method("POST")
         .uri("/api/user/totp")
@@ -1597,7 +1613,8 @@ async fn test_scenario_totp_login_with_backup_code(ctx: &mut TestContext) {
     let (_response, login_token) = crate::tests::extract_bearer_token(login_response).await;
     let login_token = login_token.expect("Login should return accessToken");
 
-    let enable_payload = json!({ "password": password });
+    let reauth_token = obtain_reauth_token(ctx, &login_token, "bind_authenticator", password).await;
+    let enable_payload = json!({ "reauth_token": reauth_token });
     let enable_request = Request::builder()
         .method("POST")
         .uri("/api/user/totp")
@@ -1765,7 +1782,8 @@ async fn test_scenario_totp_login_backup_codes_exhausted_failure(ctx: &mut TestC
     let (_response, login_token) = crate::tests::extract_bearer_token(login_response).await;
     let login_token = login_token.expect("Login should return accessToken");
 
-    let enable_payload = json!({ "password": password });
+    let reauth_token = obtain_reauth_token(ctx, &login_token, "bind_authenticator", password).await;
+    let enable_payload = json!({ "reauth_token": reauth_token });
     let enable_request = Request::builder()
         .method("POST")
         .uri("/api/user/totp")
@@ -1912,7 +1930,8 @@ async fn test_scenario_totp_enable_invalid_code_failure(ctx: &mut TestContext) {
     let login_token = login_token.expect("Login should return accessToken");
 
     println!("[Step 1] 启动 TOTP setup");
-    let enable_payload = json!({ "password": password });
+    let reauth_token = obtain_reauth_token(ctx, &login_token, "bind_authenticator", password).await;
+    let enable_payload = json!({ "reauth_token": reauth_token });
     let enable_request = Request::builder()
         .method("POST")
         .uri("/api/user/totp")
@@ -2035,7 +2054,8 @@ async fn test_scenario_totp_enable_backup_codes_displayed_once(ctx: &mut TestCon
     let login_token = login_token.expect("Login should return accessToken");
 
     println!("[Step 1] 首次调用 TOTP setup");
-    let enable_payload = json!({ "password": password });
+    let reauth_token = obtain_reauth_token(ctx, &login_token, "bind_authenticator", password).await;
+    let enable_payload = json!({ "reauth_token": reauth_token });
     let enable_request = Request::builder()
         .method("POST")
         .uri("/api/user/totp")
@@ -2115,8 +2135,8 @@ async fn test_scenario_totp_enable_backup_codes_displayed_once(ctx: &mut TestCon
 /// 2. 配置 Realm TOTP
 /// 3. 登录
 /// 4. 启用并验证 TOTP
-/// 5. 使用错误密码重新生成 TOTP
-/// 6. 验证错误响应
+/// 5. 使用错误密码请求 reauth ticket（密码校验在 reauth 阶段进行）
+/// 6. 验证 reauth verify 返回 401
 /// 7. 检查原有 secret 保持有效
 ///
 /// **验收标准**：
@@ -2160,7 +2180,8 @@ async fn test_scenario_totp_regenerate_invalid_password_failure(ctx: &mut TestCo
     let (_response, login_token) = crate::tests::extract_bearer_token(login_response).await;
     let login_token = login_token.expect("Login should return accessToken");
 
-    let enable_payload = json!({ "password": password });
+    let reauth_token = obtain_reauth_token(ctx, &login_token, "bind_authenticator", password).await;
+    let enable_payload = json!({ "reauth_token": reauth_token });
     let enable_request = Request::builder()
         .method("POST")
         .uri("/api/user/totp")
@@ -2199,19 +2220,11 @@ async fn test_scenario_totp_regenerate_invalid_password_failure(ctx: &mut TestCo
     println!("[Setup] ✓ TOTP 已启用");
     println!("[Setup] Old secret: {}", old_secret);
 
-    println!("[Step 1] 使用错误密码重新生成 TOTP");
-    let regenerate_payload = json!({ "password": "wrongpassword" });
-    let regenerate_request = Request::builder()
-        .method("POST")
-        .uri("/api/user/totp/regenerate")
-        .header("content-type", "application/json")
-        .header("authorization", format!("Bearer {}", login_token))
-        .body(Body::from(regenerate_payload.to_string()))
-        .unwrap();
-
-    let regenerate_response = app.clone().oneshot(regenerate_request).await.unwrap();
-    assert_eq!(regenerate_response.status(), StatusCode::UNAUTHORIZED);
-    println!("[Step 1] ✓ 返回 401 状态码");
+    println!("[Step 1] 使用错误密码请求 reauth ticket（密码校验在 reauth 阶段进行）");
+    let reauth_response =
+        attempt_reauth_verify(ctx, &login_token, "bind_authenticator", "wrongpassword").await;
+    assert_eq!(reauth_response.status(), StatusCode::UNAUTHORIZED);
+    println!("[Step 1] ✓ reauth verify 返回 401 状态码");
 
     println!("[Step 2] 检查原有 secret 保持有效");
     // Try to login with old secret to verify it's still valid
@@ -2293,7 +2306,8 @@ async fn test_scenario_totp_regenerate_verification_required(ctx: &mut TestConte
     let (_response, login_token) = crate::tests::extract_bearer_token(login_response).await;
     let login_token = login_token.expect("Login should return accessToken");
 
-    let enable_payload = json!({ "password": password });
+    let reauth_token = obtain_reauth_token(ctx, &login_token, "bind_authenticator", password).await;
+    let enable_payload = json!({ "reauth_token": reauth_token });
     let enable_request = Request::builder()
         .method("POST")
         .uri("/api/user/totp")
@@ -2344,7 +2358,8 @@ async fn test_scenario_totp_regenerate_verification_required(ctx: &mut TestConte
     println!("[Step 1] ✓ 旧 secret 有效");
 
     println!("[Step 2] 重新生成 TOTP secret");
-    let regenerate_payload = json!({ "password": password });
+    let reauth_token = obtain_reauth_token(ctx, &login_token, "bind_authenticator", password).await;
+    let regenerate_payload = json!({ "reauth_token": reauth_token });
     let regenerate_request = Request::builder()
         .method("POST")
         .uri("/api/user/totp/regenerate")

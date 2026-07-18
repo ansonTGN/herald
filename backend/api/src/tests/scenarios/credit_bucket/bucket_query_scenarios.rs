@@ -672,11 +672,14 @@ async fn admin_wallets_cross_tenant_with_user_id(ctx: &mut TestContext) {
 // Existing user_wallets_* scenarios all authenticate via realm-admin (which
 // carries points.manage), so they never exercised the points.view-ONLY path —
 // which is exactly why the original Gap #2 (service gated on can_manage_points)
-// 403'd real end-users undetected. This scenario closes that blind spot:
+// 403'd real end-users undetected. This scenario closes that blind spot by
+// exercising the self-service `GET /api/user/wallets` endpoint (the admin
+// `GET /api/points/{realmId}/wallets` route is manage-gated):
 //   - A points.view-only (non-admin) caller MUST get 200 (view-gated, not
 //     manage-gated) and MUST see only its own wallet rows.
-//   - `?search=<other-user>` MUST NOT leak the other user's rows (the service
-//     strips `search` and hard-scopes `user_id` to the caller for non-managers).
+//   - `?search=<other-user>` MUST NOT leak the other user's rows
+//     (`UserWalletsQuery` has no `search` field, so the parameter is ignored
+//     and `user_id` is hard-scoped to the caller by the handler).
 //   - `crossBucketTotal` is the caller's OWN sum, not the realm-wide total.
 // Contrast with `admin_wallets_cross_tenant_with_user_id` (points.manage sees
 // every user's rows).
@@ -731,13 +734,7 @@ async fn points_view_only_user_sees_only_own_wallets(ctx: &mut TestContext) {
     .await;
 
     // --- (1) Baseline: viewer lists wallets → 200 + own-only rows. ----------
-    let (status, body) = auth_user_get_via_api(
-        ctx,
-        &format!("/api/points/{}/wallets", realm_id),
-        "",
-        &viewer_token,
-    )
-    .await;
+    let (status, body) = auth_user_get_via_api(ctx, "/api/user/wallets", "", &viewer_token).await;
     assert_eq!(
         status,
         StatusCode::OK,
@@ -785,11 +782,11 @@ async fn points_view_only_user_sees_only_own_wallets(ctx: &mut TestContext) {
     );
 
     // --- (2) Negative: ?search=<other-user-uuid> must NOT leak other_user. --
-    // search is stripped server-side for non-managers, so this call is identical
-    // to (1): own-only rows, viewer's own total.
+    // `UserWalletsQuery` has no `search` field, so the unknown parameter is
+    // ignored and this call is identical to (1): own-only rows, viewer's own total.
     let (status2, body2) = auth_user_get_via_api(
         ctx,
-        &format!("/api/points/{}/wallets", realm_id),
+        "/api/user/wallets",
         &format!("search={}", other_user),
         &viewer_token,
     )

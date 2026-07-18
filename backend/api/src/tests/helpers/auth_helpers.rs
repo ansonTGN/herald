@@ -417,3 +417,68 @@ pub async fn check_permission(
     let body: serde_json::Value = crate::tests::response_json(resp).await;
     body.get("data").cloned().unwrap_or(body)
 }
+
+/// ============================================================================
+/// Reauth 票据（高风险自助操作二次认证）
+/// ============================================================================
+///
+/// 高风险自助端点（删除账号、TOTP/passkey 管理、换邮箱、改密码）不接受明文
+/// 密码，而是要求携带一次性 reauth ticket（由 `/api/user/reauth/verify`
+/// 用密码等因子换取，targetOperation 必须与目标操作匹配）。
+///
+/// # Arguments
+/// * `ctx` - 测试上下文
+/// * `session_token` - 用户 Bearer access token
+/// * `target_operation` - TargetOperation 的 snake_case 形式（如 "delete_account"）
+/// * `password` - 用户明文密码
+///
+/// # 返回
+/// 一次性 reauthToken 字符串
+pub async fn obtain_reauth_token(
+    ctx: &TestContext,
+    session_token: &str,
+    target_operation: &str,
+    password: &str,
+) -> String {
+    let resp = attempt_reauth_verify(ctx, session_token, target_operation, password).await;
+    assert_eq!(
+        resp.status(),
+        axum::http::StatusCode::OK,
+        "reauth verify must succeed for target '{target_operation}'"
+    );
+    let body: serde_json::Value = crate::tests::response_json(resp).await;
+    body["reauthToken"]
+        .as_str()
+        .expect("reauth verify should return reauthToken")
+        .to_owned()
+}
+
+/// 尝试用密码换取 reauth ticket，返回原始响应（用于断言失败场景的负向测试）。
+pub async fn attempt_reauth_verify(
+    ctx: &TestContext,
+    session_token: &str,
+    target_operation: &str,
+    password: &str,
+) -> axum::response::Response {
+    use axum::body::Body;
+    use axum::http::{Request, header};
+    use serde_json::json;
+    use tower::ServiceExt;
+
+    let app = ctx.create_unified_test_router();
+    let payload = json!({
+        "targetOperation": target_operation,
+        "factor": "password",
+        "password": password,
+    });
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/user/reauth/verify")
+        .header("content-type", "application/json")
+        .header(header::AUTHORIZATION, format!("Bearer {session_token}"))
+        .header("x-forwarded-for", "3.3.3.3")
+        .body(Body::from(payload.to_string()))
+        .unwrap();
+
+    app.oneshot(req).await.unwrap()
+}

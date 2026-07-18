@@ -77,7 +77,7 @@
 - **Passkey RP 隔离**：获准的 Client App HTTPS origin 使用其 host 作为 WebAuthn RP ID，凭证按 RP 保存、查询和验证；既有 Passkey 继续归属原 Herald RP，不跨 RP 复用。
 - **统一重新认证**：高危操作消费短时、单次、绑定用户/Client App/目标操作的重新认证结果；可使用账户已绑定的密码、TOTP 或要求用户验证的 Passkey 完成。
 - **token 生命周期（旋转 refresh token）**：短时效 access token（浏览器内存持有）+ 旋转 refresh token（每次刷新换发新 RT、旧 RT 作废）+ 复用检测（旧 RT 被再次使用时吊销整个 token 家族）+ refresh token 绝对有效上限 + 吊销能力。
-- **未认证身份端点防护**：维持现有 Turnstile + IP/identifier 限流，跨域开放后不新增 client 维度限流。
+- **未认证身份端点防护**：人机验证（Turnstile）按当前请求绑定的 Client App 的 Turnstile 配置执行（Turnstile 配置在 Client App 级），维持 IP/identifier 限流，跨域开放后不新增 client 维度限流。
 
 ### 2.2 不包含功能 (Out of Scope)
 
@@ -132,7 +132,7 @@
 - **用户绑定**：两类浏览器 token 都必须绑定单一登录用户，不可为 realm/client 级凭证。
 - **权限控制**：`CustomUserUi` token 的权限上限为明确归类的用户自服务能力（资料/改密码/TOTP/Passkey/注销账号/登出/积分/交易/购买/发票/订阅）；管理员能力和未知能力默认拒绝。`FirstParty` token 执行完整 RBAC，不受该上限约束。该规则由授权层执行，不依赖路由名称。
 - **数据边界**：浏览器 token 只能访问当前登录用户自己的数据；跨用户访问拒绝。
-- **未认证身份端点**：注册/登录/找回密码/重置密码/邮箱验证为公开端点，跨域开放后维持 Turnstile + 限流防护，不新增 client 维度限流。
+- **未认证身份端点**：注册/登录/找回密码/重置密码/邮箱验证为公开端点，跨域开放后人机验证（Turnstile）按当前请求绑定的 Client App 的配置执行，维持限流防护，不新增 client 维度限流。
 - **origin 精确匹配**：Client App 允许 origin 必须精确、可信，禁止通配或不安全形式。
 - **CORS 非授权边界**：Origin/CORS 只控制浏览器跨域响应；即使 Origin 缺失或可伪造，服务端仍须独立验证 token 的用户、Realm、Client App、用途和权限。
 - **登录签发**：跨域登录成功签发浏览器 token（access + refresh），不设 cookie；二因素流程同步支持。
@@ -221,7 +221,7 @@
 - **凭证类边界**：`FirstParty` 经 Authorization Code + PKCE 换取，执行完整 RBAC；`CustomUserUi` 经 `/login` 签发，只获得用户自服务权限。两类互不混用，不能用 URL 前缀推导授权结果。
 - **访问控制原则**：浏览器 token 绑定用户、Realm、Client App 和凭证用途；身份解析按凭证类产出身份与上下文。handler 继续执行当前用户/Realm/RBAC 检查，授权层额外执行 `CustomUserUi` 凭证权限上限；新增能力默认拒绝。
 - **租户/realm 数据边界**：浏览器 token 只能访问当前登录用户自己的数据；Client App 禁用时其浏览器 token 联动失效。
-- **未认证身份端点防护**：维持 Turnstile + 限流，不新增 client 维度限流。
+- **未认证身份端点防护**：人机验证（Turnstile）按当前请求绑定的 Client App 的配置执行（Client App 级配置），维持限流，不新增 client 维度限流。
 - **CORS 兼容性**：非通配 origin + `allow_credentials(true)`，从单 origin 改 per-Client App 动态放行。
 - **Passkey 兼容性**：Client App HTTPS origin 对应独立 RP；credential 按 RP 隔离，既有 credential 保持原 RP 归属。
 - **高危操作**：修改密码、绑定或移除认证器、注销账号必须消费重新认证结果；重新认证支持账户已绑定的密码、TOTP 或要求用户验证的 Passkey。
@@ -253,7 +253,7 @@
 - **D-LOGIN-01（登录链路）**：集成方自建 UI 登录入口经 `/login` 签发 `CustomUserUi` token，跨域场景不设 cookie；二因素流程同步支持。OAuth Authorization Code + PKCE 链路用于签发 `FirstParty` token（Herald 自有前端），不作为自建 UI 的登录入口。
 - **D-TOK-01（生命周期 = 旋转 refresh token）**：短时效 access token（内存）+ 旋转 refresh token（每次刷新换发新 RT、旧 RT 作废）+ 复用检测（旧 RT 再用吊销整个家族）+ RT 绝对有效上限。
 - **D-TOK-02（吊销）**：浏览器 token 变体支持即时吊销。OAuth PRD §2.2 原"Token 撤销（当前不支持）"对浏览器 token 变体不再成立（见 `docs/prd/auth/oauth.md` §2.2 修订），server-side token 维持原状。
-- **D-PROTECT-01（身份端点防护）**：未认证身份端点跨域开放后维持现有 Turnstile + IP/identifier 限流，不新增 client 维度限流。
+- **D-PROTECT-01（身份端点防护，Client App 级 Turnstile）**：未认证身份端点跨域开放后，人机验证（Turnstile）按当前请求绑定的 Client App 的 Turnstile 配置执行（Turnstile 配置在 Client App 级，不再由 Realm 承载，见 [docs/prd/core/realm-settings.md](../core/realm-settings.md) §3.1/§8）；维持 IP/identifier 限流，不新增 client 维度限流。
 - **D-AUTHZ-01（权限边界）**：CORS 不是授权机制。`CustomUserUi` token 只获得用户自服务权限上限，管理员与未知能力默认拒绝；新增能力必须显式归类。
 - **D-PASSKEY-01（RP 隔离）**：获准 Client App HTTPS origin 使用自身 host 作为 RP ID，credential 按 RP 隔离；既有 credential 继续归属原 Herald RP。
 - **D-REAUTH-01（高危操作确认）**：改密码、绑定或移除 TOTP/Passkey、注销账号必须先完成短时单次重新认证；可使用已绑定密码、TOTP 或要求用户验证的 Passkey。仅重命名 Passkey 不要求重新认证。

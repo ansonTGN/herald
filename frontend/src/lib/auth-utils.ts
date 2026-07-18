@@ -232,14 +232,13 @@ export async function initializeAuth(
     // If a refresh token is persisted but there is no in-memory access token
     // (the normal case after a full page reload), refresh before checking
     // status so the session can be restored instead of appearing logged out.
-    const { refreshToken, clientId } = store.getRefreshToken()
-    if (refreshToken && clientId && !accessTokenHolder.get()) {
+    const { refreshToken } = store.getRefreshToken()
+    if (refreshToken && !accessTokenHolder.get()) {
       try {
-        const tokenSet = await refreshBrowserToken(refreshToken, clientId)
+        const tokenSet = await refreshBrowserToken(refreshToken)
         store.setTokens({
           accessToken: tokenSet.accessToken,
           refreshToken: tokenSet.refreshToken,
-          clientId,
         })
       } catch {
         // Refresh failed (reuse/expiry/revocation) → force full re-login.

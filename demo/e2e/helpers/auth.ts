@@ -283,8 +283,14 @@ export async function logout(page: Page): Promise<void> {
 
 /**
  * 清除所有会话数据（cookies 和 storage）
+ *
+ * Exported so admin-setup helpers (e.g. `enableEmailOtpForRealm`) can leave a
+ * clean unauthenticated state after they finish — otherwise the next
+ * `goto /realm/auth/login` is redirected to `/manage` by the root loader's
+ * "authenticated users are sent away from auth pages" guard, and the login
+ * card never renders.
  */
-async function clearSessionData(page: Page): Promise<void> {
+export async function clearSessionData(page: Page): Promise<void> {
   await page.context().clearCookies()
   try {
     await page.evaluate(() => {
@@ -440,5 +446,19 @@ function isAuthenticatedRealmUrl(currentUrl: string, realmId: string): boolean {
     return true
   }
 
-  return allowedPrefixes.some(prefix => currentUrl.startsWith(prefix))
+  if (allowedPrefixes.some(prefix => currentUrl.startsWith(prefix))) {
+    return true
+  }
+
+  // Session-scoped裸路径（无 realm 前缀）也是合法的认证后落地页。
+  // custom-domain 双模式路由（commit e1ec3a98）后，admin 登录落地 /manage、
+  // 普通用户落地 /user/profile —— 这些段是 session-scoped（realm 从 session
+  // 取，不在 URL 里），由 frontend/src/lib/realm-routing.ts `realmPath()` 决定。
+  // 对应的前端路由 frontend/src/routes/manage/ 与 routes/user/ 同样合法。
+  // 见 frontend/src/lib/constants/auth-constants.ts DEFAULT_ADMIN_REDIRECT。
+  const sessionScopedPrefixes = [
+    `${normalizedBaseUrl}/manage`,
+    `${normalizedBaseUrl}/user`,
+  ]
+  return sessionScopedPrefixes.some(prefix => currentUrl.startsWith(prefix))
 }

@@ -13,6 +13,7 @@
     "third-party-integration",
     "custom-user-ui",
     "auth-passkey",
+    "auth-email-otp",
     "ui-custom",
     "realm-custom-domain",
     "points-quota",

@@ -414,8 +414,8 @@ pub fn router() -> axum::Router<AppState> {
 //
 // Covers: admin `check_permission` instrument skip correctness.
 //
-// WHY: `check_permission` reads auth from `headers` and a session `token`
-// (credential) from `payload`, plus rules that may reference resources bound to
+// WHY: `check_permission` reads a session `token` (credential) from `payload`,
+// plus rules that may reference resources bound to
 // a user. If the `#[instrument]` macro ever stops skipping those, the token /
 // user-bound data leaks into a span field. Source-scan baseline,
 // anchored to `fn check_permission` and its immediately-preceding
@@ -452,7 +452,7 @@ mod instrument_skip_tests {
     #[test]
     fn instrument_skip_admin_check_permission_excludes_token_and_payload() {
         let body = instrument_body_preceding("check_permission");
-        for required in ["state", "headers", "payload"] {
+        for required in ["state", "payload"] {
             assert!(
                 body.contains(required),
                 "check_permission must skip `{required}`; body was:\n{body}"

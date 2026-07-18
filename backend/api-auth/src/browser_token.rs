@@ -1,7 +1,6 @@
 use axum::{Json, extract::State};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
-use uuid::Uuid;
 
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
@@ -33,8 +32,6 @@ impl From<herald_core::domain::authentication::BrowserTokenSet> for BrowserToken
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RefreshBrowserTokenRequest {
-    /// Internal Client App UUID returned by Client App discovery/configuration.
-    pub client_id: Uuid,
     pub refresh_token: String,
 }
 
@@ -51,7 +48,7 @@ pub async fn refresh(
 ) -> Result<ApiResult<BrowserTokenResponse>, ApiError> {
     let service = RedisBrowserTokenService::new(state.redis_manager.clone());
     let tokens = service
-        .refresh(&request.refresh_token, request.client_id)
+        .refresh(&request.refresh_token)
         .await
         .map_err(map_refresh_error)?;
     Ok(ApiResult::ok(tokens.into()))
@@ -59,7 +56,7 @@ pub async fn refresh(
 
 fn map_refresh_error(error: RefreshError) -> ApiError {
     match error {
-        RefreshError::Invalid | RefreshError::ReuseDetected | RefreshError::ClientMismatch => {
+        RefreshError::Invalid | RefreshError::ReuseDetected => {
             ApiError::unauthorized("invalid refresh token")
         }
     }
@@ -87,11 +84,7 @@ mod tests {
 
     #[test]
     fn browser_token_refresh_errors_are_all_unauthorized() {
-        for error in [
-            RefreshError::Invalid,
-            RefreshError::ReuseDetected,
-            RefreshError::ClientMismatch,
-        ] {
+        for error in [RefreshError::Invalid, RefreshError::ReuseDetected] {
             assert_eq!(
                 map_refresh_error(error).into_response().status(),
                 axum::http::StatusCode::UNAUTHORIZED

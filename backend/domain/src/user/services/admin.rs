@@ -2013,7 +2013,6 @@ mod tests {
         async fn refresh(
             &self,
             _refresh_token: &str,
-            _client_app_id: Uuid,
         ) -> Result<BrowserTokenSet, crate::authentication::entities::RefreshError> {
             Ok(BrowserTokenSet {
                 access_token: String::new(),

@@ -32,7 +32,6 @@ pub trait BrowserTokenService: Send + Sync {
     fn refresh(
         &self,
         refresh_token: &str,
-        client_app_id: Uuid,
     ) -> impl Future<Output = Result<BrowserTokenSet, RefreshError>> + Send;
 
     fn revoke_family(&self, family_id: Uuid) -> impl Future<Output = Result<(), CoreError>> + Send;

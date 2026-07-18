@@ -66,6 +66,7 @@ async fn register_user(
     password: &str,
 ) -> AxumResponse {
     let payload = json!({
+        "clientId": ctx._client_id,
         "email": email,
         "password": password,
         "turnstileToken": "dummy"

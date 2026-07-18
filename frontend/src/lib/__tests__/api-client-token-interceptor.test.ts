@@ -128,10 +128,10 @@ describe('single 401 → refresh → retry exactly once', () => {
     // The caller received the business data, not an error.
     expect(result.data).toMatchObject({ authenticated: true })
 
-    // Refresh was called with the persisted RT + clientId (NOT the AT).
+    // Refresh was called with the persisted RT only (the server recovers the
+    // bound Client App from the token family; the body carries no clientId).
     expect(refreshCapture.body).toEqual({
       refreshToken: TOKEN_FIXTURE.refreshToken,
-      clientId: TOKEN_FIXTURE.clientId,
     })
     // The refresh endpoint is skipped by the Bearer injector (RT in body, not header).
     expect(refreshCapture.authorization).toBeNull()

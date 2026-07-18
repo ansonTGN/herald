@@ -50,9 +50,10 @@ Before writing code, the Realm Admin must configure a Client App for your fronte
 
 1. **Allowed origins** — list the exact HTTPS origins your frontend is served from (e.g. `https://app.example.com`). Non-wildcard, exact match. Cross-origin requests from any origin not on this list are rejected on both auth and user endpoints.
 2. **Pre-registered redirect targets** — a result page URL for email verification and a result page URL for password reset. These are the only targets the public email-verify and password-reset endpoints will redirect to; arbitrary redirect URLs are rejected.
-3. **Enabled** — the Client App must be enabled. Disabling it later invalidates its browser token families.
+3. **Turnstile (per Client App)** — Cloudflare Turnstile is configured on the Client App, not globally. When `turnstile_enabled` is on, the frontend must render the widget, solve the challenge, and send the resulting `turnstileToken` on `/login`, `/register`, email-verify, password-reset, and the email-OTP send. The Turnstile status is keyed by `clientId`, so each Client App can have its own site key or leave Turnstile off.
+4. **Enabled** — the Client App must be enabled. Disabling it later invalidates its browser token families.
 
-The realm must also have registration and login enabled. Turnstile and per-IP rate-limiting apply to all public endpoints (`/login`, `/register`, email-verify, password-reset), so the frontend must complete the Turnstile challenge before submitting those forms.
+The realm must also have registration and login enabled. Per-IP rate-limiting applies to all public endpoints regardless of Turnstile.
 
 ## End-to-end flow
 
@@ -290,7 +291,7 @@ These are enforced server-side; the frontend cannot weaken them.
 - **Passkey RP isolation.** An approved Client App HTTPS origin uses its own host as the WebAuthn RP ID. Passkey credentials are scoped per RP; existing Herald-RP passkeys are not shared with a Custom User UI origin.
 - **Safe redirects.** Email verification and password reset are bound to the Client App and only redirect to pre-registered targets; arbitrary redirect URLs are rejected.
 - **Client-App disable cascade.** Disabling a Client App invalidates its browser token families; outstanding access and refresh tokens stop working immediately.
-- **Turnstile + rate-limiting on public endpoints.** `/login`, `/register`, email-verify, and password-reset are Turnstile-gated and rate-limited per IP.
+- **Turnstile + rate-limiting on public endpoints.** `/login`, `/register`, email-verify, password-reset, and email-OTP send are Turnstile-gated when the Client App has `turnstile_enabled`, and rate-limited per IP regardless of Turnstile. Turnstile is configured per Client App, so each app can carry its own site key.
 
 ## Related docs
 

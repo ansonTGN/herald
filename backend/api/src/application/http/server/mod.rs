@@ -55,6 +55,10 @@ fn extract_realm_id_from_path(path: &str) -> Option<&str> {
     if parts.get(2) == Some(&"legal") && parts.get(3) == Some(&"admin") {
         return parts.get(4).copied();
     }
+    // /api/permission/check is realm-less (no {realmId} segment)
+    if parts.get(2) == Some(&"permission") && parts.get(3) == Some(&"check") {
+        return None;
+    }
     // /api/<prefix>/{realmId}/... -> realm is the 3rd segment
     parts.get(3).copied()
 }

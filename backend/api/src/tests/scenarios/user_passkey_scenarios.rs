@@ -2,6 +2,7 @@
 // User Passkey API Scenarios
 // =============================================================================
 
+use crate::tests::helpers::auth_helpers::obtain_reauth_token;
 use crate::tests::helpers::passkey_authenticator::Es256Authenticator;
 use crate::tests::schema_test_context::SchemaTestContext as TestContext;
 use axum::{
@@ -170,7 +171,9 @@ async fn begin_registration(
     password: &str,
     nickname: Option<&str>,
 ) -> (Value, String) {
-    let mut payload = json!({ "password": password });
+    let reauth_token =
+        obtain_reauth_token(ctx, session_token, "bind_authenticator", password).await;
+    let mut payload = json!({ "reauthToken": reauth_token });
     if let Some(name) = nickname {
         payload["nickname"] = json!(name);
     }
@@ -198,12 +201,16 @@ async fn begin_registration(
 async fn finish_registration(
     ctx: &TestContext,
     session_token: &str,
+    password: &str,
     authenticator: &mut TestAuthenticator,
     reg_token: &str,
     options: Value,
 ) -> Value {
     let attestation = authenticator.register(&options, RP_ORIGIN);
+    let reauth_token =
+        obtain_reauth_token(ctx, session_token, "bind_authenticator", password).await;
     let payload = json!({
+        "reauthToken": reauth_token,
         "regToken": reg_token,
         "attestation": attestation
     });
@@ -231,13 +238,41 @@ async fn register_one_passkey(
     let (options, reg_token) =
         begin_registration(ctx, session_token, password, Some(nickname)).await;
     clear_passkey_user_rate_limit(ctx, user_id).await;
-    let body = finish_registration(ctx, session_token, authenticator, &reg_token, options).await;
+    let body = finish_registration(
+        ctx,
+        session_token,
+        password,
+        authenticator,
+        &reg_token,
+        options,
+    )
+    .await;
     clear_passkey_user_rate_limit(ctx, user_id).await;
 
     body["credentialId"]
         .as_str()
         .expect("credentialId should be present")
         .to_string()
+}
+
+async fn delete_passkey(
+    ctx: &TestContext,
+    session_token: &str,
+    password: &str,
+    credential_id: &str,
+) -> axum::response::Response {
+    let reauth_token =
+        obtain_reauth_token(ctx, session_token, "remove_authenticator", password).await;
+    let req = Request::builder()
+        .method("DELETE")
+        .uri(format!("/api/user/passkey/credentials/{credential_id}"))
+        .header("content-type", "application/json")
+        .header(header::AUTHORIZATION, format!("Bearer {session_token}"))
+        .body(Body::from(
+            json!({ "reauthToken": reauth_token }).to_string(),
+        ))
+        .unwrap();
+    ctx.create_unified_test_router().oneshot(req).await.unwrap()
 }
 
 async fn credential_bytes_for_id(ctx: &TestContext, credential_id: &str) -> Vec<u8> {
@@ -399,7 +434,9 @@ fn generate_totp_code(secret: &str) -> String {
 }
 
 async fn enable_totp_via_http(ctx: &TestContext, session_token: &str) -> String {
-    let payload = json!({ "password": PASSWORD });
+    let reauth_token =
+        obtain_reauth_token(ctx, session_token, "bind_authenticator", PASSWORD).await;
+    let payload = json!({ "reauth_token": reauth_token });
     let req = Request::builder()
         .method("POST")
         .uri("/api/user/totp")
@@ -539,7 +576,10 @@ async fn test_passkey_first_factor_login_success_and_counter_updates(ctx: &mut T
     .await;
 
     assert!(!session_token.is_empty());
-    assert_eq!(body["message"], "ok");
+    assert!(
+        body["accessToken"].is_string() && body["refreshToken"].is_string(),
+        "first-factor passkey login should issue a browser token family"
+    );
     let row: (i64, Option<chrono::DateTime<chrono::Utc>>) = sqlx::query_as(
         "SELECT counter, last_used_at FROM user_passkey_credential WHERE id = $1::uuid",
     )
@@ -583,7 +623,10 @@ async fn test_passkey_second_factor_login_success(ctx: &mut TestContext) {
     let (session_token, body) =
         finish_second_factor(ctx, &mut authenticator, temp_token, &auth_token, options).await;
     assert!(!session_token.is_empty());
-    assert_eq!(body["message"], "ok");
+    assert!(
+        body["accessToken"].is_string() && body["refreshToken"].is_string(),
+        "second-factor passkey login should issue a browser token family"
+    );
 
     let mut conn = ctx._app_state.redis_manager.get().await.unwrap();
     let temp_exists: bool = conn
@@ -650,17 +693,7 @@ async fn test_passkey_list_rename_and_delete(ctx: &mut TestContext) {
     assert_eq!(rename_response.status(), StatusCode::NO_CONTENT);
 
     clear_passkey_user_rate_limit(ctx, &user_id).await;
-    let delete_req = Request::builder()
-        .method("DELETE")
-        .uri(format!("/api/user/passkey/credentials/{second_id}"))
-        .header(header::AUTHORIZATION, format!("Bearer {session}"))
-        .body(Body::empty())
-        .unwrap();
-    let delete_response = ctx
-        .create_unified_test_router()
-        .oneshot(delete_req)
-        .await
-        .unwrap();
+    let delete_response = delete_passkey(ctx, &session, PASSWORD, &second_id).await;
     assert_eq!(delete_response.status(), StatusCode::NO_CONTENT);
 
     let rows: Vec<(String, Option<String>)> =
@@ -693,17 +726,7 @@ async fn test_delete_last_passkey_removes_from_second_factors(ctx: &mut TestCont
     .await;
 
     clear_passkey_user_rate_limit(ctx, &user_id).await;
-    let delete_req = Request::builder()
-        .method("DELETE")
-        .uri(format!("/api/user/passkey/credentials/{credential_id}"))
-        .header(header::AUTHORIZATION, format!("Bearer {session}"))
-        .body(Body::empty())
-        .unwrap();
-    let delete_response = ctx
-        .create_unified_test_router()
-        .oneshot(delete_req)
-        .await
-        .unwrap();
+    let delete_response = delete_passkey(ctx, &session, PASSWORD, &credential_id).await;
     assert_eq!(delete_response.status(), StatusCode::NO_CONTENT);
 
     let login_response = password_login(ctx, email, PASSWORD).await;
@@ -711,7 +734,7 @@ async fn test_delete_last_passkey_removes_from_second_factors(ctx: &mut TestCont
     let (login_response, token) = crate::tests::extract_bearer_token(login_response).await;
     assert!(token.is_some(), "password login should issue accessToken");
     let body = response_body(login_response).await;
-    assert_eq!(body["requiresTotp"], false);
+    assert!(body.get("requiresTotp").is_none() || body["requiresTotp"] == false);
     assert!(
         body.get("secondFactors").is_none() || body["secondFactors"].as_array().unwrap().is_empty()
     );
@@ -884,20 +907,23 @@ async fn test_registration_finish_duplicate_credential_id_conflict(ctx: &mut Tes
 
     sqlx::query(
         "INSERT INTO user_passkey_credential
-            (id, user_id, realm_id, credential_id, credential_public_key, counter, transports,
+            (id, user_id, realm_id, rp_id, credential_id, credential_public_key, counter, transports,
              backup_eligible, backup_state, user_verified, nickname, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, 0, '[]'::jsonb, false, false, false, 'existing', NOW(), NOW())",
+         VALUES ($1, $2, $3, $4, $5, $6, 0, '[]'::jsonb, false, false, false, 'existing', NOW(), NOW())",
     )
     .bind(Uuid::now_v7())
     .bind(user_uuid)
     .bind(&ctx._realm_id)
+    .bind("localhost")
     .bind(credential_bytes)
     .bind(Vec::<u8>::from("duplicate-public-key"))
     .execute(&ctx._app_state.pool)
     .await
     .expect("duplicate fixture should insert before finish");
 
+    let reauth_token = obtain_reauth_token(ctx, &session, "bind_authenticator", PASSWORD).await;
     let payload = json!({
+        "reauthToken": reauth_token,
         "regToken": reg_token,
         "attestation": attestation_json
     });

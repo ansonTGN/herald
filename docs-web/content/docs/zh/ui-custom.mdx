@@ -34,7 +34,7 @@ Logo 和背景是 URL 引用，不是上传。租户把资产放在自己的 CDN
 
 ## Realm 配置
 
-Realm 管理员在 *Settings → White-label* 配置品牌化。这个 Tab 和现有的 General / TOTP / Passkey / Registration / Email 等 Tab 并列，复用同一套 Realm-config 存储，所以权限模型与 Settings 其他部分一致：读取要 `settings.view`，保存要 `settings.manage`。
+Realm 管理员在 *Settings → White-label* 配置品牌化。这个 Tab 和现有的 General / TOTP / Passkey / Registration / Email / Email code 等 Tab 并列，复用同一套 Realm-config 存储，所以权限模型与 Settings 其他部分一致：读取要 `settings.view`，保存要 `settings.manage`。
 
 表单包含上面六个字段加一个实时预览。预览渲染的是真正的 `AuthPageWrapper` 组件，用表单当前值，所以预览看到的就是发布后终端用户会看到的——同样的 logo、主色、回退规则。预览有登录和注册两个 Tab 可切换，因为两者消费不同的文案字段。
 
