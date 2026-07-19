@@ -43,8 +43,12 @@ fn origin_is_allowed(origin: &str, frontend_url: &str, rows: &[serde_json::Value
 }
 
 /// Extract the realm id from request paths that encode it as the first route
-/// parameter. Returns `None` for realm-less routes such as `/api/permission/check`
-/// or `/api/auth` (browser-token routes).
+/// parameter. Returns `None` for realm-less routes whose realm is carried by
+/// the Bearer token (or that have no realm at all): `/api/permission/check`,
+/// `/api/auth` (browser-token routes), and the personal-center `/api/user/*`
+/// routes. CORS runs before auth, so for these routes the realm cannot be
+/// recovered from the path; the predicate then falls back to a realm-agnostic
+/// scan of every enabled Client App's `allowed_origins`.
 fn extract_realm_id_from_path(path: &str) -> Option<&str> {
     let parts: Vec<&str> = path.split('/').collect();
     // Realm-less top-level routes (e.g. /api/permission/check, /api/auth)
@@ -57,6 +61,12 @@ fn extract_realm_id_from_path(path: &str) -> Option<&str> {
     }
     // /api/permission/check is realm-less (no {realmId} segment)
     if parts.get(2) == Some(&"permission") && parts.get(3) == Some(&"check") {
+        return None;
+    }
+    // Personal-center routes (/api/user/*) carry the realm inside the Bearer
+    // token, not in the URL. Treat them as realm-less for CORS so a registered
+    // Client App origin is matched across all realms.
+    if parts.get(2) == Some(&"user") {
         return None;
     }
     // /api/<prefix>/{realmId}/... -> realm is the 3rd segment
@@ -99,6 +109,17 @@ mod cors_origin_tests {
         );
         assert_eq!(extract_realm_id_from_path("/api/permission/check"), None);
         assert_eq!(extract_realm_id_from_path("/api/auth"), None);
+        // Personal-center routes carry the realm in the Bearer token, not the
+        // URL, so they must be realm-less for CORS — otherwise the third path
+        // segment ("profile", "change-password", …) would be misread as a
+        // realm id and the registered-origin lookup would always miss.
+        assert_eq!(extract_realm_id_from_path("/api/user/profile"), None);
+        assert_eq!(
+            extract_realm_id_from_path("/api/user/change-password"),
+            None
+        );
+        assert_eq!(extract_realm_id_from_path("/api/user/reauth"), None);
+        assert_eq!(extract_realm_id_from_path("/api/user"), None);
     }
 }
 use crate::application::http::{
@@ -344,16 +365,25 @@ pub fn create_router(
                 if origin == frontend_url {
                     return true;
                 }
-                let Some(realm_id) = realm_id else {
-                    // Realm-less routes only allow the configured frontend origin.
-                    return false;
+                // Realm-scoped routes narrow the lookup to that realm's enabled
+                // Client Apps; realm-less routes (e.g. /api/user/*, where the
+                // realm lives in the Bearer token, not the URL) scan every
+                // enabled Client App. The origin match is still exact-string,
+                // so an origin is allowed iff some enabled Client App registered it.
+                let rows = if let Some(realm_id) = realm_id {
+                    sqlx::query_scalar::<_, serde_json::Value>(
+                        "SELECT allowed_origins FROM client_app WHERE realm_id = $1 AND enabled = true",
+                    )
+                    .bind(realm_id)
+                    .fetch_all(&state.pool)
+                    .await
+                } else {
+                    sqlx::query_scalar::<_, serde_json::Value>(
+                        "SELECT allowed_origins FROM client_app WHERE enabled = true",
+                    )
+                    .fetch_all(&state.pool)
+                    .await
                 };
-                let rows = sqlx::query_scalar::<_, serde_json::Value>(
-                    "SELECT allowed_origins FROM client_app WHERE realm_id = $1 AND enabled = true",
-                )
-                .bind(realm_id)
-                .fetch_all(&state.pool)
-                .await;
                 match rows {
                     Ok(rows) => origin_is_allowed(origin, &frontend_url, &rows),
                     Err(error) => {
@@ -376,7 +406,7 @@ pub fn create_router(
             ACCEPT,
             HeaderName::from_static("x-request-id"),
         ])
-        .allow_credentials(true)
+        .allow_credentials(false)
         .expose_headers([HeaderName::from_static("x-request-id")]);
 
     // All API routes (OAuth, Realm Config, Auth, Permission, Client, Roles, User, Users, Realms, Billing)

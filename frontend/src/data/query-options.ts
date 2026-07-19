@@ -1401,8 +1401,8 @@ export const recordConsentMutation = async (
 export const deleteAccountMutation = async (password: string): Promise<void> => {
   // High-risk op (delete_account): obtain a single-use reauth ticket using the
   // user's password, then submit account deletion with it.
-  const reauth_token = await obtainReauthToken('delete_account', password)
-  const response = await deleteAccount({ body: { reauth_token } })
+  const reauthToken = await obtainReauthToken('delete_account', password)
+  const response = await deleteAccount({ body: { reauthToken } })
   if (response.error) throw response.error
 }
 

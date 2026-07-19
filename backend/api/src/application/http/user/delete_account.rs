@@ -30,6 +30,7 @@ use herald_core::infrastructure::authentication::RedisBrowserTokenService;
 
 /// DELETE /api/user request body.
 #[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct DeleteAccountRequest {
     /// Single-use reauthentication ticket bound to account deletion.
     pub reauth_token: String,

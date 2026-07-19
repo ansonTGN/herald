@@ -54,7 +54,7 @@ async fn test_scenario_sdk_permission_allowed(ctx: &mut SchemaTestContext) {
     let client = Client::new(base_url, api_key, None);
 
     let request = PermissionCheckRequest {
-        token: session_token.clone(),
+        access_token: session_token.clone(),
         rules: Some(vec![Rule {
             resource: "article".to_string(),
             action: "read".to_string(),
@@ -118,7 +118,7 @@ async fn test_scenario_sdk_permission_denied(ctx: &mut SchemaTestContext) {
     let client = Client::new(base_url, api_key, None);
 
     let request = PermissionCheckRequest {
-        token: session_token.clone(),
+        access_token: session_token.clone(),
         rules: Some(vec![Rule {
             resource: "article".to_string(), // User doesn't have this permission
             action: "read".to_string(),

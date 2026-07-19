@@ -46,7 +46,7 @@ async fn test_scenario_sdk_permission_cache_hit(ctx: &mut SchemaTestContext) {
     let client = Client::new(base_url, api_key, Some(Duration::from_secs(5)));
 
     let request = PermissionCheckRequest {
-        token: session_token.clone(),
+        access_token: session_token.clone(),
         rules: Some(vec![Rule {
             resource: "article".to_string(),
             action: "read".to_string(),
@@ -107,7 +107,7 @@ async fn test_scenario_sdk_cache_invalidation(ctx: &mut SchemaTestContext) {
     let client = Client::new(base_url, api_key, Some(Duration::from_secs(60)));
 
     let request = PermissionCheckRequest {
-        token: session_token.clone(),
+        access_token: session_token.clone(),
         rules: Some(vec![Rule {
             resource: "article".to_string(),
             action: "read".to_string(),

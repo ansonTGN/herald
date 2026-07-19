@@ -25,7 +25,7 @@ async fn main() {
 
     // Check permission
     let resp = client.check_permission(PermissionCheckRequest {
-        token: "user-token".to_string(),
+        access_token: "user-token".to_string(),
         rules: Some(vec![Rule {
             resource: "document".to_string(),
             action: "read".to_string(),

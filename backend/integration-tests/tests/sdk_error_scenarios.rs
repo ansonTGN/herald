@@ -36,7 +36,7 @@ async fn test_scenario_sdk_unauthorized_error(ctx: &mut SchemaTestContext) {
     let client = Client::new(base_url, "test-api-key".to_string(), None);
 
     let request = PermissionCheckRequest {
-        token: invalid_token.to_string(),
+        access_token: invalid_token.to_string(),
         rules: Some(vec![Rule {
             resource: "article".to_string(),
             action: "read".to_string(),
@@ -115,7 +115,7 @@ async fn test_scenario_sdk_invalid_json_error(ctx: &mut SchemaTestContext) {
     ); // Non-existent port
 
     let request = PermissionCheckRequest {
-        token: "test_token".to_string(),
+        access_token: "test_token".to_string(),
         rules: Some(vec![Rule {
             resource: "article".to_string(),
             action: "read".to_string(),
@@ -147,7 +147,7 @@ async fn test_scenario_sdk_network_error(ctx: &mut SchemaTestContext) {
     ); // Non-existent port
 
     let request = PermissionCheckRequest {
-        token: "test_token".to_string(),
+        access_token: "test_token".to_string(),
         rules: Some(vec![Rule {
             resource: "article".to_string(),
             action: "read".to_string(),

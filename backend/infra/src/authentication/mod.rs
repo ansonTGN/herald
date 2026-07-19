@@ -173,7 +173,13 @@ impl RedisReauthStore {
         self.issue_with_ttl(result, REAUTH_TTL_SECONDS).await
     }
 
-    async fn issue_with_ttl(
+    /// Issue a reauth ticket with an explicit Redis TTL.
+    ///
+    /// Production callers always pair `expires_at` with the same TTL via
+    /// `issue`. Exposing a TTL override lets test fixtures plant a ticket that
+    /// is already past its Redis expiry window without lying about the
+    /// business `expires_at` (which the Lua consume path does not read).
+    pub async fn issue_with_ttl(
         &self,
         result: ReauthResult,
         ttl_seconds: u64,

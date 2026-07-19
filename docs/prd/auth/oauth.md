@@ -98,8 +98,8 @@
 
 ### 2.2 不包含功能 (Out of Scope)
 
-- Refresh Token（当前不支持令牌刷新）
-- Token 撤销：server-side token 当前不支持撤销；浏览器 token 变体支持即时吊销（见 [自建用户 UI](/docs/prd/integration/custom-user-ui.md)）
+- Refresh Token（server-side token 当前不支持令牌刷新）；浏览器 token 变体支持旋转 refresh token（见 [自建用户 UI](/docs/prd/integration/custom-user-ui.md) D-TOK-01）
+- Token 撤销：server-side token 当前不支持撤销；浏览器 token 变体支持即时吊销（见 [自建用户 UI](/docs/prd/integration/custom-user-ui.md) D-TOK-02）
 - OAuth 2.0 Scope 管理（没有细粒度 scope 授权页面）
 - 用户主动授权/拒绝授权页面（当前授权自动完成，用户无需手动批准）
 - Implicit Flow（已被 OAuth 2.1 废弃）
@@ -191,6 +191,13 @@
 - 回调路径 `/{provider}/callback` 接收 Provider 授权结果，创建或关联 OAuth 用户账户，完成 SSO 登录
 - 支持所有已配置的 Provider 类型（Google、GitHub、Facebook、Apple、WeChat、WeChat Mini Program）
 - OAuth 账户通过 open_id 关联用户，Email 冲突时自动关联（需验证用户当前未登录）
+
+**Herald 作为身份 Broker（brokered downstream-state redirect）:**
+- 当第三方 Client App 已在 Herald `/authorize` 发起自身的 Authorization Code + PKCE 授权事务时，可在跳转 `/api/oauth/{realmId}/{provider}/login` 时携带 `downstream_state` 参数，将该事务标识传递给 Herald
+- `downstream_state` 必须指向一个已存在、未消费、与当前 realm/client_id/redirect_uri/code_challenge 完整绑定的下游授权事务；校验失败拒绝发起 Provider 授权
+- Provider 回调 `/{provider}/callback` 时，若上下文携带有效的 `downstream_state`，Herald 不为该用户创建 Herald 自身会话，而是消费该下游 state（一次性，GETDEL 语义）并签发一个一次性 `authorization_code`，重定向回下游 Client App 的 `redirect_uri`（携带 `code` 与 `state`）
+- 下游 Client App 随后通过既有 `/token` 端点 + PKCE 校验换取令牌，与普通 Authorization Code + PKCE 流程一致
+- 该流程使 Herald 在充当 OAuth Client（对接 Google 等 IdP）的同时充当下游 Client App 的身份 Broker，把 IdP 认证结果转换为下游可用的授权码
 
 **TOTP + OAuth 兼容:**
 - TOTP 临时会话中保存 OAuth 上下文（oauth_client_id、redirect_uri、state）

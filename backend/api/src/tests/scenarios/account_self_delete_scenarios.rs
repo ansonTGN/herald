@@ -235,7 +235,7 @@ async fn call_delete_account(
     reauth_token: &str,
 ) -> axum::response::Response {
     let app = ctx.create_unified_test_router();
-    let payload = json!({ "reauth_token": reauth_token });
+    let payload = json!({ "reauthToken": reauth_token });
 
     let req = Request::builder()
         .method("DELETE")

@@ -32,8 +32,14 @@ pub struct Rule {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Hash, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct PermissionCheckRequest {
-    pub token: String,
+    /// Browser access token issued by `/api/auth/{realmId}/login`.
+    ///
+    /// Serialized as `accessToken` to match the `/api/ext/permission/check`
+    /// request body contract (`api-ext::permission::PermissionCheckRequest`
+    /// is `#[serde(rename_all = "camelCase")]` on `access_token`).
+    pub access_token: String,
     #[serde(default)]
     pub rules: Option<Vec<Rule>>,
     pub client_id: String,
@@ -414,7 +420,7 @@ impl Client {
             .time_to_live(duration)
             .eviction_listener(move |key: Arc<PermissionCheckRequest>, _value, _cause| {
                 let index = Arc::clone(&index_for_eviction);
-                if let Some(mut keys) = index.get_mut(&key.token) {
+                if let Some(mut keys) = index.get_mut(&key.access_token) {
                     keys.retain(|k| k != key.as_ref());
                 }
             })
@@ -460,8 +466,8 @@ impl Client {
         req: PermissionCheckRequest,
     ) -> Result<PermissionCheckResponse, Error> {
         // Check if token is expired
-        if self.is_token_expired(&req.token) {
-            self.invalidate_cache(&req.token).await;
+        if self.is_token_expired(&req.access_token) {
+            self.invalidate_cache(&req.access_token).await;
         }
 
         if let Some(resp) = self.cache.get(&req).await {
@@ -479,10 +485,10 @@ impl Client {
 
         // Update token cache timestamp
         self.token_cache
-            .insert(req.token.clone(), (resp.clone(), Instant::now()));
+            .insert(req.access_token.clone(), (resp.clone(), Instant::now()));
 
         self.token_index
-            .entry(req.token.clone())
+            .entry(req.access_token.clone())
             .or_default()
             .push(req.clone());
         self.cache.insert(req, resp.clone()).await;
@@ -844,7 +850,7 @@ mod tests {
             .await;
 
         let req = PermissionCheckRequest {
-            token: "test_token".to_string(),
+            access_token: "test_token".to_string(),
             rules: None,
             client_id: uuid::Uuid::now_v7().to_string(),
         };
@@ -879,7 +885,7 @@ mod tests {
             .await;
 
         let req = PermissionCheckRequest {
-            token: "test_token".to_string(),
+            access_token: "test_token".to_string(),
             rules: None,
             client_id: uuid::Uuid::now_v7().to_string(),
         };
@@ -926,13 +932,13 @@ mod tests {
             .await;
 
         let req1 = PermissionCheckRequest {
-            token: "token1".to_string(),
+            access_token: "token1".to_string(),
             rules: None,
             client_id: uuid::Uuid::now_v7().to_string(),
         };
 
         let req2 = PermissionCheckRequest {
-            token: "token2".to_string(),
+            access_token: "token2".to_string(),
             rules: None,
             client_id: uuid::Uuid::now_v7().to_string(),
         };

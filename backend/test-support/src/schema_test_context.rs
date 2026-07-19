@@ -556,7 +556,15 @@ impl SchemaTestContext {
             .unwrap();
     }
 
-    /// Issue a reauthentication fixture whose business expiry is already in the past.
+    /// Issue a reauthentication fixture that the consume path will reject as
+    /// expired.
+    ///
+    /// The Lua `reauth_consume` function enforces expiry via the Redis key TTL
+    /// (PTTL), not the business `expires_at` field — see
+    /// `infra::authentication::AUTHENTICATION_FUNCTION_CODE`. So an "expired"
+    /// fixture must write the key with a TTL that has already elapsed. We issue
+    /// with a 1-second TTL and sleep past it before returning, mirroring the
+    /// `reauth_expired_token_is_invalid` unit test in the infra crate.
     pub async fn issue_expired_reauth(
         &self,
         client_app_id: uuid::Uuid,
@@ -567,16 +575,21 @@ impl SchemaTestContext {
         use herald_core::domain::authentication::ReauthResult;
         use herald_core::infrastructure::authentication::RedisReauthStore;
 
-        RedisReauthStore::new(self.app_state.redis_manager.clone())
-            .issue(ReauthResult {
-                realm_id: self._realm_id.clone(),
-                client_app_id,
-                user_id: user_id.to_owned(),
-                target_operation,
-                expires_at: Utc::now() - Duration::seconds(1),
-                consumed: false,
-            })
+        let token = RedisReauthStore::new(self.app_state.redis_manager.clone())
+            .issue_with_ttl(
+                ReauthResult {
+                    realm_id: self._realm_id.clone(),
+                    client_app_id,
+                    user_id: user_id.to_owned(),
+                    target_operation,
+                    expires_at: Utc::now() - Duration::seconds(1),
+                    consumed: false,
+                },
+                1,
+            )
             .await
-            .unwrap()
+            .unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(1_100)).await;
+        token
     }
 }

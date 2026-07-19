@@ -336,14 +336,14 @@ describe('deleteAccountMutation', () => {
     })
   })
 
-  it('obtains a reauth ticket then calls deleteAccount with reauth_token body', async () => {
+  it('obtains a reauth ticket then calls deleteAccount with reauthToken body', async () => {
     await deleteAccountMutation('secret')
 
     expect(handleBeginReauth).toHaveBeenCalledWith({ body: { targetOperation: 'delete_account' } })
     expect(handleVerifyReauth).toHaveBeenCalledWith({
       body: { targetOperation: 'delete_account', factor: 'password', password: 'secret' },
     })
-    expect(deleteAccount).toHaveBeenCalledWith({ body: { reauth_token: 'reauth-token-123' } })
+    expect(deleteAccount).toHaveBeenCalledWith({ body: { reauthToken: 'reauth-token-123' } })
   })
 
   it('throws when API returns error', async () => {

@@ -96,21 +96,23 @@ async fn require_target_user(
 /// List active sessions for a user
 ///
 /// Returns the user's currently active browser-token sessions (families that
-/// are not revoked and not past their absolute expiry). Requires `users.view`
-/// permission. Read-only: no audit event is recorded.
+/// are not revoked and not past their absolute expiry). Requires `users.manage`
+/// permission (per kickoff-user PRD §4.1: session view and revoke reuse the
+/// existing `users.manage` permission; accounts holding only `users.view` must
+/// not see the session list). Read-only: no audit event is recorded.
 #[utoipa::path(
     get,
     path = "/api/users/{realmId}/{userId}/sessions",
     tag = "users",
     summary = "List a user's active sessions",
-    description = "List active browser-token sessions for a specific user. Requires `users.view` permission.",
+    description = "List active browser-token sessions for a specific user. Requires `users.manage` permission.",
     params(
         ("realmId" = String, Path, description = "Realm ID"),
         ("userId" = Uuid, Path, description = "User ID")
     ),
     responses(
         (status = 200, description = "Active sessions for the user", body = [UserSessionResponse]),
-        (status = 403, description = "Forbidden - Insufficient permissions (requires users.view) or realm boundary violation", body = ErrorResponse),
+        (status = 403, description = "Forbidden - Insufficient permissions (requires users.manage) or realm boundary violation", body = ErrorResponse),
         (status = 404, description = "User not found", body = ErrorResponse),
         (status = 500, description = "Internal server error", body = ErrorResponse)
     ),
@@ -123,7 +125,7 @@ pub async fn list_user_sessions(
     _headers: HeaderMap,
 ) -> Result<ApiResult<Vec<UserSessionResponse>>, ApiError> {
     let admin = AdminIdentity::require(identity.clone(), &realm_id, "user session management")?;
-    admin.require_permission(&state, "users", "view").await?;
+    admin.require_permission(&state, "users", "manage").await?;
 
     require_target_user(&state, identity, &realm_id, user_id).await?;
 

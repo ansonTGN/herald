@@ -142,7 +142,7 @@ describe('DeleteAccountDialog', () => {
 
     await waitFor(() => {
       expect(mockDeleteAccount).toHaveBeenCalledWith({
-        body: { reauth_token: 'reauth-token-123' },
+        body: { reauthToken: 'reauth-token-123' },
       })
     })
 

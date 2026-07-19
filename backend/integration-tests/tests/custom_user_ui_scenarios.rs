@@ -228,6 +228,20 @@ async fn issue_password_reauth(
     access_token: &str,
     target_operation: &str,
 ) -> String {
+    issue_password_reauth_with(ctx, access_token, target_operation, PASSWORD).await
+}
+
+/// Same as `issue_password_reauth` but lets the caller supply the current
+/// password. Needed when an earlier step in the same test changed the
+/// password (e.g. a successful `/api/user/change-password` call) — reauth
+/// verify checks the live bcrypt hash, so the test must supply the new
+/// password or verification returns 401.
+async fn issue_password_reauth_with(
+    ctx: &SchemaTestContext,
+    access_token: &str,
+    target_operation: &str,
+    current_password: &str,
+) -> String {
     let begin = send(
         ctx.create_unified_test_router(),
         "POST",
@@ -255,7 +269,7 @@ async fn issue_password_reauth(
         json!({
             "targetOperation": target_operation,
             "factor": "password",
-            "password": PASSWORD
+            "password": current_password
         }),
     )
     .await;
@@ -871,6 +885,14 @@ async fn test_custom_user_ui_profile_read_write(ctx: &mut SchemaTestContext) {
 #[test_context(SchemaTestContext)]
 #[tokio::test]
 async fn test_custom_user_ui_change_password_requires_reauth(ctx: &mut SchemaTestContext) {
+    // `/api/user/reauth` advertises the passkey factor by probing the user's
+    // passkey credentials via `resolve_passkey_rp`, which reads the global
+    // RP_ID/RP_ORIGIN env vars first (see login.rs:284). Set them so a
+    // password-only user can still reach the reauth flow.
+    unsafe {
+        std::env::set_var("RP_ID", "localhost");
+        std::env::set_var("RP_ORIGIN", "http://localhost:3000");
+    }
     let app = create_custom_client_app(ctx, true).await;
     let email = format!("cui-change-password-{}@test.com", Uuid::now_v7());
     create_user(ctx, &email).await;
@@ -916,6 +938,12 @@ async fn test_custom_user_ui_change_password_requires_reauth(ctx: &mut SchemaTes
 #[test_context(SchemaTestContext)]
 #[tokio::test]
 async fn test_custom_user_ui_delete_account_requires_reauth(ctx: &mut SchemaTestContext) {
+    // See `test_custom_user_ui_change_password_requires_reauth` for why the
+    // global passkey RP env vars must be set before any /api/user/reauth call.
+    unsafe {
+        std::env::set_var("RP_ID", "localhost");
+        std::env::set_var("RP_ORIGIN", "http://localhost:3000");
+    }
     let app = create_custom_client_app(ctx, true).await;
     let email = format!("cui-delete-{}@test.com", Uuid::now_v7());
     create_user(ctx, &email).await;
@@ -951,6 +979,12 @@ async fn test_custom_user_ui_delete_account_requires_reauth(ctx: &mut SchemaTest
 #[test_context(SchemaTestContext)]
 #[tokio::test]
 async fn test_custom_user_ui_reauth_expired_consumed_mismatch(ctx: &mut SchemaTestContext) {
+    // See `test_custom_user_ui_change_password_requires_reauth` for why the
+    // global passkey RP env vars must be set before any /api/user/reauth call.
+    unsafe {
+        std::env::set_var("RP_ID", "localhost");
+        std::env::set_var("RP_ORIGIN", "http://localhost:3000");
+    }
     let app = create_custom_client_app(ctx, true).await;
     let email = format!("cui-reauth-mismatch-{}@test.com", Uuid::now_v7());
     let user_id = create_user(ctx, &email).await;
@@ -994,7 +1028,16 @@ async fn test_custom_user_ui_reauth_expired_consumed_mismatch(ctx: &mut SchemaTe
     .await;
     assert_eq!(second_use.status(), StatusCode::CONFLICT);
 
-    let reauth = issue_password_reauth(ctx, &tokens.access_token, "change_password").await;
+    // `first_use` rotated the password to `ConsumedPassword123!`, so the
+    // final reauth ticket for the target-mismatch assertion must verify
+    // against that new password, not the original `PASSWORD`.
+    let reauth = issue_password_reauth_with(
+        ctx,
+        &tokens.access_token,
+        "change_password",
+        "ConsumedPassword123!",
+    )
+    .await;
     let mismatch = send(
         ctx.create_unified_test_router(),
         "DELETE",
