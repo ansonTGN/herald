@@ -265,12 +265,6 @@ async fn test_grant_quota_entitlement_is_idempotent(ctx: &mut SchemaTestContext)
 
 #[test_context(SchemaTestContext)]
 #[tokio::test]
-async fn test_grant_idempotent(ctx: &mut SchemaTestContext) {
-    assert_grant_idempotency(ctx, "quota-idem-manifest@example.com").await;
-}
-
-#[test_context(SchemaTestContext)]
-#[tokio::test]
 async fn test_revoke_quota_entitlement_zeroes_window_without_reversing_consumes(
     ctx: &mut SchemaTestContext,
 ) {
