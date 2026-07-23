@@ -48,6 +48,22 @@ const OTP_CODE_TTL_SECONDS: u64 = 300;
 // Local request helpers
 // ---------------------------------------------------------------------------
 
+/// Enable Realm registration so the email-otp auto-register path is not
+/// rejected by the Realm registration policy (email-otp-login PRD §4.1
+/// "注册政策优先"). Only the auto-register scenarios need this; the realm
+/// defaults to registration-disabled.
+async fn enable_registration(ctx: &TestContext) {
+    sqlx::query(
+        "INSERT INTO realm_config (realm_id, config_type, config_key, config_value, enabled)
+         VALUES ($1, 'registration', 'enabled', 'true', true)
+         ON CONFLICT (realm_id, config_type, config_key) DO UPDATE SET config_value = 'true', enabled = true",
+    )
+    .bind(&ctx._realm_id)
+    .execute(&ctx._app_state.pool)
+    .await
+    .expect("failed to enable registration");
+}
+
 /// Enable Email OTP login for the test Realm. `auto_register` defaults to
 /// `false`; callers that need the auto-register path pass `true`.
 async fn enable_email_otp(ctx: &TestContext, auto_register: bool) {
@@ -239,6 +255,7 @@ async fn test_scenario_email_otp_send_unregistered_with_consent_then_auto_regist
     ctx: &mut TestContext,
 ) {
     enable_email_otp(ctx, true).await;
+    enable_registration(ctx).await;
 
     let email = format!("eo002-{}@test.com", uuid::Uuid::now_v7());
     // Sanity: the email is NOT registered.
@@ -316,6 +333,7 @@ async fn test_scenario_email_otp_send_unregistered_without_consent_returns_conse
     ctx: &mut TestContext,
 ) {
     enable_email_otp(ctx, true).await;
+    enable_registration(ctx).await;
 
     let email = format!("eo-consent-{}@test.com", uuid::Uuid::now_v7());
 
