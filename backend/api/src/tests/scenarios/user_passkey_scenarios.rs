@@ -104,30 +104,22 @@ async fn create_session(ctx: &TestContext, email: &str, password: &str) -> Strin
     token.expect("login should return accessToken")
 }
 
-async fn setup_realm_passkey_config(
-    ctx: &TestContext,
-    realm_id: &str,
-    enabled: bool,
-    force_enabled: bool,
-) {
-    let config_value = json!({ "enabled": enabled, "force_enabled": force_enabled });
-    let metadata = json!({ "force_enabled": force_enabled });
+async fn setup_realm_passkey_config(ctx: &TestContext, realm_id: &str, enabled: bool) {
+    let config_value = json!({ "enabled": enabled });
 
     sqlx::query(
         "INSERT INTO realm_config
             (id, realm_id, config_type, config_key, config_value, is_secret, enabled, metadata, created_at, updated_at)
-         VALUES ($1, $2, 'passkey', 'settings', $3, false, $4, $5::jsonb, NOW(), NOW())
+         VALUES ($1, $2, 'passkey', 'settings', $3, false, $4, NULL, NOW(), NOW())
          ON CONFLICT (realm_id, config_type, config_key)
          DO UPDATE SET config_value = EXCLUDED.config_value,
                        enabled = EXCLUDED.enabled,
-                       metadata = EXCLUDED.metadata,
                        updated_at = NOW()",
     )
     .bind(Uuid::now_v7())
     .bind(realm_id)
     .bind(config_value.to_string())
     .bind(enabled)
-    .bind(metadata.to_string())
     .execute(&ctx._app_state.pool)
     .await
     .expect("passkey realm config should upsert");
@@ -499,7 +491,7 @@ async fn create_other_realm(ctx: &TestContext, realm_id: &str) {
 #[tokio::test]
 async fn test_passkey_registration_finish_persists_credential(ctx: &mut TestContext) {
     setup_passkey_env();
-    setup_realm_passkey_config(ctx, &ctx._realm_id, true, false).await;
+    setup_realm_passkey_config(ctx, &ctx._realm_id, true).await;
     let email = "passkey-register@test.com";
     let user_id = create_test_user(ctx, email, PASSWORD).await;
     let session = create_session(ctx, email, PASSWORD).await;
@@ -548,7 +540,7 @@ async fn test_passkey_registration_finish_persists_credential(ctx: &mut TestCont
 #[tokio::test]
 async fn test_passkey_first_factor_login_success_and_counter_updates(ctx: &mut TestContext) {
     setup_passkey_env();
-    setup_realm_passkey_config(ctx, &ctx._realm_id, true, false).await;
+    setup_realm_passkey_config(ctx, &ctx._realm_id, true).await;
     let email = "passkey-first-factor@test.com";
     let user_id = create_test_user(ctx, email, PASSWORD).await;
     let session = create_session(ctx, email, PASSWORD).await;
@@ -597,7 +589,7 @@ async fn test_passkey_first_factor_login_success_and_counter_updates(ctx: &mut T
 #[tokio::test]
 async fn test_passkey_second_factor_login_success(ctx: &mut TestContext) {
     setup_passkey_env();
-    setup_realm_passkey_config(ctx, &ctx._realm_id, true, false).await;
+    setup_realm_passkey_config(ctx, &ctx._realm_id, true).await;
     let email = "passkey-second-factor@test.com";
     let user_id = create_test_user(ctx, email, PASSWORD).await;
     let session = create_session(ctx, email, PASSWORD).await;
@@ -645,7 +637,7 @@ async fn test_passkey_second_factor_login_success(ctx: &mut TestContext) {
 #[tokio::test]
 async fn test_passkey_list_rename_and_delete(ctx: &mut TestContext) {
     setup_passkey_env();
-    setup_realm_passkey_config(ctx, &ctx._realm_id, true, false).await;
+    setup_realm_passkey_config(ctx, &ctx._realm_id, true).await;
     let email = "passkey-crud@test.com";
     let user_id = create_test_user(ctx, email, PASSWORD).await;
     let session = create_session(ctx, email, PASSWORD).await;
@@ -710,7 +702,7 @@ async fn test_passkey_list_rename_and_delete(ctx: &mut TestContext) {
 #[tokio::test]
 async fn test_delete_last_passkey_removes_from_second_factors(ctx: &mut TestContext) {
     setup_passkey_env();
-    setup_realm_passkey_config(ctx, &ctx._realm_id, true, false).await;
+    setup_realm_passkey_config(ctx, &ctx._realm_id, true).await;
     let email = "passkey-delete-last@test.com";
     let user_id = create_test_user(ctx, email, PASSWORD).await;
     let session = create_session(ctx, email, PASSWORD).await;
@@ -748,7 +740,7 @@ async fn test_delete_last_passkey_removes_from_second_factors(ctx: &mut TestCont
 #[tokio::test]
 async fn test_first_factor_options_remain_available_when_realm_is_disabled(ctx: &mut TestContext) {
     setup_passkey_env();
-    setup_realm_passkey_config(ctx, &ctx._realm_id, false, false).await;
+    setup_realm_passkey_config(ctx, &ctx._realm_id, false).await;
 
     let payload = json!({
         "clientId": ctx._client_id,
@@ -764,13 +756,35 @@ async fn test_first_factor_options_remain_available_when_realm_is_disabled(ctx: 
     assert_eq!(response.status(), StatusCode::OK);
 }
 
-/// User Story: US-PK-005 / US-PK-008
-/// Covers: passkey design §4.2.3 and §4.5 unified verification failure without internal cause.
+/// Listing passkey credentials must be gated on realm enablement, mirroring
+/// registration/begin. When the realm has Passkey disabled, the list endpoint
+/// returns 404 rather than a misleading 200 empty list — so the user security
+/// page never shows an empty "add passkey" affordance for a feature the realm
+/// turned off.
+#[test_context(TestContext)]
+#[tokio::test]
+async fn test_list_credentials_returns_404_when_realm_passkey_disabled(ctx: &mut TestContext) {
+    setup_passkey_env();
+    setup_realm_passkey_config(ctx, &ctx._realm_id, false).await;
+    let email = "passkey-list-disabled-realm@test.com";
+    create_test_user(ctx, email, PASSWORD).await;
+    let session = create_session(ctx, email, PASSWORD).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/user/passkey/credentials")
+        .header(header::AUTHORIZATION, format!("Bearer {session}"))
+        .body(Body::empty())
+        .unwrap();
+    let response = ctx.create_unified_test_router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
 #[test_context(TestContext)]
 #[tokio::test]
 async fn test_assertion_failure_returns_unified_message_no_internal_cause(ctx: &mut TestContext) {
     setup_passkey_env();
-    setup_realm_passkey_config(ctx, &ctx._realm_id, true, false).await;
+    setup_realm_passkey_config(ctx, &ctx._realm_id, true).await;
     let email = "passkey-failure-message@test.com";
     let user_id = create_test_user(ctx, email, PASSWORD).await;
     let session = create_session(ctx, email, PASSWORD).await;
@@ -839,10 +853,10 @@ async fn test_assertion_failure_returns_unified_message_no_internal_cause(ctx: &
 #[tokio::test]
 async fn test_first_factor_cross_realm_credential_isolated(ctx: &mut TestContext) {
     setup_passkey_env();
-    setup_realm_passkey_config(ctx, &ctx._realm_id, true, false).await;
+    setup_realm_passkey_config(ctx, &ctx._realm_id, true).await;
     let other_realm = "passkey-other-realm";
     create_other_realm(ctx, other_realm).await;
-    setup_realm_passkey_config(ctx, other_realm, true, false).await;
+    setup_realm_passkey_config(ctx, other_realm, true).await;
     let email = "passkey-cross-realm@test.com";
     let user_id = create_test_user(ctx, email, PASSWORD).await;
     let session = create_session(ctx, email, PASSWORD).await;
@@ -887,7 +901,7 @@ async fn test_first_factor_cross_realm_credential_isolated(ctx: &mut TestContext
 #[tokio::test]
 async fn test_registration_finish_duplicate_credential_id_conflict(ctx: &mut TestContext) {
     setup_passkey_env();
-    setup_realm_passkey_config(ctx, &ctx._realm_id, true, false).await;
+    setup_realm_passkey_config(ctx, &ctx._realm_id, true).await;
     let email = "passkey-duplicate@test.com";
     let user_id = create_test_user(ctx, email, PASSWORD).await;
     let user_uuid = Uuid::parse_str(&user_id).unwrap();
@@ -946,7 +960,7 @@ async fn test_password_totp_login_backward_compat_after_second_factors_field(
     ctx: &mut TestContext,
 ) {
     setup_passkey_env();
-    setup_realm_passkey_config(ctx, &ctx._realm_id, true, false).await;
+    setup_realm_passkey_config(ctx, &ctx._realm_id, true).await;
     setup_realm_totp_config(ctx, true, false).await;
     let email = "passkey-totp-compat@test.com";
     create_test_user(ctx, email, PASSWORD).await;

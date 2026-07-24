@@ -35,6 +35,14 @@ vi.mock('@/components/profile/totp/totp-regenerate-form', () => ({
   TotpRegenerateForm: () => <div data-testid="totp-regenerate-form">TOTP Regenerate Form</div>,
 }))
 
+vi.mock('@/components/profile/passkey/passkey-list', () => ({
+  PasskeyList: () => <div data-testid="passkey-list">Passkey List</div>,
+}))
+
+vi.mock('@/components/profile/passkey/passkey-register-form', () => ({
+  PasskeyRegisterForm: () => <div data-testid="passkey-register-form">Passkey Register Form</div>,
+}))
+
 vi.mock('@/components/ui/tabs', () => ({
   Tabs: ({ children }: { children: React.ReactNode }) => <div data-testid="tabs">{children}</div>,
   TabsList: ({ children }: { children: React.ReactNode }) => (
@@ -56,6 +64,29 @@ vi.mock('@/lib/api-generated/sdk.gen', async (importOriginal) => {
   }
 })
 
+// Stub the user feature-availability query so the page never issues a real
+// network call. Each test seeds its desired `passkeyEnabled` via the module
+// override below.
+let mockPasskeyEnabled = true
+vi.mock('@/data/query-options', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/data/query-options')>()
+  return {
+    ...actual,
+    userFeatureAvailabilityQueryOptions: {
+      queryKey: ['user-feature-availability', 'test'],
+      queryFn: async () => ({
+        user: {
+          passkeyEnabled: mockPasskeyEnabled,
+          pointsVisible: false,
+          subscriptionVisible: false,
+          invoicesVisible: false,
+        },
+        invoiceEligibility: {},
+      }),
+    },
+  }
+})
+
 import { ProfileSecurity } from '../index'
 
 function createTestQueryClient() {
@@ -67,7 +98,10 @@ function createTestQueryClient() {
   })
 }
 
-function renderSecurityPage() {
+// `mockPasskeyEnabled` defaults to true to preserve the pre-existing
+// assertions that expect the passkey tab to be present.
+function renderSecurityPage(passkeyEnabled = true) {
+  mockPasskeyEnabled = passkeyEnabled
   const queryClient = createTestQueryClient()
   return render(
     <QueryClientProvider client={queryClient}>
@@ -92,5 +126,19 @@ describe('ProfileSecurity', () => {
 
     expect(screen.getByTestId('delete-account-dialog')).toBeInTheDocument()
     expect(screen.getByTestId('delete-account-dialog-title')).toHaveTextContent('Delete Account')
+  })
+
+  it('GIVEN passkey enabled for realm THEN renders the passkey management UI', async () => {
+    renderSecurityPage(true)
+
+    expect(await screen.findByTestId('passkey-list')).toBeInTheDocument()
+  })
+
+  it('GIVEN passkey disabled for realm THEN hides the passkey management UI', async () => {
+    renderSecurityPage(false)
+    // Wait for the query to settle so the gating has applied.
+    await screen.findByTestId('tabs')
+
+    expect(screen.queryByTestId('passkey-list')).not.toBeInTheDocument()
   })
 })

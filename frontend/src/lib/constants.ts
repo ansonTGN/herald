@@ -78,6 +78,7 @@ export const QUERY_KEYS = {
   AUDIT_EVENT: 'audit-event',
   DASHBOARD_STATS: 'dashboard-stats',
   FEATURE_AVAILABILITY: 'feature-availability',
+  USER_FEATURE_AVAILABILITY: 'user-feature-availability',
   API_KEYS: 'api-keys',
   API_KEY: 'api-key',
   API_KEY_ROLES: 'api-key-roles',

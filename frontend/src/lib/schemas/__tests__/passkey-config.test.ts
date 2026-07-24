@@ -8,12 +8,11 @@ import { passkeyConfigSchema } from '../realm-config'
  */
 function makePasskeyConfig(
   overrides: Partial<
-    Record<'enabled' | 'forceEnabled' | 'userVerification' | 'crossPlatformAuthenticator', unknown>
+    Record<'enabled' | 'userVerification' | 'crossPlatformAuthenticator', unknown>
   > = {}
 ): Record<string, unknown> {
   return {
     enabled: true,
-    forceEnabled: false,
     ...overrides,
   }
 }
@@ -42,15 +41,7 @@ describe('passkeyConfigSchema', () => {
   describe('required fields', () => {
     it('should reject when enabled is missing (no default)', () => {
       const result = passkeyConfigSchema.safeParse({
-        forceEnabled: false,
-      })
-
-      expect(result.success).toBe(false)
-    })
-
-    it('should reject when forceEnabled is missing (no default)', () => {
-      const result = passkeyConfigSchema.safeParse({
-        enabled: true,
+        userVerification: 'preferred',
       })
 
       expect(result.success).toBe(false)
@@ -90,7 +81,6 @@ describe('passkeyConfigSchema', () => {
   describe('boolean field type enforcement', () => {
     it.each([
       ['enabled', 'true'],
-      ['forceEnabled', 'false'],
       ['crossPlatformAuthenticator', 'true'],
     ])('should reject non-boolean %s (string instead of boolean)', (field, value) => {
       const result = passkeyConfigSchema.safeParse(makePasskeyConfig({ [field]: value }))
@@ -99,23 +89,10 @@ describe('passkeyConfigSchema', () => {
     })
   })
 
-  describe('cross-field: no refinement constrains forceEnabled to enabled', () => {
-    // 按实测：schema 是 plain z.object，没有 forceEnabled=true → enabled=true
-    // 的 refinement。验证这个边界，避免将来误加约束时悄悄破坏表单。
-    it('should accept forceEnabled=true with enabled=false (no cross-field constraint)', () => {
-      const result = passkeyConfigSchema.safeParse(
-        makePasskeyConfig({ enabled: false, forceEnabled: true })
-      )
-
-      expect(result.success).toBe(true)
-    })
-  })
-
   describe('full valid config', () => {
     it('should accept complete config with all fields specified', () => {
       const result = passkeyConfigSchema.safeParse({
         enabled: true,
-        forceEnabled: true,
         userVerification: 'required',
         crossPlatformAuthenticator: false,
       })
@@ -123,7 +100,6 @@ describe('passkeyConfigSchema', () => {
       expect(result.success).toBe(true)
       if (result.success) {
         expect(result.data.enabled).toBe(true)
-        expect(result.data.forceEnabled).toBe(true)
         expect(result.data.userVerification).toBe('required')
         expect(result.data.crossPlatformAuthenticator).toBe(false)
       }
@@ -134,7 +110,6 @@ describe('passkeyConfigSchema', () => {
     it('should apply userVerification and crossPlatformAuthenticator defaults when only required fields given', () => {
       const result = passkeyConfigSchema.safeParse({
         enabled: true,
-        forceEnabled: false,
       })
 
       expect(result.success).toBe(true)

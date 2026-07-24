@@ -65,6 +65,10 @@ import {
   adminPublishFromDraft,
   adminDiscardDraft,
   adminGetVersion,
+  getFeatureAvailability,
+  getUserFeatureAvailability,
+  getSubscriptionHistory as getSubscriptionHistoryApi,
+  listSubscriptionHistory,
 } from '@/lib/api-generated'
 import { handleApiResponse } from '@/lib/api-utils'
 import { ApiResponseError, resolveApiError } from '@/lib/error-utils'
@@ -95,6 +99,7 @@ import type {
   WhiteLabelConfigStateResponse,
   CustomDomainConfigStateResponse,
   UserSessionResponse,
+  FeatureAvailabilityResponse as GeneratedFeatureAvailabilityResponse,
 } from '@/lib/api-generated'
 import type {
   HistoryFilters,
@@ -103,7 +108,6 @@ import type {
 } from '@/types/billing'
 import { TIME_CONSTANTS, QUERY_KEYS } from '@/lib/constants'
 import { client } from '@/lib/api-generated/client.gen'
-import type { InvoiceEligibilitySummary } from '@/lib/api-generated'
 
 // ==================== Enhanced Error Handling ====================
 
@@ -205,6 +209,7 @@ export const queryKeys = {
     [QUERY_KEYS.AUDIT_EVENT, realmId, eventId] as const,
   dashboardStats: (realmId: string) => [QUERY_KEYS.DASHBOARD_STATS, realmId] as const,
   featureAvailability: (realmId: string) => [QUERY_KEYS.FEATURE_AVAILABILITY, realmId] as const,
+  userFeatureAvailability: () => [QUERY_KEYS.USER_FEATURE_AVAILABILITY] as const,
   apiKeys: (realmId: string, filters: { page?: number; pageSize?: number }) =>
     [QUERY_KEYS.API_KEYS, realmId, filters] as const,
   apiKeysList: (realmId: string) => [QUERY_KEYS.API_KEYS, realmId] as const,
@@ -264,47 +269,29 @@ export const realmQueryOptions = (realmId: string) =>
     staleTime: STALE_TIME_5_MIN,
   })
 
-export type FeatureAvailabilityResponse = {
-  admin: {
-    billingVisible: boolean
-    billingConfigVisible: boolean
-    entitlementMappingsVisible: boolean
-    invoicesVisible: boolean
-    subscriptionHistoryVisible: boolean
-    pointsVisible: boolean
-  }
-  user: {
-    pointsVisible: boolean
-    subscriptionVisible: boolean
-    invoicesVisible: boolean
-  }
-  facts: {
-    hasPaymentProviders: boolean
-    hasEntitlementMappings: boolean
-    hasEnabledMappings: boolean
-    hasOneTimeMappings: boolean
-    hasInvoiceSellerConfig: boolean
-    hasInvoices: boolean
-    hasSubscriptionHistory: boolean
-  }
-  /**
-   * Realm-level invoice eligibility. Surfaced for both admin and user
-   * consumers to gate Create/Apply invoice buttons before submit.
-   */
-  invoiceEligibility: InvoiceEligibilitySummary
-}
+export type FeatureAvailabilityResponse = GeneratedFeatureAvailabilityResponse
 
 export const featureAvailabilityQueryOptions = (realmId: string) =>
   queryOptions({
     queryKey: queryKeys.featureAvailability(realmId),
-    queryFn: async () => {
-      const response = await fetch(`/api/realms/${realmId}/feature-availability`)
-      return unwrapFetchResponse<FeatureAvailabilityResponse>(response)
-    },
+    queryFn: async () => handleApiResponse(await getFeatureAvailability({ path: { realmId } })),
     retry: RETRY_COUNT,
     staleTime: STALE_TIME_2_MIN,
     gcTime: GC_TIME_5_MIN,
   })
+
+// Current user's feature availability (`GET /api/user/feature-availability`).
+// Unlike the admin `featureAvailabilityQueryOptions`, this needs no
+// billing/points view permission — only the `FeatureRead` token scope — so it
+// is the right source for user-facing pages (e.g. the security page gating the
+// passkey tab on `passkeyEnabled`).
+export const userFeatureAvailabilityQueryOptions = queryOptions({
+  queryKey: queryKeys.userFeatureAvailability(),
+  queryFn: async () => handleApiResponse(await getUserFeatureAvailability()),
+  retry: RETRY_COUNT,
+  staleTime: STALE_TIME_2_MIN,
+  gcTime: GC_TIME_5_MIN,
+})
 
 export async function requireFeature(
   queryClient: QueryClient,
@@ -749,26 +736,15 @@ export const userSubscriptionsQueryOptions = <TData>(
   })
 
 // ==================== Subscription History ====================
-// TODO: These will be auto-generated once backend OpenAPI includes subscription history endpoints
-// For now, implement using direct fetch with proper error handling
-
-/**
- * Unwraps a fetch Response object, throwing an error if the response is not OK.
- * This is used for direct fetch calls (not generated API client).
- */
-async function unwrapFetchResponse<T>(response: Response): Promise<T> {
-  if (!response.ok) {
-    throw new Error(`API request failed: ${response.status} ${response.statusText}`)
-  }
-  return response.json()
-}
 
 export async function getSubscriptionHistory(
   realmId: string,
   subscriptionId: string
 ): Promise<SingleSubscriptionHistoryResponse> {
-  const response = await fetch(`/api/bill/${realmId}/subscriptions/${subscriptionId}/history`)
-  return unwrapFetchResponse<SingleSubscriptionHistoryResponse>(response)
+  const response = await getSubscriptionHistoryApi({
+    path: { realmId, subscriptionId },
+  })
+  return handleApiResponse(response) as SingleSubscriptionHistoryResponse
 }
 
 export async function getGlobalSubscriptionHistory(
@@ -777,19 +753,15 @@ export async function getGlobalSubscriptionHistory(
   page: number = 1,
   pageSize: number = 20
 ): Promise<GlobalSubscriptionHistoryResponse> {
-  const params = new URLSearchParams()
-
-  Object.entries(filters).forEach(([key, value]) => {
-    if (value) {
-      params.append(key, value)
-    }
+  const response = await listSubscriptionHistory({
+    path: { realmId },
+    query: {
+      ...filters,
+      page,
+      pageSize,
+    },
   })
-
-  params.append('page', page.toString())
-  params.append('pageSize', pageSize.toString())
-
-  const response = await fetch(`/api/bill/${realmId}/subscriptions/history?${params.toString()}`)
-  return unwrapFetchResponse<GlobalSubscriptionHistoryResponse>(response)
+  return handleApiResponse(response) as GlobalSubscriptionHistoryResponse
 }
 
 export const subscriptionHistoryQueryOptions = (realmId: string, subscriptionId: string) =>

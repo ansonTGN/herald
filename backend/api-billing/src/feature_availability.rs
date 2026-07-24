@@ -14,6 +14,7 @@ use serde::Serialize;
 use uuid::Uuid;
 
 use crate::invoice_eligibility::{InvoiceEligibilitySummary, evaluate_realm_invoice_eligibility};
+use herald_core::domain::realm_config::ConfigType;
 
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -51,6 +52,10 @@ pub struct UserFeatureAvailability {
     pub points_visible: bool,
     pub subscription_visible: bool,
     pub invoices_visible: bool,
+    /// Whether Passkey authentication is enabled for this realm. Consumed by
+    /// the user security page (to gate the passkey tab) and the login page
+    /// (to gate the passkey entry) before any passkey endpoint is called.
+    pub passkey_enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
@@ -120,6 +125,7 @@ pub async fn get_feature_availability(
     // `subscription_visible`) rather than `has_one_time_mappings`.
     let user_points_visible = points_area_visible(&facts);
     let user_invoices_visible = facts.has_invoice_seller_config;
+    let passkey_enabled = read_realm_passkey_enabled(&state, &realm_id).await;
 
     // Realm-level invoice eligibility: reuse the already-loaded seller-config
     // fact so we do not issue a second seller-config query here.
@@ -140,6 +146,7 @@ pub async fn get_feature_availability(
             points_visible: user_points_visible,
             subscription_visible: user_subscription_visible,
             invoices_visible: user_invoices_visible,
+            passkey_enabled,
         },
         facts: FeatureAvailabilityFacts {
             has_payment_providers: facts.has_payment_providers,
@@ -173,6 +180,7 @@ pub async fn get_user_feature_availability(
     require_token_scope(&identity, &context, CredentialScope::FeatureRead)?;
     let realm_id = identity.realm_id();
     let facts = load_feature_facts(&state, &realm_id).await?;
+    let passkey_enabled = read_realm_passkey_enabled(&state, &realm_id).await;
     let invoice_eligibility =
         evaluate_realm_invoice_eligibility(&state, &realm_id, facts.has_invoice_seller_config)
             .await?;
@@ -181,6 +189,7 @@ pub async fn get_user_feature_availability(
             points_visible: points_area_visible(&facts),
             subscription_visible: facts.has_enabled_mappings,
             invoices_visible: facts.has_invoice_seller_config,
+            passkey_enabled,
         },
         invoice_eligibility,
     }))
@@ -246,6 +255,40 @@ async fn load_feature_facts(state: &AppState, realm_id: &str) -> Result<FeatureF
 /// surfaced regardless of whether a one_time pack exists).
 fn points_area_visible(facts: &FeatureFacts) -> bool {
     facts.has_enabled_mappings
+}
+
+/// Read the realm's passkey `enabled` flag from `realm_config`
+/// (`config_type='passkey'`, `config_key='settings'`).
+///
+/// Mirrors the gating SQL in `ensure_passkey_enabled` (api-auth). Returns
+/// `false` when the config row is absent or the inner `enabled` flag is
+/// missing/false — i.e. a realm that never configured passkey is treated as
+/// disabled. This is the single user-visible signal the frontend uses to gate
+/// the passkey tab/login entry without relying on a 404 from a passkey
+/// endpoint.
+async fn read_realm_passkey_enabled(state: &AppState, realm_id: &str) -> bool {
+    let row = sqlx::query_as::<_, (String,)>(
+        "SELECT config_value FROM realm_config
+         WHERE realm_id = $1 AND config_type = $2 AND config_key = 'settings' AND enabled = true",
+    )
+    .bind(realm_id)
+    .bind(ConfigType::Passkey.as_ref())
+    .fetch_optional(&state.pool)
+    .await;
+    match row {
+        Ok(Some((value,))) => serde_json::from_str::<serde_json::Value>(&value)
+            .ok()
+            .and_then(|v| v.get("enabled").and_then(|e| e.as_bool()))
+            .unwrap_or(false),
+        // Absent config or query failure: treat as disabled. We log query
+        // errors but never propagate them — feature-availability must not
+        // hard-fail the whole response over a passkey flag lookup.
+        Ok(None) => false,
+        Err(e) => {
+            tracing::warn!(realm_id = %realm_id, error = %e, "Failed to read passkey realm config");
+            false
+        }
+    }
 }
 
 #[cfg(test)]

@@ -3,7 +3,42 @@ use axum::http::{HeaderMap, Uri, header::ORIGIN};
 use herald_api_base::application::http::server::api_entities::ApiError;
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::custom_domain::CustomDomainMappingRepository;
+use herald_core::domain::realm_config::ConfigType;
 use herald_core::domain::user_passkey::PasskeyRelyingParty;
+
+/// Gate a passkey operation on the realm having Passkey enabled.
+///
+/// Reads the realm's passkey `enabled` flag from `realm_config`
+/// (`config_type='passkey'`, `config_key='settings'`). Returns a 404
+/// "Passkey is not enabled for this realm" when the config row is absent or
+/// its inner `enabled` flag is missing/false. Shared by the user self-service
+/// handlers (list/rename/delete/register-begin) and the login begin handlers
+/// so all passkey paths reject a disabled realm consistently.
+pub async fn ensure_passkey_enabled(state: &AppState, realm_id: &str) -> Result<(), ApiError> {
+    let row = sqlx::query_as::<_, (String,)>(
+        "SELECT config_value FROM realm_config
+         WHERE realm_id = $1 AND config_type = $2 AND config_key = 'settings' AND enabled = true",
+    )
+    .bind(realm_id)
+    .bind(ConfigType::Passkey.as_ref())
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to query passkey realm config: {e}");
+        ApiError::internal("Internal server error")
+    })?;
+
+    let enabled = row
+        .and_then(|(value,)| serde_json::from_str::<serde_json::Value>(&value).ok())
+        .and_then(|value| value.get("enabled").and_then(|enabled| enabled.as_bool()))
+        .unwrap_or(false);
+
+    if !enabled {
+        return Err(ApiError::not_found("Passkey is not enabled for this realm"));
+    }
+
+    Ok(())
+}
 
 pub async fn resolve_passkey_rp(
     state: &AppState,

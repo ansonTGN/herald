@@ -36,7 +36,6 @@ export function PasskeyConfigForm({
     schema: passkeyConfigSchema,
     defaultValues: initialConfig || {
       enabled: false,
-      forceEnabled: false,
       userVerification: 'preferred',
       crossPlatformAuthenticator: true,
     },
@@ -81,22 +80,6 @@ export function PasskeyConfigForm({
                   description={m['realm_config.passkey_enable_description']()}
                   disabled={disabled}
                   errorTestId="passkey-enabled-error"
-                />
-              )}
-            />
-
-            {/* Force Passkey */}
-            <form.Field
-              name="forceEnabled"
-              children={(field) => (
-                <ConfigSwitchField
-                  field={field}
-                  form={form}
-                  id="passkey-force-enabled"
-                  label={m['realm_config.passkey_force_label']()}
-                  description={m['realm_config.passkey_force_description']()}
-                  disabled={disabled}
-                  errorTestId="passkey-force-enabled-error"
                 />
               )}
             />

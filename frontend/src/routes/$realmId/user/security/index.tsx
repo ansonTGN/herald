@@ -1,5 +1,6 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { ChangePasswordForm } from '@/components/profile/change-password-form'
 import { TotpStatusCard } from '@/components/profile/totp/totp-status-card'
 import { PasskeyList } from '@/components/profile/passkey/passkey-list'
@@ -14,6 +15,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { m } from '@/paraglide/messages'
 import { realmPath, useResolvedRealmContext } from '@/lib/realm-routing'
+import { userFeatureAvailabilityQueryOptions } from '@/data/query-options'
 
 export const Route = createFileRoute('/$realmId/user/security/')({
   component: ProfileSecurity,
@@ -30,6 +32,14 @@ export function ProfileSecurity() {
   // Toggles the inline passkey registration form within the passkey tab.
   const [passkeyRegistering, setPasskeyRegistering] = useState(false)
 
+  // Whether Passkey is enabled for this realm. The passkey tab is hidden when
+  // the realm has Passkey disabled, so users never see an empty list / "add"
+  // affordance for a feature the realm turned off. Existing passkey holders in
+  // a disabled realm can still log in (the login page gates separately); this
+  // only controls the self-service management tab.
+  const { data: userFeatureAvailability } = useQuery(userFeatureAvailabilityQueryOptions)
+  const passkeyEnabled = userFeatureAvailability?.user.passkeyEnabled ?? false
+
   const handleDialogClose = () => setTotpDialog(null)
 
   return (
@@ -44,9 +54,11 @@ export function ProfileSecurity() {
           <TabsTrigger value="totp" data-testid="totp-tab">
             {m['profile.totp_tab']()}
           </TabsTrigger>
-          <TabsTrigger value="passkey" data-testid="passkey-tab">
-            {m['profile.passkey_tab']()}
-          </TabsTrigger>
+          {passkeyEnabled && (
+            <TabsTrigger value="passkey" data-testid="passkey-tab">
+              {m['profile.passkey_tab']()}
+            </TabsTrigger>
+          )}
         </TabsList>
         <TabsContent value="password" data-testid="password-section-title">
           <ChangePasswordForm />
@@ -58,22 +70,24 @@ export function ProfileSecurity() {
             onRegenerate={() => setTotpDialog('regenerate')}
           />
         </TabsContent>
-        <TabsContent value="passkey" data-testid="passkey-section-title">
-          {passkeyRegistering ? (
-            <PasskeyRegisterForm
-              onSuccess={() => setPasskeyRegistering(false)}
-              onCancel={() => setPasskeyRegistering(false)}
-            />
-          ) : (
-            <div className="space-y-4">
-              <div>
-                <h2 className="text-2xl font-bold">{m['profile.passkey_title']()}</h2>
-                <p className="text-muted-foreground">{m['profile.passkey_description']()}</p>
+        {passkeyEnabled && (
+          <TabsContent value="passkey" data-testid="passkey-section-title">
+            {passkeyRegistering ? (
+              <PasskeyRegisterForm
+                onSuccess={() => setPasskeyRegistering(false)}
+                onCancel={() => setPasskeyRegistering(false)}
+              />
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <h2 className="text-2xl font-bold">{m['profile.passkey_title']()}</h2>
+                  <p className="text-muted-foreground">{m['profile.passkey_description']()}</p>
+                </div>
+                <PasskeyList onAdd={() => setPasskeyRegistering(true)} />
               </div>
-              <PasskeyList onAdd={() => setPasskeyRegistering(true)} />
-            </div>
-          )}
-        </TabsContent>
+            )}
+          </TabsContent>
+        )}
       </Tabs>
 
       <Dialog open={totpDialog === 'disable'} onOpenChange={(open) => !open && setTotpDialog(null)}>

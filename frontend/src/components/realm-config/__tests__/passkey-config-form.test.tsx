@@ -29,20 +29,17 @@ describe('PasskeyConfigForm', () => {
     const screen = render(<PasskeyConfigForm {...defaultProps} />)
 
     expect(screen.getByTestId('passkey-enabled-switch')).toBeInTheDocument()
-    expect(screen.getByTestId('passkey-force-enabled-switch')).toBeInTheDocument()
     expect(screen.getByTestId('passkey-cross-platform-switch')).toBeInTheDocument()
     expect(screen.getByTestId('passkey-user-verification-select')).toBeInTheDocument()
     expect(screen.getByTestId('passkey-save-button')).toBeInTheDocument()
 
     expect(screen.getByTestId('passkey-enabled-switch')).not.toBeChecked()
-    expect(screen.getByTestId('passkey-force-enabled-switch')).not.toBeChecked()
     expect(screen.getByTestId('passkey-cross-platform-switch')).toBeChecked()
   })
 
   it('GIVEN initial config provided WHEN rendering THEN should reflect the supplied values', async () => {
     const initialConfig: PasskeyConfigFormValues = {
       enabled: true,
-      forceEnabled: false,
       userVerification: 'required',
       crossPlatformAuthenticator: false,
     }
@@ -50,7 +47,6 @@ describe('PasskeyConfigForm', () => {
     const screen = render(<PasskeyConfigForm {...defaultProps} initialConfig={initialConfig} />)
 
     expect(screen.getByTestId('passkey-enabled-switch')).toBeChecked()
-    expect(screen.getByTestId('passkey-force-enabled-switch')).not.toBeChecked()
     expect(screen.getByTestId('passkey-cross-platform-switch')).not.toBeChecked()
   })
 
@@ -64,24 +60,9 @@ describe('PasskeyConfigForm', () => {
     await waitFor(() => {
       expect(mockOnSave).toHaveBeenCalledWith({
         enabled: true,
-        forceEnabled: false,
         userVerification: 'preferred',
         crossPlatformAuthenticator: true,
       })
-    })
-  })
-
-  it('GIVEN user toggles forceEnabled switch WHEN submitting THEN should include forceEnabled true', async () => {
-    mockOnSave.mockResolvedValue(undefined)
-    const screen = render(<PasskeyConfigForm {...defaultProps} />)
-
-    await userEvent.click(screen.getByTestId('passkey-force-enabled-switch'))
-    await userEvent.click(screen.getByTestId('passkey-save-button'))
-
-    await waitFor(() => {
-      expect(mockOnSave).toHaveBeenCalledWith(
-        expect.objectContaining({ enabled: false, forceEnabled: true })
-      )
     })
   })
 
@@ -94,7 +75,6 @@ describe('PasskeyConfigForm', () => {
     const screen = render(<PasskeyConfigForm {...defaultProps} disabled={true} />)
 
     expect(screen.getByTestId('passkey-enabled-switch')).toBeDisabled()
-    expect(screen.getByTestId('passkey-force-enabled-switch')).toBeDisabled()
     expect(screen.getByTestId('passkey-cross-platform-switch')).toBeDisabled()
     expect(screen.getByTestId('passkey-save-button')).toBeDisabled()
   })

@@ -56,6 +56,13 @@ export default [
       'react/no-children-prop': 'off', // TanStack Form 使用 children 作为 render prop
       'react/no-unescaped-entities': 'off', // 允许直接使用撇号等字符
       'no-undef': 'off', // TypeScript 已处理，不需要此规则
+      'no-restricted-globals': [
+        'error',
+        {
+          name: 'fetch',
+          message: 'Use the generated API SDK or shared API client instead of bare fetch.',
+        },
+      ],
       // TypeScript 规则调整
       '@typescript-eslint/no-unused-vars': [
         'warn',

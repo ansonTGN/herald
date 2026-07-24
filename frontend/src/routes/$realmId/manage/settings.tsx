@@ -275,7 +275,6 @@ export function SettingsPage() {
         path: { realmId },
         body: {
           enabled: config.enabled,
-          forceEnabled: config.forceEnabled,
           userVerification: config.userVerification,
           crossPlatformAuthenticator: config.crossPlatformAuthenticator,
         },
@@ -478,7 +477,6 @@ export function SettingsPage() {
   const passkeyInitialConfig: PasskeyConfigForm | undefined = passkeyConfigData
     ? {
         enabled: passkeyConfigData.enabled,
-        forceEnabled: passkeyConfigData.forceEnabled,
         userVerification:
           passkeyConfigData.userVerification === 'required' ? 'required' : 'preferred',
         crossPlatformAuthenticator: passkeyConfigData.crossPlatformAuthenticator,

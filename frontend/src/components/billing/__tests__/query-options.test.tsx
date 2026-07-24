@@ -1,17 +1,64 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
+  featureAvailabilityQueryOptions,
   subscriptionHistoryQueryOptions,
   globalSubscriptionHistoryQueryOptions,
+  getSubscriptionHistory,
   getGlobalSubscriptionHistory,
 } from '@/data/query-options'
 import type { HistoryFilters } from '@/types/billing'
 import { QUERY_KEYS } from '@/lib/constants'
+import {
+  getFeatureAvailability,
+  getSubscriptionHistory as getSubscriptionHistoryApi,
+  listSubscriptionHistory,
+} from '@/lib/api-generated'
+
+vi.mock('@/lib/api-generated', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/api-generated')>()),
+  getFeatureAvailability: vi.fn(),
+  getSubscriptionHistory: vi.fn(),
+  listSubscriptionHistory: vi.fn(),
+}))
+
+beforeEach(() => {
+  vi.clearAllMocks()
+})
+
+describe('featureAvailabilityQueryOptions', () => {
+  it('should load protected feature availability through the generated SDK', async () => {
+    vi.mocked(getFeatureAvailability).mockResolvedValue({
+      data: {},
+      error: undefined,
+    } as never)
+
+    const options = featureAvailabilityQueryOptions('realm-1')
+    await options.queryFn?.({} as never)
+
+    expect(getFeatureAvailability).toHaveBeenCalledWith({
+      path: { realmId: 'realm-1' },
+    })
+  })
+})
 
 describe('subscriptionHistoryQueryOptions', () => {
   it('should create correct query key for subscription history', () => {
     const options = subscriptionHistoryQueryOptions('realm-1', 'sub-1')
 
     expect(options.queryKey).toEqual([QUERY_KEYS.SUBSCRIPTION_HISTORY, 'realm-1', 'sub-1'])
+  })
+
+  it('should load protected subscription history through the generated SDK', async () => {
+    vi.mocked(getSubscriptionHistoryApi).mockResolvedValue({
+      data: { subscriptionId: 'sub-1', events: [], total: 0 },
+      error: undefined,
+    } as never)
+
+    await getSubscriptionHistory('realm-1', 'sub-1')
+
+    expect(getSubscriptionHistoryApi).toHaveBeenCalledWith({
+      path: { realmId: 'realm-1', subscriptionId: 'sub-1' },
+    })
   })
 })
 
@@ -79,20 +126,14 @@ describe('Filter Parameter Handling', () => {
     expect(options.queryKey).toContain(100)
   })
 
-  it('should send camelCase query params that match the backend contract', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          events: [],
-          pagination: { page: 1, pageSize: 50, total: 0, totalPages: 0 },
-        }),
-        {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }
-      )
-    )
-    vi.stubGlobal('fetch', fetchMock)
+  it('should use the generated SDK with camelCase backend query params', async () => {
+    vi.mocked(listSubscriptionHistory).mockResolvedValue({
+      data: {
+        events: [],
+        pagination: { page: 1, pageSize: 50, totalCount: 0, totalPages: 0 },
+      },
+      error: undefined,
+    } as never)
 
     await getGlobalSubscriptionHistory(
       'realm-1',
@@ -110,22 +151,20 @@ describe('Filter Parameter Handling', () => {
       50
     )
 
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-    const requestUrl = new URL(fetchMock.mock.calls[0][0], 'http://localhost')
-
-    expect(requestUrl.searchParams.get('userId')).toBe('user-1')
-    expect(requestUrl.searchParams.get('entitlementKey')).toBe('basic')
-    expect(requestUrl.searchParams.get('eventType')).toBe('upgraded')
-    expect(requestUrl.searchParams.get('subscriptionStatus')).toBe('active')
-    expect(requestUrl.searchParams.get('fromDate')).toBe('2025-01-01T00:00:00.000Z')
-    expect(requestUrl.searchParams.get('toDate')).toBe('2025-01-31T23:59:59.999Z')
-    expect(requestUrl.searchParams.get('sortBy')).toBe('timestamp')
-    expect(requestUrl.searchParams.get('sortOrder')).toBe('desc')
-    expect(requestUrl.searchParams.get('page')).toBe('2')
-    expect(requestUrl.searchParams.get('pageSize')).toBe('50')
-
-    expect(requestUrl.searchParams.get('user_id')).toBeNull()
-    expect(requestUrl.searchParams.get('event_type')).toBeNull()
-    expect(requestUrl.searchParams.get('page_size')).toBeNull()
+    expect(listSubscriptionHistory).toHaveBeenCalledWith({
+      path: { realmId: 'realm-1' },
+      query: {
+        userId: 'user-1',
+        entitlementKey: 'basic',
+        eventType: 'upgraded',
+        subscriptionStatus: 'active',
+        fromDate: '2025-01-01T00:00:00.000Z',
+        toDate: '2025-01-31T23:59:59.999Z',
+        sortBy: 'timestamp',
+        sortOrder: 'desc',
+        page: 2,
+        pageSize: 50,
+      },
+    })
   })
 })

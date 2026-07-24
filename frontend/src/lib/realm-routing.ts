@@ -1,4 +1,4 @@
-import type { PublicConfigResponse } from '@/lib/api-generated'
+import { resolveCustomDomain, type PublicConfigResponse } from '@/lib/api-generated'
 import { useAuthStore } from '@/stores/auth-store'
 import { useLocation, useRouter } from '@tanstack/react-router'
 
@@ -60,12 +60,10 @@ export async function resolveRealmContext(pathname: string): Promise<ResolvedRea
   }
 
   const host = typeof window === 'undefined' ? '' : window.location.host
-  const resolveUrl = host
-    ? `/api/public-config/custom-domain/resolve?host=${encodeURIComponent(host)}`
-    : '/api/public-config/custom-domain/resolve'
-
-  const response = await fetch(resolveUrl)
-  if (!response.ok) {
+  const response = await resolveCustomDomain({
+    query: host ? { host } : {},
+  })
+  if (response.error) {
     // Main-domain session routes have no realm prefix. Their realm is loaded
     // from /api/auth/status by the root loader, not from custom-domain DNS.
     if (pathname === '/' || SESSION_SCOPED_ROOT_SEGMENTS.has(firstPathSegment(pathname) ?? '')) {
@@ -83,12 +81,7 @@ export async function resolveRealmContext(pathname: string): Promise<ResolvedRea
     throw new Error('Unable to resolve custom-domain realm')
   }
 
-  const body = (await response.json()) as {
-    data?: { realmId: string; publicConfig?: PublicConfigResponse }
-    realmId?: string
-    publicConfig?: PublicConfigResponse
-  }
-  const payload = body.data ?? body
+  const payload = response.data
   if (!payload.realmId) {
     throw new Error('Custom-domain resolve response did not include realmId')
   }

@@ -214,7 +214,6 @@ function installSiblingTabHandlers() {
     http.get(`${API_BASE_URL}/api/realms/test-realm/config/passkey`, () =>
       HttpResponse.json({
         enabled: false,
-        forceEnabled: false,
         userVerification: 'preferred',
         crossPlatformAuthenticator: true,
       })

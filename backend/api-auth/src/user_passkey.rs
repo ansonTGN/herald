@@ -23,7 +23,6 @@ use herald_core::domain::authentication::{
     CredentialScope, Identity, TargetOperation, TokenCredentialContext,
 };
 use herald_core::domain::common::entities::app_errors::CoreError;
-use herald_core::domain::realm_config::ConfigType;
 use herald_core::domain::user::ports::UserRepository;
 use herald_core::domain::user_passkey::{
     PasskeyCredentialView, PasskeyError, UserPasskeyRepository, UserPasskeyService,
@@ -33,7 +32,7 @@ use herald_core::infrastructure::user_passkey::{
     PostgresPasskeyRealmConfigReader, PostgresUserPasskeyRepository, RedisPasskeyChallengeStore,
 };
 
-use crate::passkey_rp::resolve_passkey_rp;
+use crate::passkey_rp::{ensure_passkey_enabled, resolve_passkey_rp};
 use crate::reauth::consume_reauth;
 
 const PASSKEY_USER_RATE_LIMIT: (i64, usize) = (5, 60);
@@ -284,6 +283,7 @@ pub async fn handle_finish_passkey_registration(
     responses(
         (status = 200, description = "Passkey credentials retrieved", body = ListPasskeysResponse),
         (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 404, description = "Passkey is not enabled for this realm", body = ErrorResponse),
         (status = 429, description = "Too many requests", body = ErrorResponse),
         (status = 500, description = "Internal server error", body = ErrorResponse),
     ),
@@ -298,6 +298,7 @@ pub async fn handle_list_passkey_credentials(
     require_token_scope(&identity, &context, CredentialScope::PasskeyManage)?;
     let user_id = identity_user_id(&identity)?;
     rate_limit_passkey_user(&state, user_id).await?;
+    ensure_passkey_enabled(&state, &identity.realm_id()).await?;
 
     let repo = PostgresUserPasskeyRepository::new(state.db.clone());
     let relying_party = resolve_passkey_rp(
@@ -330,7 +331,7 @@ pub async fn handle_list_passkey_credentials(
         (status = 400, description = "Bad request", body = ErrorResponse),
         (status = 401, description = "Unauthorized", body = ErrorResponse),
         (status = 403, description = "Forbidden", body = ErrorResponse),
-        (status = 404, description = "Credential not found", body = ErrorResponse),
+        (status = 404, description = "Credential not found, or Passkey is not enabled for this realm", body = ErrorResponse),
         (status = 429, description = "Too many requests", body = ErrorResponse),
         (status = 500, description = "Internal server error", body = ErrorResponse),
     ),
@@ -347,6 +348,7 @@ pub async fn handle_rename_passkey_credential(
     require_token_scope(&identity, &context, CredentialScope::PasskeyManage)?;
     let user_id = identity_user_id(&identity)?;
     rate_limit_passkey_user(&state, user_id).await?;
+    ensure_passkey_enabled(&state, &identity.realm_id()).await?;
     let credential_id = Uuid::parse_str(&credential_id)
         .map_err(|_| ApiError::bad_request("Invalid credentialId"))?;
 
@@ -384,7 +386,7 @@ pub async fn handle_rename_passkey_credential(
         (status = 400, description = "Bad request", body = ErrorResponse),
         (status = 401, description = "Unauthorized", body = ErrorResponse),
         (status = 403, description = "Forbidden", body = ErrorResponse),
-        (status = 404, description = "Credential not found", body = ErrorResponse),
+        (status = 404, description = "Credential not found, or Passkey is not enabled for this realm", body = ErrorResponse),
         (status = 429, description = "Too many requests", body = ErrorResponse),
         (status = 500, description = "Internal server error", body = ErrorResponse),
     ),
@@ -401,6 +403,7 @@ pub async fn handle_delete_passkey_credential(
     require_token_scope(&identity, &context, CredentialScope::PasskeyManage)?;
     let user_id = identity_user_id(&identity)?;
     rate_limit_passkey_user(&state, user_id).await?;
+    ensure_passkey_enabled(&state, &identity.realm_id()).await?;
     let credential_id = Uuid::parse_str(&credential_id)
         .map_err(|_| ApiError::bad_request("Invalid credentialId"))?;
 
@@ -490,32 +493,6 @@ async fn rate_limit_passkey_user(state: &AppState, user_id: Uuid) -> Result<(), 
         PASSKEY_USER_RATE_LIMIT.1,
     )
     .await
-}
-
-async fn ensure_passkey_enabled(state: &AppState, realm_id: &str) -> Result<(), ApiError> {
-    let row = sqlx::query_as::<_, (String,)>(
-        "SELECT config_value FROM realm_config
-         WHERE realm_id = $1 AND config_type = $2 AND config_key = 'settings' AND enabled = true",
-    )
-    .bind(realm_id)
-    .bind(ConfigType::Passkey.as_ref())
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to query passkey realm config: {e}");
-        ApiError::internal("Internal server error")
-    })?;
-
-    let enabled = row
-        .and_then(|(value,)| serde_json::from_str::<serde_json::Value>(&value).ok())
-        .and_then(|value| value.get("enabled").and_then(|enabled| enabled.as_bool()))
-        .unwrap_or(false);
-
-    if !enabled {
-        return Err(ApiError::not_found("Passkey is not enabled for this realm"));
-    }
-
-    Ok(())
 }
 
 async fn store_registration_nickname(
