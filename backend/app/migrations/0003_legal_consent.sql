@@ -178,7 +178,7 @@ If you do not agree to any part of these Terms, please stop registering or using
 
 3.4 **Security incidents**. If you suspect unauthorized access, notify your Realm administrator or us immediately. We may take protective steps such as freezing the account or terminating sessions.
 
-3.5 **Account status**. Accounts may have different statuses (e.g., pending verification, active, disabled, invalid). Disabled accounts cannot log in.
+3.5 **Account status**. Accounts may have different statuses (e.g., pending verification, active, disabled). Disabled accounts cannot log in.
 
 ---
 

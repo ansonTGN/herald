@@ -27,6 +27,15 @@ export const secrets = {
     authtoken: process.env.NGROK_AUTHTOKEN,
     domain: process.env.NGROK_DOMAIN,
   },
+  qq: {
+    smtpHost: process.env.QQ_SMTP_HOST,
+    smtpPort: process.env.QQ_SMTP_PORT, // string, e.g. "465"
+    smtpUsername: process.env.QQ_SMTP_USERNAME, // full mailbox, e.g. xxx@qq.com
+    smtpPassword: process.env.QQ_SMTP_PASSWORD, // 16-char authorization code (not login password)
+    smtpEncryption: process.env.QQ_SMTP_ENCRYPTION, // "ssl" | "starttls", optional, default ssl
+    fromAddress: process.env.QQ_FROM_ADDRESS, // optional, defaults to smtpUsername
+    testRecipient: process.env.QQ_TEST_RECIPIENT, // optional test email recipient
+  },
 } as const
 
 // --- Predicate helpers ---
@@ -113,6 +122,28 @@ export function requireStripeOneTimePayment(): void {
     throw new Error(
       'Stripe one-time payment credentials not configured. ' +
         'Set STRIPE_PUBLISHABLE_KEY, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, and STRIPE_ONETIME_PRODUCT_ID in demo/.env.demo.',
+    )
+  }
+}
+
+// --- QQ SMTP helpers ---
+
+export function hasQqSmtp(): boolean {
+  return !!(
+    secrets.qq.smtpHost &&
+    secrets.qq.smtpPort &&
+    secrets.qq.smtpUsername &&
+    secrets.qq.smtpPassword
+  )
+}
+
+export function requireQqSmtp(): void {
+  if (!hasQqSmtp()) {
+    throw new Error(
+      'QQ SMTP credentials not configured. ' +
+        'Set QQ_SMTP_HOST, QQ_SMTP_PORT, QQ_SMTP_USERNAME, QQ_SMTP_PASSWORD in demo/.env.demo. ' +
+        'Typical values: QQ_SMTP_HOST=smtp.qq.com, QQ_SMTP_PORT=465, QQ_SMTP_ENCRYPTION=ssl. ' +
+        'QQ_SMTP_PASSWORD must be the 16-char authorization code from QQ Mail settings, not the login password.',
     )
   }
 }

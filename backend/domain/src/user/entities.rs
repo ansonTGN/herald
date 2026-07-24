@@ -37,8 +37,7 @@ pub enum UserStatus {
     WaitVerified = 0,
     Normal = 1,
     Forbidden = 2,
-    Invalid = 3,
-    Deleted = 4,
+    Deleted = 3,
 }
 
 impl From<i16> for UserStatus {
@@ -47,9 +46,10 @@ impl From<i16> for UserStatus {
             0 => UserStatus::WaitVerified,
             1 => UserStatus::Normal,
             2 => UserStatus::Forbidden,
-            3 => UserStatus::Invalid,
-            4 => UserStatus::Deleted,
-            _ => UserStatus::Invalid,
+            3 => UserStatus::Deleted,
+            // Unknown / legacy values collapse to Forbidden (inactive, login
+            // blocked) rather than a distinct state.
+            _ => UserStatus::Forbidden,
         }
     }
 }

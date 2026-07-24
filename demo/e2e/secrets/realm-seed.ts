@@ -170,3 +170,34 @@ export async function seedStripeConfig(
     { configType: 'stripe', configKey: 'webhook_secret', configValue: input.webhookSecret, isSecret: true },
   ])
 }
+
+// ---------------------------------------------------------------------------
+// Email (SMTP)
+// POST /api/configs/{realmId}/batch  (config_type='email', snake_case keys)
+// Key set mirrors herald_core::third::email::read_email_config expectations.
+// ---------------------------------------------------------------------------
+
+export interface EmailSmtpSeedInput {
+  smtpHost: string
+  smtpPort: string // note: string, parsed to u16 by backend
+  smtpUsername: string
+  smtpPassword: string
+  smtpEncryption: string // "ssl" | "starttls"
+  fromAddress: string
+}
+
+export async function seedEmailSmtpConfig(
+  request: APIRequestContext,
+  realmId: string,
+  input: EmailSmtpSeedInput,
+): Promise<void> {
+  await seedBatchConfigs(request, realmId, [
+    { configType: 'email', configKey: 'provider', configValue: 'smtp', isSecret: false },
+    { configType: 'email', configKey: 'from_address', configValue: input.fromAddress, isSecret: false },
+    { configType: 'email', configKey: 'smtp_host', configValue: input.smtpHost, isSecret: false },
+    { configType: 'email', configKey: 'smtp_port', configValue: input.smtpPort, isSecret: false },
+    { configType: 'email', configKey: 'smtp_username', configValue: input.smtpUsername, isSecret: false },
+    { configType: 'email', configKey: 'smtp_password', configValue: input.smtpPassword, isSecret: true },
+    { configType: 'email', configKey: 'smtp_encryption', configValue: input.smtpEncryption, isSecret: false },
+  ])
+}

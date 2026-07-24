@@ -16,11 +16,13 @@ use herald_api_base::application::http::common::public_helper::realm_public_url;
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
+use herald_core::domain::authentication::BrowserTokenService;
 use herald_core::domain::security_constants::{
     RESET_PASSWORD_CONFIRM_IP_RATE_LIMIT, RESET_PASSWORD_REQUEST_EMAIL_RATE_LIMIT,
     RESET_PASSWORD_REQUEST_IP_RATE_LIMIT,
 };
 use herald_core::domain::user::ports::UserService;
+use herald_core::infrastructure::authentication::RedisBrowserTokenService;
 use herald_core::third::email::{EmailService, EmailTemplateKind};
 
 use crate::mailflow::{self, MailflowType};
@@ -197,7 +199,7 @@ pub async fn confirm(
     .await?;
 
     // Use UserService to confirm password reset
-    state
+    let user_id = state
         .service
         .user_service()
         .reset_password_confirm(&code, payload.new_pass, &realm_id)
@@ -211,6 +213,18 @@ pub async fn confirm(
                 _ => ApiError::internal("Failed to reset password".to_string()),
             }
         })?;
+
+    // Revoke all active sessions for the user after a successful password
+    // reset, so any potentially compromised session is invalidated. This is a
+    // best-effort post-reset security action: the password has already been
+    // changed, so a revocation failure is logged but does not undo the reset.
+    let token_service = RedisBrowserTokenService::new(state.redis_manager.clone());
+    if let Err(e) = token_service
+        .revoke_user_families(&user_id.to_string())
+        .await
+    {
+        tracing::error!(error = %e, %user_id, "Failed to revoke sessions after password reset");
+    }
 
     let fallback = realm_public_url(&state, &realm_id, "").await?;
     let location = mailflow::return_url(client.password_reset_return_url.as_deref(), fallback);

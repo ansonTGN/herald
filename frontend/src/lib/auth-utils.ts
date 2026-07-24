@@ -18,6 +18,7 @@ import type {
   VerifyTotpResponse,
   PasskeyVerifyResponse,
   BrowserTokenResponse,
+  OneTapDirectResponse,
 } from '@/lib/api-generated'
 import {
   fetchAuthData,
@@ -557,6 +558,54 @@ export async function completeLoginAfterPasskey(
 export async function completeLoginAfterEmailOtp(
   realmId: string,
   tokenResponse: BrowserTokenResponse,
+  clientId: string
+): Promise<{ redirectPath: string }> {
+  const store = useAuthStore.getState()
+
+  try {
+    store.setTokens({
+      accessToken: tokenResponse.accessToken,
+      refreshToken: tokenResponse.refreshToken,
+      clientId,
+    })
+    store.login(realmId)
+
+    await hydrateAuthenticatedSession(store, realmId)
+
+    return { redirectPath: getRedirectPath() }
+  } catch (error) {
+    store.logout()
+    throw error
+  }
+}
+
+/**
+ * Complete a login after a Google One Tap direct-session exchange.
+ *
+ * One Tap on Herald's own login page is the first-party (non-PKCE) variant: the
+ * backend `POST /api/oauth/{realmId}/google/one-tap` handler, when no
+ * `downstreamState` is supplied, calls `issue_callback_token_response` and
+ * returns a flattened `BrowserTokenSet` (`OneTapDirectResponse`) — the same
+ * shape the Email-OTP verify endpoint returns. This therefore mirrors
+ * `completeLoginAfterEmailOtp` exactly: persist the token set via the shared
+ * store helper, mark the realm initialized via the shared
+ * `hydrateAuthenticatedSession`, and return the safe redirect path. Token
+ * storage is reused (`store.setTokens`) — never duplicated.
+ *
+ * `clientId` is the Herald Client App id the One Tap request was issued for
+ * (`FIRST_PARTY_CLIENT_ID` on the first-party login page), persisted alongside
+ * the refresh token so a later refresh rebinds to the same Client App, exactly
+ * as the OTP/PKCE paths do. The `OneTapDirectResponse` body itself does not
+ * carry `clientId`, so the caller (which owns the resolved Client App id) must
+ * supply it.
+ *
+ * @param realmId - The realm ID
+ * @param tokenResponse - The direct `OneTapDirectResponse` from the One Tap endpoint
+ * @param clientId - The Herald Client App id used for the One Tap request
+ */
+export async function completeLoginAfterOneTap(
+  realmId: string,
+  tokenResponse: OneTapDirectResponse,
   clientId: string
 ): Promise<{ redirectPath: string }> {
   const store = useAuthStore.getState()

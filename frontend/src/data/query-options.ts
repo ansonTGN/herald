@@ -1,4 +1,4 @@
-import { queryOptions, type QueryClient } from '@tanstack/react-query'
+import { queryOptions, keepPreviousData, type QueryClient } from '@tanstack/react-query'
 import { redirect } from '@tanstack/react-router'
 import {
   listUsers2,
@@ -785,6 +785,9 @@ export const globalSubscriptionHistoryQueryOptions = (
     retry: RETRY_COUNT,
     staleTime: STALE_TIME_2_MIN,
     gcTime: GC_TIME_5_MIN,
+    // Keep the previous page visible while a filter/pagination change refetches,
+    // so the list doesn't blank out between Apply Filters and the new data.
+    placeholderData: keepPreviousData,
   })
 
 // ==================== Points ====================
@@ -1191,6 +1194,9 @@ export const subscriptionsQueryOptions = (realmId: string, filters: Subscription
     },
     retry: RETRY_COUNT,
     staleTime: STALE_TIME_2_MIN,
+    // Keep the previous page visible while a filter/pagination change refetches,
+    // so the table doesn't blank out into the loading skeleton each time.
+    placeholderData: keepPreviousData,
   })
 
 export const subscriptionDetailQueryOptions = (realmId: string, subscriptionId: string) =>

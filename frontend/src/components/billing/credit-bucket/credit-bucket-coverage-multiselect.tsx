@@ -99,7 +99,7 @@ export function BucketMultiselect({
           </Button>
         </PopoverTrigger>
         <PopoverContent
-          className="w-[var(--radix-popover-content-available-width)] min-w-[16rem] p-0"
+          className="w-[var(--radix-popover-trigger-width)] min-w-[16rem] p-0"
           align="start"
         >
           <Command>

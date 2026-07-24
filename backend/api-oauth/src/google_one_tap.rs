@@ -10,6 +10,7 @@
 use axum::{
     Json,
     extract::{Path, State},
+    http::HeaderMap,
     response::{IntoResponse, Response},
 };
 use serde::{Deserialize, Serialize};
@@ -18,6 +19,7 @@ use validator::Validate;
 
 use crate::callback::issue_callback_token_response;
 use crate::helper::{find_or_create_user, issue_downstream_authorization_code};
+use herald_api_base::application::http::auth::util::{ClientIp, user_agent_from_headers};
 use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::BrowserTokenSet;
@@ -93,8 +95,12 @@ pub struct OneTapCodeResponse {
 pub async fn google_one_tap(
     Path(realm_id): Path<String>,
     State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
+    headers: HeaderMap,
     Json(payload): Json<OneTapRequest>,
 ) -> Result<Response, ApiError> {
+    let user_agent = user_agent_from_headers(&headers);
+
     // `payload.credential` is a Google ID Token — a secret. Never record it in
     // span fields; log only low-cardinality context (realm_id, provider,
     // failure category, user_id).
@@ -226,6 +232,16 @@ pub async fn google_one_tap(
                 issue_downstream_authorization_code(&state, &realm_id, user_id, &ds).await?;
             Ok(Json(OneTapCodeResponse { redirect_uri }).into_response())
         }
-        None => issue_callback_token_response(&state, &realm_id, user_id, &payload.client_id).await,
+        None => {
+            issue_callback_token_response(
+                &state,
+                &realm_id,
+                user_id,
+                &payload.client_id,
+                user_agent,
+                Some(ip),
+            )
+            .await
+        }
     }
 }

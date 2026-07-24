@@ -25,7 +25,8 @@
  *   - Entitlement Key: herald-live-stripe-onetime-entitlement
  */
 
-import { test, expect, type Frame, type Locator, type Page } from '@playwright/test'
+import { type Frame, type Locator, type Page } from '@playwright/test'
+import { test, expect } from '../../../fixtures/demo-auth.fixtures'
 import { secrets, requireStripeOneTimePayment } from '../../../secrets/env'
 import { seedStripeConfig } from '../../../secrets/realm-seed'
 import { loginAsAdmin } from '../../../helpers/auth'
@@ -148,7 +149,7 @@ async function waitForStripeInvoice(
 
 test.describe('[Live][Billing One-Time Mapping] US-PU-006: Stripe one-time invoice verification', () => {
 
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ page, demoLogger }) => {
     requireStripeOneTimePayment()
 
     await verifyTestEnvironment(page, {
@@ -163,6 +164,7 @@ test.describe('[Live][Billing One-Time Mapping] US-PU-006: Stripe one-time invoi
       secretKey: secrets.stripe.secretKey!,
       webhookSecret: secrets.stripe.webhookSecret!,
     })
+    demoLogger.testCode.log('[Live] ✓ Stripe config seeded + admin login')
 
     // Cleanup stale entitlement mappings from previous runs
     try {
@@ -189,20 +191,21 @@ test.describe('[Live][Billing One-Time Mapping] US-PU-006: Stripe one-time invoi
     }
   })
 
-  test.afterEach(async ({ page }) => {
+  test.afterEach(async ({ page, demoLogger }) => {
     try {
       for (const key of ['publishable_key', 'api_key', 'webhook_secret']) {
         const resp = await page.request.delete(
           `${BASE_URL}/api/configs/${REALM_ID}/stripe/${key}`,
         )
-        console.log(`[cleanup] Stripe ${key} delete: ${resp.status()}`)
+        demoLogger.testCode.log(`[Live] ✓ Stripe ${key} cleanup delete: ${resp.status()}`)
       }
     } catch (error) {
+      demoLogger.testCode.log(`[Live] ✗ Stripe config cleanup error: ${error}`)
       console.error('[cleanup] Error during Stripe config cleanup:', error)
     }
   })
 
-  test('US-PU-006 Scenario 7: Stripe one-time checkout creates external invoice with correct fields', async ({ page }) => {
+  test('US-PU-006 Scenario 7: Stripe one-time checkout creates external invoice with correct fields', async ({ page, demoLogger }) => {
     let clientAppId: string
     let attemptId: string
     let mappingId: string
@@ -311,7 +314,7 @@ test.describe('[Live][Billing One-Time Mapping] US-PU-006: Stripe one-time invoi
       await submitButton.click()
       await page.waitForTimeout(5000)
 
-      console.log('[live-s7] One-time payment submitted')
+      demoLogger.testCode.log('[Live] ✓ one-time payment submitted')
     })
 
     await test.step('And fulfill payment and verify success', async () => {
@@ -336,7 +339,7 @@ test.describe('[Live][Billing One-Time Mapping] US-PU-006: Stripe one-time invoi
       if (attemptId) {
         const fulfillResult = await fulfillPayment(page.request, REALM_ID, attemptId)
         expect(fulfillResult.success, `Fulfillment failed: ${fulfillResult.error}`).toBeTruthy()
-        console.log(`[live-s7] Fulfillment result: ${JSON.stringify(fulfillResult)}`)
+        demoLogger.testCode.log(`[Live] ✓ fulfillment result: ${JSON.stringify(fulfillResult)}`)
 
         const finalStatus = await waitForPaymentStatus(
           page.request,
@@ -345,7 +348,7 @@ test.describe('[Live][Billing One-Time Mapping] US-PU-006: Stripe one-time invoi
           'Succeeded',
           15000,
         )
-        console.log(`[live-s7] Payment status: ${finalStatus}`)
+        demoLogger.testCode.log(`[Live] ✓ payment status: ${finalStatus}`)
         expect(finalStatus).not.toBe('Pending')
       } else {
         console.log('[live-s7] No payment attempt found to fulfill -- payment may have been processed via webhook')
@@ -368,6 +371,7 @@ test.describe('[Live][Billing One-Time Mapping] US-PU-006: Stripe one-time invoi
       expect(invoice.currency, 'Expected currency to be a 3-letter code').toMatch(/^[a-z]{3}$/)
       expect(invoice.invoiceNumber, 'Expected invoiceNumber to be present').toBeTruthy()
       expect(invoice.amountRefunded, 'Expected amountRefunded to be 0 on a fresh paid invoice').toBe(0)
+      demoLogger.testCode.log('[Live] ✓ Stripe one-time invoice fields verified')
     })
 
     await test.step('And invoice detail endpoint returns full response', async () => {

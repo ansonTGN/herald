@@ -3,6 +3,7 @@
 use axum::{
     Form, Json,
     extract::{Path, Query, State},
+    http::HeaderMap,
     response::{IntoResponse, Redirect, Response},
 };
 use serde::{Deserialize, Serialize};
@@ -10,6 +11,7 @@ use utoipa::ToSchema;
 use validator::Validate;
 
 use crate::helper::handle_oauth_callback;
+use herald_api_base::application::http::auth::util::{ClientIp, user_agent_from_headers};
 use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::{BrowserTokenService, BrowserTokenSet};
@@ -53,26 +55,33 @@ pub struct OAuthCallbackResponse {
 )]
 #[tracing::instrument(
     // Governance: query carries provider authorization
-    // code + state (CSRF) — both secrets. state holds handles.
+    // code + state (CSRF) — both secrets. state holds handles;
+    // headers carries User-Agent/cookies, ip may be PII.
     // realm_id/provider are low-cardinality but conservatively skipped.
     // Only http.route is recorded.
-    skip(state, query),
+    skip(state, query, headers, ip),
     fields(http.route = "/api/oauth/{realmId}/{provider}/callback")
 )]
 pub async fn oauth_callback(
     State(state): State<AppState>,
     Path((realm_id, provider)): Path<(String, String)>,
+    ClientIp(ip): ClientIp,
+    headers: HeaderMap,
     Query(query): Query<OAuthCallbackQuery>,
 ) -> Result<Response, ApiError> {
-    oauth_callback_inner(state, realm_id, provider, query).await
+    let user_agent = user_agent_from_headers(&headers);
+    oauth_callback_inner(state, realm_id, provider, query, user_agent, ip).await
 }
 
 pub async fn oauth_callback_form(
     State(state): State<AppState>,
     Path((realm_id, provider)): Path<(String, String)>,
+    ClientIp(ip): ClientIp,
+    headers: HeaderMap,
     Form(query): Form<OAuthCallbackQuery>,
 ) -> Result<Response, ApiError> {
-    oauth_callback_inner(state, realm_id, provider, query).await
+    let user_agent = user_agent_from_headers(&headers);
+    oauth_callback_inner(state, realm_id, provider, query, user_agent, ip).await
 }
 
 async fn oauth_callback_inner(
@@ -80,6 +89,8 @@ async fn oauth_callback_inner(
     realm_id: String,
     provider: String,
     query: OAuthCallbackQuery,
+    user_agent: Option<String>,
+    client_ip: String,
 ) -> Result<Response, ApiError> {
     // Validate provider
     let provider_type = provider.to_lowercase();
@@ -114,7 +125,15 @@ async fn oauth_callback_inner(
 
     let user_id = callback.user_id;
     let client_id = callback.client_id;
-    issue_callback_token_response(&state, &realm_id, user_id, &client_id).await
+    issue_callback_token_response(
+        &state,
+        &realm_id,
+        user_id,
+        &client_id,
+        user_agent,
+        Some(client_ip),
+    )
+    .await
 }
 
 pub async fn issue_callback_token_response(
@@ -122,6 +141,8 @@ pub async fn issue_callback_token_response(
     realm_id: &str,
     user_id: uuid::Uuid,
     client_id: &str,
+    user_agent: Option<String>,
+    client_ip: Option<String>,
 ) -> Result<Response, ApiError> {
     let client_app = state
         .service
@@ -143,11 +164,11 @@ pub async fn issue_callback_token_response(
     let token_service = RedisBrowserTokenService::new(state.redis_manager.clone());
     let tokens = if client_app.is_first_party {
         token_service
-            .create_first_party_token_family(&user, &client_app, None, None)
+            .create_first_party_token_family(&user, &client_app, user_agent, client_ip)
             .await
     } else {
         token_service
-            .create_token_family(&user, &client_app, None, None)
+            .create_token_family(&user, &client_app, user_agent, client_ip)
             .await
     }
     .map_err(|error| {

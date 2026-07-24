@@ -88,27 +88,12 @@
  *      external_invoice_id = last_transaction_id)
  */
 
-import { test as base, expect, type Page } from '@playwright/test'
+import { type Page } from '@playwright/test'
+import { test, expect } from '../../../fixtures/demo-auth.fixtures'
 import { secrets, requireCreemPayment } from '../../../secrets/env'
 import { seedCreemConfig } from '../../../secrets/realm-seed'
 import { loginAsAdmin } from '../../../helpers/auth'
 import { verifyTestEnvironment } from '../../../helpers/environment-setup'
-import { UnifiedLogger } from '../../../helpers/unified-logger'
-
-// demoLogger fixture gate: this file re-uses the demo-page fixture shape so the
-// test routes logging through the unified logger and never calls
-// logger.finalize() by hand. We re-extend `base` here (instead of importing the
-// full demo-page fixture) because this live test drives its own checkout and
-// MUST NOT inherit the admin-login / navigation that the heavier fixtures bake
-// in — but the demoLogger contract is identical.
-const test = base.extend<{ demoLogger: UnifiedLogger }>({
-  demoLogger: async ({ page }, use, testInfo) => {
-    const logger = new UnifiedLogger(page, testInfo.title)
-    await use(logger)
-    logger.printSummary('[Live] Test Summary')
-    await logger.finalize()
-  },
-})
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
 const REALM_ID = 'admin'
@@ -309,11 +294,7 @@ test.describe('[Live][Billing Payment Invoice Mapping] US-PM-002: Creem renewal 
     // Fail loud on missing real credentials — this is a live integration smoke.
     requireCreemPayment()
 
-    console.log(`[${testInfo.title}] Verifying demo environment`)
-    // demoLogger is wired through the unified fixture (per demo-dev gate) and
-    // auto-finalizes after the test; the body uses console.log to mirror the
-    // sibling live Creem tests (us-pa-001-creem-checkout-live.e2e.ts).
-    void demoLogger
+    demoLogger.testCode.log(`[${testInfo.title}] verifying demo environment`)
     await verifyTestEnvironment(page, {
       requiredRealms: [REALM_ID],
       requiredUsers: ['admin@cas.com'],
@@ -326,6 +307,7 @@ test.describe('[Live][Billing Payment Invoice Mapping] US-PM-002: Creem renewal 
       apiKey: secrets.creem.apiKey!,
       webhookSecret: secrets.creem.webhookSecret!,
     })
+    demoLogger.testCode.log('[Live] ✓ Creem config seeded + admin login')
 
     // Cleanup stale entitlement mappings from previous runs so the mapping is
     // deterministically configured for THIS run.
@@ -358,16 +340,17 @@ test.describe('[Live][Billing Payment Invoice Mapping] US-PM-002: Creem renewal 
     }
   })
 
-  test.afterEach(async ({ page }) => {
+  test.afterEach(async ({ page, demoLogger }) => {
     // Mirror the reference live Creem test's config cleanup pattern.
     try {
       for (const key of ['api_key', 'webhook_secret']) {
         const resp = await page.request.delete(
           `${BASE_URL}/api/configs/${REALM_ID}/creem/${key}`,
         )
-        console.log(`[cleanup] Creem ${key} delete: ${resp.status()}`)
+        demoLogger.testCode.log(`[Live] ✓ Creem ${key} cleanup delete: ${resp.status()}`)
       }
     } catch (error) {
+      demoLogger.testCode.log(`[Live] ✗ Creem config cleanup error: ${error}`)
       console.error('[cleanup] Error during Creem config cleanup:', error)
     }
   })
@@ -426,7 +409,7 @@ test.describe('[Live][Billing Payment Invoice Mapping] US-PM-002: Creem renewal 
     // be satisfied by a genuine NEW renewal invoice. We snapshot here (before
     // any checkout) to also exclude first-checkout invoices from prior runs.
     const invoiceBaseline = await snapshotCreemInvoiceExternalIds(page)
-    console.log(`[setup] baseline creem invoices: ${invoiceBaseline.size}`)
+    demoLogger.testCode.log(`[Live] baseline creem invoices: ${invoiceBaseline.size}`)
 
     await test.step('When a Creem subscription is created via real checkout OR an existing subscription is reused', async () => {
       // This live test assumes an active Creem subscription exists for the
@@ -465,8 +448,8 @@ test.describe('[Live][Billing Payment Invoice Mapping] US-PM-002: Creem renewal 
       // (webhook_handlers.rs:1203-1331) when Creem delivers a real
       // subscription.paid renewal event carrying last_transaction_id.
       renewalInvoice = await waitForNewCreemInvoice(page, invoiceBaseline)
-      console.log(
-        `[renewal] new invoice id=${renewalInvoice.id} ` +
+      demoLogger.testCode.log(
+        `[Live] new renewal invoice id=${renewalInvoice.id} ` +
           `externalInvoiceId=${renewalInvoice.externalInvoiceId} ` +
           `status=${renewalInvoice.status} total=${renewalInvoice.total}`,
       )
@@ -484,6 +467,7 @@ test.describe('[Live][Billing Payment Invoice Mapping] US-PM-002: Creem renewal 
         renewalInvoice.total,
         'Renewal invoice total must be > 0 (zero-amount cycles must not produce invoices)',
       ).toBeGreaterThan(0)
+      demoLogger.testCode.log('[Live] ✓ renewal invoice carries non-empty tran_ + provider=creem + total>0')
     })
 
     await test.step('And the renewal invoice detail carries provider=creem and a paid status', async () => {
@@ -526,6 +510,7 @@ test.describe('[Live][Billing Payment Invoice Mapping] US-PM-002: Creem renewal 
         status === 'succeeded' || status === 'success',
         `Renewal attempt status should be succeeded, got "${attempt!.status}"`,
       ).toBeTruthy()
+      demoLogger.testCode.log('[Live] ✓ renewal attempt provider_reference + status verified')
     })
   })
 })

@@ -3,6 +3,7 @@
 use axum::{
     Json,
     extract::{Path, Query, State},
+    http::HeaderMap,
     response::{IntoResponse, Redirect, Response},
 };
 use serde::{Deserialize, Serialize};
@@ -12,6 +13,7 @@ use crate::{
     callback::issue_callback_token_response,
     helper::{generate_oauth_auth_url, handle_oauth_callback},
 };
+use herald_api_base::application::http::auth::util::{ClientIp, user_agent_from_headers};
 use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
 use herald_api_base::application::http::state::AppState;
 use validator::Validate;
@@ -104,7 +106,11 @@ pub async fn wechat_callback(
     Path(realm_id): Path<String>,
     Query(query): Query<std::collections::HashMap<String, String>>,
     State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
+    headers: HeaderMap,
 ) -> Result<Response, ApiError> {
+    let user_agent = user_agent_from_headers(&headers);
+
     let code = query
         .get("code")
         .ok_or_else(|| ApiError::bad_request("Missing code parameter".to_string()))?
@@ -144,5 +150,6 @@ pub async fn wechat_callback(
         "WeChat callback processed successfully"
     );
 
-    issue_callback_token_response(&state, &realm_id, user_id, &client_id).await
+    issue_callback_token_response(&state, &realm_id, user_id, &client_id, user_agent, Some(ip))
+        .await
 }

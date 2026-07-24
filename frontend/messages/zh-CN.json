@@ -96,7 +96,7 @@
     "logout_button": "退出登录"
   },
   "pagination": {
-    "showing": "显示第 {from} 到 {to} 条，共 {total} 条结果"
+    "showing": "{from}-{to} / 共 {total} 条"
   },
   "shared": {
     "builtin": "内置",
@@ -146,7 +146,8 @@
       "passkey_verification_failed": "通行密钥验证失败",
       "passkey_unsupported": "您的浏览器不支持通行密钥。",
       "passkey_2fa_title": "通行密钥验证",
-      "passkey_2fa_description": "使用通行密钥完成登录。"
+      "passkey_2fa_description": "使用通行密钥完成登录。",
+      "one_tap_failed": "Google 登录失败"
     },
     "register": {
       "title": "创建账户",
@@ -685,8 +686,7 @@
     "all": "全部",
     "wait_verified": "待验证",
     "normal": "正常",
-    "forbidden": "禁止",
-    "invalid": "无效"
+    "forbidden": "禁止"
   },
   "client_apps": {
     "page_title": "客户端应用",
@@ -1528,7 +1528,6 @@
     "purchase_records_page_title": "购买记录",
     "purchase_records_history_title": "购买历史",
     "subscription_history_events": "历史事件",
-    "subscription_history_loading_page": "加载订阅历史...",
     "subscription_history_failed_load": "加载订阅历史失败：{error}",
     "subscription_detail_history_title": "订阅历史",
     "subscription_current_status": "当前订阅状态",
@@ -1674,6 +1673,8 @@
     "billing_period_year": "年",
     "label_granted_roles": "授予的角色",
     "help_granted_roles": "选择支付成功后授予的角色",
+    "help_granted_roles_hint": "在每次支付成功时授予购买者（一次性与周期性均生效），与「订阅时发放」相互独立。",
+    "help_grant_on_subscribe": "开启时，积分在订阅时立即发放；关闭时则在每个续期周期延迟发放。不影响角色授予。",
     "role_not_in_realm_error": "所选角色中存在不属于当前 Realm 的角色，请仅选择本 Realm 的角色后重试。"
   },
   "purchase": {

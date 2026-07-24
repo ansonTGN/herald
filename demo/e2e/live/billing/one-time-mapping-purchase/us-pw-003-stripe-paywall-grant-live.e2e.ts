@@ -53,7 +53,8 @@
  *   (backend/api-billing/src/types.rs:314 PriceMappingUpdate.granted_role_ids.)
  */
 
-import { test, expect, type Frame, type Locator, type Page } from '@playwright/test'
+import { type Frame, type Locator, type Page } from '@playwright/test'
+import { test, expect } from '../../../fixtures/demo-auth.fixtures'
 import { secrets, requireStripeOneTimePayment } from '../../../secrets/env'
 import { seedStripeConfig } from '../../../secrets/realm-seed'
 import { loginAsAdmin } from '../../../helpers/auth'
@@ -322,7 +323,7 @@ async function createPaymentAttemptAndGetCheckoutUrl(
 // ---------------------------------------------------------------------------
 
 test.describe('[Live][Paywall] US-PW-002/003/006: Stripe one-time payment grants role + RBAC gate', () => {
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ page, demoLogger }) => {
     requireStripeOneTimePayment()
 
     await verifyTestEnvironment(page, {
@@ -337,21 +338,25 @@ test.describe('[Live][Paywall] US-PW-002/003/006: Stripe one-time payment grants
       secretKey: secrets.stripe.secretKey!,
       webhookSecret: secrets.stripe.webhookSecret!,
     })
+    demoLogger.testCode.log('[Live] ✓ Stripe config seeded + admin login')
   })
 
-  test.afterEach(async ({ page }) => {
+  test.afterEach(async ({ page, demoLogger }) => {
     // Best-effort credential cleanup; non-fatal.
     try {
       for (const key of ['publishable_key', 'api_key', 'webhook_secret']) {
         await page.request.delete(`${BASE_URL}/api/configs/${REALM_ID}/stripe/${key}`)
       }
+      demoLogger.testCode.log('[Live] ✓ Stripe config cleanup complete')
     } catch (error) {
+      demoLogger.testCode.log(`[Live] ✗ Stripe config cleanup error: ${error}`)
       console.error('[cleanup] Stripe config cleanup error (non-fatal):', error)
     }
   })
 
   test('US-PW-002 + US-PW-003 场景1 + US-PW-006 场景1: 真实 Stripe 支付授 role，第三方 RBAC 放行', async ({
     page,
+    demoLogger,
   }) => {
     let mappingId = ''
     let attemptId = ''
@@ -458,7 +463,7 @@ test.describe('[Live][Paywall] US-PW-002/003/006: Stripe one-time payment grants
       await submitButton.scrollIntoViewIfNeeded()
       await submitButton.click()
       await page.waitForTimeout(5000)
-      console.log('[US-PW-003 live] one-time payment submitted')
+      demoLogger.testCode.log('[Live] ✓ one-time payment submitted')
     })
 
     await test.step('Then: 等待支付成功（webhook 驱动履约，授 role）', async () => {
@@ -490,6 +495,7 @@ test.describe('[Live][Paywall] US-PW-002/003/006: Stripe one-time payment grants
         await new Promise((r) => setTimeout(r, 2000))
       }
       expect(status, `payment attempt must reach Succeeded (got ${status})`).toBe('Succeeded')
+      demoLogger.testCode.log('[Live] ✓ payment attempt reached Succeeded (role fulfillment done)')
     })
 
     await test.step('And: 第三方 RBAC /permission/check 放行（US-PW-006 场景1，source-agnostic）', async () => {
@@ -517,7 +523,7 @@ test.describe('[Live][Paywall] US-PW-002/003/006: Stripe one-time payment grants
         'third-party RBAC must allow the buyer after the real Stripe payment ' +
           '(US-PW-003 grant + US-PW-006 gate)',
       ).toBe(true)
-      console.log('[US-PW-003 live] RBAC allowed AFTER purchase: true (role granted by payment)')
+      demoLogger.testCode.log('[Live] ✓ RBAC allowed AFTER purchase (role granted by payment)')
     })
   })
 })

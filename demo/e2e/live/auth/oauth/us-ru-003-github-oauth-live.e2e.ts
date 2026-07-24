@@ -68,7 +68,7 @@
  * =============================================================================
  */
 
-import { test, expect } from '@playwright/test'
+import { test, expect } from '../../../fixtures/demo-auth.fixtures'
 import { secrets, hasGitHubOAuth } from '../../../secrets/env'
 import { seedOAuthConfig } from '../../../secrets/realm-seed'
 import { loginAsAdmin, logout } from '../../../helpers/auth'
@@ -77,7 +77,7 @@ const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
 const REALM_ID = 'admin'
 
 test.describe('[Live][Auth OAuth] US-RU-003: GitHub OAuth login', () => {
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ page, demoLogger }) => {
     test.skip(!hasGitHubOAuth(), 'GitHub OAuth credentials not configured in .env.demo')
     test.skip(!process.env.HEADED, 'Live OAuth tests require headed mode (set HEADED=1)')
 
@@ -91,14 +91,14 @@ test.describe('[Live][Auth OAuth] US-RU-003: GitHub OAuth login', () => {
         scopes: ['user:email'],
         enabled: true,
       })
-      console.log('[setup] GitHub OAuth config seeded')
+      demoLogger.testCode.log('[Live] ✓ GitHub OAuth config seeded')
 
       // Logout so the OAuth flow starts from the login page
       await logout(page)
     })
   })
 
-  test.afterEach(async ({ page }) => {
+  test.afterEach(async ({ page, demoLogger }) => {
     // Cleanup: delete the GitHub OAuth config
     try {
       await loginAsAdmin(page, { realmId: REALM_ID })
@@ -106,16 +106,17 @@ test.describe('[Live][Auth OAuth] US-RU-003: GitHub OAuth login', () => {
         `${BASE_URL}/api/oauth/${REALM_ID}/configs/github`,
       )
       if (response.ok()) {
-        console.log('[cleanup] GitHub OAuth config deleted')
+        demoLogger.testCode.log('[Live] ✓ GitHub OAuth config deleted')
       } else {
-        console.log(`[cleanup] GitHub OAuth config delete returned ${response.status()}`)
+        demoLogger.testCode.log(`[Live] ✗ GitHub OAuth config delete returned ${response.status()}`)
       }
     } catch (error) {
+      demoLogger.testCode.log(`[Live] ✗ failed to clean up GitHub OAuth config: ${error}`)
       console.error('[cleanup] Failed to clean up GitHub OAuth config:', error)
     }
   })
 
-  test('US-RU-003 Scenario 2: GitHub login succeeds with manual authorization', async ({ page }) => {
+  test('US-RU-003 Scenario 2: GitHub login succeeds with manual authorization', async ({ page, demoLogger }) => {
     // Step 2: Navigate to login page and verify GitHub button exists
     await test.step('Given the login page with GitHub OAuth enabled', async () => {
       await page.goto(`${BASE_URL}/${REALM_ID}/auth/login`, {
@@ -125,7 +126,7 @@ test.describe('[Live][Auth OAuth] US-RU-003: GitHub OAuth login', () => {
 
       const githubButton = page.getByTestId('oauth-login-button-github')
       await expect(githubButton).toBeVisible({ timeout: 10000 })
-      console.log('[step-2] GitHub OAuth button is visible on login page')
+      demoLogger.testCode.log('[Live] ✓ GitHub OAuth button is visible on login page')
     })
 
     // Step 3: Click GitHub button, validate redirect URL, then pause for manual login
@@ -199,7 +200,7 @@ test.describe('[Live][Auth OAuth] US-RU-003: GitHub OAuth login', () => {
       )
 
       if (hasAuthCookie) {
-        console.log('[step-4] Auth cookie found - OAuth login successful')
+        demoLogger.testCode.log('[Live] ✓ Auth cookie found - OAuth login successful')
       } else {
         // Check localStorage as fallback
         const hasLocalToken = await page.evaluate(() => {
@@ -210,10 +211,10 @@ test.describe('[Live][Auth OAuth] US-RU-003: GitHub OAuth login', () => {
           )
         })
         expect(hasLocalToken).toBeTruthy()
-        console.log('[step-4] Auth token in localStorage - OAuth login successful')
+        demoLogger.testCode.log('[Live] ✓ Auth token in localStorage - OAuth login successful')
       }
 
-      console.log('[step-4] Full GitHub OAuth flow completed successfully')
+      demoLogger.testCode.log('[Live] ✓ Full GitHub OAuth flow completed successfully')
     })
   })
 })

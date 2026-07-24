@@ -538,7 +538,10 @@ function PriceEditRow({
           className="sm:col-span-2"
           data-testid={`price-granted-roles-${price.externalPriceId ?? price.id}`}
         >
-          <Field label={m['billing.label_granted_roles']()}>
+          <Field
+            label={m['billing.label_granted_roles']()}
+            hint={m['billing.help_granted_roles_hint']()}
+          >
             <RoleSelector
               roles={assignableRoles}
               selectedRoleIds={row.grantedRoleIds ?? []}
@@ -627,7 +630,10 @@ function PriceEditRow({
             )}
 
             {!isOneTime && (
-              <Field label={m['billing.field_grant_on_subscribe']()}>
+              <Field
+                label={m['billing.field_grant_on_subscribe']()}
+                hint={m['billing.help_grant_on_subscribe']()}
+              >
                 <div className="flex items-center gap-2">
                   <Switch
                     checked={row.grantOnSubscribe ?? false}

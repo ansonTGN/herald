@@ -73,6 +73,7 @@ pub struct EnableTotpResponse {
         (status = 400, description = "Bad request", body = ErrorResponse),
         (status = 401, description = "Unauthorized", body = ErrorResponse),
         (status = 403, description = "TOTP already enabled", body = ErrorResponse),
+        (status = 404, description = "TOTP is not enabled for this realm", body = ErrorResponse),
     ),
     security(("bearer_auth" = []))
 )]
@@ -93,7 +94,7 @@ pub async fn handle_enable_totp(
     let realm_repo = PostgresRealmTotpConfigRepository::new(state.db.clone());
     let realm_config = realm_repo.get_realm_totp_config(&user.realm_id).await?;
     if !realm_config.map(|config| config.enabled).unwrap_or(false) {
-        return Err(ApiError::forbidden(
+        return Err(ApiError::not_found(
             "TOTP is not enabled for this realm".to_string(),
         ));
     }

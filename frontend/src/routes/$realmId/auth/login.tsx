@@ -8,6 +8,7 @@ import type {
   LegalAgreementSummary,
   AuthConsentAgreement,
   BrowserTokenResponse,
+  OneTapDirectResponse,
 } from '@/lib/api-generated'
 import { loginSchema } from '@/lib/schemas/common'
 import { loginSearchSchema, type LoginSearchParams } from '@/lib/schemas/search-params'
@@ -17,6 +18,7 @@ import {
   completeLoginAfterTotp,
   completeLoginAfterPasskey,
   completeLoginAfterEmailOtp,
+  completeLoginAfterOneTap,
   isConsentRequired,
   getSafeRedirect,
   checkAdminPermission,
@@ -33,6 +35,7 @@ import { TotpVerificationForm } from '@/components/auth/totp-verification-form'
 import { PasskeyLoginForm } from '@/components/auth/passkey-login-form'
 import { Passkey2FaForm } from '@/components/auth/passkey-2fa-form'
 import { EmailOtpLoginForm } from '@/components/auth/email-otp-login-form'
+import { OneTapLogin } from '@/components/auth/one-tap-login'
 import { TurnstileWidget } from '@/components/auth/turnstile-widget'
 import {
   publicConfigQueryOptions,
@@ -119,6 +122,12 @@ export function LoginPage() {
   // Defaults to true (WebAuthn-capable) and is flipped to false when the
   // begin-options call 404s or the browser is unsupported, hiding the entry.
   const [passkeyAvailable, setPasskeyAvailable] = useState(true)
+  // Google One Tap entry visibility. Defaults to true and is flipped to false
+  // when the GIS script fails to load or `window.google` is absent, hiding the
+  // entry without affecting the password/OAuth options. Separate from
+  // `googleProvider` (which gates on realm config) so a load failure still
+  // degrades gracefully even when the realm has Google enabled.
+  const [oneTapAvailable, setOneTapAvailable] = useState(true)
   // Email-OTP mode toggle. `false` (default) shows the password form; `true`
   // swaps the card body for `EmailOtpLoginForm`. The toggle is only rendered
   // when the public OTP-status query reports `enabled` (design §4.4.1), so the
@@ -147,6 +156,15 @@ export function LoginPage() {
   const isRegistrationAllowed = publicConfig?.registration?.enabled === true
 
   const { oauthParams, hasPartialOAuth } = validateOAuthParams(search)
+
+  // Google One Tap is offered only when the realm has the Google provider
+  // enabled with a client_id exposed via publicConfig (the GIS init client_id),
+  // AND this is not a third-party OAuth downstream login (oauthParams present).
+  // In the downstream case the One Tap direct-session mode would mint a
+  // first-party token, conflicting with the Code+PKCE grant the third party is
+  // waiting on — that path is covered by the redirect OAuth buttons with state.
+  const googleProvider = oauthProviders.find((p) => p.name === 'google' && p.enabled && p.clientId)
+  const oneTapEligible = Boolean(googleProvider?.clientId) && !oauthParams
 
   const loginMutation = useMutation({
     mutationFn: async (values: {
@@ -362,6 +380,26 @@ export function LoginPage() {
     toast.success(m['auth.login.login_successful']())
 
     const { redirectPath } = await completeLoginAfterEmailOtp(
+      realmId,
+      tokenResponse,
+      resolvedClientId
+    )
+
+    await navigateAfterLoginSuccess(redirectPath)
+  }
+
+  /**
+   * Completion handler for a Google One Tap login. Mirrors
+   * `handleEmailOtpSuccess`: the One Tap direct-session endpoint returns a
+   * flattened `BrowserTokenSet` (`OneTapDirectResponse`) with no PKCE /
+   * `redirectTo` branch, so only the safe-internal-redirect path applies. The
+   * route owns token storage (`completeLoginAfterOneTap`) + navigation; the
+   * `OneTapLogin` component handed up the raw response via its `onSuccess` prop.
+   */
+  async function handleOneTapSuccess(tokenResponse: OneTapDirectResponse): Promise<void> {
+    toast.success(m['auth.login.login_successful']())
+
+    const { redirectPath } = await completeLoginAfterOneTap(
       realmId,
       tokenResponse,
       resolvedClientId
@@ -647,6 +685,24 @@ export function LoginPage() {
                     }
                     onSuccess={handlePasskeySuccess}
                     onUnavailable={() => setPasskeyAvailable(false)}
+                  />
+                </div>
+              )}
+
+              {/* Google One Tap prompt entry (design §4.4.3). Only offered
+              when the realm has Google enabled with a client_id and this is
+              not a third-party OAuth downstream login. The GIS prompt overlay
+              is rendered/positioned by Google; the component emits only an
+              anchor. On script-load failure or `window.google` absence it
+              calls onUnavailable and is hidden without affecting other
+              entries (PRD §7 silent degradation). */}
+              {oneTapEligible && oneTapAvailable && (
+                <div className="mt-4">
+                  <OneTapLogin
+                    realmId={realmId}
+                    googleClientId={googleProvider!.clientId!}
+                    onSuccess={handleOneTapSuccess}
+                    onUnavailable={() => setOneTapAvailable(false)}
                   />
                 </div>
               )}

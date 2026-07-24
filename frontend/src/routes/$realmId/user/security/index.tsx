@@ -32,13 +32,13 @@ export function ProfileSecurity() {
   // Toggles the inline passkey registration form within the passkey tab.
   const [passkeyRegistering, setPasskeyRegistering] = useState(false)
 
-  // Whether Passkey is enabled for this realm. The passkey tab is hidden when
-  // the realm has Passkey disabled, so users never see an empty list / "add"
-  // affordance for a feature the realm turned off. Existing passkey holders in
-  // a disabled realm can still log in (the login page gates separately); this
-  // only controls the self-service management tab.
+  // Whether Passkey/TOTP are enabled for this realm. Each feature's tab is
+  // hidden when the realm has it disabled, so users never see setup/management
+  // affordances (or a misleading "X is not enabled for this realm" error after
+  // entering a password) for a feature the realm turned off.
   const { data: userFeatureAvailability } = useQuery(userFeatureAvailabilityQueryOptions)
   const passkeyEnabled = userFeatureAvailability?.user.passkeyEnabled ?? false
+  const totpEnabled = userFeatureAvailability?.user.totpEnabled ?? false
 
   const handleDialogClose = () => setTotpDialog(null)
 
@@ -51,9 +51,11 @@ export function ProfileSecurity() {
           <TabsTrigger value="password" data-testid="password-tab">
             {m['profile.password_tab']()}
           </TabsTrigger>
-          <TabsTrigger value="totp" data-testid="totp-tab">
-            {m['profile.totp_tab']()}
-          </TabsTrigger>
+          {totpEnabled && (
+            <TabsTrigger value="totp" data-testid="totp-tab">
+              {m['profile.totp_tab']()}
+            </TabsTrigger>
+          )}
           {passkeyEnabled && (
             <TabsTrigger value="passkey" data-testid="passkey-tab">
               {m['profile.passkey_tab']()}
@@ -63,13 +65,17 @@ export function ProfileSecurity() {
         <TabsContent value="password" data-testid="password-section-title">
           <ChangePasswordForm />
         </TabsContent>
-        <TabsContent value="totp" data-testid="totp-section-title">
-          <TotpStatusCard
-            onEnable={() => navigate({ to: realmPath(realmContext, '/user/security/totp-setup') })}
-            onDisable={() => setTotpDialog('disable')}
-            onRegenerate={() => setTotpDialog('regenerate')}
-          />
-        </TabsContent>
+        {totpEnabled && (
+          <TabsContent value="totp" data-testid="totp-section-title">
+            <TotpStatusCard
+              onEnable={() =>
+                navigate({ to: realmPath(realmContext, '/user/security/totp-setup') })
+              }
+              onDisable={() => setTotpDialog('disable')}
+              onRegenerate={() => setTotpDialog('regenerate')}
+            />
+          </TabsContent>
+        )}
         {passkeyEnabled && (
           <TabsContent value="passkey" data-testid="passkey-section-title">
             {passkeyRegistering ? (

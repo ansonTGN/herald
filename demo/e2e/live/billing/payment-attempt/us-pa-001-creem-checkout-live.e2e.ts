@@ -43,7 +43,8 @@
  * Fails loud when credentials are absent.
  */
 
-import { test, expect, type Locator, type Page } from '@playwright/test'
+import { type Locator, type Page } from '@playwright/test'
+import { test, expect } from '../../../fixtures/demo-auth.fixtures'
 import { secrets, requireCreemPayment } from '../../../secrets/env'
 import { seedCreemConfig } from '../../../secrets/realm-seed'
 import { loginAsAdmin } from '../../../helpers/auth'
@@ -374,7 +375,7 @@ async function waitForNewCreemInvoice(
 
 test.describe('[Live][Billing Payment Attempt] US-PA-001: Creem checkout payment attempt', () => {
 
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ page, demoLogger }) => {
     requireCreemPayment()
 
     await verifyTestEnvironment(page, {
@@ -388,6 +389,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Creem checkout payment
       apiKey: secrets.creem.apiKey!,
       webhookSecret: secrets.creem.webhookSecret!,
     })
+    demoLogger.testCode.log('[Live] ✓ Creem config seeded + admin login')
 
     // Cleanup stale entitlement mappings from previous runs
     try {
@@ -415,20 +417,21 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Creem checkout payment
     }
   })
 
-  test.afterEach(async ({ page }) => {
+  test.afterEach(async ({ page, demoLogger }) => {
     try {
       for (const key of ['api_key', 'webhook_secret']) {
         const resp = await page.request.delete(
           `${BASE_URL}/api/configs/${REALM_ID}/creem/${key}`,
         )
-        console.log(`[cleanup] Creem ${key} delete: ${resp.status()}`)
+        demoLogger.testCode.log(`[Live] ✓ Creem ${key} cleanup delete: ${resp.status()}`)
       }
     } catch (error) {
+      demoLogger.testCode.log(`[Live] ✗ Creem config cleanup error: ${error}`)
       console.error('[cleanup] Error during Creem config cleanup:', error)
     }
   })
 
-  test('US-PA-001 Setup: Creem credentials are configured and entitlement mapping synced', async ({ page }) => {
+  test('US-PA-001 Setup: Creem credentials are configured and entitlement mapping synced', async ({ page, demoLogger }) => {
     await test.step('Given Creem config is seeded', async () => {
       const providersResponse = await page.request.get(
         `${BASE_URL}/api/third/pay/${REALM_ID}/providers`,
@@ -492,7 +495,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Creem checkout payment
     })
   })
 
-  test('US-PA-001 Scenario 5: Creem checkout payment attempt succeeds', async ({ page }) => {
+  test('US-PA-001 Scenario 5: Creem checkout payment attempt succeeds', async ({ page, demoLogger }) => {
     let clientAppId: string
     let attemptId: string
     let checkoutUrl: string
@@ -575,7 +578,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Creem checkout payment
       await page.screenshot({ path: 'test-results/creem-checkout-page.png' })
 
       await completeCreemCheckout(page, { fullName: 'Herald Demo User' })
-      console.log('[live] Payment submitted, redirected to success page')
+      demoLogger.testCode.log('[Live] ✓ payment submitted, redirected to success page')
     })
 
     await test.step('And wait for redirect and fulfill payment', async () => {
@@ -617,7 +620,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Creem checkout payment
         )
 
         await page.screenshot({ path: `test-results/creem-checkout-result-${finalStatus}.png` })
-        console.log(`[live] Final payment status: ${finalStatus}`)
+        demoLogger.testCode.log(`[Live] ✓ final payment status: ${finalStatus}`)
         expect(finalStatus).not.toBe('Pending')
       } else {
         console.log('[live] No payment attempt found to fulfill — payment may have been processed via webhook')
@@ -625,7 +628,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Creem checkout payment
     })
   })
 
-  test('US-PA-001 Scenario 6: Full subscription lifecycle — subscribe, verify credits, cancel, verify credit change', async ({ page }) => {
+  test('US-PA-001 Scenario 6: Full subscription lifecycle — subscribe, verify credits, cancel, verify credit change', async ({ page, demoLogger }) => {
     let clientAppId: string
     let attemptId: string
     let checkoutUrl: string
@@ -710,7 +713,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Creem checkout payment
       await page.screenshot({ path: 'test-results/creem-s6-checkout-page.png' })
 
       await completeCreemCheckout(page, { fullName: 'Herald Demo User' })
-      console.log('[live-s6] Payment submitted, redirected to success page')
+      demoLogger.testCode.log('[Live] ✓ (s6) payment submitted, redirected to success page')
     })
 
     await test.step('And waiting for redirect and fulfilling payment', async () => {
@@ -843,7 +846,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Creem checkout payment
     })
   })
 
-  test('US-PA-001 Scenario 7: Creem checkout creates external invoice with correct fields', async ({ page }) => {
+  test('US-PA-001 Scenario 7: Creem checkout creates external invoice with correct fields', async ({ page, demoLogger }) => {
     let clientAppId: string
     let attemptId: string
     let checkoutUrl: string
@@ -926,7 +929,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Creem checkout payment
       // confirms the payment server-side, which is also when the real
       // checkout.completed webhook fires and creates the invoice.
       await completeCreemCheckout(page, { fullName: 'Herald Demo User' })
-      console.log('[live-s7] Checkout completed, redirected to success page')
+      demoLogger.testCode.log('[Live] ✓ (s7) checkout completed, redirected to success page')
     })
 
     await test.step('And fulfill payment and verify success', async () => {
@@ -969,6 +972,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Creem checkout payment
       expect(invoice.external_invoice_id, 'Expected external_invoice_id to be a non-empty string').toBeTruthy()
       expect(invoice.status, `Expected status 'paid', got '${invoice.status}'`).toBe('paid')
       expect(invoice.total, 'Expected total > 0').toBeGreaterThan(0)
+      demoLogger.testCode.log('[Live] ✓ (s7) Creem external invoice fields verified (provider/id/status/total)')
       // Creem may or may not provide hosted/pdf URLs — check they exist in the response
       if (invoice.external_hosted_url) {
         expect(invoice.external_hosted_url).toBeTruthy()

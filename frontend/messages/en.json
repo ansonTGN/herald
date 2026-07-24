@@ -96,7 +96,7 @@
     "logout_button": "Log out"
   },
   "pagination": {
-    "showing": "Showing {from} to {to} of {total} results"
+    "showing": "{from}-{to} of {total}"
   },
   "shared": {
     "builtin": "Built-in",
@@ -146,7 +146,8 @@
       "passkey_verification_failed": "Passkey verification failed",
       "passkey_unsupported": "Your browser does not support passkeys.",
       "passkey_2fa_title": "Passkey Verification",
-      "passkey_2fa_description": "Use a passkey to complete sign-in."
+      "passkey_2fa_description": "Use a passkey to complete sign-in.",
+      "one_tap_failed": "Google sign-in failed"
     },
     "register": {
       "title": "Create an Account",
@@ -685,8 +686,7 @@
     "all": "All",
     "wait_verified": "Wait Verified",
     "normal": "Normal",
-    "forbidden": "Forbidden",
-    "invalid": "Invalid"
+    "forbidden": "Forbidden"
   },
   "client_apps": {
     "page_title": "Client Apps",
@@ -1528,7 +1528,6 @@
     "purchase_records_page_title": "Purchase Records",
     "purchase_records_history_title": "Purchase History",
     "subscription_history_events": "History Events",
-    "subscription_history_loading_page": "Loading subscription history...",
     "subscription_history_failed_load": "Failed to load subscription history: {error}",
     "subscription_detail_history_title": "Subscription History",
     "subscription_current_status": "Current Subscription Status",
@@ -1674,6 +1673,8 @@
     "billing_period_year": "Year",
     "label_granted_roles": "Granted Roles",
     "help_granted_roles": "Select roles to grant on successful payment",
+    "help_granted_roles_hint": "Granted to the buyer on every successful payment (one-time and recurring), independent of \"Grant on subscribe\".",
+    "help_grant_on_subscribe": "When on, points are credited immediately on subscribe; off = points granted lazily per renewal. Does not affect role grants.",
     "role_not_in_realm_error": "One or more selected roles do not belong to this realm. Choose roles from this realm and try again."
   },
   "purchase": {

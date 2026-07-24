@@ -59,7 +59,7 @@
 - 会话元数据（设备/IP）以独立的会话元数据索引形式存放，不写入浏览器令牌族记录本体；具体索引结构归属技术设计
 - 用户管理后台与既有 `users.*` 权限模型（见 [权限管理](../auth/permissions.md)、[用户管理](users.md)）
 - 审计日志系统与既有 `AuditTargetType::Session` 目标类型
-- 用户状态枚举（`WaitVerified / Normal / Forbidden / Invalid / Deleted`）与用户编辑流程
+- 用户状态枚举（`WaitVerified / Normal / Forbidden / Deleted`）与用户编辑流程
 
 ---
 

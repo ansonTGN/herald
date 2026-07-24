@@ -70,7 +70,7 @@
  *     disambiguation is the WHY this test exists.
  */
 
-import { test, expect } from '../../../fixtures/demo-page.fixtures'
+import { test, expect } from '../../../fixtures/demo-auth.fixtures'
 import { secrets, requireStripePayment } from '../../../secrets/env'
 import { seedStripeConfig } from '../../../secrets/realm-seed'
 import { loginAsAdmin } from '../../../helpers/auth'
@@ -185,8 +185,8 @@ test.describe('[Live][Billing Multiple-Price] US-EM-009 / US-EM-008 multi-price 
       expect(monthlyRow, 'synced monthly price-level mapping row not found').toBeTruthy()
       annualMappingId = annualRow!.id
       monthlyMappingId = monthlyRow!.id
-      console.log(
-        `[live] synced annual mapping=${annualMappingId}, monthly mapping=${monthlyMappingId}`,
+      demoLogger.testCode.log(
+        `[Live] ✓ synced annual mapping=${annualMappingId}, monthly mapping=${monthlyMappingId}`,
       )
     })
 
@@ -306,7 +306,7 @@ test.describe('[Live][Billing Multiple-Price] US-EM-009 / US-EM-008 multi-price 
       // token. We match it directly rather than reconstructing.
       const match = /(cs_(?:live|test)_[A-Za-z0-9]+)/.exec(checkoutUrl!)
       checkoutSessionId = match ? match[1] : null
-      console.log(`[live] checkoutUrl=${checkoutUrl}`)
+      demoLogger.testCode.log(`[Live] ✓ checkoutUrl resolved, sessionId=${checkoutSessionId ?? '(unparsed)'}`)
     })
 
     await test.step('And the Stripe checkout session references the REAL annual price (line_items[0][price])', async () => {
@@ -355,8 +355,8 @@ test.describe('[Live][Billing Multiple-Price] US-EM-009 / US-EM-008 multi-price 
       expect(lineItemPriceId, 'expected line_items[0].price.id to equal the annual price id').toBe(
         annualPriceId,
       )
-      console.log(
-        `[live] line_items[0].price.id=${lineItemPriceId} (matches annual ${annualPriceId})`,
+      demoLogger.testCode.log(
+        `[Live] ✓ line_items[0].price.id=${lineItemPriceId} matches annual ${annualPriceId}`,
       )
     })
 

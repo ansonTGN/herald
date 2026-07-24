@@ -17,6 +17,7 @@ in the role or domain directories under `demo/e2e/`.
 | `billing/one-time-mapping-purchase/us-pu-006-creem-one-time-invoice-live.e2e.ts` | US-PU-006 | Partial: one-time Creem invoice verification only | Creem | No |
 | `billing/payment-invoice-mapping/us-pm-002-creem-renewal-tran-stability-live.e2e.ts` | US-PM-001, US-PM-002 | Partial: Creem renewal tran_ existence + renewal attempt provider_reference smoke only | Creem | Yes |
 | `billing/one-time-mapping-purchase/us-pw-003-stripe-paywall-grant-live.e2e.ts` | US-PW-002, US-PW-003 (场景1), US-PW-006 (场景1) | Partial: real Stripe one-time checkout → role grant (source=payment) + third-party RBAC gate | Stripe | No |
+| `core/us-ra-013-qq-smtp-live.e2e.ts` | US-RA-013 (场景2), US-RA-014 (场景1) | Partial: QQ SMTP config saved + test email sent via API | QQ Mail SMTP | No |
 
 ## Rules
 

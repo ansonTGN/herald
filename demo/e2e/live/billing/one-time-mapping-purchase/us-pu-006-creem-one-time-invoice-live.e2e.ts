@@ -23,7 +23,8 @@
  *   - Entitlement Key: herald-live-creem-onetime-entitlement
  */
 
-import { test, expect, type Frame, type Locator, type Page } from '@playwright/test'
+import { type Frame, type Locator, type Page } from '@playwright/test'
+import { test, expect } from '../../../fixtures/demo-auth.fixtures'
 import { secrets, requireCreemOneTimePayment } from '../../../secrets/env'
 import { seedCreemConfig } from '../../../secrets/realm-seed'
 import { loginAsAdmin } from '../../../helpers/auth'
@@ -445,7 +446,7 @@ async function waitForCreemInvoice(
 
 test.describe('[Live][Billing One-Time Mapping] US-PU-006: Creem one-time invoice verification', () => {
 
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ page, demoLogger }) => {
     requireCreemOneTimePayment()
 
     await verifyTestEnvironment(page, {
@@ -459,6 +460,7 @@ test.describe('[Live][Billing One-Time Mapping] US-PU-006: Creem one-time invoic
       apiKey: secrets.creem.apiKey!,
       webhookSecret: secrets.creem.webhookSecret!,
     })
+    demoLogger.testCode.log('[Live] ✓ Creem config seeded + admin login')
 
     // Cleanup stale entitlement mappings from previous runs
     try {
@@ -485,20 +487,21 @@ test.describe('[Live][Billing One-Time Mapping] US-PU-006: Creem one-time invoic
     }
   })
 
-  test.afterEach(async ({ page }) => {
+  test.afterEach(async ({ page, demoLogger }) => {
     try {
       for (const key of ['api_key', 'webhook_secret']) {
         const resp = await page.request.delete(
           `${BASE_URL}/api/configs/${REALM_ID}/creem/${key}`,
         )
-        console.log(`[cleanup] Creem ${key} delete: ${resp.status()}`)
+        demoLogger.testCode.log(`[Live] ✓ Creem ${key} cleanup delete: ${resp.status()}`)
       }
     } catch (error) {
+      demoLogger.testCode.log(`[Live] ✗ Creem config cleanup error: ${error}`)
       console.error('[cleanup] Error during Creem config cleanup:', error)
     }
   })
 
-  test('US-PU-006 Scenario 7: Creem one-time checkout creates external invoice with correct fields', async ({ page }) => {
+  test('US-PU-006 Scenario 7: Creem one-time checkout creates external invoice with correct fields', async ({ page, demoLogger }) => {
     let clientAppId: string
     let attemptId: string
     let mappingId: string
@@ -619,7 +622,7 @@ test.describe('[Live][Billing One-Time Mapping] US-PU-006: Creem one-time invoic
       await submitButton.click()
       await page.waitForTimeout(5000)
 
-      console.log('[live-s7] One-time payment submitted')
+      demoLogger.testCode.log('[Live] ✓ one-time payment submitted')
     })
 
     await test.step('And fulfill payment and verify success', async () => {
@@ -644,7 +647,7 @@ test.describe('[Live][Billing One-Time Mapping] US-PU-006: Creem one-time invoic
       if (attemptId) {
         const fulfillResult = await fulfillPayment(page.request, REALM_ID, attemptId)
         expect(fulfillResult.success, `Fulfillment failed: ${fulfillResult.error}`).toBeTruthy()
-        console.log(`[live-s7] Fulfillment result: ${JSON.stringify(fulfillResult)}`)
+        demoLogger.testCode.log(`[Live] ✓ fulfillment result: ${JSON.stringify(fulfillResult)}`)
 
         const finalStatus = await waitForPaymentStatus(
           page.request,
@@ -653,7 +656,7 @@ test.describe('[Live][Billing One-Time Mapping] US-PU-006: Creem one-time invoic
           'Succeeded',
           15000,
         )
-        console.log(`[live-s7] Payment status: ${finalStatus}`)
+        demoLogger.testCode.log(`[Live] ✓ payment status: ${finalStatus}`)
         expect(finalStatus).not.toBe('Pending')
       } else {
         console.log('[live-s7] No payment attempt found to fulfill -- payment may have been processed via webhook')
@@ -668,6 +671,7 @@ test.describe('[Live][Billing One-Time Mapping] US-PU-006: Creem one-time invoic
       expect(invoice.externalInvoiceId, 'Expected externalInvoiceId to be a non-empty string').toBeTruthy()
       expect(invoice.status, `Expected status 'paid', got '${invoice.status}'`).toBe('paid')
       expect(invoice.total, 'Expected total > 0').toBeGreaterThan(0)
+      demoLogger.testCode.log('[Live] ✓ Creem one-time invoice fields verified (provider/id/status/total)')
       // Creem may or may not provide hosted/pdf URLs
       if (invoice.externalHostedUrl) {
         expect(invoice.externalHostedUrl).toBeTruthy()

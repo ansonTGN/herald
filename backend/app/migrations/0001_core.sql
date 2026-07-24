@@ -40,7 +40,7 @@ CREATE INDEX idx_account_deleted_email_hash
     ON account (realm_id, deleted_original_email_hash)
     WHERE deleted_original_email_hash IS NOT NULL;
 COMMENT ON TABLE account IS 'User accounts for authentication';
-COMMENT ON COLUMN account.status IS '0: wait verified, 1: normal, 2: forbid, 3: invalid';
+COMMENT ON COLUMN account.status IS '0: wait verified, 1: normal, 2: forbid, 3: deleted';
 COMMENT ON COLUMN account.username IS 'Optional username for login, can be used instead of email';
 COMMENT ON COLUMN account.provider_ids IS 'Array of OAuth provider IDs linked to this account';
 COMMENT ON COLUMN account.deleted_original_email_hash IS 'One-way hash of original email retained after soft-delete for deleted-account detection';

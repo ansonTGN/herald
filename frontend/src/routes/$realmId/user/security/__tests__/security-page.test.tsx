@@ -65,9 +65,9 @@ vi.mock('@/lib/api-generated/sdk.gen', async (importOriginal) => {
 })
 
 // Stub the user feature-availability query so the page never issues a real
-// network call. Each test seeds its desired `passkeyEnabled` via the module
+// network call. Each test seeds its desired feature flags via the module
 // override below.
-let mockPasskeyEnabled = true
+let mockFeatureFlags = { passkeyEnabled: true, totpEnabled: true }
 vi.mock('@/data/query-options', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/data/query-options')>()
   return {
@@ -76,7 +76,7 @@ vi.mock('@/data/query-options', async (importOriginal) => {
       queryKey: ['user-feature-availability', 'test'],
       queryFn: async () => ({
         user: {
-          passkeyEnabled: mockPasskeyEnabled,
+          ...mockFeatureFlags,
           pointsVisible: false,
           subscriptionVisible: false,
           invoicesVisible: false,
@@ -98,10 +98,10 @@ function createTestQueryClient() {
   })
 }
 
-// `mockPasskeyEnabled` defaults to true to preserve the pre-existing
-// assertions that expect the passkey tab to be present.
-function renderSecurityPage(passkeyEnabled = true) {
-  mockPasskeyEnabled = passkeyEnabled
+// Feature flags default to enabled to preserve the pre-existing assertions
+// that expect the passkey/totp tabs to be present.
+function renderSecurityPage(flags: { passkeyEnabled?: boolean; totpEnabled?: boolean } = {}) {
+  mockFeatureFlags = { passkeyEnabled: true, totpEnabled: true, ...flags }
   const queryClient = createTestQueryClient()
   return render(
     <QueryClientProvider client={queryClient}>
@@ -129,16 +129,30 @@ describe('ProfileSecurity', () => {
   })
 
   it('GIVEN passkey enabled for realm THEN renders the passkey management UI', async () => {
-    renderSecurityPage(true)
+    renderSecurityPage({ passkeyEnabled: true })
 
     expect(await screen.findByTestId('passkey-list')).toBeInTheDocument()
   })
 
   it('GIVEN passkey disabled for realm THEN hides the passkey management UI', async () => {
-    renderSecurityPage(false)
+    renderSecurityPage({ passkeyEnabled: false })
     // Wait for the query to settle so the gating has applied.
     await screen.findByTestId('tabs')
 
     expect(screen.queryByTestId('passkey-list')).not.toBeInTheDocument()
+  })
+
+  it('GIVEN totp enabled for realm THEN renders the totp status card', async () => {
+    renderSecurityPage({ totpEnabled: true })
+
+    expect(await screen.findByTestId('totp-status-card')).toBeInTheDocument()
+  })
+
+  it('GIVEN totp disabled for realm THEN hides the totp status card', async () => {
+    renderSecurityPage({ totpEnabled: false })
+    // Wait for the query to settle so the gating has applied.
+    await screen.findByTestId('tabs')
+
+    expect(screen.queryByTestId('totp-status-card')).not.toBeInTheDocument()
   })
 })

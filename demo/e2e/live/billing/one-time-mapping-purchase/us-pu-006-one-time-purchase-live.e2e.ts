@@ -28,8 +28,8 @@
  *   - Backend and frontend running
  */
 
-import { test, expect, cleanupTestData } from '../../../fixtures/demo-page.fixtures'
-import { verifyTestEnvironment } from '../../../helpers/environment-setup'
+import { test, expect } from '../../../fixtures/demo-auth.fixtures'
+import { verifyTestEnvironment, cleanupDemoTestData } from '../../../helpers/environment-setup'
 import { loginWithCredentials } from '../../../helpers/auth'
 import { SELECTORS } from '../../../selectors'
 import {
@@ -45,7 +45,7 @@ const REALM_ID = TEST_DATA.REALMS.REALM_001
 const USER_EMAIL = TEST_DATA.USERS.USER_REALM_001
 
 test.describe('[Live][Billing One-Time Mapping] US-PU-006: One-Time Mapping Purchase Flow', () => {
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ page, demoLogger }) => {
     await verifyTestEnvironment(page, {
       requiredRealms: [REALM_ID],
       requiredUsers: [USER_EMAIL],
@@ -58,13 +58,15 @@ test.describe('[Live][Billing One-Time Mapping] US-PU-006: One-Time Mapping Purc
     })
 
     await page.waitForURL(`**/${REALM_ID}/user**`)
+    demoLogger.testCode.log(`[Live] ✓ logged in as ${USER_EMAIL} @ ${REALM_ID}`)
   })
 
-  test.afterEach(async ({ page, testStartTime }) => {
-    await cleanupTestData(page, REALM_ID, {
+  test.afterEach(async ({ page, testStartTime, demoLogger }) => {
+    await cleanupDemoTestData(page, REALM_ID, {
       keepUsers: [USER_EMAIL],
       timestamp: testStartTime,
     })
+    demoLogger.testCode.log('[Live] ✓ test data cleanup complete')
   })
 
   test('should initiate Stripe redirect payment when selecting mapping and Stripe provider (US-PU-006 S2)', async ({
@@ -103,6 +105,7 @@ test.describe('[Live][Billing One-Time Mapping] US-PU-006: One-Time Mapping Purc
     await test.step('Verify payment attempt ID persisted in localStorage', async () => {
       const attemptId = await extractPaymentAttemptId(page)
       expect(attemptId).toBeTruthy()
+      demoLogger.testCode.log(`[Live] ✓ Stripe redirect attempt persisted: ${attemptId}`)
     })
   })
 
@@ -141,6 +144,7 @@ test.describe('[Live][Billing One-Time Mapping] US-PU-006: One-Time Mapping Purc
     await test.step('Verify payment attempt ID persisted in localStorage', async () => {
       const attemptId = await extractPaymentAttemptId(page)
       expect(attemptId).toBeTruthy()
+      demoLogger.testCode.log(`[Live] ✓ Creem redirect attempt persisted: ${attemptId}`)
     })
   })
 
@@ -185,6 +189,7 @@ test.describe('[Live][Billing One-Time Mapping] US-PU-006: One-Time Mapping Purc
       })
 
       expect(attemptIdAfterRefresh).toBe(attemptIdBeforeRefresh)
+      demoLogger.testCode.log(`[Live] ✓ attempt id preserved across refresh: ${attemptIdAfterRefresh}`)
     })
   })
 })

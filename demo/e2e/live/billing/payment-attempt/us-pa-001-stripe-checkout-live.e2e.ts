@@ -49,7 +49,8 @@
  * Fails loud when credentials are absent.
  */
 
-import { test, expect, type Frame, type Locator, type Page } from '@playwright/test'
+import { type Frame, type Locator, type Page } from '@playwright/test'
+import { test, expect } from '../../../fixtures/demo-auth.fixtures'
 import { secrets, requireStripePayment } from '../../../secrets/env'
 import { seedStripeConfig } from '../../../secrets/realm-seed'
 import { loginAsAdmin } from '../../../helpers/auth'
@@ -282,7 +283,7 @@ async function waitForNewStripeInvoice(
 
 test.describe('[Live][Billing Payment Attempt] US-PA-001: Stripe checkout payment attempt', () => {
 
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ page, demoLogger }) => {
     requireStripePayment()
 
     await verifyTestEnvironment(page, {
@@ -297,6 +298,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Stripe checkout paymen
       secretKey: secrets.stripe.secretKey!,
       webhookSecret: secrets.stripe.webhookSecret!,
     })
+    demoLogger.testCode.log('[Live] ✓ Stripe config seeded + admin login')
 
     // Cleanup stale entitlement mappings from previous runs
     try {
@@ -323,20 +325,21 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Stripe checkout paymen
     }
   })
 
-  test.afterEach(async ({ page }) => {
+  test.afterEach(async ({ page, demoLogger }) => {
     try {
       for (const key of ['publishable_key', 'api_key', 'webhook_secret']) {
         const resp = await page.request.delete(
           `${BASE_URL}/api/configs/${REALM_ID}/stripe/${key}`,
         )
-        console.log(`[cleanup] Stripe ${key} delete: ${resp.status()}`)
+        demoLogger.testCode.log(`[Live] ✓ Stripe ${key} cleanup delete: ${resp.status()}`)
       }
     } catch (error) {
+      demoLogger.testCode.log(`[Live] ✗ Stripe config cleanup error: ${error}`)
       console.error('[cleanup] Error during Stripe config cleanup:', error)
     }
   })
 
-  test('US-PA-001 Setup: Stripe credentials are configured and entitlement mapping synced', async ({ page }) => {
+  test('US-PA-001 Setup: Stripe credentials are configured and entitlement mapping synced', async ({ page, demoLogger }) => {
     await test.step('Given Stripe config is seeded', async () => {
       const providersResponse = await page.request.get(
         `${BASE_URL}/api/third/pay/${REALM_ID}/providers`,
@@ -399,7 +402,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Stripe checkout paymen
     })
   })
 
-  test('US-PA-001 Scenario 5: Stripe checkout payment attempt succeeds', async ({ page }) => {
+  test('US-PA-001 Scenario 5: Stripe checkout payment attempt succeeds', async ({ page, demoLogger }) => {
     let clientAppId: string
     let attemptId: string
     let checkoutUrl: string
@@ -555,7 +558,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Stripe checkout paymen
         )
 
         await page.screenshot({ path: `test-results/stripe-checkout-result-${finalStatus}.png` })
-        console.log(`[live] Final payment status: ${finalStatus}`)
+        demoLogger.testCode.log(`[Live] ✓ final payment status: ${finalStatus}`)
         expect(finalStatus).not.toBe('Pending')
       } else {
         console.log('[live] No payment attempt found to fulfill — payment may have been processed via webhook')
@@ -563,7 +566,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Stripe checkout paymen
     })
   })
 
-  test('US-PA-001 Scenario 6: Full subscription lifecycle — subscribe, verify credits, cancel, verify credit change', async ({ page }) => {
+  test('US-PA-001 Scenario 6: Full subscription lifecycle — subscribe, verify credits, cancel, verify credit change', async ({ page, demoLogger }) => {
     let clientAppId: string
     let attemptId: string
     let checkoutUrl: string
@@ -745,7 +748,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Stripe checkout paymen
       ).toBeGreaterThanOrEqual(1000)
 
       await page.screenshot({ path: `test-results/stripe-s6-balance-after-subscribe.png` })
-      console.log(`[live-s6] Credit increase verified: +${balanceIncrease} points`)
+      demoLogger.testCode.log(`[Live] ✓ (s6) credit increase verified: +${balanceIncrease} points`)
     })
 
     await test.step('When canceling the subscription', async () => {
@@ -811,7 +814,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Stripe checkout paymen
     })
   })
 
-  test('US-PA-001 Scenario 7: Stripe checkout creates external invoice with correct fields', async ({ page }) => {
+  test('US-PA-001 Scenario 7: Stripe checkout creates external invoice with correct fields', async ({ page, demoLogger }) => {
     let clientAppId: string
     let attemptId: string
     let checkoutUrl: string
@@ -967,6 +970,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Stripe checkout paymen
       expect(invoice.currency, 'Expected currency to be a 3-letter code').toMatch(/^[a-z]{3}$/)
       expect(invoice.invoiceNumber, 'Expected invoiceNumber to be present').toBeTruthy()
       expect(invoice.amountRefunded, 'Expected amountRefunded to be 0 on a fresh paid invoice').toBe(0)
+      demoLogger.testCode.log('[Live] ✓ (s7) Stripe external invoice fields verified')
     })
 
     await test.step('And invoice detail endpoint returns full response', async () => {
@@ -1041,7 +1045,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Stripe checkout paymen
     })
   })
 
-  test('US-PA-001 Scenario 8: Stripe credit note syncs refund amount to invoice (US-IF-007)', async ({ page }) => {
+  test('US-PA-001 Scenario 8: Stripe credit note syncs refund amount to invoice (US-IF-007)', async ({ page, demoLogger }) => {
     // NOTE: This scenario depends on the Stripe `credit_note.created` webhook reaching Herald.
     // It requires an ngrok tunnel (or equivalent public endpoint) so Stripe can deliver the
     // callback; without it the refund totals never update and the test will time out.
@@ -1222,6 +1226,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Stripe checkout paymen
       expect(matched.status, 'Expected credit note status to be active').toBe('active')
       expect(matched.amount, 'Expected credit note amount to match').toBe(creditNoteAmount)
       expect(matched.externalCreditNoteId, 'Expected externalCreditNoteId to start with cn_').toMatch(/^cn_/)
+      demoLogger.testCode.log(`[Live] ✓ (s8) credit note synced (amountRefunded=${detail.amountRefunded})`)
     })
 
     await test.step('Cleanup: cancel subscription if created', async () => {

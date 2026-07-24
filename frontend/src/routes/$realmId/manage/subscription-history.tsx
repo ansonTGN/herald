@@ -88,21 +88,6 @@ export function SubscriptionHistoryRoute() {
     )
   }
 
-  if (isLoading) {
-    return (
-      <div className="space-y-6" data-testid="subscription-history-page">
-        <div className="flex items-center justify-center py-12" data-testid="page-loading">
-          <div className="text-center">
-            <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent" />
-            <p className="mt-4 text-muted-foreground">
-              {m['billing.subscription_history_loading_page']()}
-            </p>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="space-y-6" data-testid="subscription-history-page">
       <PageHeader title={m['billing.subscription_history_page_title']()} />

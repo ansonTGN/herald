@@ -17,14 +17,14 @@ export const createUserSchema = z.object({
   email: emailSchema,
   password: passwordSchema,
   nickname: z.string().min(2).max(50).optional(),
-  status: z.number().int().min(0).max(3).optional(),
+  status: z.number().int().min(0).max(2).optional(),
   roleIds: z.array(z.string()).min(1, { error: () => m['auth.role_required']() }),
 })
 
 export const updateUserSchema = z.object({
   email: emailSchema,
   nickname: z.string().min(2).max(50).optional(),
-  status: z.number().int().min(0).max(3).optional(),
+  status: z.number().int().min(0).max(2).optional(),
 })
 
 export const changePasswordSchema = z

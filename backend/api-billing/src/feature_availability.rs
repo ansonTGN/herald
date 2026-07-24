@@ -56,6 +56,9 @@ pub struct UserFeatureAvailability {
     /// the user security page (to gate the passkey tab) and the login page
     /// (to gate the passkey entry) before any passkey endpoint is called.
     pub passkey_enabled: bool,
+    /// Whether TOTP is enabled for this realm. Consumed by the user security
+    /// page to gate the TOTP tab before any TOTP endpoint is called.
+    pub totp_enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
@@ -126,6 +129,7 @@ pub async fn get_feature_availability(
     let user_points_visible = points_area_visible(&facts);
     let user_invoices_visible = facts.has_invoice_seller_config;
     let passkey_enabled = read_realm_passkey_enabled(&state, &realm_id).await;
+    let totp_enabled = read_realm_totp_enabled(&state, &realm_id).await;
 
     // Realm-level invoice eligibility: reuse the already-loaded seller-config
     // fact so we do not issue a second seller-config query here.
@@ -147,6 +151,7 @@ pub async fn get_feature_availability(
             subscription_visible: user_subscription_visible,
             invoices_visible: user_invoices_visible,
             passkey_enabled,
+            totp_enabled,
         },
         facts: FeatureAvailabilityFacts {
             has_payment_providers: facts.has_payment_providers,
@@ -181,6 +186,7 @@ pub async fn get_user_feature_availability(
     let realm_id = identity.realm_id();
     let facts = load_feature_facts(&state, &realm_id).await?;
     let passkey_enabled = read_realm_passkey_enabled(&state, &realm_id).await;
+    let totp_enabled = read_realm_totp_enabled(&state, &realm_id).await;
     let invoice_eligibility =
         evaluate_realm_invoice_eligibility(&state, &realm_id, facts.has_invoice_seller_config)
             .await?;
@@ -190,6 +196,7 @@ pub async fn get_user_feature_availability(
             subscription_visible: facts.has_enabled_mappings,
             invoices_visible: facts.has_invoice_seller_config,
             passkey_enabled,
+            totp_enabled,
         },
         invoice_eligibility,
     }))
@@ -286,6 +293,36 @@ async fn read_realm_passkey_enabled(state: &AppState, realm_id: &str) -> bool {
         Ok(None) => false,
         Err(e) => {
             tracing::warn!(realm_id = %realm_id, error = %e, "Failed to read passkey realm config");
+            false
+        }
+    }
+}
+
+/// Read the realm's TOTP `enabled` flag from `realm_config`
+/// (`config_type='totp'`, `config_key='settings'`).
+///
+/// Mirrors the gating logic in `handle_enable_totp` (api-auth) and
+/// `read_realm_passkey_enabled` above. Returns `false` when the config row is
+/// absent or its inner `enabled` flag is missing/false. This is the single
+/// user-visible signal the frontend uses to gate the TOTP tab without relying
+/// on a 404 from a TOTP endpoint.
+async fn read_realm_totp_enabled(state: &AppState, realm_id: &str) -> bool {
+    let row = sqlx::query_as::<_, (String,)>(
+        "SELECT config_value FROM realm_config
+         WHERE realm_id = $1 AND config_type = $2 AND config_key = 'settings' AND enabled = true",
+    )
+    .bind(realm_id)
+    .bind(ConfigType::Totp.as_ref())
+    .fetch_optional(&state.pool)
+    .await;
+    match row {
+        Ok(Some((value,))) => serde_json::from_str::<serde_json::Value>(&value)
+            .ok()
+            .and_then(|v| v.get("enabled").and_then(|e| e.as_bool()))
+            .unwrap_or(false),
+        Ok(None) => false,
+        Err(e) => {
+            tracing::warn!(realm_id = %realm_id, error = %e, "Failed to read totp realm config");
             false
         }
     }

@@ -6,9 +6,11 @@
 use axum::{
     Json,
     extract::{Path, State},
+    http::HeaderMap,
 };
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use herald_api_base::application::http::auth::util::{ClientIp, user_agent_from_headers};
 use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::BrowserTokenService;
@@ -86,15 +88,20 @@ fn verify_pkce(code_verifier: &str, code_challenge: &str) -> bool {
 #[tracing::instrument(
     // Governance: req carries authorization code, PKCE
     // code_verifier, client_id — all credentials/secrets. state holds handles;
-    // realm_id conservatively skipped. Only http.route is recorded.
-    skip(state, req),
+    // realm_id conservatively skipped; headers carries User-Agent/cookies, ip
+    // may be PII. Only http.route is recorded.
+    skip(state, req, headers, ip),
     fields(http.route = "/api/oauth/{realmId}/token")
 )]
 pub async fn oauth_token(
     Path(realm_id): Path<String>,
     State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
+    headers: HeaderMap,
     Json(req): Json<TokenRequest>,
 ) -> Result<Json<TokenResponse>, ApiError> {
+    let user_agent = user_agent_from_headers(&headers);
+
     if req.grant_type != "authorization_code" {
         return Err(ApiError::bad_request(
             "grant_type must be 'authorization_code'",
@@ -172,11 +179,16 @@ pub async fn oauth_token(
     let token_service = RedisBrowserTokenService::new(state.redis_manager.clone());
     let tokens = if client_app.is_first_party {
         token_service
-            .create_first_party_token_family(&user, &client_app, None, None)
+            .create_first_party_token_family(
+                &user,
+                &client_app,
+                user_agent.clone(),
+                Some(ip.clone()),
+            )
             .await
     } else {
         token_service
-            .create_token_family(&user, &client_app, None, None)
+            .create_token_family(&user, &client_app, user_agent.clone(), Some(ip.clone()))
             .await
     }
     .map_err(|error| {

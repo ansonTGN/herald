@@ -442,7 +442,7 @@ where
         code: &str,
         new_password: String,
         realm_id: &str,
-    ) -> Result<(), CoreError> {
+    ) -> Result<Uuid, CoreError> {
         let code_realm_id = parse_reset_code_realm_id(code)?;
 
         if code_realm_id != realm_id {
@@ -475,7 +475,7 @@ where
         // Consume verification code
         self.verification_repository.consume_code(code).await?;
 
-        Ok(())
+        Ok(user.id)
     }
 
     async fn activate_user(&self, user_id: Uuid) -> Result<(), CoreError> {
@@ -580,10 +580,11 @@ mod tests {
             Arc::new(AllowAllUserPolicy),
         );
 
-        service
+        let confirmed_user_id = service
             .reset_password_confirm(&code, "new-password-123".to_string(), realm_id)
             .await
             .expect("reset password should succeed");
+        assert_eq!(confirmed_user_id, user_id);
     }
 
     #[tokio::test]

@@ -14,11 +14,12 @@ use crate::application::http::server::api_entities::{ApiError, ApiResult};
 use crate::application::http::state::AppState;
 use herald_api_auth::reauth::consume_reauth;
 use herald_core::domain::authentication::{
-    CredentialScope, Identity, TargetOperation, TokenCredentialContext,
+    BrowserTokenService, CredentialScope, Identity, TargetOperation, TokenCredentialContext,
 };
 use herald_core::domain::security_constants::DEFAULT_BCRYPT_COST;
 use herald_core::domain::user::entities::Profile;
 use herald_core::domain::user::ports::UserRepository;
+use herald_core::infrastructure::authentication::RedisBrowserTokenService;
 use herald_core::infrastructure::user::repositories::PostgresUserRepository;
 
 // ==================== Request/Response Types ====================
@@ -209,6 +210,36 @@ pub async fn change_password(
             tracing::error!("Failed to update password: {}", e);
             ApiError::internal("Failed to update password")
         })?;
+
+    // After a successful password change, revoke all of the user's other
+    // sessions (every device/browser except the current one). The current
+    // session is preserved so the user stays logged in. Best-effort: the
+    // password has already been changed, so a revocation failure is logged but
+    // does not block the response.
+    let token_service = RedisBrowserTokenService::new(state.redis_manager.clone());
+    let current_family_id = context.family_id;
+    match token_service.list_user_sessions(&identity.user_id()).await {
+        Ok(sessions) => {
+            for session in sessions {
+                if session.family_id == current_family_id {
+                    continue;
+                }
+                if let Err(e) = token_service.revoke_family(session.family_id).await {
+                    tracing::warn!(
+                        error = %e,
+                        family_id = %session.family_id,
+                        "change_password: failed to revoke other session"
+                    );
+                }
+            }
+        }
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                "change_password: failed to list sessions for revocation"
+            );
+        }
+    }
 
     Ok(ApiResult::ok(
         serde_json::json!({"message": "Password changed successfully"}),

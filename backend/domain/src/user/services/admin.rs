@@ -421,7 +421,7 @@ where
         let old_status = if request.status.is_some() {
             match self.user_repository.get_user_with_profile(user_id).await {
                 Ok(Some(existing)) => Some(UserStatus::from(
-                    i16::try_from(existing.status).unwrap_or(i16::from(UserStatus::Invalid)),
+                    i16::try_from(existing.status).unwrap_or(i16::from(UserStatus::Forbidden)),
                 )),
                 Ok(None) => None,
                 Err(e) => {
@@ -822,6 +822,23 @@ where
             return Err(UserAdminError::UserNotFound(user_id.to_string()));
         }
 
+        // Revoke all active sessions for the target user after an admin-initiated
+        // password reset, so any existing (potentially compromised) session is
+        // invalidated. Best-effort: the password has already been changed, so a
+        // revocation failure is logged but does not prevent the new password from
+        // being returned to the admin.
+        if let Err(e) = self
+            .token_service
+            .revoke_user_families(&user_id.to_string())
+            .await
+        {
+            tracing::error!(
+                error = %e,
+                user_id = %user_id,
+                "reset_user_password: failed to revoke sessions"
+            );
+        }
+
         // Record success audit event (failure does not fail the operation)
         if let Err(e) = self
             .audit_event_repository
@@ -836,9 +853,11 @@ where
                 target_id: user_id.to_string(),
                 target_name: None,
                 result: AuditResult::Success,
-                details: Some(
-                    serde_json::json!({"action": "reset_password", "user_id": user_id.to_string()}),
-                ),
+                details: Some(serde_json::json!({
+                    "action": "reset_password",
+                    "user_id": user_id.to_string(),
+                    "sessions_revoked": "all",
+                })),
                 ip_address: None,
                 user_agent: None,
                 trace_id: None,

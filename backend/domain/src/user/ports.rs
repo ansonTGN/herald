@@ -229,12 +229,14 @@ pub trait UserService: Send + Sync {
         code_type: &str,
     ) -> impl Future<Output = Result<String, CoreError>> + Send;
 
+    /// Returns the id of the user whose password was reset, so callers can
+    /// revoke their sessions after a successful reset.
     fn reset_password_confirm(
         &self,
         code: &str,
         new_password: String,
         realm_id: &str,
-    ) -> impl Future<Output = Result<(), CoreError>> + Send;
+    ) -> impl Future<Output = Result<Uuid, CoreError>> + Send;
 
     /// Activate user account (for realms without email verification)
     fn activate_user(&self, user_id: Uuid) -> impl Future<Output = Result<(), CoreError>> + Send;
