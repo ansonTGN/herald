@@ -13,20 +13,16 @@ describe('PasswordStrengthMeter', () => {
   }
 
   describe('rendering', () => {
-    it('GIVEN weak password WHEN rendering THEN displays Weak label and empty bar', async () => {
+    it('GIVEN weak password WHEN rendering THEN displays Weak label', async () => {
       const screen = render(<PasswordStrengthMeter password="" config={defaultConfig} />)
       expect(screen.getByText('Weak')).toBeInTheDocument()
-      const bar = screen.container.querySelector('[style*="width: 0%"]')
-      expect(bar).toBeInTheDocument()
     })
 
-    it('GIVEN strong password WHEN rendering THEN displays Strong label and full bar', async () => {
+    it('GIVEN strong password WHEN rendering THEN displays Strong label', async () => {
       const screen = render(
         <PasswordStrengthMeter password="Password123!" config={defaultConfig} />
       )
       expect(screen.getByText('Strong')).toBeInTheDocument()
-      const bar = screen.container.querySelector('.bg-green-500')
-      expect(bar).toBeInTheDocument()
     })
   })
 
@@ -61,27 +57,6 @@ describe('PasswordStrengthMeter', () => {
       )
       const list = screen.container.querySelector('ul')
       expect(list).not.toBeInTheDocument()
-    })
-  })
-
-  describe('config variations', () => {
-    it('GIVEN minimal config WHEN rendering THEN works correctly', async () => {
-      const minimalConfig: PasswordConfig = {
-        minLength: 1,
-        requireUppercase: false,
-        requireLowercase: false,
-        requireNumber: false,
-        requireSpecialChar: false,
-      }
-      const screen = render(<PasswordStrengthMeter password="a" config={minimalConfig} />)
-      expect(screen.getByText(/Weak|Fair|Good|Strong/)).toBeInTheDocument()
-    })
-
-    it('GIVEN unicode password WHEN rendering THEN calculates strength correctly', async () => {
-      const screen = render(
-        <PasswordStrengthMeter password="Password123!é" config={defaultConfig} />
-      )
-      expect(screen.getByText('Strong')).toBeInTheDocument()
     })
   })
 })

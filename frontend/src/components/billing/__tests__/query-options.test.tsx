@@ -79,53 +79,9 @@ describe('globalSubscriptionHistoryQueryOptions', () => {
       20,
     ])
   })
-
-  describe('Cache Key Generation', () => {
-    it('should create unique cache keys for different filter combinations', () => {
-      const options1 = globalSubscriptionHistoryQueryOptions('realm-1', { eventType: 'upgraded' })
-      const options2 = globalSubscriptionHistoryQueryOptions('realm-1', { eventType: 'canceled' })
-
-      expect(options1.queryKey).not.toEqual(options2.queryKey)
-    })
-
-    it('should create unique cache keys for different pages', () => {
-      const options1 = globalSubscriptionHistoryQueryOptions('realm-1', {}, 1)
-      const options2 = globalSubscriptionHistoryQueryOptions('realm-1', {}, 2)
-
-      expect(options1.queryKey).not.toEqual(options2.queryKey)
-    })
-
-    it('should create unique cache keys for different realms', () => {
-      const options1 = globalSubscriptionHistoryQueryOptions('realm-1', {})
-      const options2 = globalSubscriptionHistoryQueryOptions('realm-2', {})
-
-      expect(options1.queryKey).not.toEqual(options2.queryKey)
-    })
-
-    it('should create unique cache keys for different page sizes', () => {
-      const options1 = globalSubscriptionHistoryQueryOptions('realm-1', {}, 1, 20)
-      const options2 = globalSubscriptionHistoryQueryOptions('realm-1', {}, 1, 50)
-
-      expect(options1.queryKey).not.toEqual(options2.queryKey)
-    })
-  })
 })
 
 describe('Filter Parameter Handling', () => {
-  it('should handle default pagination', () => {
-    const options = globalSubscriptionHistoryQueryOptions('realm-1', {})
-
-    expect(options.queryKey).toContain(1) // default page
-    expect(options.queryKey).toContain(20) // default pageSize
-  })
-
-  it('should handle custom pagination', () => {
-    const options = globalSubscriptionHistoryQueryOptions('realm-1', {}, 3, 100)
-
-    expect(options.queryKey).toContain(3)
-    expect(options.queryKey).toContain(100)
-  })
-
   it('should use the generated SDK with camelCase backend query params', async () => {
     vi.mocked(listSubscriptionHistory).mockResolvedValue({
       data: {

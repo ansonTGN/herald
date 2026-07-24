@@ -90,23 +90,6 @@ describe('EmailOtpConfigForm', () => {
     expect(screen.getByTestId('email-otp-save-button')).toBeDisabled()
   })
 
-  it('GIVEN onSave rejects WHEN submitting THEN should handle the error gracefully', async () => {
-    mockOnSave.mockRejectedValue(new Error('Failed to save configuration'))
-    const screen = render(<EmailOtpConfigForm {...defaultProps} />)
-
-    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-
-    await userEvent.click(screen.getByTestId('email-otp-enabled-switch'))
-    await userEvent.click(screen.getByTestId('email-otp-save-button'))
-
-    await waitFor(() => {
-      expect(mockOnSave).toHaveBeenCalled()
-    })
-    await new Promise((resolve) => setTimeout(resolve, 0))
-
-    consoleSpy.mockRestore()
-  })
-
   it('GIVEN form is submitting WHEN save is in progress THEN should disable the save button', async () => {
     mockOnSave.mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 100)))
 

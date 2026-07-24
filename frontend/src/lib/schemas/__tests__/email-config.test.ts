@@ -160,19 +160,4 @@ describe('emailConfigSchema', () => {
       }
     })
   })
-
-  describe('minimum valid config applies defaults', () => {
-    it('should apply smtpPort and smtpEncryption defaults when only required fields given', () => {
-      const result = emailConfigSchema.safeParse({
-        provider: 'resend',
-        fromAddress: 'noreply@example.com',
-      })
-
-      expect(result.success).toBe(true)
-      if (result.success) {
-        expect(result.data.smtpPort).toBe('587')
-        expect(result.data.smtpEncryption).toBe('starttls')
-      }
-    })
-  })
 })

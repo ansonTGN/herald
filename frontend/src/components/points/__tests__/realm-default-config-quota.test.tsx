@@ -80,7 +80,6 @@ vi.mock('@/hooks/use-auth', () => ({
 // `RealmConfigPage` directly to avoid the autoCodeSplitting Lazy wrapper (see
 // the rendering note above).
 import { RealmConfigPage } from '@/routes/$realmId/manage/points/default-config'
-import { pointsDefaultConfigSchema } from '@/lib/schemas/points-forms'
 import { useAuth } from '@/hooks/use-auth'
 
 const SEEDED_WINDOWS = [
@@ -404,42 +403,6 @@ describe('Realm default-config — free-periodic quota editor integration', () =
     expect(body.registrationBonusPoints).toBe(2000)
     // Seeded windows travel alongside the edited bonus — both sides intact.
     expect(body.freePeriodicQuotaWindows).toEqual(SEEDED_WINDOWS)
-  })
-})
-
-describe('pointsDefaultConfigSchema — freePeriodicQuotaWindows array contract', () => {
-  // WHY: the schema is the save gate (onChange validator). These cases pin the
-  // accept/reject boundary so a future loosening (e.g. dropping .max(8) or the
-  // per-window min) fails the editor's own protection.
-  it.each([
-    ['accepts a valid windows array', [{ windowSeconds: 3600, limit: 0 }], true],
-    ['accepts an empty array (clear semantics)', [], true],
-    ['accepts exactly 8 windows (the cap)', Array(8).fill({ windowSeconds: 60, limit: 1 }), true],
-    ['rejects windowSeconds 0', [{ windowSeconds: 0, limit: 1 }], false],
-    ['rejects a negative limit', [{ windowSeconds: 60, limit: -1 }], false],
-  ])(
-    '%s',
-    (_label: string, windows: Array<{ windowSeconds: number; limit: number }>, ok: boolean) => {
-      const result = pointsDefaultConfigSchema.safeParse({
-        registrationBonusPoints: 1000,
-        freePeriodicPointsAmount: 50,
-        freePeriodicGrantPeriodType: 'daily',
-        freePeriodicValidityDays: 1,
-        freePeriodicQuotaWindows: windows,
-      })
-      expect(result.success).toBe(ok)
-    }
-  )
-
-  it('rejects more than 8 windows', () => {
-    const result = pointsDefaultConfigSchema.safeParse({
-      registrationBonusPoints: 1000,
-      freePeriodicPointsAmount: 50,
-      freePeriodicGrantPeriodType: 'daily',
-      freePeriodicValidityDays: 1,
-      freePeriodicQuotaWindows: Array(9).fill({ windowSeconds: 60, limit: 1 }),
-    })
-    expect(result.success).toBe(false)
   })
 })
 

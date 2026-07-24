@@ -258,26 +258,4 @@ describe('EmailConfigForm', () => {
       expect(screen.getByTestId('email-test-error')).toBeInTheDocument()
     })
   })
-
-  it('GIVEN onSave fails WHEN submitting form THEN should handle error gracefully', async () => {
-    const testError = new Error('Failed to save configuration')
-    mockOnSave.mockRejectedValue(testError)
-
-    renderWithProviders(<EmailConfigForm {...defaultProps} />)
-
-    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-
-    // Fill required field
-    await userEvent.type(screen.getByTestId('email-from-address-input'), 'test@example.com')
-
-    const saveButton = screen.getByTestId('email-save-button')
-    await userEvent.click(saveButton)
-
-    await waitFor(() => {
-      expect(mockOnSave).toHaveBeenCalled()
-    })
-
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    consoleSpy.mockRestore()
-  })
 })

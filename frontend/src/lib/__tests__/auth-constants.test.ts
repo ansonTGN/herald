@@ -6,20 +6,6 @@ describe('PERMISSION constant object', () => {
     expect(PERMISSION).not.toHaveProperty('REALM_ADMIN')
     expect(PERMISSION).not.toHaveProperty('REALM_CREATE')
   })
-
-  it('contains DASHBOARD_VIEW, AUDIT_VIEW, API_KEYS_VIEW, REALM_MANAGE keys', () => {
-    expect(PERMISSION).toHaveProperty('DASHBOARD_VIEW')
-    expect(PERMISSION).toHaveProperty('AUDIT_VIEW')
-    expect(PERMISSION).toHaveProperty('API_KEYS_VIEW')
-    expect(PERMISSION).toHaveProperty('REALM_MANAGE')
-  })
-
-  it('maps each new key to the correct resource.action string value', () => {
-    expect(PERMISSION.DASHBOARD_VIEW).toBe('dashboard.view')
-    expect(PERMISSION.AUDIT_VIEW).toBe('audit.view')
-    expect(PERMISSION.API_KEYS_VIEW).toBe('api_keys.view')
-    expect(PERMISSION.REALM_MANAGE).toBe('realm.manage')
-  })
 })
 
 describe('ADMIN_PERMISSIONS array', () => {

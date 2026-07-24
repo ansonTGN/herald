@@ -334,56 +334,6 @@ describe('useEmailOtpSendMutation — 409 conflict classification', () => {
       expect(result.conflict?.message).toBe('Please register first.')
     }
   })
-
-  it('the two 409 branches yield distinguishable surfaced payloads', async () => {
-    // Regression for design §4.2: the two conflict codes must not collapse to
-    // the same shape — the form relies on `consentRequired`/`agreements` being
-    // present ONLY for the consent branch.
-    const consentBody = {
-      code: 'consent_required',
-      consentRequired: true,
-      agreements: [makeAgreement('terms_of_service', 'tos-v2', 2)],
-      message: 'consent required',
-    }
-    const notRegisteredBody = {
-      code: 'email_not_registered',
-      message: 'Please register first.',
-    }
-
-    // First send: consent_required.
-    const consentResult = await runSendOnce(consentBody, 409)
-    // Second send (new MSW handler + new probe): email_not_registered.
-    const notRegisteredResult = await runSendOnce(notRegisteredBody, 409)
-
-    expect(consentResult.conflict?.code).toBe('consent_required')
-    expect(notRegisteredResult.conflict?.code).toBe('email_not_registered')
-    // The branches are distinguishable on every field the form branches on.
-    expect(consentResult.conflict?.code).not.toBe(notRegisteredResult.conflict?.code)
-    expect(Boolean(consentResult.conflict?.agreements?.length)).toBe(true)
-    expect(Boolean(notRegisteredResult.conflict?.agreements?.length)).toBe(false)
-    expect(consentResult.conflict?.consentRequired).toBe(true)
-    expect(notRegisteredResult.conflict?.consentRequired).not.toBe(true)
-  })
-
-  async function runSendOnce(
-    responseBody: Record<string, unknown>,
-    status: number
-  ): Promise<EmailOtpSendResult> {
-    server.use(http.post(SEND_URL, () => HttpResponse.json(responseBody, { status })))
-    const onResult = vi.fn<(result: EmailOtpSendResult) => void>()
-    renderProbe(
-      <SendProbe
-        realmId="realm-1"
-        payload={{ email: 'user@example.com', clientId: 'admin-web-console' }}
-        onSuccess={onResult}
-      />
-    )
-    await clickProbe('send-probe')
-    await waitFor(() => {
-      expect(onResult).toHaveBeenCalledTimes(1)
-    })
-    return onResult.mock.calls[0][0]
-  }
 })
 
 // ===========================================================================

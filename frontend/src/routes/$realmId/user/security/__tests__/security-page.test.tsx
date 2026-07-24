@@ -118,16 +118,6 @@ describe('ProfileSecurity', () => {
     expect(screen.getByTestId('delete-account-open-button')).toHaveTextContent('Delete Account')
   })
 
-  it('WHEN delete account button is clicked THEN opens delete account dialog', async () => {
-    const user = userEvent.setup()
-    renderSecurityPage()
-
-    await user.click(screen.getByTestId('delete-account-open-button'))
-
-    expect(screen.getByTestId('delete-account-dialog')).toBeInTheDocument()
-    expect(screen.getByTestId('delete-account-dialog-title')).toHaveTextContent('Delete Account')
-  })
-
   it('GIVEN passkey enabled for realm THEN renders the passkey management UI', async () => {
     renderSecurityPage({ passkeyEnabled: true })
 

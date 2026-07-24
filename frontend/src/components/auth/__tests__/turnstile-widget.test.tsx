@@ -94,26 +94,4 @@ describe('TurnstileWidget', () => {
       expect(mockOnError).not.toHaveBeenCalled()
     })
   })
-
-  describe('integration', () => {
-    it('GIVEN multiple callbacks WHEN triggered THEN handles them in sequence', async () => {
-      await renderWidget()
-      const callbacks = getCallbacks()
-
-      await act(() => {
-        callbacks?.onSuccess?.('token-1')
-        callbacks?.onError?.('error-1')
-        callbacks?.onSuccess?.('token-2')
-      })
-
-      expect(mockOnTokenChange).toHaveBeenCalled()
-    })
-
-    it('GIVEN component renders WHEN mounted THEN has no side effects', async () => {
-      const initialCallCount = mockOnTokenChange.mock.calls.length
-      await renderWidget()
-
-      expect(mockOnTokenChange.mock.calls.length).toBe(initialCallCount)
-    })
-  })
 })

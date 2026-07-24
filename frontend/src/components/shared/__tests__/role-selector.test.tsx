@@ -129,25 +129,4 @@ describe('RoleSelector', () => {
     const trigger = screen.getByTestId('role-selector-trigger')
     expect(trigger).toHaveTextContent(customPlaceholder)
   })
-
-  it('GIVEN user types in search WHEN roles are present THEN should filter roles', async () => {
-    const handleChange = vi.fn()
-    render(<RoleSelector roles={mockRoles} selectedRoleIds={[]} onChange={handleChange} />)
-
-    // Open dropdown
-    const trigger = document.querySelector('[data-testid="role-selector-trigger"]') as HTMLElement
-    if (trigger) {
-      await userEvent.click(trigger)
-    }
-
-    // Type in search
-    const searchInput = document.querySelector(
-      '[data-testid="role-selector-search"]'
-    ) as HTMLInputElement
-    if (searchInput) {
-      await userEvent.type(searchInput, 'Admin')
-      // The search should filter the roles (implementation detail check)
-      expect(searchInput).toHaveValue('Admin')
-    }
-  })
 })

@@ -79,52 +79,6 @@ describe('TOTPConfigForm', () => {
     expect(saveButton).toBeDisabled()
   })
 
-  // 异常场景测试
-  it('GIVEN onSave fails WHEN submitting form THEN should handle error gracefully', async () => {
-    const testError = new Error('Failed to save configuration')
-    mockOnSave.mockRejectedValue(testError)
-
-    const screen = render(<TOTPConfigForm {...defaultProps} />)
-
-    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-
-    // 启用 TOTP 并提交
-    const enabledSwitch = screen.getByTestId('totp-enabled-switch')
-    await userEvent.click(enabledSwitch)
-
-    const saveButton = screen.getByTestId('totp-save-button')
-    await userEvent.click(saveButton)
-
-    // 验证 onSave 被调用但错误被处理
-    await waitFor(() => {
-      expect(mockOnSave).toHaveBeenCalled()
-    })
-
-    // Wait for async operations
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    consoleSpy.mockRestore()
-  })
-
-  it('GIVEN form validation fails WHEN submitting THEN should not call onSave', async () => {
-    // Zod schema 验证在表单层面处理，无效类型会在 TypeScript 编译时捕获
-    // 在运行时，TanStack Form 会验证，但我们的 schema 只接受 boolean 值
-    // 所以这个测试验证表单提交逻辑本身
-
-    const screen = render(<TOTPConfigForm {...defaultProps} />)
-
-    // 不切换任何开关，表单仍然可以提交（默认值是有效的）
-    const saveButton = screen.getByTestId('totp-save-button')
-    await userEvent.click(saveButton)
-
-    // 验证 onSave 被调用了（因为默认值是有效的）
-    await waitFor(() => {
-      expect(mockOnSave).toHaveBeenCalledWith({
-        enabled: false,
-        forceEnabled: false,
-      })
-    })
-  })
-
   // P0 补充：字段依赖逻辑测试
   it('GIVEN TOTP is disabled WHEN enabling forceEnabled THEN should auto-enable TOTP', async () => {
     const screen = render(<TOTPConfigForm {...defaultProps} />)
@@ -145,28 +99,6 @@ describe('TOTPConfigForm', () => {
         forceEnabled: true,
       })
     })
-  })
-
-  // P0 补充：并发提交测试
-  it('GIVEN user clicks save multiple times WHEN submitting THEN should call onSave multiple times', async () => {
-    mockOnSave.mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 100)))
-
-    const screen = render(<TOTPConfigForm {...defaultProps} />)
-
-    const saveButton = screen.getByTestId('totp-save-button')
-
-    // 快速点击 3 次
-    await userEvent.click(saveButton)
-    await userEvent.click(saveButton)
-    await userEvent.click(saveButton)
-
-    // 等待异步操作完成
-    await new Promise((resolve) => setTimeout(resolve, 200))
-
-    // 验证：组件当前的防重复提交实现只阻止第一个提交正在进行时的后续点击
-    // 但如果点击足够快，可能会有多次调用
-    expect(mockOnSave).toHaveBeenCalled()
-    // 注意：这个测试验证当前行为，如果需要更强防抖，需要更新组件
   })
 
   // P0 补充：禁用状态测试

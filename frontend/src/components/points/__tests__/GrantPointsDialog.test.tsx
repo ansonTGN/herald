@@ -14,8 +14,6 @@ import {
   createUserSearchEmptyHandler,
   userSearchHandler,
 } from '@/test/mocks/handlers/points'
-import { grantPointsSchema } from '@/lib/schemas/points-forms'
-import { QUERY_KEYS } from '@/lib/constants'
 import { GrantPointsDialog } from '../grant-points-dialog'
 
 // Mock usePermission -- dialog requires points.manage for full UI
@@ -117,100 +115,8 @@ async function fillValidForm() {
 }
 
 // ---------- Tests ----------
-
-describe('grantPointsSchema', () => {
-  it('accepts valid data with all required fields', () => {
-    const result = grantPointsSchema.safeParse({
-      userId: 'user-1',
-      amount: 100,
-      reason: 'Promotional grant',
-      validityDays: 30,
-      bucketId: 'bucket-1',
-    })
-
-    expect(result.success).toBe(true)
-    if (result.success) {
-      expect(result.data).toEqual({
-        userId: 'user-1',
-        amount: 100,
-        reason: 'Promotional grant',
-        validityDays: 30,
-        bucketId: 'bucket-1',
-      })
-    }
-  })
-
-  it('accepts validityDays null (permanent)', () => {
-    const result = grantPointsSchema.safeParse({
-      userId: 'user-1',
-      amount: 100,
-      reason: 'Promotional grant',
-      bucketId: 'bucket-1',
-      validityDays: null,
-    })
-
-    expect(result.success).toBe(true)
-  })
-
-  it('accepts validityDays omitted', () => {
-    const result = grantPointsSchema.safeParse({
-      userId: 'user-1',
-      amount: 100,
-      reason: 'Promotional grant',
-      bucketId: 'bucket-1',
-    })
-
-    expect(result.success).toBe(true)
-  })
-
-  it.each([
-    { amount: 0, label: 'zero' },
-    { amount: -5, label: 'negative' },
-    { amount: 1.5, label: 'non-integer' },
-  ])('rejects amount = $label ($amount)', ({ amount }) => {
-    const result = grantPointsSchema.safeParse({
-      userId: 'user-1',
-      amount,
-      reason: 'Test',
-    })
-
-    expect(result.success).toBe(false)
-  })
-
-  it('rejects empty userId', () => {
-    const result = grantPointsSchema.safeParse({
-      userId: '',
-      amount: 100,
-      reason: 'Test',
-    })
-
-    expect(result.success).toBe(false)
-  })
-
-  it('rejects empty reason', () => {
-    const result = grantPointsSchema.safeParse({
-      userId: 'user-1',
-      amount: 100,
-      reason: '',
-    })
-
-    expect(result.success).toBe(false)
-  })
-
-  it.each([
-    { validityDays: 0, label: 'zero' },
-    { validityDays: -1, label: 'negative' },
-  ])('rejects validityDays = $label ($validityDays)', ({ validityDays }) => {
-    const result = grantPointsSchema.safeParse({
-      userId: 'user-1',
-      amount: 100,
-      reason: 'Test',
-      validityDays,
-    })
-
-    expect(result.success).toBe(false)
-  })
-})
+// grantPointsSchema is covered in src/lib/schemas/__tests__/points-forms.test.ts
+// (with intent docs: bucketId required business error, UUID-grammar boundary).
 
 describe('GrantPointsDialog', () => {
   beforeEach(() => {
@@ -506,24 +412,6 @@ describe('GrantPointsDialog', () => {
       renderDialog()
 
       expect(screen.getByText(/do not have permission to grant points/i)).toBeInTheDocument()
-    })
-  })
-})
-
-describe('useGrantPoints cache invalidation', () => {
-  it('invalidates WALLETS_BY_BUCKET query key on success', async () => {
-    const queryClient = createTestQueryClient()
-    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
-
-    // Simulate the invalidation that happens in onSuccess. Wallet balances are
-    // served by walletsByBucketQueryOptions (key WALLETS_BY_BUCKET), consumed by
-    // both the admin PointsWalletsPage and the user UserPointsPage.
-    queryClient.invalidateQueries({
-      queryKey: [QUERY_KEYS.WALLETS_BY_BUCKET, 'test-realm'],
-    })
-
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: [QUERY_KEYS.WALLETS_BY_BUCKET, 'test-realm'],
     })
   })
 })

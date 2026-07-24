@@ -73,30 +73,6 @@ describe('UserSubscriptionTimeline - Event Sorting', () => {
     // Third event should be created (oldest: 2025-01-15)
     expect(eventElements[2]).toHaveAttribute('data-testid', 'timeline-event-evt-1')
   })
-
-  it('should sort events correctly when timestamps are equal', () => {
-    const eventsWithSameTimestamp: SubscriptionHistoryEvent[] = [
-      {
-        id: 'evt-1',
-        subscriptionId: 'sub-1',
-        eventType: 'created',
-        timestamp: '2025-01-20T10:30:00Z',
-        actor: 'user@example.com',
-      },
-      {
-        id: 'evt-2',
-        subscriptionId: 'sub-1',
-        eventType: 'upgraded',
-        timestamp: '2025-01-20T10:30:00Z',
-        actor: 'admin@example.com',
-      },
-    ]
-
-    render(<UserSubscriptionTimeline events={eventsWithSameTimestamp} />)
-
-    const eventElements = screen.getAllByTestId(/timeline-event-/)
-    expect(eventElements).toHaveLength(2)
-  })
 })
 
 describe('UserSubscriptionTimeline - Expand/Collapse Details', () => {

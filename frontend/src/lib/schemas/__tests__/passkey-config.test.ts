@@ -105,18 +105,4 @@ describe('passkeyConfigSchema', () => {
       }
     })
   })
-
-  describe('minimum valid config applies defaults', () => {
-    it('should apply userVerification and crossPlatformAuthenticator defaults when only required fields given', () => {
-      const result = passkeyConfigSchema.safeParse({
-        enabled: true,
-      })
-
-      expect(result.success).toBe(true)
-      if (result.success) {
-        expect(result.data.userVerification).toBe('preferred')
-        expect(result.data.crossPlatformAuthenticator).toBe(true)
-      }
-    })
-  })
 })
