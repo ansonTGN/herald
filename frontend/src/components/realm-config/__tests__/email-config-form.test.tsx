@@ -258,4 +258,72 @@ describe('EmailConfigForm', () => {
       expect(screen.getByTestId('email-test-error')).toBeInTheDocument()
     })
   })
+
+  // --- Email-OTP integration (merged into the email card) -------------------
+  // WHY: OTP login can only send codes if the email channel is configured, so
+  // the OTP switches must be gated on `emailStatus.configured`. These tests
+  // pin that dependency so a regression that lets admins enable OTP without
+  // email (and silently break login) is caught.
+  describe('Email-OTP integration', () => {
+    const mockOnSaveOtp = vi.fn()
+    const propsWithOtp = {
+      ...defaultProps,
+      onSaveEmailOtp: mockOnSaveOtp,
+    }
+
+    beforeEach(() => {
+      mockOnSaveOtp.mockClear()
+    })
+
+    it('GIVEN email not configured WHEN rendering THEN should disable OTP switches and show hint', () => {
+      renderWithProviders(
+        <EmailConfigForm
+          {...propsWithOtp}
+          emailStatus={{ configured: false, missingFields: ['provider'] }}
+        />
+      )
+
+      expect(screen.getByTestId('email-otp-section')).toBeInTheDocument()
+      expect(screen.getByTestId('email-otp-enabled-switch')).toBeDisabled()
+      expect(screen.getByTestId('email-otp-auto-register-switch')).toBeDisabled()
+      expect(screen.getByTestId('email-otp-save-button')).toBeDisabled()
+      expect(screen.getByTestId('email-otp-email-required-hint')).toBeInTheDocument()
+    })
+
+    it('GIVEN email configured WHEN rendering THEN should enable OTP switches and hide hint', () => {
+      renderWithProviders(
+        <EmailConfigForm {...propsWithOtp} emailStatus={{ configured: true, missingFields: [] }} />
+      )
+
+      expect(screen.getByTestId('email-otp-enabled-switch')).not.toBeDisabled()
+      expect(screen.getByTestId('email-otp-auto-register-switch')).not.toBeDisabled()
+      expect(screen.getByTestId('email-otp-save-button')).not.toBeDisabled()
+      expect(screen.queryByTestId('email-otp-email-required-hint')).not.toBeInTheDocument()
+    })
+
+    it('GIVEN no onSaveEmailOtp provided WHEN rendering THEN should not render the OTP section', () => {
+      // Without the OTP save handler the merged OTP block is hidden, keeping
+      // the email-only usage (and the legacy tests above) intact.
+      renderWithProviders(<EmailConfigForm {...defaultProps} />)
+
+      expect(screen.queryByTestId('email-otp-section')).not.toBeInTheDocument()
+    })
+
+    it('GIVEN email configured WHEN toggling enabled and saving THEN should call onSaveEmailOtp with the OTP values', async () => {
+      mockOnSaveOtp.mockResolvedValue(undefined)
+      renderWithProviders(
+        <EmailConfigForm {...propsWithOtp} emailStatus={{ configured: true, missingFields: [] }} />
+      )
+
+      await userEvent.click(screen.getByTestId('email-otp-enabled-switch'))
+      await userEvent.click(screen.getByTestId('email-otp-save-button'))
+
+      await waitFor(() => {
+        expect(mockOnSaveOtp).toHaveBeenCalledWith({
+          enabled: true,
+          autoRegister: false,
+        })
+      })
+    })
+  })
 })

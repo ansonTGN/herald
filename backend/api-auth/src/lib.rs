@@ -70,6 +70,7 @@ pub use verify_passkey::__path_handle_passkey_2fa_options;
 pub use verify_passkey::__path_handle_passkey_2fa_verify;
 pub use verify_passkey::__path_handle_passkey_options;
 pub use verify_passkey::__path_handle_passkey_verify;
+pub use verify_passkey::__path_status as __path_passkey_status;
 pub use verify_totp::__path_handle_verify_totp as __path_verify_totp;
 
 /// OpenAPI specification for auth module
@@ -98,6 +99,7 @@ pub use verify_totp::__path_handle_verify_totp as __path_verify_totp;
         crate::verify_passkey::handle_passkey_verify,
         crate::verify_passkey::handle_passkey_2fa_options,
         crate::verify_passkey::handle_passkey_2fa_verify,
+        crate::verify_passkey::status,
         crate::user_totp::handle_enable_totp,
         crate::user_totp::handle_verify_totp_setup,
         crate::user_totp::handle_disable_totp,
@@ -147,6 +149,7 @@ pub use verify_totp::__path_handle_verify_totp as __path_verify_totp;
         crate::verify_passkey::Passkey2faOptionsRequest,
         crate::verify_passkey::Passkey2faOptionsResponse,
         crate::verify_passkey::Passkey2faVerifyRequest,
+        crate::verify_passkey::PasskeyStatusResponse,
         crate::user_totp::EnableTotpRequest,
         crate::user_totp::EnableTotpResponse,
         crate::user_totp::VerifyTotpSetupRequest,
@@ -175,6 +178,7 @@ pub fn auth_router() -> Router<AppState> {
         .route("/login/email-otp/send", post(email_otp::send))
         .route("/login/email-otp/verify", post(email_otp::verify))
         .route("/email-otp/status", get(email_otp::status))
+        .route("/passkey/status", get(verify_passkey::status))
         .route("/login/verify-totp", post(verify_totp::handle_verify_totp))
         .route(
             "/login/passkey/options",

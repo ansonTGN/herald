@@ -27,10 +27,9 @@
 // =============================================================================
 
 use crate::tests::schema_test_context::SchemaTestContext as TestContext;
-use herald_core::domain::audit::ActorType;
+use herald_core::domain::audit::{ActorType, AuditContext};
 use herald_core::domain::common::entities::app_errors::CoreError;
 use herald_core::domain::legal::entities::{AgreementSource, AgreementType, ConsentSource};
-use herald_core::domain::legal::service::AuditActorMeta;
 use sqlx::Row;
 use test_context::test_context;
 use uuid::Uuid;
@@ -39,13 +38,13 @@ use uuid::Uuid;
 // Helpers
 // =============================================================================
 
-/// Build an `AuditActorMeta` for a normal user. Threaded into `record_consent`
+/// Build an `AuditContext` for a normal user. Threaded into `record_consent`
 /// / `publish_custom` / `revert_to_default` so each audited call records
 /// request-scoped context (ip / ua / trace).
-fn make_audit_actor_meta(user_id: Uuid) -> AuditActorMeta {
-    AuditActorMeta {
+fn make_audit_actor_meta(user_id: Uuid) -> AuditContext {
+    AuditContext {
         actor_id: user_id.to_string(),
-        actor_type: ActorType::User,
+        actor_type: Some(ActorType::User),
         actor_name: Some(format!("test-user-{user_id}")),
         ip_address: Some("203.0.113.10".to_string()),
         user_agent: Some("legal-scene-test/1.0".to_string()),

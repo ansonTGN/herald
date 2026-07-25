@@ -5,9 +5,11 @@ use axum::{
     http::HeaderMap,
 };
 use axum_valid::Valid;
+use herald_api_base::application::http::auth::util::{ClientIp, user_agent_from_headers};
 use herald_api_base::application::http::common::auth_utils::AdminIdentity;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
+use herald_core::domain::audit::AuditContext;
 use herald_core::domain::authentication::Identity;
 use herald_core::domain::user::{
     AdminUserService, admin_dtos::UpdateUserAdminRequest, admin_errors::UserAdminError,
@@ -41,7 +43,8 @@ pub async fn update_user(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Path((realm_id, target_user_id)): Path<(String, Uuid)>,
-    _headers: HeaderMap,
+    ClientIp(ip): ClientIp,
+    headers: HeaderMap,
     Valid(Json(payload)): Valid<Json<UserUpdateRequest>>,
 ) -> Result<ApiResult<UserResponse>, ApiError> {
     let admin = AdminIdentity::require(identity, &realm_id, "user management")?;
@@ -64,7 +67,13 @@ pub async fn update_user(
 
     // Call service layer
     let admin_user = admin_user_service
-        .update_user_admin(admin.identity().clone(), &realm_id, target_user_id, request)
+        .update_user_admin(
+            admin.identity().clone(),
+            AuditContext::admin(admin.identity(), ip, user_agent_from_headers(&headers)),
+            &realm_id,
+            target_user_id,
+            request,
+        )
         .await
         .map_err(|e| match e {
             UserAdminError::DuplicateEmail(email) => {

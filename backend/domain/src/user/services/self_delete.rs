@@ -20,8 +20,8 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::audit::{
-    ActorType, AuditAction, AuditCategory, AuditEventRepository, AuditResult, AuditTargetType,
-    NewAuditEvent,
+    ActorType, AuditAction, AuditCategory, AuditContext, AuditEventRepository, AuditResult,
+    AuditTargetType, NewAuditEvent,
 };
 use crate::authentication::Identity;
 use crate::authentication::ports::BrowserTokenService;
@@ -82,7 +82,11 @@ where
     ///   - [`CoreError::NotFound`] — account does not exist (should not happen
     ///     for a valid session).
     ///   - [`CoreError::Conflict`] — account is already in the `Deleted` state.
-    pub async fn self_delete_account(&self, identity: &Identity) -> Result<(), CoreError> {
+    pub async fn self_delete_account(
+        &self,
+        identity: &Identity,
+        ctx: &AuditContext,
+    ) -> Result<(), CoreError> {
         let user_id = parse_user_id(identity.user_id())?;
         let realm_id = identity.realm_id();
 
@@ -141,18 +145,18 @@ where
             action: AuditAction::UserDelete,
             actor_id: user_id.to_string(),
             actor_type: Some(ActorType::User),
-            actor_name: None,
+            actor_name: Some(account.email.clone()),
             target_type: AuditTargetType::User,
             target_id: user_id.to_string(),
-            target_name: None,
+            target_name: Some(account.email.clone()),
             result: AuditResult::Success,
             details: Some(serde_json::json!({
                 "method": "self_service",
                 "anonymized": true,
             })),
-            ip_address: None,
-            user_agent: None,
-            trace_id: None,
+            ip_address: ctx.ip_address.clone(),
+            user_agent: ctx.user_agent.clone(),
+            trace_id: ctx.trace_id.clone(),
         };
         if let Err(e) = self.audit_repo.create(audit_event).await {
             tracing::warn!(

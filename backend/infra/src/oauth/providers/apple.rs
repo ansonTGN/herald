@@ -86,12 +86,23 @@ impl OAuthProviderHandler for AppleOAuthProvider {
             .set_auth_uri(AuthUrl::new(Self::AUTH_URL.to_string())?)
             .set_redirect_uri(RedirectUrl::new(config.redirect_uri.clone())?);
 
-        let (auth_url, _csrf_token) = client
-            .authorize_url(|| oauth2::CsrfToken::new(state.to_string()))
-            .add_scopes([
+        // Honor realm-configured scopes; fall back to Apple default if none.
+        let scopes: Vec<Scope> = if config.scopes.is_empty() {
+            vec![
                 Scope::new("name".to_string()),
                 Scope::new("email".to_string()),
-            ])
+            ]
+        } else {
+            config
+                .scopes
+                .iter()
+                .map(|s| Scope::new(s.clone()))
+                .collect()
+        };
+
+        let (auth_url, _csrf_token) = client
+            .authorize_url(|| oauth2::CsrfToken::new(state.to_string()))
+            .add_scopes(scopes)
             .set_response_type(&oauth2::ResponseType::new("code id_token".to_string()))
             .add_extra_param("response_mode", "form_post")
             .url();

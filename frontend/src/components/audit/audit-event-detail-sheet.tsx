@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { auditDetailQueryOptions } from '@/data/query-options'
 import { formatDateTimeShort } from '@/lib/date-utils'
+import { formatAuditAction } from '@/lib/audit-utils'
 import { m } from '@/paraglide/messages'
 import { getErrorMessage } from '@/lib/error-utils'
 
@@ -93,7 +94,12 @@ export function AuditEventDetailSheet({ eventId, realmId, onClose }: AuditEventD
                 {data.category.replace(/_/g, ' ')}
               </DetailField>
               <DetailField label={m['audit.detail_action_label']()}>
-                <code className="font-mono text-xs">{data.action}</code>
+                <div>
+                  <span>{formatAuditAction(data.action)}</span>
+                  <code className="ml-1 font-mono text-xs text-muted-foreground">
+                    {data.action}
+                  </code>
+                </div>
               </DetailField>
               <DetailField label={m['audit.detail_target_label']()}>
                 <div>

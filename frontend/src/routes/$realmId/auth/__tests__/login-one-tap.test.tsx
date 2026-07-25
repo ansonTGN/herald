@@ -115,6 +115,13 @@ vi.mock('@/data/query-options', () => ({
     queryKey: ['email-otp-status', 'test-realm'],
     queryFn: () => Promise.resolve({ enabled: false }),
   }),
+  // Passkey status gate for the passkey entry. Default true to preserve the
+  // pre-flag mount behaviour (the form's own options probe + onUnavailable
+  // remains the per-browser fallback).
+  passkeyStatusQueryOptions: () => ({
+    queryKey: ['passkey-status', 'test-realm'],
+    queryFn: () => Promise.resolve({ enabled: true }),
+  }),
   toAuthConsentAgreements: () => [],
 }))
 

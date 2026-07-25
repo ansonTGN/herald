@@ -1,15 +1,18 @@
 use axum::{
     Extension, Json,
     extract::{Path, State},
+    http::HeaderMap,
 };
 use axum_valid::Valid;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use herald_api_base::application::http::auth::util::{ClientIp, user_agent_from_headers};
 use herald_api_base::application::http::common::auth_utils::AdminIdentity;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
+use herald_core::domain::audit::AuditContext;
 use herald_core::domain::authentication::{BrowserTokenService, Identity};
 use herald_core::domain::authorization::permission_service::PermissionService;
 use herald_core::domain::user::PermissionManagementService;
@@ -112,6 +115,8 @@ pub async fn create_permission(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Path(realm_id): Path<String>,
+    ClientIp(ip): ClientIp,
+    headers: HeaderMap,
     Valid(Json(payload)): Valid<Json<PermissionCreateRequest>>,
 ) -> Result<ApiResult<()>, ApiError> {
     let admin = AdminIdentity::require(identity, &realm_id, "permissions")?;
@@ -140,9 +145,11 @@ pub async fn create_permission(
     };
 
     // 4. 调用 service 层
+    let ctx = AuditContext::admin(admin.identity(), ip, user_agent_from_headers(&headers));
     permission_management_service
         .create_permission(
             admin.into_identity(),
+            ctx,
             &realm_id,
             &client_id,
             role_id,
@@ -263,6 +270,8 @@ pub async fn delete_permission(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Path(realm_id): Path<String>,
+    ClientIp(ip): ClientIp,
+    headers: HeaderMap,
     Valid(Json(payload)): Valid<Json<PermissionCreateRequest>>,
 ) -> Result<ApiResult<()>, ApiError> {
     let admin = AdminIdentity::require(identity, &realm_id, "permissions")?;
@@ -288,9 +297,11 @@ pub async fn delete_permission(
     };
 
     // 调用 service 层
+    let ctx = AuditContext::admin(admin.identity(), ip, user_agent_from_headers(&headers));
     permission_management_service
         .delete_permission(
             admin.into_identity(),
+            ctx,
             &realm_id,
             &client_id,
             role_id,

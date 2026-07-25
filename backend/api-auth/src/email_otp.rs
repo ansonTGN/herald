@@ -32,13 +32,14 @@ use herald_api_base::application::http::auth::util::{
 use herald_api_base::application::http::server::api_entities::ApiError;
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
 use herald_api_base::application::http::state::AppState;
+use herald_core::domain::audit::AuditContext;
 use herald_core::domain::audit::{
     ActorType, AuditAction, AuditCategory, AuditEventRepository, AuditResult, AuditTargetType,
     NewAuditEvent,
 };
 use herald_core::domain::authentication::BrowserTokenService;
 use herald_core::domain::common::entities::app_errors::CoreError;
-use herald_core::domain::legal::{AgreementType, AuditActorMeta, ConsentSource};
+use herald_core::domain::legal::{AgreementType, ConsentSource};
 use herald_core::domain::security_constants::{
     OTP_CODE_TTL_SECONDS, OTP_MAX_ATTEMPTS, OTP_SEND_EMAIL_RATE_LIMIT, OTP_SEND_IP_RATE_LIMIT,
     OTP_VERIFY_EMAIL_RATE_LIMIT, OTP_VERIFY_IP_RATE_LIMIT,
@@ -837,9 +838,9 @@ async fn record_register_consent(
         return;
     }
 
-    let actor_meta = AuditActorMeta {
+    let actor_meta = AuditContext {
         actor_id: user_id.to_string(),
-        actor_type: ActorType::User,
+        actor_type: Some(ActorType::User),
         actor_name: Some(email.to_string()),
         ip_address: Some(ip.to_string()),
         user_agent: None,

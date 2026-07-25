@@ -424,7 +424,7 @@ async fn test_delete_account_already_deleted_returns_401(ctx: &mut TestContext) 
     );
 
     let (status, _, _, _, _) = read_account_row(ctx, user_id).await;
-    assert_eq!(status, 4, "Account must remain Deleted");
+    assert_eq!(status, 3, "Account must remain Deleted");
 }
 
 /// ============================================================================
@@ -448,7 +448,7 @@ async fn test_delete_account_success_anonymizes_pii(ctx: &mut TestContext) {
     let (status, email_after, password_after, username_after, provider_ids_after) =
         read_account_row(ctx, user_id).await;
 
-    assert_eq!(status, 4, "Account status must be Deleted");
+    assert_eq!(status, 3, "Account status must be Deleted");
     assert_eq!(
         email_after,
         format!("deleted+{}@anonymized.local", user_id),
@@ -620,7 +620,7 @@ async fn test_login_fails_after_delete(ctx: &mut TestContext) {
     );
 
     let (status, _, _, _, _) = read_account_row(ctx, user_id).await;
-    assert_eq!(status, 4);
+    assert_eq!(status, 3);
 }
 
 /// ============================================================================

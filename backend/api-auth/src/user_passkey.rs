@@ -11,13 +11,16 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 use validator::Validate;
 
-use herald_api_base::application::http::auth::util::rate_limit_hit;
+use herald_api_base::application::http::auth::util::{
+    ClientIp, rate_limit_hit, user_agent_from_headers,
+};
 use herald_api_base::application::http::common::auth_utils::require_token_scope;
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::audit::{
-    AuditAction, AuditCategory, AuditEventRepository, AuditResult, AuditTargetType, NewAuditEvent,
+    ActorType, AuditAction, AuditCategory, AuditEventRepository, AuditResult, AuditTargetType,
+    NewAuditEvent,
 };
 use herald_core::domain::authentication::{
     CredentialScope, Identity, TargetOperation, TokenCredentialContext,
@@ -213,6 +216,8 @@ pub async fn handle_finish_passkey_registration(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Extension(context): Extension<TokenCredentialContext>,
+    ClientIp(ip): ClientIp,
+    headers: HeaderMap,
     Valid(Json(req)): Valid<Json<FinishRegistrationRequest>>,
 ) -> Result<ApiResult<FinishRegistrationResponse>, ApiError> {
     require_token_scope(&identity, &context, CredentialScope::PasskeyManage)?;
@@ -251,17 +256,17 @@ pub async fn handle_finish_passkey_registration(
         .create(NewAuditEvent {
             realm_id: identity.realm_id(),
             category: AuditCategory::Auth,
-            action: AuditAction::UserCreate,
+            action: AuditAction::PasskeyRegister,
             actor_id: user_id.to_string(),
-            actor_type: None,
+            actor_type: Some(ActorType::User),
             actor_name: identity.as_user().map(|u| u.email.clone()),
             target_type: AuditTargetType::User,
             target_id: credential.id.to_string(),
             target_name: credential.nickname.clone(),
             result: AuditResult::Success,
-            details: Some(serde_json::json!({"action": "passkey_register"})),
-            ip_address: None,
-            user_agent: None,
+            details: None,
+            ip_address: Some(ip),
+            user_agent: user_agent_from_headers(&headers),
             trace_id: None,
         })
         .await
@@ -396,6 +401,7 @@ pub async fn handle_delete_passkey_credential(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Extension(context): Extension<TokenCredentialContext>,
+    ClientIp(ip): ClientIp,
     headers: HeaderMap,
     Path(credential_id): Path<String>,
     Json(req): Json<DeletePasskeyRequest>,
@@ -442,17 +448,17 @@ pub async fn handle_delete_passkey_credential(
         .create(NewAuditEvent {
             realm_id: identity.realm_id(),
             category: AuditCategory::Auth,
-            action: AuditAction::UserDelete,
+            action: AuditAction::PasskeyDelete,
             actor_id: user_id.to_string(),
-            actor_type: None,
+            actor_type: Some(ActorType::User),
             actor_name: identity.as_user().map(|u| u.email.clone()),
             target_type: AuditTargetType::User,
             target_id: credential_id.to_string(),
             target_name: None,
             result: AuditResult::Success,
-            details: Some(serde_json::json!({"action": "passkey_delete"})),
-            ip_address: None,
-            user_agent: None,
+            details: None,
+            ip_address: Some(ip),
+            user_agent: user_agent_from_headers(&headers),
             trace_id: None,
         })
         .await

@@ -759,9 +759,9 @@ async fn test_post_consent_returns_409_on_stale_version(ctx: &mut TestContext) {
             json!({ "en": "old version body" }),
             None,
             "admin@scene",
-            herald_core::domain::legal::service::AuditActorMeta {
+            herald_core::domain::audit::AuditContext {
                 actor_id: "admin@scene".to_string(),
-                actor_type: herald_core::domain::audit::ActorType::Admin,
+                actor_type: Some(herald_core::domain::audit::ActorType::Admin),
                 actor_name: None,
                 ip_address: None,
                 user_agent: None,
@@ -777,9 +777,9 @@ async fn test_post_consent_returns_409_on_stale_version(ctx: &mut TestContext) {
         json!({ "en": "newer version body" }),
         None,
         "admin@scene",
-        herald_core::domain::legal::service::AuditActorMeta {
+        herald_core::domain::audit::AuditContext {
             actor_id: "admin@scene".to_string(),
-            actor_type: herald_core::domain::audit::ActorType::Admin,
+            actor_type: Some(herald_core::domain::audit::ActorType::Admin),
             actor_name: None,
             ip_address: None,
             user_agent: None,

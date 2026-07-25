@@ -3,6 +3,7 @@
 use axum::{
     Json,
     extract::{Extension, Path, State},
+    http::HeaderMap,
 };
 use axum_valid::Valid;
 use serde::{Deserialize, Serialize};
@@ -18,11 +19,13 @@ fn validate_user_verification(value: &str) -> Result<(), validator::ValidationEr
 
 use crate::application::http::server::api_entities::{ApiError, ApiResult};
 use crate::application::http::state::AppState;
+use herald_api_base::application::http::auth::util::{ClientIp, user_agent_from_headers};
 use herald_core::domain::audit::{
     AuditAction, AuditCategory, AuditEventRepository, AuditResult, AuditTargetType, NewAuditEvent,
 };
 use herald_core::domain::authentication::Identity;
 use herald_core::domain::authorization::PermissionService;
+use herald_core::domain::realm::RealmService;
 use herald_core::domain::realm_config::{ConfigType, RealmConfigService, UpsertRealmConfigRequest};
 
 pub use crate::application::http::server::api_entities::ErrorResponse;
@@ -78,8 +81,11 @@ pub async fn handle_update_realm_passkey_config(
     State(state): State<AppState>,
     Path(realm_id): Path<String>,
     Extension(identity): Extension<Identity>,
+    ClientIp(ip): ClientIp,
+    headers: HeaderMap,
     Valid(Json(req)): Valid<Json<UpdateRealmPasskeyConfigRequest>>,
 ) -> Result<ApiResult<UpdateRealmPasskeyConfigResponse>, ApiError> {
+    let user_agent = user_agent_from_headers(&headers);
     let has_permission = state
         .permission_checker
         .check_permission(
@@ -153,25 +159,38 @@ pub async fn handle_update_realm_passkey_config(
         })?;
 
     // Audit Passkey policy change (PRD §4.1 audit rule: "管理员变更 Passkey 策略").
+    // Resolve the realm name for the target display; best-effort: a lookup
+    // failure must not fail the (already-succeeded) config write.
+    let target_name = match state
+        .service
+        .realm_service()
+        .get_realm(identity.clone(), realm_id.clone())
+        .await
+    {
+        Ok(realm) => Some(realm.name),
+        Err(e) => {
+            tracing::warn!(error = %e, realm_id = %realm_id, "Failed to resolve realm name for audit event");
+            None
+        }
+    };
     if let Err(audit_err) = state
         .audit_event_repository
         .create(NewAuditEvent {
             realm_id: realm_id.clone(),
             category: AuditCategory::Auth,
-            action: AuditAction::RoleUpdate,
+            action: AuditAction::PasskeyConfigUpdate,
             actor_id: identity.user_id(),
             actor_type: None,
             actor_name: identity.as_user().map(|u| u.email.clone()),
             target_type: AuditTargetType::Realm,
             target_id: realm_id.clone(),
-            target_name: None,
+            target_name,
             result: AuditResult::Success,
             details: Some(serde_json::json!({
-                "action": "passkey_config_update",
                 "enabled": req.enabled,
             })),
-            ip_address: None,
-            user_agent: None,
+            ip_address: Some(ip),
+            user_agent,
             trace_id: None,
         })
         .await

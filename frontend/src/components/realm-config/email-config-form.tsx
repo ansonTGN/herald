@@ -4,7 +4,9 @@ import { useStore } from '@tanstack/react-form'
 import { useAppForm, AppForm } from '@/components/ui/tanstack-form'
 import {
   emailConfigSchema,
+  emailOtpConfigSchema,
   type EmailConfigForm as EmailConfigFormValues,
+  type EmailOtpConfigForm as EmailOtpConfigFormValues,
 } from '@/lib/schemas/realm-config'
 import type { EmailStatusResponse } from '@/lib/api-generated/types.gen'
 import { emailTest } from '@/lib/api-generated/sdk.gen'
@@ -12,6 +14,7 @@ import { handleApiResponse } from '@/lib/api-utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { ConfigSwitchField } from './config-switch-field'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Label } from '@/components/ui/label'
 import { TextField } from '@/components/shared/form-fields/text-field'
@@ -36,6 +39,11 @@ interface EmailConfigFormProps {
   disabled?: boolean
   emailStatus?: EmailStatusResponse | null
   emailStatusError?: string | null
+  // Email-OTP login config is gated on the email channel above being
+  // configured: the OTP switches stay disabled until `emailStatus.configured`
+  // is true. Passed through from the settings page.
+  emailOtpInitialConfig?: EmailOtpConfigFormValues
+  onSaveEmailOtp?: (config: EmailOtpConfigFormValues) => Promise<void>
 }
 
 export function EmailConfigForm({
@@ -46,6 +54,8 @@ export function EmailConfigForm({
   disabled,
   emailStatus,
   emailStatusError,
+  emailOtpInitialConfig,
+  onSaveEmailOtp,
 }: EmailConfigFormProps) {
   const [saveError, setSaveError] = React.useState<string | null>(null)
   const [testRecipient, setTestRecipient] = React.useState('')
@@ -71,6 +81,21 @@ export function EmailConfigForm({
   })
 
   const provider = useStore(form.store, (state) => state.values.provider)
+
+  // Email-OTP login depends on the email channel being configured. When it
+  // isn't, the switches are disabled and a hint is shown (mirrors the
+  // `emailConfigured` pattern in registration-config-form). The dependency
+  // re-evaluates live because `emailStatus` is invalidated on email save.
+  const emailConfigured = emailStatus?.configured ?? false
+  const emailOtpDisabled = disabled || !emailConfigured
+
+  const otpForm = useAppForm({
+    schema: emailOtpConfigSchema,
+    defaultValues: emailOtpInitialConfig || { enabled: false, autoRegister: false },
+    onSubmit: async ({ value }) => {
+      await onSaveEmailOtp?.(value)
+    },
+  })
 
   const testEmailMutation = useMutation({
     mutationFn: async (recipient: string) => {
@@ -312,6 +337,67 @@ export function EmailConfigForm({
               <p className="text-sm text-green-600" data-testid="email-test-success">
                 {testEmailMutation.data?.message || m['realm_config.email_test_success']()}
               </p>
+            )}
+
+            {onSaveEmailOtp && (
+              <div className="space-y-4 border-t pt-6" data-testid="email-otp-section">
+                <div className="space-y-1">
+                  <h4 className="text-base font-medium">{m['realm_config.email_otp_title']()}</h4>
+                  <p className="text-sm text-muted-foreground">
+                    {m['realm_config.email_otp_description']()}
+                  </p>
+                </div>
+
+                <otpForm.Field
+                  name="enabled"
+                  children={(field) => (
+                    <ConfigSwitchField
+                      field={field}
+                      form={otpForm}
+                      id="email-otp-enabled"
+                      label={m['realm_config.email_otp_enable_label']()}
+                      description={m['realm_config.email_otp_enable_description']()}
+                      disabled={emailOtpDisabled}
+                      errorTestId="email-otp-enabled-error"
+                    />
+                  )}
+                />
+
+                <otpForm.Field
+                  name="autoRegister"
+                  children={(field) => (
+                    <ConfigSwitchField
+                      field={field}
+                      form={otpForm}
+                      id="email-otp-auto-register"
+                      label={m['realm_config.email_otp_auto_register_label']()}
+                      description={m['realm_config.email_otp_auto_register_description']()}
+                      disabled={emailOtpDisabled}
+                      errorTestId="email-otp-auto-register-error"
+                    />
+                  )}
+                />
+
+                {!emailConfigured && (
+                  <span
+                    className="text-sm text-muted-foreground"
+                    data-testid="email-otp-email-required-hint"
+                  >
+                    {m['realm_config.email_otp_email_not_configured']()}
+                  </span>
+                )}
+
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    onClick={() => otpForm.handleSubmit()}
+                    disabled={emailOtpDisabled}
+                    data-testid="email-otp-save-button"
+                  >
+                    {m['realm_config.save']()}
+                  </Button>
+                </div>
+              </div>
             )}
           </form>
         </AppForm>

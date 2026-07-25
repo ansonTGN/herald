@@ -1,8 +1,6 @@
 use herald_api_base::application::http::state::AppState;
-use herald_core::domain::audit::ActorType;
-use herald_core::domain::legal::{
-    AgreementType, AuditActorMeta, ConsentSource, LegalAgreementSummary,
-};
+use herald_core::domain::audit::{ActorType, AuditContext};
+use herald_core::domain::legal::{AgreementType, ConsentSource, LegalAgreementSummary};
 use herald_core::domain::user::entities::User;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -23,9 +21,9 @@ pub async fn evaluate_login_consent_gate(
     ip_address: Option<String>,
     user_agent: Option<String>,
 ) -> Option<Vec<LegalAgreementSummary>> {
-    let actor_meta = AuditActorMeta {
+    let actor_meta = AuditContext {
         actor_id: user.id.to_string(),
-        actor_type: ActorType::User,
+        actor_type: Some(ActorType::User),
         actor_name: Some(user.email.clone()),
         ip_address,
         user_agent,

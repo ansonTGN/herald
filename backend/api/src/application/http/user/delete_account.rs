@@ -14,7 +14,7 @@
 use axum::{
     Json,
     extract::{Extension, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
 };
 use serde::Deserialize;
 use utoipa::ToSchema;
@@ -23,6 +23,8 @@ use crate::application::http::common::auth_utils::require_token_scope;
 use crate::application::http::server::api_entities::{ApiError, ErrorResponse};
 use crate::application::http::state::AppState;
 use herald_api_auth::reauth::consume_reauth;
+use herald_api_base::application::http::auth::util::{ClientIp, user_agent_from_headers};
+use herald_core::domain::audit::AuditContext;
 use herald_core::domain::authentication::{
     BrowserTokenService, CredentialScope, Identity, TargetOperation, TokenCredentialContext,
 };
@@ -59,6 +61,8 @@ pub async fn delete_account(
     State(app_state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Extension(context): Extension<TokenCredentialContext>,
+    ClientIp(ip): ClientIp,
+    headers: HeaderMap,
     Json(req): Json<DeleteAccountRequest>,
 ) -> Result<StatusCode, ApiError> {
     require_token_scope(&identity, &context, CredentialScope::DeleteAccount)?;
@@ -70,9 +74,10 @@ pub async fn delete_account(
         TargetOperation::DeleteAccount,
     )
     .await?;
+    let ctx = AuditContext::user(&identity, ip, user_agent_from_headers(&headers));
     app_state
         .self_delete_service
-        .self_delete_account(&identity)
+        .self_delete_account(&identity, &ctx)
         .await?;
     RedisBrowserTokenService::new(app_state.redis_manager.clone())
         .revoke_family(context.family_id)

@@ -5,13 +5,15 @@
 use axum::{
     Json,
     extract::{Extension, Path, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
+use herald_api_base::application::http::auth::util::{ClientIp, user_agent_from_headers};
 use herald_api_base::application::http::common::error_codes::ErrorCode;
 use herald_api_base::application::http::common::error_helpers::json_error;
 use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
 use herald_api_base::application::http::state::AppState;
+use herald_core::domain::audit::AuditContext;
 use herald_core::domain::authentication::Identity;
 use herald_core::domain::realm::{CreateRealmRequest, InitialAdminUser, Realm, RealmService};
 use serde::{Deserialize, Serialize};
@@ -148,6 +150,8 @@ fn realm_to_list_item(realm: Realm) -> RealmListItem {
 pub async fn create_realm(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
+    ClientIp(ip): ClientIp,
+    headers: HeaderMap,
     Json(req): Json<CreateRealmExtRequest>,
 ) -> Response {
     // 1. Authorization: requires realm:manage in the admin realm
@@ -186,10 +190,11 @@ pub async fn create_realm(
     };
 
     // 4. Call domain service
+    let ctx = AuditContext::admin(&identity, ip, user_agent_from_headers(&headers));
     match state
         .service
         .realm_service()
-        .create_realm(identity, create_req)
+        .create_realm(identity, ctx, create_req)
         .await
     {
         Ok(realm) => {

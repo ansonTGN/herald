@@ -58,6 +58,7 @@ export const QUERY_KEYS = {
   CUSTOM_DOMAIN_REALM_CONFIG: 'custom-domain-realm-config',
   TURNSTILE_STATUS: 'turnstile-status',
   EMAIL_OTP_STATUS: 'email-otp-status',
+  PASSKEY_STATUS: 'passkey-status',
   EMAIL_OTP_REALM_CONFIG: 'email-otp-realm-config',
   USER_SUBSCRIPTIONS: 'user-subscriptions',
   SUBSCRIPTION_DETAILS: 'subscription-details',

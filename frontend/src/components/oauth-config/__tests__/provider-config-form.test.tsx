@@ -322,10 +322,7 @@ describe('ProviderConfigForm - Edit Mode', () => {
       realmId: 'admin',
       providerType: 'google',
       clientId: 'google-client-id',
-      scopes: [
-        'https://www.googleapis.com/auth/userinfo.profile',
-        'https://www.googleapis.com/auth/userinfo.email',
-      ],
+      scopes: ['openid', 'email', 'profile'],
       enabled: true,
       createdAt: '2024-01-01T00:00:00Z',
       updatedAt: '2024-01-01T00:00:00Z',
@@ -337,9 +334,7 @@ describe('ProviderConfigForm - Edit Mode', () => {
     const scopesInput = screen.getByTestId('oauth-scopes-input') as HTMLInputElement
     expect(scopesInput).toBeInTheDocument()
     expect(scopesInput).not.toBeDisabled()
-    expect(scopesInput.value).toBe(
-      'https://www.googleapis.com/auth/userinfo.profile, https://www.googleapis.com/auth/userinfo.email'
-    )
+    expect(scopesInput.value).toBe('openid, email, profile')
 
     // Verify helper text about fixed scope is NOT shown
     expect(screen.queryByText('(Fixed: snsapi_login)')).not.toBeInTheDocument()

@@ -64,8 +64,9 @@ impl OAuthProviderConfig {
 fn default_scopes(provider_type: &ProviderType) -> Vec<String> {
     match provider_type {
         ProviderType::Google => vec![
-            "https://www.googleapis.com/auth/userinfo.profile".to_string(),
-            "https://www.googleapis.com/auth/userinfo.email".to_string(),
+            "openid".to_string(),
+            "email".to_string(),
+            "profile".to_string(),
         ],
         ProviderType::GitHub => vec!["user:email".to_string()],
         ProviderType::Facebook => vec!["email".to_string()],

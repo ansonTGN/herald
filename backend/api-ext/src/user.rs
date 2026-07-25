@@ -5,13 +5,15 @@
 use axum::{
     Json,
     extract::{Extension, Path, Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
+use herald_api_base::application::http::auth::util::{ClientIp, user_agent_from_headers};
 use herald_api_base::application::http::common::error_codes::ErrorCode;
 use herald_api_base::application::http::common::error_helpers::json_error;
 use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
 use herald_api_base::application::http::state::AppState;
+use herald_core::domain::audit::AuditContext;
 use herald_core::domain::authentication::Identity;
 use herald_core::domain::user::AdminUserService;
 use herald_core::domain::user::admin_dtos::CreateUserWithRolesRequest;
@@ -117,6 +119,8 @@ pub async fn create_user(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Path(realm_id): Path<String>,
+    ClientIp(ip): ClientIp,
+    headers: HeaderMap,
     Json(req): Json<CreateUserExtRequest>,
 ) -> Response {
     // 1. Authorization: requires users:create in the target realm
@@ -155,9 +159,10 @@ pub async fn create_user(
     };
 
     // 5. Call domain service
+    let ctx = AuditContext::admin(&identity, ip, user_agent_from_headers(&headers));
     match state
         .admin_user_service
-        .create_user_with_roles(identity, &realm_id, create_req)
+        .create_user_with_roles(identity, ctx, &realm_id, create_req)
         .await
     {
         Ok(admin_user) => {

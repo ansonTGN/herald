@@ -62,6 +62,12 @@ pub enum AuditAction {
     OAuthConfigUpdate,
     #[serde(rename = "oauth_config.delete")]
     OAuthConfigDelete,
+    #[serde(rename = "passkey_config.update")]
+    PasskeyConfigUpdate,
+    #[serde(rename = "passkey.register")]
+    PasskeyRegister,
+    #[serde(rename = "passkey.delete")]
+    PasskeyDelete,
     #[serde(rename = "agreement.consent")]
     AgreementConsent,
     #[serde(rename = "agreement.published")]
@@ -127,6 +133,9 @@ mod tests {
             (AuditAction::OAuthConfigCreate, "oauth_config.create"),
             (AuditAction::OAuthConfigUpdate, "oauth_config.update"),
             (AuditAction::OAuthConfigDelete, "oauth_config.delete"),
+            (AuditAction::PasskeyConfigUpdate, "passkey_config.update"),
+            (AuditAction::PasskeyRegister, "passkey.register"),
+            (AuditAction::PasskeyDelete, "passkey.delete"),
             (AuditAction::AgreementConsent, "agreement.consent"),
             (AuditAction::AgreementPublished, "agreement.published"),
             (AuditAction::AgreementReverted, "agreement.reverted"),

@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use crate::audit::{
-    ActorType, AuditAction, AuditCategory, AuditEventRepository, AuditResult, AuditTargetType,
-    NewAuditEvent,
+    ActorType, AuditAction, AuditCategory, AuditContext, AuditEventRepository, AuditResult,
+    AuditTargetType, NewAuditEvent,
 };
 use crate::authentication::Identity;
 use crate::authorization::{AssignRoleToUserRequest, RoleRepository, UserRoleRepository};
@@ -114,6 +114,7 @@ where
     async fn create_realm(
         &self,
         identity: Identity,
+        ctx: AuditContext,
         request: CreateRealmRequest,
     ) -> Result<Realm, CoreError> {
         // Policy check
@@ -474,9 +475,9 @@ where
                 realm_id: actor_realm_id.clone(),
                 category: AuditCategory::RealmManagement,
                 action: AuditAction::RealmCreate,
-                actor_id: identity.user_id().to_string(),
-                actor_type: Some(ActorType::Admin),
-                actor_name: identity.as_user().map(|u| u.email.clone()),
+                actor_id: ctx.actor_id.clone(),
+                actor_type: ctx.actor_type,
+                actor_name: ctx.actor_name.clone(),
                 target_type: AuditTargetType::Realm,
                 target_id: realm.id.clone(),
                 target_name: Some(realm.name.clone()),
@@ -486,9 +487,9 @@ where
                     "realm_id": realm.id,
                     "realm_name": realm.name,
                 })),
-                ip_address: None,
-                user_agent: None,
-                trace_id: None,
+                ip_address: ctx.ip_address.clone(),
+                user_agent: ctx.user_agent.clone(),
+                trace_id: ctx.trace_id.clone(),
             })
             .await
         {
@@ -501,7 +502,7 @@ where
                 realm_id: actor_realm_id,
                 category: AuditCategory::RealmManagement,
                 action: AuditAction::RealmRbacInit,
-                actor_id: identity.user_id().to_string(),
+                actor_id: ctx.actor_id.clone(),
                 actor_type: Some(ActorType::System),
                 actor_name: None,
                 target_type: AuditTargetType::Realm,
@@ -513,9 +514,9 @@ where
                     "realm_id": realm.id,
                     "realm_name": realm.name,
                 })),
-                ip_address: None,
-                user_agent: None,
-                trace_id: None,
+                ip_address: ctx.ip_address.clone(),
+                user_agent: ctx.user_agent.clone(),
+                trace_id: ctx.trace_id.clone(),
             })
             .await
         {

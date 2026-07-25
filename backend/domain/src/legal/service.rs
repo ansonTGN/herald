@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use uuid::Uuid;
 
-use crate::audit::{ActorType, AuditAction, AuditCategory, AuditResult, AuditTargetType};
+use crate::audit::{AuditAction, AuditCategory, AuditContext, AuditResult, AuditTargetType};
 use crate::audit::{AuditEventRepository, NewAuditEvent};
 use crate::common::entities::app_errors::CoreError;
 use crate::legal::entities::{
@@ -11,22 +11,6 @@ use crate::legal::entities::{
 };
 use crate::legal::error::LegalError;
 use crate::legal::ports::{LegalAgreementRepository, UserConsentRepository};
-
-/// Audit-write metadata threaded from the HTTP layer into the legal service.
-///
-/// Mirrors the fields the login handler populates on `NewAuditEvent`
-/// (`actor_id`, `actor_type`, `actor_name`, `ip_address`, `user_agent`,
-/// `trace_id`). Keeping these here keeps the domain service HTTP-agnostic
-/// while still recording request-scoped audit context.
-#[derive(Debug, Clone)]
-pub struct AuditActorMeta {
-    pub actor_id: String,
-    pub actor_type: ActorType,
-    pub actor_name: Option<String>,
-    pub ip_address: Option<String>,
-    pub user_agent: Option<String>,
-    pub trace_id: Option<String>,
-}
 
 /// Legal + consent use-case service.
 ///
@@ -129,7 +113,7 @@ where
         realm_id: &str,
         items: Vec<(AgreementType, Uuid)>,
         source: ConsentSource,
-        actor: AuditActorMeta,
+        ctx: AuditContext,
     ) -> Result<(), CoreError> {
         for (agreement_type, version_id) in items {
             let agreement_type_str = agreement_type.as_ref().to_string();
@@ -157,17 +141,17 @@ where
                     realm_id: realm_id.to_string(),
                     category: AuditCategory::Compliance,
                     action: AuditAction::AgreementConsent,
-                    actor_id: actor.actor_id.clone(),
-                    actor_type: Some(actor.actor_type),
-                    actor_name: actor.actor_name.clone(),
+                    actor_id: ctx.actor_id.clone(),
+                    actor_type: ctx.actor_type,
+                    actor_name: ctx.actor_name.clone(),
                     target_type: AuditTargetType::User,
                     target_id: user_id.to_string(),
-                    target_name: actor.actor_name.clone(),
+                    target_name: ctx.actor_name.clone(),
                     result: AuditResult::Success,
                     details: Some(details),
-                    ip_address: actor.ip_address.clone(),
-                    user_agent: actor.user_agent.clone(),
-                    trace_id: actor.trace_id.clone(),
+                    ip_address: ctx.ip_address.clone(),
+                    user_agent: ctx.user_agent.clone(),
+                    trace_id: ctx.trace_id.clone(),
                 })
                 .await
             {
@@ -196,7 +180,7 @@ where
         content: serde_json::Value,
         label: Option<String>,
         published_by: &str,
-        actor: AuditActorMeta,
+        ctx: AuditContext,
     ) -> Result<LegalAgreementVersion, CoreError> {
         if !content.is_object() || content.as_object().is_none_or(|m| m.is_empty()) {
             return Err(CoreError::BadRequest(
@@ -226,17 +210,17 @@ where
                 realm_id: realm_id.to_string(),
                 category: AuditCategory::Compliance,
                 action: AuditAction::AgreementPublished,
-                actor_id: actor.actor_id.clone(),
-                actor_type: Some(actor.actor_type),
-                actor_name: actor.actor_name.clone(),
+                actor_id: ctx.actor_id.clone(),
+                actor_type: ctx.actor_type,
+                actor_name: ctx.actor_name.clone(),
                 target_type: AuditTargetType::Realm,
                 target_id: realm_id.to_string(),
                 target_name: None,
                 result: AuditResult::Success,
                 details: Some(details),
-                ip_address: actor.ip_address.clone(),
-                user_agent: actor.user_agent.clone(),
-                trace_id: actor.trace_id.clone(),
+                ip_address: ctx.ip_address.clone(),
+                user_agent: ctx.user_agent.clone(),
+                trace_id: ctx.trace_id.clone(),
             })
             .await
         {
@@ -264,7 +248,7 @@ where
         realm_id: &str,
         agreement_type: AgreementType,
         published_by: &str,
-        actor: AuditActorMeta,
+        ctx: AuditContext,
     ) -> Result<LegalAgreementVersion, CoreError> {
         let default = self
             .legal_repo
@@ -294,17 +278,17 @@ where
                 realm_id: realm_id.to_string(),
                 category: AuditCategory::Compliance,
                 action: AuditAction::AgreementReverted,
-                actor_id: actor.actor_id.clone(),
-                actor_type: Some(actor.actor_type),
-                actor_name: actor.actor_name.clone(),
+                actor_id: ctx.actor_id.clone(),
+                actor_type: ctx.actor_type,
+                actor_name: ctx.actor_name.clone(),
                 target_type: AuditTargetType::Realm,
                 target_id: realm_id.to_string(),
                 target_name: None,
                 result: AuditResult::Success,
                 details: Some(details),
-                ip_address: actor.ip_address.clone(),
-                user_agent: actor.user_agent.clone(),
-                trace_id: actor.trace_id.clone(),
+                ip_address: ctx.ip_address.clone(),
+                user_agent: ctx.user_agent.clone(),
+                trace_id: ctx.trace_id.clone(),
             })
             .await
         {
@@ -453,7 +437,7 @@ where
         agreement_type: AgreementType,
         version_label_override: Option<String>,
         published_by: &str,
-        actor: AuditActorMeta,
+        ctx: AuditContext,
     ) -> Result<LegalAgreementVersion, CoreError> {
         let draft = self
             .legal_repo
@@ -470,7 +454,7 @@ where
                     draft.content,
                     label,
                     published_by,
-                    actor,
+                    ctx.clone(),
                 )
                 .await?
             }
@@ -500,17 +484,17 @@ where
                         realm_id: realm_id.to_string(),
                         category: AuditCategory::Compliance,
                         action: AuditAction::AgreementPublished,
-                        actor_id: actor.actor_id,
-                        actor_type: Some(actor.actor_type),
-                        actor_name: actor.actor_name,
+                        actor_id: ctx.actor_id.clone(),
+                        actor_type: ctx.actor_type,
+                        actor_name: ctx.actor_name.clone(),
                         target_type: AuditTargetType::Realm,
                         target_id: realm_id.to_string(),
                         target_name: None,
                         result: AuditResult::Success,
                         details: Some(details),
-                        ip_address: actor.ip_address,
-                        user_agent: actor.user_agent,
-                        trace_id: actor.trace_id,
+                        ip_address: ctx.ip_address.clone(),
+                        user_agent: ctx.user_agent.clone(),
+                        trace_id: ctx.trace_id.clone(),
                     })
                     .await
                 {
@@ -549,7 +533,7 @@ fn validate_external_url(value: Option<&str>) -> Result<(), CoreError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::audit::{AuditEvent, AuditEventFilters, PaginatedAuditEvents};
+    use crate::audit::{ActorType, AuditEvent, AuditEventFilters, PaginatedAuditEvents};
     use crate::legal::entities::{AgreementMode, AgreementSource, UserAgreementConsent};
     use chrono::Utc;
     use std::sync::Mutex;
@@ -825,10 +809,10 @@ mod tests {
         }
     }
 
-    fn actor() -> AuditActorMeta {
-        AuditActorMeta {
+    fn actor() -> AuditContext {
+        AuditContext {
             actor_id: "u1".to_string(),
-            actor_type: ActorType::User,
+            actor_type: Some(ActorType::User),
             actor_name: None,
             ip_address: None,
             user_agent: None,

@@ -15,6 +15,7 @@ import type { AuditSearchParams } from '@/lib/schemas/search-params'
 import { toDateInputValue } from '@/lib/date-utils'
 import { FILTER_ALL_VALUE } from '@/lib/constants'
 import { m } from '@/paraglide/messages'
+import { AUDIT_ACTION_LABELS } from '@/lib/audit-utils'
 
 export const CATEGORY_ACTIONS: Record<string, string[]> = {
   user_management: ['user.create', 'user.update', 'user.delete'],
@@ -38,26 +39,6 @@ const CATEGORY_LABELS: Record<string, () => string> = {
   rbac: () => m['audit.category_rbac'](),
   realm_management: () => m['audit.category_realm_management'](),
   auth: () => m['audit.category_auth'](),
-}
-
-const ACTION_LABELS: Record<string, () => string> = {
-  'user.create': () => m['audit.action_user_create'](),
-  'user.update': () => m['audit.action_user_update'](),
-  'user.delete': () => m['audit.action_user_delete'](),
-  'role.create': () => m['audit.action_role_create'](),
-  'role.update': () => m['audit.action_role_update'](),
-  'role.delete': () => m['audit.action_role_delete'](),
-  'permission.create': () => m['audit.action_permission_create'](),
-  'permission.delete': () => m['audit.action_permission_delete'](),
-  'role.assign': () => m['audit.action_role_assign'](),
-  'role.unassign': () => m['audit.action_role_unassign'](),
-  'permission.grant': () => m['audit.action_permission_grant'](),
-  'permission.revoke': () => m['audit.action_permission_revoke'](),
-  'realm.create': () => m['audit.action_realm_create'](),
-  'realm.rbac_init': () => m['audit.action_realm_rbac_init'](),
-  'auth.login': () => m['audit.action_auth_login'](),
-  'auth.logout': () => m['audit.action_auth_logout'](),
-  'auth.login_failed': () => m['audit.action_auth_login_failed'](),
 }
 
 function getActionsForCategory(category?: string): string[] {
@@ -178,7 +159,7 @@ export function AuditFilterBar({ filters, onFilterChange, onClearFilters }: Audi
             <SelectItem value={FILTER_ALL_VALUE}>{m['audit.filter_action_all']()}</SelectItem>
             {availableActions.map((act) => (
               <SelectItem key={act} value={act}>
-                {ACTION_LABELS[act] ? ACTION_LABELS[act]() : act}
+                {AUDIT_ACTION_LABELS[act] ? AUDIT_ACTION_LABELS[act]() : act}
               </SelectItem>
             ))}
           </SelectContent>

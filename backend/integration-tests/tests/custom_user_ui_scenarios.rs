@@ -1190,6 +1190,7 @@ async fn test_custom_user_ui_passkey_rp_isolation(ctx: &mut SchemaTestContext) {
         std::env::set_var("RP_ID", "localhost");
         std::env::set_var("RP_ORIGIN", "http://localhost:3000");
     }
+    enable_passkeys(ctx).await;
     let app = create_custom_client_app(ctx, true).await;
     let email = format!("cui-passkey-isolation-{}@test.com", Uuid::now_v7());
     let user_id = create_user(ctx, &email).await;
@@ -1417,6 +1418,41 @@ async fn test_custom_user_ui_client_app_disable_revokes_family(ctx: &mut SchemaT
         refresh(ctx, &app, &tokens.refresh_token).await.0.status(),
         StatusCode::UNAUTHORIZED
     );
+}
+
+/// Public `GET /api/auth/{realmId}/passkey/status` reflects the realm's passkey
+/// enablement flag. The login page gates the passkey entry on this signal
+/// *before* firing the begin-options probe, so the contract it protects is:
+/// a realm that never configured passkey reads `{ enabled: false }` (not 404),
+/// and a realm with `passkey`/`settings`/`enabled:true` reads `true`.
+/// Anonymous — no Bearer required.
+#[test_context(SchemaTestContext)]
+#[tokio::test]
+async fn test_passkey_status_reflects_realm_config(ctx: &mut SchemaTestContext) {
+    // Default: no passkey config row → disabled (opt-in per realm), NOT a 404.
+    let off = send(
+        ctx.create_unified_test_router(),
+        "GET",
+        &format!("/api/auth/{}/passkey/status", ctx._realm_id),
+        None,
+        Value::Null,
+    )
+    .await;
+    assert_eq!(off.status(), StatusCode::OK);
+    assert_eq!(response_json(off).await["enabled"], false);
+
+    // Enable passkey for the realm → status flips to true.
+    enable_passkeys(ctx).await;
+    let on = send(
+        ctx.create_unified_test_router(),
+        "GET",
+        &format!("/api/auth/{}/passkey/status", ctx._realm_id),
+        None,
+        Value::Null,
+    )
+    .await;
+    assert_eq!(on.status(), StatusCode::OK);
+    assert_eq!(response_json(on).await["enabled"], true);
 }
 
 // CredentialClass is imported deliberately so this file fails to compile if the public

@@ -5,6 +5,8 @@ use axum::{
     extract::{Extension, Path, Query, State},
     http::HeaderMap,
 };
+use herald_api_base::application::http::auth::util::{ClientIp, user_agent_from_headers};
+use herald_core::domain::audit::AuditContext;
 use herald_core::domain::authentication::Identity;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -258,7 +260,8 @@ pub async fn get_realm(
 pub async fn create_realm(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
-    _headers: HeaderMap,
+    ClientIp(ip): ClientIp,
+    headers: HeaderMap,
     Json(payload): Json<CreateRealmValidator>,
 ) -> Result<ApiResult<RealmResponse>, ApiError> {
     // Validate request
@@ -291,8 +294,9 @@ pub async fn create_realm(
         "create_realm: Received request"
     );
 
+    let ctx = AuditContext::admin(&identity, ip, user_agent_from_headers(&headers));
     let realm = realm_service
-        .create_realm(identity, request)
+        .create_realm(identity, ctx, request)
         .await
         .map_err(|e| {
             tracing::error!("Failed to create realm: {e}");

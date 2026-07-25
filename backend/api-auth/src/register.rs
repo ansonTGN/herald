@@ -269,9 +269,9 @@ pub async fn register(
         }
 
         if !items.is_empty() {
-            let actor_meta = herald_core::domain::legal::AuditActorMeta {
+            let actor_meta = herald_core::domain::audit::AuditContext {
                 actor_id: user.id.to_string(),
-                actor_type: herald_core::domain::audit::ActorType::User,
+                actor_type: Some(herald_core::domain::audit::ActorType::User),
                 actor_name: Some(email.clone()),
                 ip_address: Some(ip.clone()),
                 user_agent: None,

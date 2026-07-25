@@ -17,6 +17,7 @@ use super::{
 };
 
 type ApiKeyRoleSummaries = Vec<(String, Vec<(Uuid, String)>)>;
+use crate::audit::AuditContext;
 use crate::authentication::Identity;
 
 // ============================================================================
@@ -294,6 +295,7 @@ pub trait AdminUserService: Send + Sync {
     fn create_user_with_roles(
         &self,
         identity: Identity,
+        ctx: AuditContext,
         realm_id: &str,
         request: CreateUserWithRolesRequest,
     ) -> impl Future<Output = UserAdminResult<AdminUser>> + Send;
@@ -302,6 +304,7 @@ pub trait AdminUserService: Send + Sync {
     fn update_user_admin(
         &self,
         identity: Identity,
+        ctx: AuditContext,
         realm_id: &str,
         user_id: Uuid,
         request: UpdateUserAdminRequest,
@@ -319,6 +322,7 @@ pub trait AdminUserService: Send + Sync {
     fn delete_user(
         &self,
         identity: Identity,
+        ctx: AuditContext,
         realm_id: &str,
         user_id: Uuid,
     ) -> impl Future<Output = UserAdminResult<()>> + Send;
@@ -327,6 +331,7 @@ pub trait AdminUserService: Send + Sync {
     fn reset_user_password(
         &self,
         identity: Identity,
+        ctx: AuditContext,
         realm_id: &str,
         user_id: Uuid,
     ) -> impl Future<Output = UserAdminResult<String>> + Send;
@@ -417,6 +422,7 @@ pub trait PermissionManagementService: Send + Sync {
     fn create_permission(
         &self,
         identity: Identity,
+        ctx: AuditContext,
         realm_id: &str,
         client_id: &str,
         role_id: Option<Uuid>,    // For role policies
@@ -430,6 +436,7 @@ pub trait PermissionManagementService: Send + Sync {
     fn delete_permission(
         &self,
         identity: Identity,
+        ctx: AuditContext,
         realm_id: &str,
         client_id: &str,
         role_id: Option<Uuid>,    // For role policies

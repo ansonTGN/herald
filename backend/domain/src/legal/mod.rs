@@ -6,4 +6,4 @@ pub mod service;
 pub use entities::*;
 pub use error::*;
 pub use ports::*;
-pub use service::{AuditActorMeta, LegalService};
+pub use service::LegalService;

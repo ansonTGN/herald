@@ -15,7 +15,6 @@ import {
 import type { UpsertRealmConfigRequest } from '@/lib/api-generated/types.gen'
 import { TOTPConfigForm as TOTPConfigFormComponent } from '@/components/realm-config/totp-config-form'
 import { PasskeyConfigForm as PasskeyConfigFormComponent } from '@/components/realm-config/passkey-config-form'
-import { EmailOtpConfigForm as EmailOtpConfigFormComponent } from '@/components/realm-config/email-otp-config-form'
 import { RegistrationConfigForm as RegistrationConfigFormComponent } from '@/components/realm-config/registration-config-form'
 import { EmailConfigForm as EmailConfigFormComponent } from '@/components/realm-config/email-config-form'
 import { TurnstileConfigForm as TurnstileConfigFormComponent } from '@/components/realm-config/turnstile-config-form'
@@ -608,9 +607,6 @@ export function SettingsPage() {
           <TabsTrigger value="passkey" data-testid="passkey-tab">
             {m['settings.tab_passkey']()}
           </TabsTrigger>
-          <TabsTrigger value="email-otp" data-testid="email-otp-tab">
-            {m['settings.tab_email_otp']()}
-          </TabsTrigger>
           <TabsTrigger value="turnstile" data-testid="turnstile-tab">
             {m['settings.tab_turnstile']()}
           </TabsTrigger>
@@ -656,15 +652,6 @@ export function SettingsPage() {
           />
         </TabsContent>
 
-        <TabsContent value="email-otp">
-          <EmailOtpConfigFormComponent
-            initialConfig={emailOtpConfigData ?? undefined}
-            onSave={saveEmailOtpConfig}
-            isLoading={isLoading}
-            disabled={!canUpdateConfig}
-          />
-        </TabsContent>
-
         <TabsContent value="turnstile">
           <TurnstileConfigFormComponent
             initialConfig={turnstileConfig}
@@ -695,6 +682,8 @@ export function SettingsPage() {
             emailStatusError={
               emailStatusQueryError instanceof Error ? emailStatusQueryError.message : null
             }
+            emailOtpInitialConfig={emailOtpConfigData ?? undefined}
+            onSaveEmailOtp={saveEmailOtpConfig}
           />
         </TabsContent>
 

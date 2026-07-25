@@ -21,6 +21,7 @@ import {
   getPublicConfig,
   getTurnstileStatus,
   status2 as emailOtpStatus,
+  status3 as passkeyStatus,
   getProfile,
   handleGetTotpStatus,
   handleListPasskeyCredentials,
@@ -172,6 +173,7 @@ export const queryKeys = {
   turnstileStatus: (realmId: string, clientId: string) =>
     [QUERY_KEYS.TURNSTILE_STATUS, realmId, clientId] as const,
   emailOtpStatus: (realmId: string) => [QUERY_KEYS.EMAIL_OTP_STATUS, realmId] as const,
+  passkeyStatus: (realmId: string) => [QUERY_KEYS.PASSKEY_STATUS, realmId] as const,
   subscription: (realmId: string, clientAppId: string) =>
     [QUERY_KEYS.SUBSCRIPTION, realmId, clientAppId] as const,
   subscriptionDetails: (realmId: string, subscriptionId: string) =>
@@ -581,6 +583,26 @@ export const emailOtpStatusQueryOptions = (realmId: string) =>
     queryKey: queryKeys.emailOtpStatus(realmId),
     queryFn: async () => {
       const response = await emailOtpStatus({ path: { realmId } })
+      if (response.error) throw response.error
+      return response.data
+    },
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_2_MIN,
+    gcTime: GC_TIME_5_MIN,
+  })
+
+// ==================== Passkey Status (public) ====================
+//
+// Reads the Realm's Passkey enablement flag
+// (`GET /api/auth/{realmId}/passkey/status`). Public; consumed by the login
+// route to gate the passkey entry visibility BEFORE the PasskeyLoginForm is
+// mounted (so a realm with passkey disabled never fires the begin-options
+// probe request at all). Mirrors `emailOtpStatusQueryOptions`.
+export const passkeyStatusQueryOptions = (realmId: string) =>
+  queryOptions({
+    queryKey: queryKeys.passkeyStatus(realmId),
+    queryFn: async () => {
+      const response = await passkeyStatus({ path: { realmId } })
       if (response.error) throw response.error
       return response.data
     },

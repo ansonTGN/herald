@@ -3,9 +3,11 @@
 use axum::{
     Json,
     extract::{Extension, Path, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
 };
+use herald_api_base::application::http::auth::util::{ClientIp, user_agent_from_headers};
+use herald_core::domain::audit::AuditContext;
 use herald_core::domain::authentication::Identity;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -192,8 +194,11 @@ pub async fn create_oauth_config(
     Path(realm_id): Path<String>,
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
+    ClientIp(ip): ClientIp,
+    headers: HeaderMap,
     Json(payload): Json<CreateOAuthConfigRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
+    let user_agent = user_agent_from_headers(&headers);
     // Validate request
     payload
         .validate()
@@ -224,8 +229,9 @@ pub async fn create_oauth_config(
         enabled: payload.enabled,
     };
 
+    let ctx = AuditContext::admin(&identity, ip, user_agent);
     let config = oauth_config_service
-        .create_config(identity, request)
+        .create_config(identity, ctx, request)
         .await
         .map_err(|e| {
             tracing::error!("Failed to create oauth config: {e}");
@@ -271,8 +277,11 @@ pub async fn update_oauth_config(
     Path((realm_id, provider_type)): Path<(String, String)>,
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
+    ClientIp(ip): ClientIp,
+    headers: HeaderMap,
     Json(payload): Json<UpdateOAuthConfigRequest>,
 ) -> Result<ApiResult<OAuthConfigResponse>, ApiError> {
+    let ctx = AuditContext::admin(&identity, ip, user_agent_from_headers(&headers));
     // Validate request
     payload
         .validate()
@@ -315,7 +324,7 @@ pub async fn update_oauth_config(
     };
 
     let config = oauth_config_service
-        .update_config(identity, existing_config.id, update_request)
+        .update_config(identity, ctx, existing_config.id, update_request)
         .await
         .map_err(|e| {
             tracing::error!("Failed to update oauth config: {e}");
@@ -357,7 +366,10 @@ pub async fn delete_oauth_config(
     Path((realm_id, provider_type)): Path<(String, String)>,
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
+    ClientIp(ip): ClientIp,
+    headers: HeaderMap,
 ) -> Result<StatusCode, ApiError> {
+    let ctx = AuditContext::admin(&identity, ip, user_agent_from_headers(&headers));
     let oauth_config_service = state.service.oauth_config_service();
 
     let identity_realm_id = identity.realm_id();
@@ -387,7 +399,7 @@ pub async fn delete_oauth_config(
         })?;
 
     oauth_config_service
-        .delete_config(identity, existing_config.id)
+        .delete_config(identity, ctx, existing_config.id)
         .await
         .map_err(|e| {
             tracing::error!("Failed to delete oauth config: {e}");

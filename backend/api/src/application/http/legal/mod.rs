@@ -10,14 +10,13 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use herald_api_base::application::http::auth::util::{ClientIp, require_permission};
-use herald_core::domain::audit::ActorType;
+use herald_core::domain::audit::AuditContext;
 use herald_core::domain::authentication::Identity;
 use herald_core::domain::legal::ConsentSource;
 use herald_core::domain::legal::entities::{
     AgreementMode, AgreementSource, AgreementType, ConsentStatusItem, LegalAgreementSummary,
     LegalAgreementVersion,
 };
-use herald_core::domain::legal::service::AuditActorMeta;
 
 use crate::application::http::server::api_entities::{ApiError, ErrorResponse};
 use crate::application::http::state::AppState;
@@ -298,18 +297,11 @@ pub async fn record_consent(
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
 
-    let actor = AuditActorMeta {
-        actor_id: identity.user_id(),
-        actor_type: ActorType::User,
-        actor_name: None,
-        ip_address: Some(ip),
-        user_agent,
-        trace_id: None,
-    };
+    let ctx = AuditContext::user(&identity, ip, user_agent);
 
     state
         .legal_service
-        .record_consent(user_id, &realm_id, items, ConsentSource::Explicit, actor)
+        .record_consent(user_id, &realm_id, items, ConsentSource::Explicit, ctx)
         .await?;
 
     Ok(StatusCode::NO_CONTENT)
@@ -446,22 +438,15 @@ fn to_version_summary(v: &LegalAgreementVersion) -> LegalAgreementVersionSummary
     }
 }
 
-/// Build the AuditActorMeta for an admin operation. Admin ops are performed by
+/// Build the [`AuditContext`] for an admin operation. Admin ops are performed by
 /// an authenticated user with `ActorType::Admin` (the realm operator managing
 /// legal agreements), mirroring how the consent handler derives its actor.
 fn admin_actor(
     identity: &Identity,
     ip: Option<String>,
     user_agent: Option<String>,
-) -> AuditActorMeta {
-    AuditActorMeta {
-        actor_id: identity.user_id(),
-        actor_type: ActorType::Admin,
-        actor_name: None,
-        ip_address: ip,
-        user_agent,
-        trace_id: None,
-    }
+) -> AuditContext {
+    AuditContext::admin(identity, ip.unwrap_or_default(), user_agent)
 }
 
 // ----------------------------------------------------------------------------

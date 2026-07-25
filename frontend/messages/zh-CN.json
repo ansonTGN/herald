@@ -1007,6 +1007,7 @@
     "email_otp_enable_description": "允许用户使用发送到邮箱的一次性验证码登录",
     "email_otp_auto_register_label": "启用自动注册",
     "email_otp_auto_register_description": "未注册邮箱在验证码验证成功后自动创建并激活账户",
+    "email_otp_email_not_configured": "启用邮箱验证码登录需要先完成邮件配置",
     "registration_title": "注册配置",
     "registration_description": "配置此域的用户注册设置",
     "registration_enable_label": "启用注册",
@@ -1100,7 +1101,19 @@
     "action_realm_rbac_init": "域 RBAC 初始化",
     "action_auth_login": "登录",
     "action_auth_logout": "登出",
-    "action_auth_login_failed": "登录失败"
+    "action_auth_login_failed": "登录失败",
+    "action_product_create": "商品创建",
+    "action_product_update": "商品更新",
+    "action_product_delete": "商品删除",
+    "action_oauth_config_create": "OAuth 配置创建",
+    "action_oauth_config_update": "OAuth 配置更新",
+    "action_oauth_config_delete": "OAuth 配置删除",
+    "action_passkey_config_update": "Passkey 配置更新",
+    "action_passkey_register": "Passkey 注册",
+    "action_passkey_delete": "Passkey 删除",
+    "action_agreement_consent": "协议同意",
+    "action_agreement_published": "协议发布",
+    "action_agreement_reverted": "协议还原"
   },
   "oauth": {
     "identity_providers": "身份提供商",

@@ -37,8 +37,8 @@ pub mod user_totp;
 
 // Re-export commonly used types
 pub use audit::{
-    ActorType, AuditAction, AuditCategory, AuditEvent, AuditEventFilters, AuditEventRepository,
-    AuditResult, AuditTargetType, NewAuditEvent, PaginatedAuditEvents,
+    ActorType, AuditAction, AuditCategory, AuditContext, AuditEvent, AuditEventFilters,
+    AuditEventRepository, AuditResult, AuditTargetType, NewAuditEvent, PaginatedAuditEvents,
 };
 pub use authentication::Identity;
 pub use custom_domain::{CustomDomainMappingRepository, MappingRow};

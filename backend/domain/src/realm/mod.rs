@@ -1,3 +1,4 @@
+use crate::audit::AuditContext;
 use crate::authentication::Identity;
 use crate::common::entities::{Entity, app_errors::CoreError};
 use chrono::{DateTime, Utc};
@@ -179,6 +180,7 @@ pub trait RealmService: Send + Sync {
     fn create_realm(
         &self,
         identity: Identity,
+        ctx: AuditContext,
         request: CreateRealmRequest,
     ) -> impl Future<Output = Result<Realm, CoreError>> + Send;
 

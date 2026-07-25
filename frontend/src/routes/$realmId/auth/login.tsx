@@ -42,6 +42,7 @@ import {
   toAuthConsentAgreements,
   turnstileStatusQueryOptions,
   emailOtpStatusQueryOptions,
+  passkeyStatusQueryOptions,
 } from '@/data/query-options'
 import { Link } from '@tanstack/react-router'
 import { useOAuthLogin } from '@/hooks/use-oauth-login'
@@ -118,9 +119,11 @@ export function LoginPage() {
   const [passkeySecondFactor, setPasskeySecondFactor] = useState<PasskeySecondFactorStep | null>(
     null
   )
-  // Tracks whether the realm exposes a passkey login entry for this browser.
-  // Defaults to true (WebAuthn-capable) and is flipped to false when the
-  // begin-options call 404s or the browser is unsupported, hiding the entry.
+  // Tracks whether the mounted PasskeyLoginForm can still serve an entry for
+  // this browser. Defaults to true and is flipped to false only by the form's
+  // onUnavailable callback (begin-options 404 or unsupported browser). Acts as
+  // a defensive secondary fallback behind `passkeyEnabled` (the primary gate
+  // from /passkey/status) — see the comment near the PasskeyLoginForm render.
   const [passkeyAvailable, setPasskeyAvailable] = useState(true)
   // Google One Tap entry visibility. Defaults to true and is flipped to false
   // when the GIS script fails to load or `window.google` is absent, hiding the
@@ -146,6 +149,17 @@ export function LoginPage() {
   // (design §4.4.1). Anonymous; safe to query unconditionally.
   const { data: emailOtpStatus } = useQuery(emailOtpStatusQueryOptions(realmId))
   const emailOtpEnabled = emailOtpStatus?.enabled === true
+
+  // Public Passkey enablement flag. The PRIMARY gate for the passkey entry:
+  // when the realm has passkey disabled we skip mounting PasskeyLoginForm
+  // entirely (so the begin-options probe request is never fired). The
+  // `passkeyAvailable` state below remains as a defensive secondary fallback
+  // (e.g. browser unsupported, or a rare race where the flag and the begin
+  // endpoint disagree). Anonymous; safe to query unconditionally.
+  const { data: passkeyStatus } = useQuery(passkeyStatusQueryOptions(realmId))
+  // `!== false` keeps the entry optimistically visible while the query loads
+  // (matches the pre-flag UX); it is hidden only on an explicit `enabled:false`.
+  const passkeyEnabled = passkeyStatus?.enabled !== false
 
   // Per-realm white-label config. Derived once so every auth
   // sub-state (consent, TOTP, passkey 2FA, main form) reuses the same brand
@@ -662,13 +676,13 @@ export function LoginPage() {
                 </div>
               </form>
 
-              {/* Passkey first-factor entry. Mounted whenever the realm exposes
-              passkey for this browser (passkeyAvailable). The form fetches the
-              begin-challenge on mount and arms the conditional (autofill) UI;
-              if the realm has passkey disabled (options 404) or the browser is
-              unsupported it calls onUnavailable and we hide the entry without
-              touching the password form. */}
-              {passkeyAvailable && (
+              {/* Passkey first-factor entry. The PRIMARY gate is `passkeyEnabled`
+              (from GET /passkey/status): when the realm has passkey disabled we
+              skip mounting the form so the begin-options probe is never fired.
+              `passkeyAvailable` is a defensive secondary fallback (browser
+              unsupported, or a begin-challenge 404) — when it flips to false
+              after mount we hide the entry without touching the password form. */}
+              {passkeyEnabled && passkeyAvailable && (
                 <div className="mt-4">
                   <PasskeyLoginForm
                     realmId={realmId}

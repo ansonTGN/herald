@@ -5,8 +5,8 @@ use uuid::Uuid;
 
 use crate::{
     audit::{
-        ActorType, AuditAction, AuditCategory, AuditEventRepository, AuditResult, AuditTargetType,
-        NewAuditEvent,
+        AuditAction, AuditCategory, AuditContext, AuditEventRepository, AuditResult,
+        AuditTargetType, NewAuditEvent,
     },
     authentication::Identity,
     common::{
@@ -49,7 +49,7 @@ where
 
     async fn record_audit(
         &self,
-        identity: &Identity,
+        ctx: &AuditContext,
         config: &OAuthProviderConfig,
         action: AuditAction,
     ) {
@@ -59,9 +59,9 @@ where
                 realm_id: config.realm_id.clone(),
                 category: AuditCategory::OAuth,
                 action,
-                actor_id: identity.id(),
-                actor_type: Some(ActorType::Admin),
-                actor_name: identity.as_user().map(|u| u.email.clone()),
+                actor_id: ctx.actor_id.clone(),
+                actor_type: ctx.actor_type,
+                actor_name: ctx.actor_name.clone(),
                 target_type: AuditTargetType::OAuthConfig,
                 target_id: config.id.to_string(),
                 target_name: Some(config.provider_type.as_str().to_string()),
@@ -70,9 +70,9 @@ where
                     "provider_type": config.provider_type.as_str(),
                     "enabled": config.enabled,
                 })),
-                ip_address: None,
-                user_agent: None,
-                trace_id: None,
+                ip_address: ctx.ip_address.clone(),
+                user_agent: ctx.user_agent.clone(),
+                trace_id: ctx.trace_id.clone(),
             })
             .await
         {
@@ -100,6 +100,7 @@ where
     pub async fn create_config(
         &self,
         identity: Identity,
+        ctx: AuditContext,
         request: CreateOAuthProviderConfigRequest,
     ) -> Result<OAuthProviderConfig, CoreError> {
         // Policy check（使用具体方法 + ensure_policy）
@@ -128,7 +129,7 @@ where
 
         let config = OAuthProviderConfig::new(request)?;
         let created = self.config_repository.create_config(config).await?;
-        self.record_audit(&identity, &created, AuditAction::OAuthConfigCreate)
+        self.record_audit(&ctx, &created, AuditAction::OAuthConfigCreate)
             .await;
         Ok(created)
     }
@@ -231,6 +232,7 @@ where
     pub async fn update_config(
         &self,
         identity: Identity,
+        ctx: AuditContext,
         id: Uuid,
         request: UpdateOAuthProviderConfigRequest,
     ) -> Result<OAuthProviderConfig, CoreError> {
@@ -251,7 +253,7 @@ where
         }
 
         let updated = self.config_repository.update_config(id, request).await?;
-        self.record_audit(&identity, &updated, AuditAction::OAuthConfigUpdate)
+        self.record_audit(&ctx, &updated, AuditAction::OAuthConfigUpdate)
             .await;
         Ok(updated)
     }
@@ -268,7 +270,12 @@ where
     /// Returns `CoreError::Forbidden` if the caller lacks permission
     /// Returns `CoreError::NotFound` if the config does not exist
     /// Returns `CoreError::Database` if database operation fails
-    pub async fn delete_config(&self, identity: Identity, id: Uuid) -> Result<(), CoreError> {
+    pub async fn delete_config(
+        &self,
+        identity: Identity,
+        ctx: AuditContext,
+        id: Uuid,
+    ) -> Result<(), CoreError> {
         // Policy check
         ensure_policy(
             self.policy.can_delete_config(identity.clone()).await,
@@ -286,7 +293,7 @@ where
         }
 
         self.config_repository.delete_config(id).await?;
-        self.record_audit(&identity, &config, AuditAction::OAuthConfigDelete)
+        self.record_audit(&ctx, &config, AuditAction::OAuthConfigDelete)
             .await;
         Ok(())
     }

@@ -55,9 +55,20 @@ impl OAuthProviderHandler for FacebookOAuthProvider {
             .set_token_uri(TokenUrl::new(Self::TOKEN_URL.to_string())?)
             .set_redirect_uri(RedirectUrl::new(config.redirect_uri.clone())?);
 
+        // Honor realm-configured scopes; fall back to Facebook default if none.
+        let scopes: Vec<Scope> = if config.scopes.is_empty() {
+            vec![Scope::new("email".to_string())]
+        } else {
+            config
+                .scopes
+                .iter()
+                .map(|s| Scope::new(s.clone()))
+                .collect()
+        };
+
         let (auth_url, _csrf_token) = client
             .authorize_url(|| oauth2::CsrfToken::new(state.to_string()))
-            .add_scopes([Scope::new("email".to_string())])
+            .add_scopes(scopes)
             .url();
 
         Ok(auth_url.to_string())

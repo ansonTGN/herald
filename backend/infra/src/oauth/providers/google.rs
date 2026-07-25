@@ -17,9 +17,9 @@ use serde::Deserialize;
 pub struct GoogleOAuthProvider;
 
 impl GoogleOAuthProvider {
-    const AUTH_URL: &'static str = "https://accounts.google.com/o/oauth2/auth";
-    const TOKEN_URL: &'static str = "https://accounts.google.com/o/oauth2/token";
-    const USER_INFO_URL: &'static str = "https://www.googleapis.com/oauth2/v1/userinfo";
+    const AUTH_URL: &'static str = "https://accounts.google.com/o/oauth2/v2/auth";
+    const TOKEN_URL: &'static str = "https://oauth2.googleapis.com/token";
+    const USER_INFO_URL: &'static str = "https://www.googleapis.com/oauth2/v2/userinfo";
 
     /// Production Google JWKS endpoint. Public so handlers in other crates
     /// can inject it as the `jwks_url` argument to
@@ -95,12 +95,27 @@ impl OAuthProviderHandler for GoogleOAuthProvider {
             .set_token_uri(TokenUrl::new(Self::TOKEN_URL.to_string())?)
             .set_redirect_uri(RedirectUrl::new(config.redirect_uri.clone())?);
 
+        // Honor realm-configured scopes; fall back to OIDC defaults if the
+        // config carries none (legacy/abnormal data path). `openid` yields the
+        // ID Token, `email` yields email + email_verified, `profile` yields
+        // name/picture.
+        let scopes: Vec<Scope> = if config.scopes.is_empty() {
+            vec![
+                Scope::new("openid".to_string()),
+                Scope::new("email".to_string()),
+                Scope::new("profile".to_string()),
+            ]
+        } else {
+            config
+                .scopes
+                .iter()
+                .map(|s| Scope::new(s.clone()))
+                .collect()
+        };
+
         let (auth_url, _csrf_token) = client
             .authorize_url(|| oauth2::CsrfToken::new(state.to_string()))
-            .add_scopes([
-                Scope::new("https://www.googleapis.com/auth/userinfo.profile".to_string()),
-                Scope::new("https://www.googleapis.com/auth/userinfo.email".to_string()),
-            ])
+            .add_scopes(scopes)
             .url();
 
         Ok(auth_url.to_string())
@@ -240,4 +255,49 @@ where
         .map_err(|e| CoreError::BadRequest(format!("Invalid Google id_token: {}", e)))?;
 
     Ok(token_data.claims)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use herald_domain::oauth::value_objects::OAuthConfig;
+
+    fn make_config(scopes: Vec<String>) -> OAuthConfig {
+        OAuthConfig {
+            client_id: "test-client-id".to_string(),
+            client_secret: "test-secret".to_string(),
+            redirect_uri: "https://example.com/callback".to_string(),
+            scopes,
+        }
+    }
+
+    // Intent: realm-configured scopes must reach Google's authorize endpoint.
+    // If a realm admin edits scopes in the settings UI, those scopes — not a
+    // hardcoded constant — must appear in the redirect URL. This test fails
+    // the moment get_auth_url stops honoring config.scopes.
+    #[test]
+    fn get_auth_url_honors_realm_configured_scopes() {
+        let url = GoogleOAuthProvider
+            .get_auth_url(
+                "state-123",
+                &make_config(vec!["openid".into(), "email".into()]),
+            )
+            .expect("auth url");
+
+        // oauth2 encodes space-separated scopes in the `scope` query param.
+        assert!(url.contains("scope=openid+email"), "url was: {url}");
+    }
+
+    // Intent: when no scopes are configured (legacy/abnormal data), fall back
+    // to OIDC defaults so login still works — never emit an empty scope.
+    #[test]
+    fn get_auth_url_falls_back_to_oidc_defaults_when_scopes_empty() {
+        let url = GoogleOAuthProvider
+            .get_auth_url("state-123", &make_config(vec![]))
+            .expect("auth url");
+
+        assert!(url.contains("scope=openid"), "url was: {url}");
+        assert!(url.contains("email"), "url was: {url}");
+        assert!(url.contains("profile"), "url was: {url}");
+    }
 }

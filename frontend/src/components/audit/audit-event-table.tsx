@@ -3,6 +3,7 @@ import { DataTable } from '@/components/shared'
 import { Badge } from '@/components/ui/badge'
 import type { AuditEventResponse } from '@/lib/api-generated'
 import { formatDateTimeShort } from '@/lib/date-utils'
+import { formatAuditAction } from '@/lib/audit-utils'
 import { m } from '@/paraglide/messages'
 
 interface AuditEventTableProps {
@@ -45,7 +46,9 @@ const columns: ColumnDef<AuditEventResponse>[] = [
   {
     accessorKey: 'action',
     header: () => m['audit.table_action'](),
-    cell: ({ getValue }) => <span className="font-mono text-sm">{getValue() as string}</span>,
+    cell: ({ getValue }) => (
+      <span className="text-sm">{formatAuditAction(getValue() as string)}</span>
+    ),
   },
   {
     id: 'target',

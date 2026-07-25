@@ -14,7 +14,7 @@
 #[cfg(test)]
 mod realm_admin_tests {
 
-    use crate::audit::MockAuditEventRepository;
+    use crate::audit::{AuditContext, MockAuditEventRepository};
     use crate::authentication::Identity;
     use crate::authorization::{MockRoleRepository, MockUserRoleRepository};
     use crate::client::ports::MockClientRepository;
@@ -108,6 +108,20 @@ mod realm_admin_tests {
 
     fn identity_fixture() -> Identity {
         Identity::User(user_fixture())
+    }
+
+    /// Minimal audit context for realm-creation tests — these tests assert on
+    /// realm/RBAC-init behavior, not on IP/UA capture, so a default context
+    /// suffices.
+    fn audit_ctx() -> AuditContext {
+        AuditContext {
+            actor_id: "creator".to_string(),
+            actor_type: Some(crate::audit::ActorType::Admin),
+            actor_name: None,
+            ip_address: None,
+            user_agent: None,
+            trace_id: None,
+        }
     }
 
     fn policy_fixture() -> AllowAllRealmPolicy {
@@ -288,6 +302,7 @@ mod realm_admin_tests {
         let result = realm_service
             .create_realm(
                 identity_fixture(),
+                audit_ctx(),
                 CreateRealmRequest {
                     id: Some("test-realm".to_string()),
                     name: "Test Realm".to_string(),
@@ -394,6 +409,7 @@ mod realm_admin_tests {
         let result = realm_service
             .create_realm(
                 identity_fixture(),
+                audit_ctx(),
                 CreateRealmRequest {
                     id: Some("test-realm".to_string()),
                     name: "Test Realm".to_string(),
@@ -513,6 +529,7 @@ mod realm_admin_tests {
         let result = realm_service
             .create_realm(
                 identity_fixture(),
+                audit_ctx(),
                 CreateRealmRequest {
                     id: Some("test-realm".to_string()),
                     name: "Test Realm".to_string(),

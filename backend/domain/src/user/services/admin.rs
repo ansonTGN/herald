@@ -6,7 +6,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::audit::{
-    ActorType, AuditAction, AuditCategory, AuditEventRepository, AuditResult, AuditTargetType,
+    AuditAction, AuditCategory, AuditContext, AuditEventRepository, AuditResult, AuditTargetType,
     NewAuditEvent,
 };
 use crate::authentication::ports::BrowserTokenService;
@@ -105,7 +105,7 @@ where
 
     async fn record_user_audit(
         &self,
-        identity: &Identity,
+        ctx: &AuditContext,
         realm_id: &str,
         action: AuditAction,
         target_id: String,
@@ -119,17 +119,17 @@ where
                 realm_id: realm_id.to_string(),
                 category: AuditCategory::UserManagement,
                 action,
-                actor_id: identity.user_id().to_string(),
-                actor_type: Some(ActorType::Admin),
-                actor_name: identity.as_user().map(|u| u.email.clone()),
+                actor_id: ctx.actor_id.clone(),
+                actor_type: ctx.actor_type,
+                actor_name: ctx.actor_name.clone(),
                 target_type: AuditTargetType::User,
                 target_id,
                 target_name,
                 result,
                 details: reason.map(|reason| serde_json::json!({"reason": reason})),
-                ip_address: None,
-                user_agent: None,
-                trace_id: None,
+                ip_address: ctx.ip_address.clone(),
+                user_agent: ctx.user_agent.clone(),
+                trace_id: ctx.trace_id.clone(),
             })
             .await
         {
@@ -162,6 +162,7 @@ where
     async fn create_user_with_roles(
         &self,
         identity: Identity,
+        ctx: AuditContext,
         realm_id: &str,
         request: CreateUserWithRolesRequest,
     ) -> UserAdminResult<AdminUser> {
@@ -183,17 +184,17 @@ where
                     realm_id: realm_id.to_string(),
                     category: AuditCategory::UserManagement,
                     action: AuditAction::UserCreate,
-                    actor_id: identity.user_id().to_string(),
-                    actor_type: Some(ActorType::Admin),
-                    actor_name: identity.as_user().map(|u| u.email.clone()),
+                    actor_id: ctx.actor_id.clone(),
+                    actor_type: ctx.actor_type,
+                    actor_name: ctx.actor_name.clone(),
                     target_type: AuditTargetType::User,
                     target_id: "".to_string(),
                     target_name: Some(request.email.clone()),
                     result: AuditResult::Failure,
                     details: Some(serde_json::json!({"reason": "realm_boundary"})),
-                    ip_address: None,
-                    user_agent: None,
-                    trace_id: None,
+                    ip_address: ctx.ip_address.clone(),
+                    user_agent: ctx.user_agent.clone(),
+                    trace_id: ctx.trace_id.clone(),
                 })
                 .await
             {
@@ -216,17 +217,17 @@ where
                     realm_id: realm_id.to_string(),
                     category: AuditCategory::UserManagement,
                     action: AuditAction::UserCreate,
-                    actor_id: identity.user_id().to_string(),
-                    actor_type: Some(ActorType::Admin),
-                    actor_name: identity.as_user().map(|u| u.email.clone()),
+                    actor_id: ctx.actor_id.clone(),
+                    actor_type: ctx.actor_type,
+                    actor_name: ctx.actor_name.clone(),
                     target_type: AuditTargetType::User,
                     target_id: "".to_string(),
                     target_name: Some(request.email.clone()),
                     result: AuditResult::Failure,
                     details: Some(serde_json::json!({"reason": "duplicate_email"})),
-                    ip_address: None,
-                    user_agent: None,
-                    trace_id: None,
+                    ip_address: ctx.ip_address.clone(),
+                    user_agent: ctx.user_agent.clone(),
+                    trace_id: ctx.trace_id.clone(),
                 })
                 .await
             {
@@ -240,7 +241,7 @@ where
             Ok(hash) => hash,
             Err(e) => {
                 self.record_user_audit(
-                    &identity,
+                    &ctx,
                     realm_id,
                     AuditAction::UserCreate,
                     "".to_string(),
@@ -268,7 +269,7 @@ where
             Ok(user_id) => user_id,
             Err(e) => {
                 self.record_user_audit(
-                    &identity,
+                    &ctx,
                     realm_id,
                     AuditAction::UserCreate,
                     "".to_string(),
@@ -287,7 +288,7 @@ where
             .await
         {
             self.record_user_audit(
-                &identity,
+                &ctx,
                 realm_id,
                 AuditAction::UserCreate,
                 user_id.to_string(),
@@ -304,7 +305,7 @@ where
             Ok(Some(user)) => user,
             Ok(None) => {
                 self.record_user_audit(
-                    &identity,
+                    &ctx,
                     realm_id,
                     AuditAction::UserCreate,
                     user_id.to_string(),
@@ -319,7 +320,7 @@ where
             }
             Err(e) => {
                 self.record_user_audit(
-                    &identity,
+                    &ctx,
                     realm_id,
                     AuditAction::UserCreate,
                     user_id.to_string(),
@@ -348,17 +349,17 @@ where
                 realm_id: realm_id.to_string(),
                 category: AuditCategory::UserManagement,
                 action: AuditAction::UserCreate,
-                actor_id: identity.user_id().to_string(),
-                actor_type: Some(ActorType::Admin),
-                actor_name: identity.as_user().map(|u| u.email.clone()),
+                actor_id: ctx.actor_id.clone(),
+                actor_type: ctx.actor_type,
+                actor_name: ctx.actor_name.clone(),
                 target_type: AuditTargetType::User,
                 target_id: admin_user.id.to_string(),
                 target_name: Some(admin_user.email.clone()),
                 result: AuditResult::Success,
                 details: Some(serde_json::json!({"email": admin_user.email})),
-                ip_address: None,
-                user_agent: None,
-                trace_id: None,
+                ip_address: ctx.ip_address.clone(),
+                user_agent: ctx.user_agent.clone(),
+                trace_id: ctx.trace_id.clone(),
             })
             .await
         {
@@ -371,6 +372,7 @@ where
     async fn update_user_admin(
         &self,
         identity: Identity,
+        ctx: AuditContext,
         realm_id: &str,
         user_id: Uuid,
         request: UpdateUserAdminRequest,
@@ -393,17 +395,17 @@ where
                     realm_id: realm_id.to_string(),
                     category: AuditCategory::UserManagement,
                     action: AuditAction::UserUpdate,
-                    actor_id: identity.user_id().to_string(),
-                    actor_type: Some(ActorType::Admin),
-                    actor_name: identity.as_user().map(|u| u.email.clone()),
+                    actor_id: ctx.actor_id.clone(),
+                    actor_type: ctx.actor_type,
+                    actor_name: ctx.actor_name.clone(),
                     target_type: AuditTargetType::User,
                     target_id: user_id.to_string(),
                     target_name: None,
                     result: AuditResult::Failure,
                     details: Some(serde_json::json!({"reason": "realm_boundary"})),
-                    ip_address: None,
-                    user_agent: None,
-                    trace_id: None,
+                    ip_address: ctx.ip_address.clone(),
+                    user_agent: ctx.user_agent.clone(),
+                    trace_id: ctx.trace_id.clone(),
                 })
                 .await
             {
@@ -426,7 +428,7 @@ where
                 Ok(None) => None,
                 Err(e) => {
                     self.record_user_audit(
-                        &identity,
+                        &ctx,
                         realm_id,
                         AuditAction::UserUpdate,
                         user_id.to_string(),
@@ -449,7 +451,7 @@ where
             .await
         {
             self.record_user_audit(
-                &identity,
+                &ctx,
                 realm_id,
                 AuditAction::UserUpdate,
                 user_id.to_string(),
@@ -492,7 +494,7 @@ where
             Ok(Some(user)) => user,
             Ok(None) => {
                 self.record_user_audit(
-                    &identity,
+                    &ctx,
                     realm_id,
                     AuditAction::UserUpdate,
                     user_id.to_string(),
@@ -505,7 +507,7 @@ where
             }
             Err(e) => {
                 self.record_user_audit(
-                    &identity,
+                    &ctx,
                     realm_id,
                     AuditAction::UserUpdate,
                     user_id.to_string(),
@@ -545,17 +547,17 @@ where
                 realm_id: realm_id.to_string(),
                 category: AuditCategory::UserManagement,
                 action: AuditAction::UserUpdate,
-                actor_id: identity.user_id().to_string(),
-                actor_type: Some(ActorType::Admin),
-                actor_name: identity.as_user().map(|u| u.email.clone()),
+                actor_id: ctx.actor_id.clone(),
+                actor_type: ctx.actor_type,
+                actor_name: ctx.actor_name.clone(),
                 target_type: AuditTargetType::User,
                 target_id: admin_user.id.to_string(),
                 target_name: Some(admin_user.email.clone()),
                 result: AuditResult::Success,
                 details: Some(audit_details),
-                ip_address: None,
-                user_agent: None,
-                trace_id: None,
+                ip_address: ctx.ip_address.clone(),
+                user_agent: ctx.user_agent.clone(),
+                trace_id: ctx.trace_id.clone(),
             })
             .await
         {
@@ -607,6 +609,7 @@ where
     async fn delete_user(
         &self,
         identity: Identity,
+        ctx: AuditContext,
         realm_id: &str,
         user_id: Uuid,
     ) -> UserAdminResult<()> {
@@ -628,17 +631,17 @@ where
                     realm_id: realm_id.to_string(),
                     category: AuditCategory::UserManagement,
                     action: AuditAction::UserDelete,
-                    actor_id: identity.user_id().to_string(),
-                    actor_type: Some(ActorType::Admin),
-                    actor_name: identity.as_user().map(|u| u.email.clone()),
+                    actor_id: ctx.actor_id.clone(),
+                    actor_type: ctx.actor_type,
+                    actor_name: ctx.actor_name.clone(),
                     target_type: AuditTargetType::User,
                     target_id: user_id.to_string(),
                     target_name: None,
                     result: AuditResult::Failure,
                     details: Some(serde_json::json!({"reason": "realm_boundary"})),
-                    ip_address: None,
-                    user_agent: None,
-                    trace_id: None,
+                    ip_address: ctx.ip_address.clone(),
+                    user_agent: ctx.user_agent.clone(),
+                    trace_id: ctx.trace_id.clone(),
                 })
                 .await
             {
@@ -654,7 +657,7 @@ where
             Ok(deleted) => deleted,
             Err(e) => {
                 self.record_user_audit(
-                    &identity,
+                    &ctx,
                     realm_id,
                     AuditAction::UserDelete,
                     user_id.to_string(),
@@ -669,7 +672,7 @@ where
 
         if !deleted {
             self.record_user_audit(
-                &identity,
+                &ctx,
                 realm_id,
                 AuditAction::UserDelete,
                 user_id.to_string(),
@@ -688,17 +691,17 @@ where
                 realm_id: realm_id.to_string(),
                 category: AuditCategory::UserManagement,
                 action: AuditAction::UserDelete,
-                actor_id: identity.user_id().to_string(),
-                actor_type: Some(ActorType::Admin),
-                actor_name: identity.as_user().map(|u| u.email.clone()),
+                actor_id: ctx.actor_id.clone(),
+                actor_type: ctx.actor_type,
+                actor_name: ctx.actor_name.clone(),
                 target_type: AuditTargetType::User,
                 target_id: user_id.to_string(),
                 target_name: None,
                 result: AuditResult::Success,
                 details: None,
-                ip_address: None,
-                user_agent: None,
-                trace_id: None,
+                ip_address: ctx.ip_address.clone(),
+                user_agent: ctx.user_agent.clone(),
+                trace_id: ctx.trace_id.clone(),
             })
             .await
         {
@@ -711,6 +714,7 @@ where
     async fn reset_user_password(
         &self,
         identity: Identity,
+        ctx: AuditContext,
         realm_id: &str,
         user_id: Uuid,
     ) -> UserAdminResult<String> {
@@ -732,17 +736,17 @@ where
                     realm_id: realm_id.to_string(),
                     category: AuditCategory::UserManagement,
                     action: AuditAction::UserUpdate,
-                    actor_id: identity.user_id().to_string(),
-                    actor_type: Some(ActorType::Admin),
-                    actor_name: identity.as_user().map(|u| u.email.clone()),
+                    actor_id: ctx.actor_id.clone(),
+                    actor_type: ctx.actor_type,
+                    actor_name: ctx.actor_name.clone(),
                     target_type: AuditTargetType::User,
                     target_id: user_id.to_string(),
                     target_name: None,
                     result: AuditResult::Failure,
                     details: Some(serde_json::json!({"reason": "realm_boundary"})),
-                    ip_address: None,
-                    user_agent: None,
-                    trace_id: None,
+                    ip_address: ctx.ip_address.clone(),
+                    user_agent: ctx.user_agent.clone(),
+                    trace_id: ctx.trace_id.clone(),
                 })
                 .await
             {
@@ -761,7 +765,7 @@ where
             Ok(hash) => hash,
             Err(e) => {
                 self.record_user_audit(
-                    &identity,
+                    &ctx,
                     realm_id,
                     AuditAction::UserUpdate,
                     user_id.to_string(),
@@ -783,7 +787,7 @@ where
             Ok(updated) => updated,
             Err(e) => {
                 self.record_user_audit(
-                    &identity,
+                    &ctx,
                     realm_id,
                     AuditAction::UserUpdate,
                     user_id.to_string(),
@@ -803,17 +807,17 @@ where
                     realm_id: realm_id.to_string(),
                     category: AuditCategory::UserManagement,
                     action: AuditAction::UserUpdate,
-                    actor_id: identity.user_id().to_string(),
-                    actor_type: Some(ActorType::Admin),
-                    actor_name: identity.as_user().map(|u| u.email.clone()),
+                    actor_id: ctx.actor_id.clone(),
+                    actor_type: ctx.actor_type,
+                    actor_name: ctx.actor_name.clone(),
                     target_type: AuditTargetType::User,
                     target_id: user_id.to_string(),
                     target_name: None,
                     result: AuditResult::Failure,
                     details: Some(serde_json::json!({"reason": "user_not_found"})),
-                    ip_address: None,
-                    user_agent: None,
-                    trace_id: None,
+                    ip_address: ctx.ip_address.clone(),
+                    user_agent: ctx.user_agent.clone(),
+                    trace_id: ctx.trace_id.clone(),
                 })
                 .await
             {
@@ -846,9 +850,9 @@ where
                 realm_id: realm_id.to_string(),
                 category: AuditCategory::UserManagement,
                 action: AuditAction::UserUpdate,
-                actor_id: identity.user_id().to_string(),
-                actor_type: Some(ActorType::Admin),
-                actor_name: identity.as_user().map(|u| u.email.clone()),
+                actor_id: ctx.actor_id.clone(),
+                actor_type: ctx.actor_type,
+                actor_name: ctx.actor_name.clone(),
                 target_type: AuditTargetType::User,
                 target_id: user_id.to_string(),
                 target_name: None,
@@ -858,9 +862,9 @@ where
                     "user_id": user_id.to_string(),
                     "sessions_revoked": "all",
                 })),
-                ip_address: None,
-                user_agent: None,
-                trace_id: None,
+                ip_address: ctx.ip_address.clone(),
+                user_agent: ctx.user_agent.clone(),
+                trace_id: ctx.trace_id.clone(),
             })
             .await
         {
@@ -1422,11 +1426,12 @@ where
 
     async fn record_rbac_audit(
         &self,
-        identity: &Identity,
+        ctx: &AuditContext,
         realm_id: &str,
         action: AuditAction,
         target_type: AuditTargetType,
         target_id: String,
+        target_name: Option<String>,
         details: serde_json::Value,
     ) {
         if let Err(e) = self
@@ -1435,17 +1440,17 @@ where
                 realm_id: realm_id.to_string(),
                 category: AuditCategory::Rbac,
                 action,
-                actor_id: identity.user_id().to_string(),
-                actor_type: Some(ActorType::Admin),
-                actor_name: identity.as_user().map(|u| u.email.clone()),
+                actor_id: ctx.actor_id.clone(),
+                actor_type: ctx.actor_type,
+                actor_name: ctx.actor_name.clone(),
                 target_type,
                 target_id,
-                target_name: None,
+                target_name,
                 result: AuditResult::Success,
                 details: Some(details),
-                ip_address: None,
-                user_agent: None,
-                trace_id: None,
+                ip_address: ctx.ip_address.clone(),
+                user_agent: ctx.user_agent.clone(),
+                trace_id: ctx.trace_id.clone(),
             })
             .await
         {
@@ -1464,6 +1469,7 @@ where
     async fn create_permission(
         &self,
         identity: Identity,
+        ctx: AuditContext,
         realm_id: &str,
         client_id: &str,
         role_id: Option<Uuid>,
@@ -1496,11 +1502,12 @@ where
                 .create_role_policy(rid, realm_id, &res, &act)
                 .await?;
             self.record_rbac_audit(
-                &identity,
+                &ctx,
                 realm_id,
                 AuditAction::PermissionGrant,
                 AuditTargetType::Role,
                 rid.to_string(),
+                None,
                 serde_json::json!({"resource": res, "action": act}),
             )
             .await;
@@ -1518,11 +1525,12 @@ where
                 .add_user_role(uid, r, realm_id, client_id)
                 .await?;
             self.record_rbac_audit(
-                &identity,
+                &ctx,
                 realm_id,
                 AuditAction::RoleAssign,
                 AuditTargetType::User,
                 uid.to_string(),
+                None,
                 serde_json::json!({"role_id": r, "client_id": client_id}),
             )
             .await;
@@ -1540,6 +1548,7 @@ where
     async fn delete_permission(
         &self,
         identity: Identity,
+        ctx: AuditContext,
         realm_id: &str,
         client_id: &str,
         role_id: Option<Uuid>,
@@ -1570,11 +1579,12 @@ where
                 .delete_role_policy(rid, &res, &act)
                 .await?;
             self.record_rbac_audit(
-                &identity,
+                &ctx,
                 realm_id,
                 AuditAction::PermissionRevoke,
                 AuditTargetType::Role,
                 rid.to_string(),
+                None,
                 serde_json::json!({"resource": res, "action": act}),
             )
             .await;
@@ -1592,11 +1602,12 @@ where
                 .remove_user_role(uid, r, client_id)
                 .await?;
             self.record_rbac_audit(
-                &identity,
+                &ctx,
                 realm_id,
                 AuditAction::RoleUnassign,
                 AuditTargetType::User,
                 uid.to_string(),
+                None,
                 serde_json::json!({"role_id": r, "client_id": client_id}),
             )
             .await;
@@ -2070,6 +2081,20 @@ mod tests {
         }
     }
 
+    /// Minimal audit context for unit tests — the `update_user_admin` tests
+    /// assert on session-revocation behavior, not on IP/UA capture, so a
+    /// default (empty) context is sufficient.
+    fn audit_ctx() -> AuditContext {
+        AuditContext {
+            actor_id: "admin".to_string(),
+            actor_type: Some(crate::audit::ActorType::Admin),
+            actor_name: None,
+            ip_address: None,
+            user_agent: None,
+            trace_id: None,
+        }
+    }
+
     /// Build a test `Identity::User` whose realm matches `realm_id`, so the
     /// realm-boundary check in `update_user_admin` passes.
     fn admin_identity(realm_id: &str) -> Identity {
@@ -2136,6 +2161,7 @@ mod tests {
         let res = svc
             .update_user_admin(
                 admin_identity("r"),
+                audit_ctx(),
                 "r",
                 Uuid::nil(),
                 UpdateUserAdminRequest {
@@ -2164,6 +2190,7 @@ mod tests {
         let res = svc
             .update_user_admin(
                 admin_identity("r"),
+                audit_ctx(),
                 "r",
                 Uuid::nil(),
                 UpdateUserAdminRequest {
@@ -2189,6 +2216,7 @@ mod tests {
         let res2 = svc2
             .update_user_admin(
                 admin_identity("r"),
+                audit_ctx(),
                 "r",
                 Uuid::nil(),
                 UpdateUserAdminRequest {
@@ -2214,6 +2242,7 @@ mod tests {
         let res3 = svc3
             .update_user_admin(
                 admin_identity("r"),
+                audit_ctx(),
                 "r",
                 Uuid::nil(),
                 UpdateUserAdminRequest {
@@ -2242,6 +2271,7 @@ mod tests {
         let res = svc
             .update_user_admin(
                 admin_identity("r"),
+                audit_ctx(),
                 "r",
                 Uuid::nil(),
                 UpdateUserAdminRequest {
@@ -2270,6 +2300,7 @@ mod tests {
         let res = svc
             .update_user_admin(
                 admin_identity("r"),
+                audit_ctx(),
                 "r",
                 Uuid::nil(),
                 UpdateUserAdminRequest {

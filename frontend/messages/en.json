@@ -1007,6 +1007,7 @@
     "email_otp_enable_description": "Allow users to sign in using a one-time code sent to their email",
     "email_otp_auto_register_label": "Enable Auto-Registration",
     "email_otp_auto_register_description": "Automatically create and activate an account for unregistered emails after successful code verification",
+    "email_otp_email_not_configured": "Email configuration is required before enabling Email Code login",
     "registration_title": "Registration Configuration",
     "registration_description": "Configure user registration settings for this realm",
     "registration_enable_label": "Enable Registration",
@@ -1100,7 +1101,19 @@
     "action_realm_rbac_init": "Realm RBAC Init",
     "action_auth_login": "Login",
     "action_auth_logout": "Logout",
-    "action_auth_login_failed": "Login Failed"
+    "action_auth_login_failed": "Login Failed",
+    "action_product_create": "Product Create",
+    "action_product_update": "Product Update",
+    "action_product_delete": "Product Delete",
+    "action_oauth_config_create": "OAuth Config Create",
+    "action_oauth_config_update": "OAuth Config Update",
+    "action_oauth_config_delete": "OAuth Config Delete",
+    "action_passkey_config_update": "Passkey Config Update",
+    "action_passkey_register": "Passkey Register",
+    "action_passkey_delete": "Passkey Delete",
+    "action_agreement_consent": "Agreement Consent",
+    "action_agreement_published": "Agreement Published",
+    "action_agreement_reverted": "Agreement Reverted"
   },
   "oauth": {
     "identity_providers": "Identity Providers",

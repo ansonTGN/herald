@@ -41,10 +41,11 @@ export const PROVIDER_DISPLAY_NAMES: Record<ProviderType, string> = {
  * Default OAuth scopes for each provider
  */
 export const DEFAULT_SCOPES: Record<ProviderType, string[]> = {
-  google: [
-    'https://www.googleapis.com/auth/userinfo.profile',
-    'https://www.googleapis.com/auth/userinfo.email',
-  ],
+  // OIDC standard scopes (per Google's OpenID Connect docs). `openid` is
+  // required to obtain an ID Token; `email` returns email + email_verified;
+  // `profile` returns name/picture/locale. Legacy
+  // `https://www.googleapis.com/auth/userinfo.*` URLs are deprecated.
+  google: ['openid', 'email', 'profile'],
   github: ['user:email'],
   facebook: ['email'],
   apple: ['name', 'email'],

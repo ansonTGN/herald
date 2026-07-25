@@ -6,15 +6,19 @@ use herald_core::domain::custom_domain::CustomDomainMappingRepository;
 use herald_core::domain::realm_config::ConfigType;
 use herald_core::domain::user_passkey::PasskeyRelyingParty;
 
-/// Gate a passkey operation on the realm having Passkey enabled.
+/// Read the realm's passkey `enabled` flag from `realm_config`
+/// (`config_type='passkey'`, `config_key='settings'`).
 ///
-/// Reads the realm's passkey `enabled` flag from `realm_config`
-/// (`config_type='passkey'`, `config_key='settings'`). Returns a 404
-/// "Passkey is not enabled for this realm" when the config row is absent or
-/// its inner `enabled` flag is missing/false. Shared by the user self-service
-/// handlers (list/rename/delete/register-begin) and the login begin handlers
-/// so all passkey paths reject a disabled realm consistently.
-pub async fn ensure_passkey_enabled(state: &AppState, realm_id: &str) -> Result<(), ApiError> {
+/// Returns `Ok(false)` when the config row is absent or its inner `enabled`
+/// flag is missing/false — passkey is opt-in per realm. Propagates a 500 only
+/// when the lookup itself fails. This is the single read path shared by the
+/// passkey gate below and the public `/passkey/status` status endpoint.
+///
+/// Note: the structurally identical `read_realm_passkey_enabled` in
+/// `api-billing/feature_availability.rs` is intentionally kept separate — it
+/// deliberately swallows lookup errors (returns `false`) so a passkey flag
+/// lookup can never hard-fail the aggregated feature-availability response.
+pub async fn is_passkey_enabled(state: &AppState, realm_id: &str) -> Result<bool, ApiError> {
     let row = sqlx::query_as::<_, (String,)>(
         "SELECT config_value FROM realm_config
          WHERE realm_id = $1 AND config_type = $2 AND config_key = 'settings' AND enabled = true",
@@ -33,10 +37,19 @@ pub async fn ensure_passkey_enabled(state: &AppState, realm_id: &str) -> Result<
         .and_then(|value| value.get("enabled").and_then(|enabled| enabled.as_bool()))
         .unwrap_or(false);
 
-    if !enabled {
+    Ok(enabled)
+}
+
+/// Gate a passkey operation on the realm having Passkey enabled.
+///
+/// Returns a 404 "Passkey is not enabled for this realm" when [`is_passkey_enabled`]
+/// reports `false`. Shared by the user self-service handlers
+/// (list/rename/delete/register-begin) and the login begin handlers so all
+/// passkey paths reject a disabled realm consistently.
+pub async fn ensure_passkey_enabled(state: &AppState, realm_id: &str) -> Result<(), ApiError> {
+    if !is_passkey_enabled(state, realm_id).await? {
         return Err(ApiError::not_found("Passkey is not enabled for this realm"));
     }
-
     Ok(())
 }
 

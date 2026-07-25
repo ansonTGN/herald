@@ -91,6 +91,12 @@ vi.mock('@/data/query-options', () => ({
     queryKey: ['email-otp-status', 'test-realm'],
     queryFn: () => Promise.resolve({ enabled: false }),
   }),
+  // Passkey enabled by default so the PasskeyLoginForm entry mounts and the
+  // per-test MSW handlers on /login/passkey/options drive the real behaviour.
+  passkeyStatusQueryOptions: () => ({
+    queryKey: ['passkey-status', 'test-realm'],
+    queryFn: () => Promise.resolve({ enabled: true }),
+  }),
   toAuthConsentAgreements: (agreements: LegalAgreementSummary[]) =>
     agreements.map((agreement) => ({
       agreementType: agreement.agreement_type,

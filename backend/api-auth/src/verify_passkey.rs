@@ -38,7 +38,7 @@ use herald_core::infrastructure::user_passkey::{
 use crate::browser_token::BrowserTokenResponse;
 use crate::consent_gate::AuthConsentAgreement;
 use crate::mailflow;
-use crate::passkey_rp::resolve_passkey_rp;
+use crate::passkey_rp::{is_passkey_enabled, resolve_passkey_rp};
 
 const PASSKEY_VERIFY_FAILED: &str = "Passkey 验证失败";
 
@@ -128,6 +128,19 @@ pub struct Passkey2faVerifyRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(required = false)]
     pub agreements: Option<Vec<AuthConsentAgreement>>,
+}
+
+/// Public Passkey enablement flag for a Realm.
+///
+/// Mirrors `email_otp::status`: a single boolean consumed by the login page to
+/// gate the passkey entry *before* any passkey endpoint is called, instead of
+/// relying on a 404 from `POST /login/passkey/options` to hide it after mount.
+/// Returns `{ enabled: false }` when the config is absent or malformed (opt-in
+/// per Realm).
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PasskeyStatusResponse {
+    pub enabled: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -790,4 +803,34 @@ fn map_passkey_setup_error(err: PasskeyError) -> ApiError {
         | PasskeyError::ChallengeExpired
         | PasskeyError::NotFound => ApiError::unauthorized(PASSKEY_VERIFY_FAILED),
     }
+}
+
+// ---------------------------------------------------------------------------
+// status handler
+// ---------------------------------------------------------------------------
+
+/// Public passkey enablement flag for a Realm.
+///
+/// Reads the `passkey` / `settings` config row and returns `{ enabled }`. The
+/// login page uses this to decide whether to render the passkey entry before
+/// any passkey endpoint is called, rather than discovering disablement via a
+/// 404 from `POST /login/passkey/options`. Anonymous (no authentication).
+#[utoipa::path(
+    get,
+    path = "/api/auth/{realmId}/passkey/status",
+    tag = "auth",
+    params(
+        ("realmId" = String, Path, description = "Realm ID")
+    ),
+    responses(
+        (status = 200, description = "Passkey status", body = PasskeyStatusResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse),
+    )
+)]
+pub async fn status(
+    Path(realm_id): Path<String>,
+    State(state): State<AppState>,
+) -> Result<Json<PasskeyStatusResponse>, ApiError> {
+    let enabled = is_passkey_enabled(&state, &realm_id).await?;
+    Ok(Json(PasskeyStatusResponse { enabled }))
 }
