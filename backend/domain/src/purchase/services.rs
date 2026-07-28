@@ -1,6 +1,3 @@
-// Purchase domain value types
-// PurchaseService implementation moved to infrastructure/purchase/purchase_service.rs
-
 use uuid::Uuid;
 
 use crate::billing::entities::BillingType;
@@ -81,4 +78,30 @@ pub struct CompletePaymentAttemptInput {
     /// Used when the provider webhook carries billing_type metadata that
     /// should take precedence over the mapping's stored billing_type.
     pub billing_type_override: Option<BillingType>,
+}
+
+/// Input for the IAP receipt submission path (design support-iap §5.2).
+///
+/// IAP (Apple App Store / Google Play) is a "purchase already happened on the
+/// store -> client submits credential -> Herald verifies + fulfils" reverse
+/// payment semantic. Unlike the Stripe/Creem forward path, IAP never returns a
+/// checkout URL, so it reuses `prepare_payment_attempt`'s row creation but
+/// **skips** `build_payment_context` (design §5.2). The store-side transaction
+/// id (`originalTransactionId` / `purchaseToken`) is bound as the attempt's
+/// `provider_reference` up-front.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CreateIapAttemptInput {
+    pub realm_id: String,
+    pub user_id: Uuid,
+    /// Provider short name: `"apple"` or `"google"`.
+    pub payment_provider: String,
+    /// Purchasable target type. Always `EntitlementMapping` for IAP.
+    pub target_type: PurchasableTarget,
+    /// Entitlement mapping id (the store product's Herald mapping).
+    pub target_id: Uuid,
+    /// Store-side transaction id used as the attempt's `provider_reference`:
+    /// Apple `originalTransactionId` / Google `purchaseToken`.
+    pub provider_reference: String,
+    /// Optional diagnostic metadata persisted on the attempt.
+    pub metadata: Option<serde_json::Value>,
 }

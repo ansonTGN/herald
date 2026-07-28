@@ -692,7 +692,6 @@ export const SELECTORS = {
    * @see .ai/user-stories/core/ui-custom.md (DRAFT)
    */
   whiteLabel: {
-    // Tab + page entry
     tab: '[data-testid="white-label-tab"]',
     // Form fields
     logoUrlInput: '[data-testid="white-label-logo-url"]',
@@ -706,14 +705,12 @@ export const SELECTORS = {
     loginSubtitleInput: '[data-testid="white-label-login-subtitle"]',
     registerTitleInput: '[data-testid="white-label-register-title"]',
     registerSubtitleInput: '[data-testid="white-label-register-subtitle"]',
-    // Status notice
     draftNotice: '[data-testid="white-label-draft-notice"]',
     // Action buttons (idle vs in-flight text differs)
     saveDraftButton: '[data-testid="white-label-save-draft"]',
     publishButton: '[data-testid="white-label-publish"]',
     discardDraftButton: '[data-testid="white-label-discard-draft"]',
     restoreButton: '[data-testid="white-label-restore"]',
-    // Restore confirmation dialog
     restoreDialog: '[data-testid="white-label-restore-dialog"]',
     restoreConfirmButton: '[data-testid="white-label-restore-confirm"]',
     // In-form preview panels (AuthPageWrapper in login/register variant)
@@ -738,13 +735,10 @@ export const SELECTORS = {
    * User stories: US-CD-001 (config save), US-CD-003 (authorize gate)
    */
   customDomain: {
-    // Tab entry
     tab: '[data-testid="custom-domain-tab"]',
-    // Hostname input
     hostnameInput: '[data-testid="custom-domain-hostname"]',
     // CNAME guidance panel (renders configured cname_target)
     cnameGuidance: '[data-testid="custom-domain-cname-guidance"]',
-    // CNAME/TLS status badges
     statusCname: '[data-testid="custom-domain-status-cname"]',
     statusTls: '[data-testid="custom-domain-status-tls"]',
     refreshStatusButton: '[data-testid="custom-domain-refresh-status"]',
@@ -1166,6 +1160,104 @@ export const SELECTORS = {
     enabledSwitch: '[data-testid="email-otp-enabled-switch"]',
     autoRegisterSwitch: '[data-testid="email-otp-auto-register-switch"]',
     saveButton: '[data-testid="email-otp-save-button"]',
+  },
+
+  /**
+   * IAP (App Store / Google Play) — provider configuration + create-mapping dialog
+   *
+   * Anchors calibrated against shipped source (all `data-testid` verified in the
+   * DE-D01 session):
+   * - frontend/src/components/billing/payment-providers-page.tsx (page shell,
+   *   provider rows, add/edit/delete buttons)
+   * - frontend/src/components/billing/DeleteConfirmDialog.tsx (delete dialog)
+   * - frontend/src/components/billing/AppleIapConfigForm.tsx (Apple config form)
+   * - frontend/src/components/billing/GooglePlayConfigForm.tsx (Google config form)
+   * - frontend/src/components/billing/create-entitlement-mapping-dialog.tsx
+   *   (create-mapping dialog — consumed by DE-D02)
+   *
+   * LOUD NOTE — Google form inputs ship canonical testids:
+   * `google-package-name-input` and `google-service-account-json-input` are
+   * present on the shipped GooglePlayConfigForm. Use them directly; NO
+   * label-based semantic fallback is required. If a testid is missing at
+   * execution time, fall back to the label→ancestor-field pattern from
+   * `entitlement-mappings-page.ts:fillPriceRow`
+   * (`page.locator('label', { hasText })
+   *   .locator('xpath=ancestor::div[starts-with(@class,"space-y-1")][1]')
+   *   .locator('input')`) and record the gap in the DE-D01 Handoff.
+   *
+   * User stories: US-IAP-001 (provider config), US-IAP-002 (create mapping —
+   * DE-D02 consumes the create-mapping dialog selectors below).
+   * @see .ai/design/support-iap.md §4.4 (provider config form testids), §6.2 (demo)
+   * @see .ai/user-stories/billing/support-iap.md (DRAFT — US-IAP-001 P0)
+   */
+  iap: {
+    // --- Payment providers page shell (payment-providers-page.tsx) -----------
+    paymentProvidersPage: '[data-testid="payment-providers-page"]',
+    providerList: '[data-testid="provider-list"]',
+    appleProviderRow: '[data-testid="apple-provider-row"]',
+    googleProviderRow: '[data-testid="google-provider-row"]',
+    editAppleButton: '[data-testid="edit-apple-button"]',
+    editGoogleButton: '[data-testid="edit-google-button"]',
+    deleteAppleButton: '[data-testid="delete-apple-button"]',
+    deleteGoogleButton: '[data-testid="delete-google-button"]',
+    // `add-${type}-button` is rendered per unconfigured provider type.
+    addButton: (type: 'apple' | 'google') => `[data-testid="add-${type}-button"]`,
+
+    // --- Delete confirm dialog (DeleteConfirmDialog.tsx) ---------------------
+    // Note: when the provider protects active subscriptions, `delete-confirm-button`
+    // is NOT rendered (the dialog surfaces the active-sub count + a Cancel-only
+    // footer). Tests asserting the delete path assume an empty subscription set.
+    deleteConfirmDialog: '[data-testid="delete-confirm-dialog"]',
+    deleteConfirmButton: '[data-testid="delete-confirm-button"]',
+    deleteCancelButton: '[data-testid="delete-cancel-button"]',
+
+    // --- Apple config form (AppleIapConfigForm.tsx) --------------------------
+    appleConfigPage: '[data-testid="apple-config-form-page"]',
+    appleConfigHeading: '[data-testid="apple-config-form-page-heading"]',
+    appleConfigForm: '[data-testid="apple-config-page-form"]',
+    appleBundleIdInput: '[data-testid="apple-bundle-id-input"]',
+    appleIssuerIdInput: '[data-testid="apple-issuer-id-input"]',
+    appleKeyIdInput: '[data-testid="apple-key-id-input"]',
+    applePrivateKeyP8Input: '[data-testid="apple-private-key-p8-input"]',
+    appleEnvironmentSelect: '[data-testid="apple-environment-select"]',
+    appleEnvironmentSelectTrigger: '[data-testid="apple-environment-select-trigger"]',
+    appleConfigSubmitButton: '[data-testid="apple-config-page-submit-button"]',
+    appleConfigCancelButton: '[data-testid="apple-config-page-cancel-button"]',
+
+    // --- Google config form (GooglePlayConfigForm.tsx) -----------------------
+    googleConfigPage: '[data-testid="google-config-form-page"]',
+    googleConfigHeading: '[data-testid="google-config-form-page-heading"]',
+    googleConfigForm: '[data-testid="google-config-page-form"]',
+    googlePackageNameInput: '[data-testid="google-package-name-input"]',
+    googleServiceAccountJsonInput: '[data-testid="google-service-account-json-input"]',
+    googleConfigSubmitButton: '[data-testid="google-config-page-submit-button"]',
+    googleConfigCancelButton: '[data-testid="google-config-page-cancel-button"]',
+
+    // --- Create-mapping dialog (create-entitlement-mapping-dialog.tsx) -------
+    // The dialog is opened from the entitlement-mappings page via
+    // `create-mapping-button`. Several fields are conditionally rendered
+    // (billing-period only when recurring; validity-days / points-per-period /
+    // grant-on-subscribe only when canManagePoints + the matching billing
+    // type).
+    createMappingDialog: '[data-testid="create-entitlement-mapping-dialog"]',
+    createMappingButton: '[data-testid="create-mapping-button"]',
+    createMappingProviderSelect: '[data-testid="create-mapping-provider-select"]',
+    createMappingBucketSelect: '[data-testid="create-mapping-bucket-select"]',
+    createMappingBillingTypeSelect: '[data-testid="create-mapping-billing-type-select"]',
+    createMappingBillingPeriodSelect: '[data-testid="create-mapping-billing-period-select"]',
+    createMappingExternalProductIdInput:
+      '[data-testid="create-mapping-external-product-id-input"]',
+    createMappingExternalPriceIdInput: '[data-testid="create-mapping-external-price-id-input"]',
+    createMappingEntitlementKeyInput: '[data-testid="create-mapping-entitlement-key-input"]',
+    createMappingValidityDaysInput: '[data-testid="create-mapping-validity-days-input"]',
+    createMappingPointsPerPeriodInput:
+      '[data-testid="create-mapping-points-per-period-input"]',
+    createMappingGrantOnSubscribeToggle:
+      '[data-testid="create-mapping-grant-on-subscribe-toggle"]',
+    createMappingGrantedRoles: '[data-testid="create-mapping-granted-roles"]',
+    createMappingSubmitError: '[data-testid="create-mapping-submit-error"]',
+    createMappingSubmitButton: '[data-testid="create-mapping-submit-button"]',
+    createMappingCancelButton: '[data-testid="create-mapping-cancel-button"]',
   },
 };
 

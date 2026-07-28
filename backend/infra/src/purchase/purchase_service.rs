@@ -1,4 +1,3 @@
-// Purchase orchestration service
 // Moved from domain/purchase/services.rs to eliminate domain -> infrastructure dependency
 
 use std::collections::HashMap;
@@ -17,11 +16,12 @@ use herald_domain::payment_attempt::{
 use herald_domain::purchase::errors::{PurchaseErrorExt, PurchaseResult};
 use herald_domain::purchase::ports::{FulfillmentResult, FulfillmentService};
 use herald_domain::purchase::services::{
-    CompletePaymentAttemptInput, CreatedPaymentAttempt, PaymentCompletionSource,
-    PreparePaymentAttemptInput, PreparedPaymentAttempt, PurchaseTargetSnapshot, metadata_keys,
+    CompletePaymentAttemptInput, CreateIapAttemptInput, CreatedPaymentAttempt,
+    PaymentCompletionSource, PreparePaymentAttemptInput, PreparedPaymentAttempt,
+    PurchaseTargetSnapshot, metadata_keys,
 };
 use herald_domain::user::UserRoleRepository;
-/// Build common herald metadata map for payment providers.
+
 fn build_herald_metadata(
     realm_id: &str,
     user_id: Uuid,
@@ -60,7 +60,6 @@ fn build_herald_metadata(
 use herald_infra_creem::{CreateCheckoutRequest as CreemCreateCheckoutRequest, CreemClient};
 use herald_infra_stripe::{CreateCheckoutRequest as StripeCreateCheckoutRequest, StripeClient};
 
-/// Purchase service for unified purchase orchestration and fulfillment
 pub struct PurchaseService<B, PA, F, UR>
 where
     B: BillingRepository,
@@ -188,6 +187,77 @@ where
         Ok(CreatedPaymentAttempt { attempt, context })
     }
 
+    /// Create a payment attempt for an IAP receipt submission (design
+    /// support-iap §5.2).
+    ///
+    /// IAP (Apple App Store / Google Play) is a reverse-payment semantic: the
+    /// purchase has already happened on the store and the client submits a
+    /// credential (Apple `jwsRepresentation` / Google `purchaseToken`). This
+    /// method therefore reuses `resolve_target` (mapping lookup + M3
+    /// one-time-role ownership gate) and the attempt-row creation path, but
+    /// **skips** `build_payment_context` (IAP returns no checkout URL) and
+    /// binds the store-side transaction id as `provider_reference` up-front.
+    ///
+    /// The attempt is created in `Pending` status; the caller drives it to
+    /// `Succeeded` via `complete_succeeded_payment_attempt` inside the
+    /// fulfillment transaction (which for Google also performs the in-tx
+    /// `acknowledge` / `consume`, design §6.3).
+    pub async fn create_iap_payment_attempt(
+        &self,
+        input: CreateIapAttemptInput,
+    ) -> PurchaseResult<PaymentAttempt> {
+        let target = self
+            .resolve_target(
+                &input.realm_id,
+                input.user_id,
+                &input.target_type.to_string(),
+                input.target_id,
+                &input.payment_provider,
+            )
+            .await?;
+
+        // IAP amount semantics: Apple/Google are the merchant-of-record, so
+        // the store-side price is not authoritative for Herald's
+        // `payment_attempts` row (the column exists for the Stripe/Creem
+        // checkout flow). The `payment_attempts.amount CHECK(amount > 0)`
+        // constraint, however, rejects 0. When the entitlement mapping has no
+        // `provider_product_info.price` (design A6: IAP product info is
+        // optional / manually entered), `resolve_target` returns amount=0; we
+        // coerce to a sentinel `1` so the row satisfies the CHECK without
+        // pretending to know the real store price. A non-zero mapping price is
+        // still passed through verbatim when present.
+        let amount = if target.amount > 0 { target.amount } else { 1 };
+
+        let (attempt, _) = self
+            .payment_attempt_service
+            .create_payment_attempt(
+                CreatePaymentAttemptInput {
+                    realm_id: input.realm_id,
+                    user_id: input.user_id,
+                    payment_provider: input.payment_provider,
+                    target_type: target.target_type.to_string(),
+                    target_id: target.target_id,
+                    bucket_id: target.bucket_id,
+                    amount,
+                    currency: target.currency.clone(),
+                    // Bind the store-side transaction id up-front (Apple
+                    // originalTransactionId / Google purchaseToken). Unlike
+                    // Stripe/Creem, IAP has no intermediate checkout session.
+                    provider_reference: Some(input.provider_reference),
+                    metadata: input.metadata,
+                    is_one_time_role: target.is_one_time_role,
+                },
+                PaymentContext {
+                    stripe_checkout_url: None,
+                    creem_checkout_url: None,
+                    client_secret: None,
+                },
+            )
+            .await?;
+
+        Ok(attempt)
+    }
+
     /// Fulfill a payment attempt based on billing type from entitlement mapping.
     /// When `billing_type_override` is provided, it takes precedence.
     /// When absent, resolves from the entitlement mapping — returns an error if
@@ -202,7 +272,6 @@ where
         let billing_type = if let Some(bt) = billing_type_override {
             bt
         } else {
-            // Resolve billing_type from the entitlement mapping
             let mapping = self
                 .billing_repository
                 .find_entitlement_mapping_by_id(attempt.target_id)
@@ -327,7 +396,6 @@ where
         // `payment_attempt.bucket_id`.
         let bucket_id = mapping.bucket_id;
 
-        // Extract price info from provider_product_info if available
         let (amount, currency, title) = mapping
             .provider_product_info
             .as_ref()
@@ -616,8 +684,14 @@ where
     fn validate_completion_source(&self, source: &PaymentCompletionSource) -> PurchaseResult<()> {
         match source {
             PaymentCompletionSource::InternalApi => Ok(()),
+            // IAP providers (apple / google) reach this path via the IAP
+            // receipt handler and Apple SSV V2 webhook
+            // (`shared_fulfillment::fulfill_provider_event`), in addition to
+            // the Stripe / Creem webhook paths. Design support-iap §4.1 key
+            // boundary #2: the short names `apple` / `google` flow through
+            // every `payment_provider` match arm alongside `stripe` / `creem`.
             PaymentCompletionSource::ProviderWebhook { provider }
-                if matches!(provider.as_str(), "stripe" | "creem") =>
+                if matches!(provider.as_str(), "stripe" | "creem" | "apple" | "google") =>
             {
                 Ok(())
             }

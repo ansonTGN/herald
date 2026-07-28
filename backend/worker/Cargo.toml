@@ -9,6 +9,10 @@ path = "src/lib.rs"
 
 [dependencies]
 herald-core = { path = "../core" }
+# IAP reconciliation job (BE-D04 / design support-iap §5.7). Wired here (not in
+# api-billing / infra) per the BE-D01 handoff: BE-D04 owns the worker
+# Cargo.toml edge, which does not overlap BE-D03's api-billing/infra edges.
+herald-infra-iap = { path = "../infra-iap" }
 tokio = { workspace = true }
 tracing = { workspace = true }
 anyhow = { workspace = true }
@@ -17,3 +21,9 @@ sqlx = { workspace = true }
 uuid = { workspace = true }
 serde_json = { workspace = true }
 reqwest = { workspace = true }
+# `FutureExt::catch_unwind` is used by `iap_reconciliation_job` to convert
+# panics raised inside the third-party `app-store-server-library`
+# (`EncodingKey::from_ec_pem(...).unwrap()` on a malformed realm `.p8` key)
+# into a realm-level error, honouring the job's "single-realm failure must not
+# abort the sweep" contract.
+futures = { workspace = true }

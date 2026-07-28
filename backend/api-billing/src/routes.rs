@@ -9,8 +9,9 @@ use crate::credit_bucket_handlers::{
     get_credit_bucket_handler, list_credit_buckets_handler, update_credit_bucket_handler,
 };
 use crate::entitlement_mapping_handlers::{
-    batch_update_entitlement_mappings, get_entitlement_mapping, list_entitlement_mappings,
-    list_one_time_mappings, sync_provider_products, update_entitlement_mapping,
+    batch_update_entitlement_mappings, create_entitlement_mapping, get_entitlement_mapping,
+    list_entitlement_mappings, list_one_time_mappings, sync_provider_products,
+    update_entitlement_mapping,
 };
 use crate::feature_availability::{get_feature_availability, get_user_feature_availability};
 use crate::handlers::{
@@ -21,6 +22,7 @@ use crate::handlers_history::{
     get_my_subscription_history, get_subscription_history, list_my_subscription_history,
     list_subscription_history,
 };
+use crate::iap_handlers::{handle_apple_webhook, submit_iap_receipt};
 use crate::invoice_handlers::{
     apply_invoice, create_credit_note, create_invoice, download_invoice_pdf,
     download_my_invoice_pdf, get_invoice, get_invoice_apply_eligibility, get_my_invoice_scoped,
@@ -47,6 +49,12 @@ pub fn billing_public_routes() -> Router<AppState> {
         .route(
             "/api/third/pay/{realmId}/stripe/webhooks",
             post(handle_stripe_webhook),
+        )
+        // Apple App Store Server Notifications V2 (design support-iap §5.5).
+        // Unauthenticated HTTP; the JWS signature is the trust root.
+        .route(
+            "/api/third/pay/{realmId}/apple/webhooks",
+            post(handle_apple_webhook),
         )
         // ===== Internal Fulfillment Webhook =====
         .route(
@@ -83,7 +91,7 @@ pub fn billing_routes() -> Router<AppState> {
         // ===== Entitlement Mapping =====
         .route(
             "/api/bill/{realmId}/entitlement-mappings",
-            get(list_entitlement_mappings),
+            get(list_entitlement_mappings).post(create_entitlement_mapping),
         )
         .route(
             "/api/bill/{realmId}/one-time-mappings",
@@ -188,6 +196,12 @@ pub fn billing_browser_routes() -> Router<AppState> {
         .route(
             "/api/bill/{realmId}/purchase/payment-attempts/{attemptId}",
             get(get_payment_attempt_status),
+        )
+        // IAP receipt submission (design support-iap §5.2). CustomUserUi token
+        // + `PurchaseInitiate` scope enforced inside the handler.
+        .route(
+            "/api/bill/{realmId}/purchase/iap/receipt",
+            post(submit_iap_receipt),
         )
         .route(
             "/api/third/pay/{realmId}/providers",

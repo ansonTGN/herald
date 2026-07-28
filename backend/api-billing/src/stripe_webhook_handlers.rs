@@ -36,7 +36,6 @@ use herald_core::domain::points::entities::{
 use herald_core::domain::points::ports::PointsRepository;
 use herald_core::domain::points::subscription_service::CancelMode;
 use herald_core::domain::purchase::metadata_keys;
-use herald_core::domain::purchase::{CompletePaymentAttemptInput, PaymentCompletionSource};
 use herald_core::domain::realm_config::RealmConfigRepository;
 
 struct StripeCheckoutCompletedPayload {
@@ -792,21 +791,16 @@ async fn fulfill_payment_attempt(
     completed_at: DateTime<Utc>,
     billing_type_override: Option<BillingType>,
 ) -> Result<(), CoreError> {
-    app_state
-        .purchase_service
-        .complete_succeeded_payment_attempt(CompletePaymentAttemptInput {
-            attempt_id,
-            provider_status: provider_status.to_string(),
-            provider_transaction_id,
-            completed_at,
-            source: PaymentCompletionSource::ProviderWebhook {
-                provider: "stripe".to_string(),
-            },
-            billing_type_override,
-        })
-        .await?;
-
-    Ok(())
+    crate::shared_fulfillment::fulfill_provider_event(
+        app_state,
+        attempt_id,
+        "stripe",
+        provider_status,
+        provider_transaction_id,
+        completed_at,
+        billing_type_override,
+    )
+    .await
 }
 
 async fn fail_payment_attempt(
@@ -1762,7 +1756,6 @@ async fn handle_checkout_session_async_failed(
         );
     }
 
-    // Mark payment attempt as Failed via dedicated async recovery method
     app_state
         .payment_attempt_service
         .mark_failed_for_async_recovery(

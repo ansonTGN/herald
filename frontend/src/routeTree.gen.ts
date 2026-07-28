@@ -101,7 +101,9 @@ import { Route as RealmIdManageAuditIndexRouteImport } from './routes/$realmId/m
 import { Route as RealmIdManageApiKeysIndexRouteImport } from './routes/$realmId/manage/api-keys/index'
 import { Route as ManageClientAppsClientAppIdEditRouteImport } from './routes/manage/client-apps/$clientAppId.edit'
 import { Route as ManageBillingPaymentProvidersStripeRouteImport } from './routes/manage/billing/payment-providers/stripe'
+import { Route as ManageBillingPaymentProvidersGoogleRouteImport } from './routes/manage/billing/payment-providers/google'
 import { Route as ManageBillingPaymentProvidersCreemRouteImport } from './routes/manage/billing/payment-providers/creem'
+import { Route as ManageBillingPaymentProvidersAppleRouteImport } from './routes/manage/billing/payment-providers/apple'
 import { Route as ManageBillingInvoicesNewRouteImport } from './routes/manage/billing/invoices/new'
 import { Route as ManageBillingCreditBucketsOverviewRouteImport } from './routes/manage/billing/credit-buckets/overview'
 import { Route as ManageApiKeysApiKeyIdEditRouteImport } from './routes/manage/api-keys/$apiKeyId.edit'
@@ -124,7 +126,9 @@ import { Route as RealmIdManageBillingCreditBucketsIndexRouteImport } from './ro
 import { Route as ManageBillingInvoicesInvoiceIdEditRouteImport } from './routes/manage/billing/invoices/$invoiceId.edit'
 import { Route as RealmIdManageClientAppsClientAppIdEditRouteImport } from './routes/$realmId/manage/client-apps/$clientAppId.edit'
 import { Route as RealmIdManageBillingPaymentProvidersStripeRouteImport } from './routes/$realmId/manage/billing/payment-providers/stripe'
+import { Route as RealmIdManageBillingPaymentProvidersGoogleRouteImport } from './routes/$realmId/manage/billing/payment-providers/google'
 import { Route as RealmIdManageBillingPaymentProvidersCreemRouteImport } from './routes/$realmId/manage/billing/payment-providers/creem'
+import { Route as RealmIdManageBillingPaymentProvidersAppleRouteImport } from './routes/$realmId/manage/billing/payment-providers/apple'
 import { Route as RealmIdManageBillingInvoicesNewRouteImport } from './routes/$realmId/manage/billing/invoices/new'
 import { Route as RealmIdManageBillingCreditBucketsOverviewRouteImport } from './routes/$realmId/manage/billing/credit-buckets/overview'
 import { Route as RealmIdManageApiKeysApiKeyIdEditRouteImport } from './routes/$realmId/manage/api-keys/$apiKeyId.edit'
@@ -614,10 +618,22 @@ const ManageBillingPaymentProvidersStripeRoute =
     path: '/stripe',
     getParentRoute: () => ManageBillingPaymentProvidersRoute,
   } as any)
+const ManageBillingPaymentProvidersGoogleRoute =
+  ManageBillingPaymentProvidersGoogleRouteImport.update({
+    id: '/google',
+    path: '/google',
+    getParentRoute: () => ManageBillingPaymentProvidersRoute,
+  } as any)
 const ManageBillingPaymentProvidersCreemRoute =
   ManageBillingPaymentProvidersCreemRouteImport.update({
     id: '/creem',
     path: '/creem',
+    getParentRoute: () => ManageBillingPaymentProvidersRoute,
+  } as any)
+const ManageBillingPaymentProvidersAppleRoute =
+  ManageBillingPaymentProvidersAppleRouteImport.update({
+    id: '/apple',
+    path: '/apple',
     getParentRoute: () => ManageBillingPaymentProvidersRoute,
   } as any)
 const ManageBillingInvoicesNewRoute =
@@ -750,10 +766,22 @@ const RealmIdManageBillingPaymentProvidersStripeRoute =
     path: '/stripe',
     getParentRoute: () => RealmIdManageBillingPaymentProvidersRoute,
   } as any)
+const RealmIdManageBillingPaymentProvidersGoogleRoute =
+  RealmIdManageBillingPaymentProvidersGoogleRouteImport.update({
+    id: '/google',
+    path: '/google',
+    getParentRoute: () => RealmIdManageBillingPaymentProvidersRoute,
+  } as any)
 const RealmIdManageBillingPaymentProvidersCreemRoute =
   RealmIdManageBillingPaymentProvidersCreemRouteImport.update({
     id: '/creem',
     path: '/creem',
+    getParentRoute: () => RealmIdManageBillingPaymentProvidersRoute,
+  } as any)
+const RealmIdManageBillingPaymentProvidersAppleRoute =
+  RealmIdManageBillingPaymentProvidersAppleRouteImport.update({
+    id: '/apple',
+    path: '/apple',
     getParentRoute: () => RealmIdManageBillingPaymentProvidersRoute,
   } as any)
 const RealmIdManageBillingInvoicesNewRoute =
@@ -880,7 +908,9 @@ export interface FileRoutesByFullPath {
   '/manage/api-keys/$apiKeyId/edit': typeof ManageApiKeysApiKeyIdEditRoute
   '/manage/billing/credit-buckets/overview': typeof ManageBillingCreditBucketsOverviewRoute
   '/manage/billing/invoices/new': typeof ManageBillingInvoicesNewRoute
+  '/manage/billing/payment-providers/apple': typeof ManageBillingPaymentProvidersAppleRoute
   '/manage/billing/payment-providers/creem': typeof ManageBillingPaymentProvidersCreemRoute
+  '/manage/billing/payment-providers/google': typeof ManageBillingPaymentProvidersGoogleRoute
   '/manage/billing/payment-providers/stripe': typeof ManageBillingPaymentProvidersStripeRoute
   '/manage/client-apps/$clientAppId/edit': typeof ManageClientAppsClientAppIdEditRoute
   '/$realmId/manage/api-keys/': typeof RealmIdManageApiKeysIndexRoute
@@ -894,7 +924,9 @@ export interface FileRoutesByFullPath {
   '/$realmId/manage/api-keys/$apiKeyId/edit': typeof RealmIdManageApiKeysApiKeyIdEditRoute
   '/$realmId/manage/billing/credit-buckets/overview': typeof RealmIdManageBillingCreditBucketsOverviewRoute
   '/$realmId/manage/billing/invoices/new': typeof RealmIdManageBillingInvoicesNewRoute
+  '/$realmId/manage/billing/payment-providers/apple': typeof RealmIdManageBillingPaymentProvidersAppleRoute
   '/$realmId/manage/billing/payment-providers/creem': typeof RealmIdManageBillingPaymentProvidersCreemRoute
+  '/$realmId/manage/billing/payment-providers/google': typeof RealmIdManageBillingPaymentProvidersGoogleRoute
   '/$realmId/manage/billing/payment-providers/stripe': typeof RealmIdManageBillingPaymentProvidersStripeRoute
   '/$realmId/manage/client-apps/$clientAppId/edit': typeof RealmIdManageClientAppsClientAppIdEditRoute
   '/manage/billing/invoices/$invoiceId/edit': typeof ManageBillingInvoicesInvoiceIdEditRoute
@@ -984,7 +1016,9 @@ export interface FileRoutesByTo {
   '/manage/api-keys/$apiKeyId/edit': typeof ManageApiKeysApiKeyIdEditRoute
   '/manage/billing/credit-buckets/overview': typeof ManageBillingCreditBucketsOverviewRoute
   '/manage/billing/invoices/new': typeof ManageBillingInvoicesNewRoute
+  '/manage/billing/payment-providers/apple': typeof ManageBillingPaymentProvidersAppleRoute
   '/manage/billing/payment-providers/creem': typeof ManageBillingPaymentProvidersCreemRoute
+  '/manage/billing/payment-providers/google': typeof ManageBillingPaymentProvidersGoogleRoute
   '/manage/billing/payment-providers/stripe': typeof ManageBillingPaymentProvidersStripeRoute
   '/manage/client-apps/$clientAppId/edit': typeof ManageClientAppsClientAppIdEditRoute
   '/$realmId/manage/api-keys': typeof RealmIdManageApiKeysIndexRoute
@@ -998,7 +1032,9 @@ export interface FileRoutesByTo {
   '/$realmId/manage/api-keys/$apiKeyId/edit': typeof RealmIdManageApiKeysApiKeyIdEditRoute
   '/$realmId/manage/billing/credit-buckets/overview': typeof RealmIdManageBillingCreditBucketsOverviewRoute
   '/$realmId/manage/billing/invoices/new': typeof RealmIdManageBillingInvoicesNewRoute
+  '/$realmId/manage/billing/payment-providers/apple': typeof RealmIdManageBillingPaymentProvidersAppleRoute
   '/$realmId/manage/billing/payment-providers/creem': typeof RealmIdManageBillingPaymentProvidersCreemRoute
+  '/$realmId/manage/billing/payment-providers/google': typeof RealmIdManageBillingPaymentProvidersGoogleRoute
   '/$realmId/manage/billing/payment-providers/stripe': typeof RealmIdManageBillingPaymentProvidersStripeRoute
   '/$realmId/manage/client-apps/$clientAppId/edit': typeof RealmIdManageClientAppsClientAppIdEditRoute
   '/manage/billing/invoices/$invoiceId/edit': typeof ManageBillingInvoicesInvoiceIdEditRoute
@@ -1107,7 +1143,9 @@ export interface FileRoutesById {
   '/manage/api-keys/$apiKeyId/edit': typeof ManageApiKeysApiKeyIdEditRoute
   '/manage/billing/credit-buckets/overview': typeof ManageBillingCreditBucketsOverviewRoute
   '/manage/billing/invoices/new': typeof ManageBillingInvoicesNewRoute
+  '/manage/billing/payment-providers/apple': typeof ManageBillingPaymentProvidersAppleRoute
   '/manage/billing/payment-providers/creem': typeof ManageBillingPaymentProvidersCreemRoute
+  '/manage/billing/payment-providers/google': typeof ManageBillingPaymentProvidersGoogleRoute
   '/manage/billing/payment-providers/stripe': typeof ManageBillingPaymentProvidersStripeRoute
   '/manage/client-apps/$clientAppId/edit': typeof ManageClientAppsClientAppIdEditRoute
   '/$realmId/manage/api-keys/': typeof RealmIdManageApiKeysIndexRoute
@@ -1121,7 +1159,9 @@ export interface FileRoutesById {
   '/$realmId/manage/api-keys/$apiKeyId/edit': typeof RealmIdManageApiKeysApiKeyIdEditRoute
   '/$realmId/manage/billing/credit-buckets/overview': typeof RealmIdManageBillingCreditBucketsOverviewRoute
   '/$realmId/manage/billing/invoices/new': typeof RealmIdManageBillingInvoicesNewRoute
+  '/$realmId/manage/billing/payment-providers/apple': typeof RealmIdManageBillingPaymentProvidersAppleRoute
   '/$realmId/manage/billing/payment-providers/creem': typeof RealmIdManageBillingPaymentProvidersCreemRoute
+  '/$realmId/manage/billing/payment-providers/google': typeof RealmIdManageBillingPaymentProvidersGoogleRoute
   '/$realmId/manage/billing/payment-providers/stripe': typeof RealmIdManageBillingPaymentProvidersStripeRoute
   '/$realmId/manage/client-apps/$clientAppId/edit': typeof RealmIdManageClientAppsClientAppIdEditRoute
   '/manage/billing/invoices/$invoiceId/edit': typeof ManageBillingInvoicesInvoiceIdEditRoute
@@ -1231,7 +1271,9 @@ export interface FileRouteTypes {
     | '/manage/api-keys/$apiKeyId/edit'
     | '/manage/billing/credit-buckets/overview'
     | '/manage/billing/invoices/new'
+    | '/manage/billing/payment-providers/apple'
     | '/manage/billing/payment-providers/creem'
+    | '/manage/billing/payment-providers/google'
     | '/manage/billing/payment-providers/stripe'
     | '/manage/client-apps/$clientAppId/edit'
     | '/$realmId/manage/api-keys/'
@@ -1245,7 +1287,9 @@ export interface FileRouteTypes {
     | '/$realmId/manage/api-keys/$apiKeyId/edit'
     | '/$realmId/manage/billing/credit-buckets/overview'
     | '/$realmId/manage/billing/invoices/new'
+    | '/$realmId/manage/billing/payment-providers/apple'
     | '/$realmId/manage/billing/payment-providers/creem'
+    | '/$realmId/manage/billing/payment-providers/google'
     | '/$realmId/manage/billing/payment-providers/stripe'
     | '/$realmId/manage/client-apps/$clientAppId/edit'
     | '/manage/billing/invoices/$invoiceId/edit'
@@ -1335,7 +1379,9 @@ export interface FileRouteTypes {
     | '/manage/api-keys/$apiKeyId/edit'
     | '/manage/billing/credit-buckets/overview'
     | '/manage/billing/invoices/new'
+    | '/manage/billing/payment-providers/apple'
     | '/manage/billing/payment-providers/creem'
+    | '/manage/billing/payment-providers/google'
     | '/manage/billing/payment-providers/stripe'
     | '/manage/client-apps/$clientAppId/edit'
     | '/$realmId/manage/api-keys'
@@ -1349,7 +1395,9 @@ export interface FileRouteTypes {
     | '/$realmId/manage/api-keys/$apiKeyId/edit'
     | '/$realmId/manage/billing/credit-buckets/overview'
     | '/$realmId/manage/billing/invoices/new'
+    | '/$realmId/manage/billing/payment-providers/apple'
     | '/$realmId/manage/billing/payment-providers/creem'
+    | '/$realmId/manage/billing/payment-providers/google'
     | '/$realmId/manage/billing/payment-providers/stripe'
     | '/$realmId/manage/client-apps/$clientAppId/edit'
     | '/manage/billing/invoices/$invoiceId/edit'
@@ -1457,7 +1505,9 @@ export interface FileRouteTypes {
     | '/manage/api-keys/$apiKeyId/edit'
     | '/manage/billing/credit-buckets/overview'
     | '/manage/billing/invoices/new'
+    | '/manage/billing/payment-providers/apple'
     | '/manage/billing/payment-providers/creem'
+    | '/manage/billing/payment-providers/google'
     | '/manage/billing/payment-providers/stripe'
     | '/manage/client-apps/$clientAppId/edit'
     | '/$realmId/manage/api-keys/'
@@ -1471,7 +1521,9 @@ export interface FileRouteTypes {
     | '/$realmId/manage/api-keys/$apiKeyId/edit'
     | '/$realmId/manage/billing/credit-buckets/overview'
     | '/$realmId/manage/billing/invoices/new'
+    | '/$realmId/manage/billing/payment-providers/apple'
     | '/$realmId/manage/billing/payment-providers/creem'
+    | '/$realmId/manage/billing/payment-providers/google'
     | '/$realmId/manage/billing/payment-providers/stripe'
     | '/$realmId/manage/client-apps/$clientAppId/edit'
     | '/manage/billing/invoices/$invoiceId/edit'
@@ -2137,11 +2189,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ManageBillingPaymentProvidersStripeRouteImport
       parentRoute: typeof ManageBillingPaymentProvidersRoute
     }
+    '/manage/billing/payment-providers/google': {
+      id: '/manage/billing/payment-providers/google'
+      path: '/google'
+      fullPath: '/manage/billing/payment-providers/google'
+      preLoaderRoute: typeof ManageBillingPaymentProvidersGoogleRouteImport
+      parentRoute: typeof ManageBillingPaymentProvidersRoute
+    }
     '/manage/billing/payment-providers/creem': {
       id: '/manage/billing/payment-providers/creem'
       path: '/creem'
       fullPath: '/manage/billing/payment-providers/creem'
       preLoaderRoute: typeof ManageBillingPaymentProvidersCreemRouteImport
+      parentRoute: typeof ManageBillingPaymentProvidersRoute
+    }
+    '/manage/billing/payment-providers/apple': {
+      id: '/manage/billing/payment-providers/apple'
+      path: '/apple'
+      fullPath: '/manage/billing/payment-providers/apple'
+      preLoaderRoute: typeof ManageBillingPaymentProvidersAppleRouteImport
       parentRoute: typeof ManageBillingPaymentProvidersRoute
     }
     '/manage/billing/invoices/new': {
@@ -2298,11 +2364,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RealmIdManageBillingPaymentProvidersStripeRouteImport
       parentRoute: typeof RealmIdManageBillingPaymentProvidersRoute
     }
+    '/$realmId/manage/billing/payment-providers/google': {
+      id: '/$realmId/manage/billing/payment-providers/google'
+      path: '/google'
+      fullPath: '/$realmId/manage/billing/payment-providers/google'
+      preLoaderRoute: typeof RealmIdManageBillingPaymentProvidersGoogleRouteImport
+      parentRoute: typeof RealmIdManageBillingPaymentProvidersRoute
+    }
     '/$realmId/manage/billing/payment-providers/creem': {
       id: '/$realmId/manage/billing/payment-providers/creem'
       path: '/creem'
       fullPath: '/$realmId/manage/billing/payment-providers/creem'
       preLoaderRoute: typeof RealmIdManageBillingPaymentProvidersCreemRouteImport
+      parentRoute: typeof RealmIdManageBillingPaymentProvidersRoute
+    }
+    '/$realmId/manage/billing/payment-providers/apple': {
+      id: '/$realmId/manage/billing/payment-providers/apple'
+      path: '/apple'
+      fullPath: '/$realmId/manage/billing/payment-providers/apple'
+      preLoaderRoute: typeof RealmIdManageBillingPaymentProvidersAppleRouteImport
       parentRoute: typeof RealmIdManageBillingPaymentProvidersRoute
     }
     '/$realmId/manage/billing/invoices/new': {
@@ -2422,15 +2502,21 @@ const RealmIdManageBillingInvoicesRouteWithChildren =
   )
 
 interface RealmIdManageBillingPaymentProvidersRouteChildren {
+  RealmIdManageBillingPaymentProvidersAppleRoute: typeof RealmIdManageBillingPaymentProvidersAppleRoute
   RealmIdManageBillingPaymentProvidersCreemRoute: typeof RealmIdManageBillingPaymentProvidersCreemRoute
+  RealmIdManageBillingPaymentProvidersGoogleRoute: typeof RealmIdManageBillingPaymentProvidersGoogleRoute
   RealmIdManageBillingPaymentProvidersStripeRoute: typeof RealmIdManageBillingPaymentProvidersStripeRoute
   RealmIdManageBillingPaymentProvidersIndexRoute: typeof RealmIdManageBillingPaymentProvidersIndexRoute
 }
 
 const RealmIdManageBillingPaymentProvidersRouteChildren: RealmIdManageBillingPaymentProvidersRouteChildren =
   {
+    RealmIdManageBillingPaymentProvidersAppleRoute:
+      RealmIdManageBillingPaymentProvidersAppleRoute,
     RealmIdManageBillingPaymentProvidersCreemRoute:
       RealmIdManageBillingPaymentProvidersCreemRoute,
+    RealmIdManageBillingPaymentProvidersGoogleRoute:
+      RealmIdManageBillingPaymentProvidersGoogleRoute,
     RealmIdManageBillingPaymentProvidersStripeRoute:
       RealmIdManageBillingPaymentProvidersStripeRoute,
     RealmIdManageBillingPaymentProvidersIndexRoute:
@@ -2706,15 +2792,21 @@ const ManageBillingInvoicesRouteWithChildren =
   )
 
 interface ManageBillingPaymentProvidersRouteChildren {
+  ManageBillingPaymentProvidersAppleRoute: typeof ManageBillingPaymentProvidersAppleRoute
   ManageBillingPaymentProvidersCreemRoute: typeof ManageBillingPaymentProvidersCreemRoute
+  ManageBillingPaymentProvidersGoogleRoute: typeof ManageBillingPaymentProvidersGoogleRoute
   ManageBillingPaymentProvidersStripeRoute: typeof ManageBillingPaymentProvidersStripeRoute
   ManageBillingPaymentProvidersIndexRoute: typeof ManageBillingPaymentProvidersIndexRoute
 }
 
 const ManageBillingPaymentProvidersRouteChildren: ManageBillingPaymentProvidersRouteChildren =
   {
+    ManageBillingPaymentProvidersAppleRoute:
+      ManageBillingPaymentProvidersAppleRoute,
     ManageBillingPaymentProvidersCreemRoute:
       ManageBillingPaymentProvidersCreemRoute,
+    ManageBillingPaymentProvidersGoogleRoute:
+      ManageBillingPaymentProvidersGoogleRoute,
     ManageBillingPaymentProvidersStripeRoute:
       ManageBillingPaymentProvidersStripeRoute,
     ManageBillingPaymentProvidersIndexRoute:

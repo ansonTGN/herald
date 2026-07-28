@@ -16,7 +16,7 @@ pub struct PaymentProvidersResponse {
 }
 
 /// Payment provider information
-#[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PaymentProviderInfo {
     pub platform: String,
@@ -45,6 +45,19 @@ pub struct ValidationErrorDetail {
 pub struct GenericErrorResponse {
     pub error: String,
     pub message: String,
+}
+
+/// Whitelist of recognized payment-provider identifiers across the billing
+/// surface (design support-iap §3.4). Shared by the entitlement-mapping create
+/// and payment-attempt create validators so IAP attempts stay recognizable for
+/// status/lookup queries even though IAP receipt submission itself goes through
+/// a dedicated endpoint (§4.2.1).
+pub fn validate_payment_provider_value(provider: &str) -> Result<(), validator::ValidationError> {
+    if matches!(provider, "stripe" | "creem" | "apple" | "google") {
+        Ok(())
+    } else {
+        Err(validator::ValidationError::new("invalid_payment_provider"))
+    }
 }
 
 pub fn validate_request<T: Validate>(req: &T) -> Result<(), ValidationErrorResponse> {

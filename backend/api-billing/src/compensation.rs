@@ -36,6 +36,23 @@ impl WebhookEventProcessor for WebhookEventProcessorImpl {
                 payload,
                 event_type,
             )),
+            // IAP compensation (design support-iap §5.7). BE-D03 ships only the
+            // skeleton signatures; the full "lookup + replay" implementation
+            // (Apple getNotificationHistory / Google subscriptionsv2.get polling)
+            // is BE-D04. The signatures here are the contract BE-D04 must
+            // preserve (job + compensation both depend on them).
+            "apple" => Box::pin(crate::iap_handlers::reprocess_apple_event(
+                self.app_state.clone(),
+                realm_id.to_string(),
+                payload.clone(),
+                event_type.to_string(),
+            )),
+            "google" => Box::pin(crate::iap_handlers::reprocess_google_event(
+                self.app_state.clone(),
+                realm_id.to_string(),
+                payload.clone(),
+                event_type.to_string(),
+            )),
             _ => Box::pin(async move {
                 Err(CoreError::BadRequest(format!(
                     "unsupported payment provider: {}",

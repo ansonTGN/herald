@@ -17,11 +17,60 @@ import { DeleteConfirmDialog } from './DeleteConfirmDialog'
 import { Edit, Trash2, Plug2, Plus } from 'lucide-react'
 import { listPaymentProviders } from '@/lib/api-generated'
 import { deleteRealmConfig } from '@/lib/api-generated/sdk.gen'
-import { STRIPE_CONFIG_KEYS } from '@/lib/billing-constants'
+import {
+  STRIPE_CONFIG_KEYS,
+  APPLE_CONFIG_KEYS,
+  GOOGLE_CONFIG_KEYS,
+  type PaymentProvider,
+} from '@/lib/billing-constants'
 import { CREEM_CONFIG_KEYS } from '@/lib/creem-config-utils'
+import { formatProviderName } from '@/components/billing/format-provider-name'
 import { queryKeys } from '@/data/query-options'
 import { m } from '@/paraglide/messages'
 import { realmPath, useResolvedRealmContext } from '@/lib/realm-routing'
+
+/** Display order for the providers table and "add provider" buttons. */
+const PROVIDER_TYPES: readonly PaymentProvider[] = ['stripe', 'creem', 'apple', 'google']
+
+const CONFIG_KEYS_BY_PROVIDER: Record<PaymentProvider, readonly string[]> = {
+  stripe: Object.values(STRIPE_CONFIG_KEYS),
+  creem: Object.values(CREEM_CONFIG_KEYS),
+  apple: Object.values(APPLE_CONFIG_KEYS),
+  google: Object.values(GOOGLE_CONFIG_KEYS),
+}
+
+function ProviderRow({
+  type,
+  onEdit,
+  onDelete,
+}: {
+  type: PaymentProvider
+  onEdit: () => void
+  onDelete: () => void
+}) {
+  return (
+    <TableRow data-testid={`${type}-provider-row`}>
+      <TableCell className="font-medium">{formatProviderName(type)}</TableCell>
+      <TableCell className="text-right">
+        <div className="flex items-center justify-end gap-2">
+          <Button variant="outline" size="sm" onClick={onEdit} data-testid={`edit-${type}-button`}>
+            <Edit className="mr-1 h-3 w-3" />
+            {m['common.edit']()}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onDelete}
+            data-testid={`delete-${type}-button`}
+          >
+            <Trash2 className="mr-1 h-3 w-3" />
+            {m['common.delete']()}
+          </Button>
+        </div>
+      </TableCell>
+    </TableRow>
+  )
+}
 
 interface PaymentProvidersPageProps {
   realmId: string
@@ -32,7 +81,7 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
   const navigate = useNavigate()
   const realmContext = useResolvedRealmContext()
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
-  const [deleteProviderType, setDeleteProviderType] = useState<'stripe' | 'creem'>('stripe')
+  const [deleteProviderType, setDeleteProviderType] = useState<PaymentProvider>('stripe')
 
   const { data: providers, isLoading } = useQuery({
     queryKey: ['payment-providers', realmId],
@@ -46,16 +95,10 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
 
   const deleteMutation = useMutation({
     mutationFn: async () => {
-      const configKeys =
-        deleteProviderType === 'stripe'
-          ? Object.values(STRIPE_CONFIG_KEYS).map((key) => ({
-              configType: 'stripe',
-              configKey: key,
-            }))
-          : Object.values(CREEM_CONFIG_KEYS).map((key) => ({
-              configType: 'creem',
-              configKey: key,
-            }))
+      const configKeys = CONFIG_KEYS_BY_PROVIDER[deleteProviderType].map((configKey) => ({
+        configType: deleteProviderType,
+        configKey,
+      }))
       // Delete all keys, ignoring 404s for keys that don't exist
       await Promise.all(
         configKeys.map((k) =>
@@ -82,7 +125,7 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
     },
   })
 
-  const handleNavigate = (type: 'stripe' | 'creem') => {
+  const handleNavigate = (type: PaymentProvider) => {
     void navigate({
       to: realmPath({ ...realmContext, realmId }, `/manage/billing/payment-providers/${type}`),
     })
@@ -90,6 +133,11 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
 
   const handleDelete = () => {
     deleteMutation.mutate()
+  }
+
+  const openDeleteDialog = (type: PaymentProvider) => {
+    setDeleteProviderType(type)
+    setIsDeleteDialogOpen(true)
   }
 
   if (isLoading) {
@@ -100,24 +148,18 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
     )
   }
 
-  const stripeProvider = providers?.find((p) => p.platform === 'stripe')
-  const creemProvider = providers?.find((p) => p.platform === 'creem')
-
-  const hasAnyProvider = stripeProvider || creemProvider
-  const unconfiguredProviders: {
-    type: 'stripe' | 'creem'
-    label: string
-  }[] = []
-  if (!stripeProvider) unconfiguredProviders.push({ type: 'stripe', label: 'Stripe' })
-  if (!creemProvider) unconfiguredProviders.push({ type: 'creem', label: 'Creem' })
+  const configuredPlatforms = new Set((providers ?? []).map((p) => p.platform))
+  const configuredTypes = PROVIDER_TYPES.filter((type) => configuredPlatforms.has(type))
+  const unconfiguredTypes = PROVIDER_TYPES.filter((type) => !configuredPlatforms.has(type))
+  const hasAnyProvider = configuredTypes.length > 0
 
   return (
     <div className="space-y-6" data-testid="payment-providers-page">
       <PageHeader title={m['billing.payment_providers_title']()} />
 
-      {unconfiguredProviders.length > 0 && (
+      {unconfiguredTypes.length > 0 && (
         <div className="flex gap-2 flex-wrap">
-          {unconfiguredProviders.map(({ type, label }) => (
+          {unconfiguredTypes.map((type) => (
             <Button
               key={type}
               onClick={() => handleNavigate(type)}
@@ -125,7 +167,7 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
               variant="outline"
             >
               <Plus className="mr-2 h-4 w-4" />
-              {m['billing.add_provider']({ name: label })}
+              {m['billing.add_provider']({ name: formatProviderName(type) })}
             </Button>
           ))}
         </div>
@@ -140,67 +182,14 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {stripeProvider && (
-              <TableRow data-testid="stripe-provider-row">
-                <TableCell className="font-medium">Stripe</TableCell>
-                <TableCell className="text-right">
-                  <div className="flex items-center justify-end gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleNavigate('stripe')}
-                      data-testid="edit-stripe-button"
-                    >
-                      <Edit className="mr-1 h-3 w-3" />
-                      {m['common.edit']()}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setDeleteProviderType('stripe')
-                        setIsDeleteDialogOpen(true)
-                      }}
-                      data-testid="delete-stripe-button"
-                    >
-                      <Trash2 className="mr-1 h-3 w-3" />
-                      {m['common.delete']()}
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            )}
-
-            {creemProvider && (
-              <TableRow data-testid="creem-provider-row">
-                <TableCell className="font-medium">Creem</TableCell>
-                <TableCell className="text-right">
-                  <div className="flex items-center justify-end gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleNavigate('creem')}
-                      data-testid="edit-creem-button"
-                    >
-                      <Edit className="mr-1 h-3 w-3" />
-                      {m['common.edit']()}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setDeleteProviderType('creem')
-                        setIsDeleteDialogOpen(true)
-                      }}
-                      data-testid="delete-creem-button"
-                    >
-                      <Trash2 className="mr-1 h-3 w-3" />
-                      {m['common.delete']()}
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            )}
+            {configuredTypes.map((type) => (
+              <ProviderRow
+                key={type}
+                type={type}
+                onEdit={() => handleNavigate(type)}
+                onDelete={() => openDeleteDialog(type)}
+              />
+            ))}
           </TableBody>
         </Table>
       ) : (
@@ -218,7 +207,7 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
         open={isDeleteDialogOpen}
         onOpenChange={setIsDeleteDialogOpen}
         onConfirm={handleDelete}
-        configType={({ creem: 'Creem', stripe: 'Stripe' } as const)[deleteProviderType]}
+        configType={formatProviderName(deleteProviderType)}
         activeSubscriptions={0}
         isDeleting={deleteMutation.isPending}
       />

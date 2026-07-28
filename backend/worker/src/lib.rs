@@ -17,6 +17,7 @@ use herald_core::domain::points::ExpirationService;
 use herald_core::infrastructure::points::PostgresPointsRepository;
 use sqlx::PgPool;
 
+pub use jobs::IapReconciliationJob;
 pub use jobs::InvoiceOverdueJob;
 pub use jobs::PaymentEventRetryJob;
 pub use jobs::PointsExpirationJob;
@@ -66,6 +67,18 @@ where
 
     /// Interval for the payment-event retry sweep job (in seconds).
     pub payment_event_retry_interval_secs: u64,
+
+    /// Optional IAP reconciliation job (design support-iap §5.7 / BE-D04).
+    /// When Some, the job runs Apple notification-history compensation + Google
+    /// lifecycle polling (`subscriptionsv2.get` + `voidedpurchases.list`). The
+    /// job carries its own Apple/Google intervals (sized for their lookback
+    /// windows); the worker fires it on `iap_reconciliation_interval_secs`.
+    pub iap_reconciliation: Option<Arc<IapReconciliationJob>>,
+
+    /// Interval for the IAP reconciliation job sweep (seconds). Default 1800
+    /// (30 min) per design A5. The job itself fans out Apple compensation +
+    /// Google lifecycle polling per realm.
+    pub iap_reconciliation_interval_secs: u64,
 }
 
 impl<R> WorkerConfig<R>
@@ -100,6 +113,15 @@ where
                 .ok()
                 .and_then(|v| v.parse::<u64>().ok())
                 .unwrap_or(300);
+        // Default 1800s (30 min) for Apple compensation, 900s (15 min) for
+        // Google lifecycle polling (design support-iap §5.7 / decision A5).
+        // Both cadences are well within Apple's / Google's event-retention
+        // windows (~30 days).
+        let iap_reconciliation_interval_secs =
+            std::env::var("WORKER_IAP_RECONCILIATION_INTERVAL_SECS")
+                .ok()
+                .and_then(|v| v.parse::<u64>().ok())
+                .unwrap_or(1800);
         Self {
             expiration_service,
             invoice_repo,
@@ -111,10 +133,11 @@ where
             quota_expiration_interval_secs,
             payment_event_retry: None,
             payment_event_retry_interval_secs,
+            iap_reconciliation: None,
+            iap_reconciliation_interval_secs,
         }
     }
 
-    /// Set the webhook compensation event processor.
     pub fn with_event_processor(mut self, processor: Arc<dyn WebhookEventProcessor>) -> Self {
         self.event_processor = Some(processor);
         self
@@ -135,9 +158,18 @@ where
         self.payment_event_retry = Some(job);
         self
     }
+
+    /// Attach the IAP reconciliation job (design support-iap §5.7 / BE-D04).
+    /// The worker fires the job on `iap_reconciliation_interval_secs`
+    /// (default 1800s); the job itself owns its Apple/Google intervals (passed
+    /// to `IapReconciliationJob::new`) which size the respective lookback
+    /// windows (decision A5).
+    pub fn with_iap_reconciliation(mut self, job: Arc<IapReconciliationJob>) -> Self {
+        self.iap_reconciliation = Some(job);
+        self
+    }
 }
 
-/// Worker service that runs background jobs
 pub struct WorkerService<R>
 where
     R: InvoiceRepository,
@@ -149,7 +181,6 @@ impl<R> WorkerService<R>
 where
     R: InvoiceRepository + 'static,
 {
-    /// Create a new worker service
     pub fn new(config: WorkerConfig<R>) -> Self {
         Self { config }
     }
@@ -171,8 +202,10 @@ where
         let payment_event_retry = self.config.payment_event_retry.clone();
         let payment_event_retry_interval =
             Duration::from_secs(self.config.payment_event_retry_interval_secs);
+        let iap_reconciliation = self.config.iap_reconciliation.clone();
+        let iap_reconciliation_interval =
+            Duration::from_secs(self.config.iap_reconciliation_interval_secs);
 
-        // Spawn the worker loop
         let handle = tokio::spawn(async move {
             Self::worker_loop(
                 expiration_service,
@@ -186,6 +219,8 @@ where
                 quota_expiration_interval,
                 payment_event_retry,
                 payment_event_retry_interval,
+                iap_reconciliation,
+                iap_reconciliation_interval,
             )
             .await
         });
@@ -193,7 +228,6 @@ where
         Ok(WorkerHandle { handle })
     }
 
-    /// Main worker loop
     #[allow(clippy::too_many_arguments)]
     async fn worker_loop(
         expiration_service: Arc<ExpirationService<PostgresPointsRepository>>,
@@ -207,14 +241,14 @@ where
         quota_expiration_interval: Duration,
         payment_event_retry: Option<Arc<PaymentEventRetryJob>>,
         payment_event_retry_interval: Duration,
+        iap_reconciliation: Option<Arc<IapReconciliationJob>>,
+        iap_reconciliation_interval: Duration,
     ) {
         info!("Starting worker service");
 
-        // Create jobs
         let expiration_job = PointsExpirationJob::new(expiration_service);
         let invoice_overdue_job = InvoiceOverdueJob::new(invoice_repo);
 
-        // Create compensation job only if processor is provided
         let compensation_job = event_processor.map(|processor| {
             WebhookCompensationJob::new(pg_pool.clone(), processor, compensation_lookback_secs)
         });
@@ -241,13 +275,22 @@ where
             } else {
                 Duration::MAX
             });
+        // IAP reconciliation runs on `iap_reconciliation_interval_secs`
+        // (default 1800s). The job internally fans out Apple compensation +
+        // Google lifecycle polling per realm (each with its own lookback
+        // window). When no job is attached the timer is parked at
+        // Duration::MAX so the arm never fires.
+        let mut iap_reconciliation_timer = tokio::time::interval(if iap_reconciliation.is_some() {
+            iap_reconciliation_interval
+        } else {
+            Duration::MAX
+        });
 
         loop {
             tokio::select! {
                 _ = expiration_timer.tick() => {
                     info!("Running background jobs...");
 
-                    // Run expiration job
                     match expiration_job.run().await {
                         Ok(summary) => {
                             info!(
@@ -261,7 +304,6 @@ where
                         }
                     }
 
-                    // Run invoice overdue marking job
                     match invoice_overdue_job.run().await {
                         Ok(result) => {
                             info!(
@@ -277,7 +319,6 @@ where
                     }
                 }
 
-                // Run webhook compensation job on its own schedule
                 _ = compensation_timer.tick(), if compensation_job.is_some() => {
                     if let Some(ref job) = compensation_job {
                         match job.run().await {
@@ -336,6 +377,33 @@ where
                     }
                 }
 
+                // Run IAP reconciliation on the Apple cadence (design
+                // support-iap §5.7 / BE-D04). The job fans out Apple
+                // notification-history compensation + Google lifecycle polling
+                // (subscriptionsv2.get + voidedpurchases.list) per realm.
+                _ = iap_reconciliation_timer.tick(), if iap_reconciliation.is_some() => {
+                    if let Some(ref job) = iap_reconciliation {
+                        match job.run().await {
+                            Ok(stats) => {
+                                info!(
+                                    realms_scanned = stats.realms_scanned,
+                                    apple_notifications_fetched = stats.apple_notifications_fetched,
+                                    apple_replayed = stats.apple_replayed,
+                                    apple_failed = stats.apple_failed,
+                                    google_tokens_polled = stats.google_tokens_polled,
+                                    google_replayed = stats.google_replayed,
+                                    google_voided_fetched = stats.google_voided_fetched,
+                                    google_failed = stats.google_failed,
+                                    "IAP reconciliation completed"
+                                );
+                            }
+                            Err(e) => {
+                                tracing::error!(error = %e, "IAP reconciliation failed");
+                            }
+                        }
+                    }
+                }
+
                 _ = Self::shutdown_signal() => {
                     info!("Shutting down worker service");
                     return;
@@ -344,7 +412,6 @@ where
         }
     }
 
-    /// Wait for shutdown signal
     async fn shutdown_signal() {
         let ctrl_c = async {
             tokio::signal::ctrl_c()
@@ -370,13 +437,11 @@ where
     }
 }
 
-/// Handle for a running worker
 pub struct WorkerHandle {
     handle: JoinHandle<()>,
 }
 
 impl WorkerHandle {
-    /// Wait for the worker to complete
     pub async fn wait(self) -> Result<()> {
         self.handle.await?;
         Ok(())

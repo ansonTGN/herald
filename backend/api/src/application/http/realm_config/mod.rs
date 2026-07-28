@@ -1,6 +1,3 @@
-// Realm configuration CRUD handlers
-
-// Re-export public_helper from api-base
 pub use herald_api_base::application::http::common::public_helper;
 
 use axum::{
@@ -29,32 +26,99 @@ fn parse_config_type(value: String) -> Result<ConfigType, ApiError> {
     ConfigType::try_from_str(&value).map_err(ApiError::bad_request)
 }
 
-fn is_empty_stripe_secret(config_type: &ConfigType, config_key: &str, config_value: &str) -> bool {
-    *config_type == ConfigType::Stripe
-        && matches!(config_key, "api_key" | "webhook_secret")
-        && config_value.trim().is_empty()
+/// Detect "leave-empty-to-preserve" requests for any payment provider's
+/// sensitive config key.
+///
+/// When an admin edits a provider form without re-entering a secret, the
+/// frontend submits the secret field as an empty string (design support-iap
+/// §5.4 / §4.5 "buildProviderConfigRequest"). To avoid clobbering the stored
+/// secret with empty, the upsert path must short-circuit and return the
+/// existing stored row unchanged.
+///
+/// Returns the provider's config_type string name (e.g. `"stripe"`) when the
+/// incoming write should be preserved, or `None` otherwise. The caller uses
+/// the returned name to reload the matching existing config row.
+///
+/// Covers all four payment providers (stripe / creem / apple / google); the
+/// sensitive key sets are per design support-iap §4.3.2.
+fn is_empty_secret_to_preserve(
+    config_type: &ConfigType,
+    config_key: &str,
+    config_value: &str,
+) -> Option<&'static str> {
+    if !config_value.trim().is_empty() {
+        return None;
+    }
+    // Only the per-provider sensitive key sets qualify as "preserve on empty";
+    // the provider name itself comes from `provider_string_for_config_type`
+    // (single source of truth for the ConfigType → provider-string mapping).
+    let is_preservable_secret = match config_type {
+        ConfigType::Stripe => matches!(config_key, "api_key" | "webhook_secret"),
+        ConfigType::Creem => config_key == "api_key",
+        ConfigType::Apple => config_key == "private_key_p8",
+        ConfigType::Google => config_key == "service_account_json",
+        _ => false,
+    };
+    if is_preservable_secret {
+        provider_string_for_config_type(config_type)
+    } else {
+        None
+    }
 }
 
-async fn ensure_stripe_config_deletable(state: &AppState, realm_id: &str) -> Result<(), ApiError> {
+/// Map a payment-provider ConfigType to its `payment_provider` column value
+/// for active-subscription protection queries. Returns `None` for non-payment
+/// config types so the caller can skip the guard entirely.
+fn provider_string_for_config_type(config_type: &ConfigType) -> Option<&'static str> {
+    match config_type {
+        ConfigType::Stripe | ConfigType::Creem | ConfigType::Apple | ConfigType::Google => {
+            Some(config_type.as_static_str())
+        }
+        _ => None,
+    }
+}
+
+/// Block deletion of a payment provider's configuration while that provider
+/// has active subscriptions in the realm (design support-iap §5.4).
+///
+/// Generalized from the Stripe-only `ensure_stripe_config_deletable` to cover
+/// stripe / creem / apple / google: the guard filters active subscriptions by
+/// the provider string matching the config_type being deleted.
+async fn ensure_provider_config_deletable(
+    state: &AppState,
+    realm_id: &str,
+    config_type: &ConfigType,
+) -> Result<(), ApiError> {
+    let Some(provider) = provider_string_for_config_type(config_type) else {
+        // Non-payment config type: no active-subscription guard applies.
+        return Ok(());
+    };
+
     let active_count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*)
          FROM subscription
          WHERE realm_id = $1
-           AND payment_provider = 'stripe'
+           AND payment_provider = $2
            AND status IN ('active', 'trialing', 'past_due', 'scheduled_cancel')",
     )
     .bind(realm_id)
+    .bind(provider)
     .fetch_one(&state.pool)
     .await
     .map_err(|e| {
-        tracing::error!(realm_id = %realm_id, error = %e, "Failed to count active Stripe subscriptions");
-        ApiError::internal("Failed to validate Stripe configuration deletion")
+        tracing::error!(
+            realm_id = %realm_id,
+            provider = %provider,
+            error = %e,
+            "Failed to count active subscriptions for provider"
+        );
+        ApiError::internal("Failed to validate provider configuration deletion")
     })?;
 
     if active_count > 0 {
-        return Err(ApiError::bad_request(
-            "Cannot delete Stripe configuration while active Stripe subscriptions exist",
-        ));
+        return Err(ApiError::bad_request(format!(
+            "Cannot delete {provider} configuration while active {provider} subscriptions exist"
+        )));
     }
 
     Ok(())
@@ -118,7 +182,6 @@ pub struct EmailTestResponse {
     pub message: String,
 }
 
-// Helper function to convert domain entity to response
 fn to_response(config: RealmConfig) -> RealmConfigResponse {
     RealmConfigResponse {
         id: config.id,
@@ -312,7 +375,6 @@ pub async fn upsert_realm_config(
     Extension(identity): Extension<Identity>,
     Json(payload): Json<UpsertRealmConfigValidator>,
 ) -> Result<Json<RealmConfigResponse>, ApiError> {
-    // 验证请求
     payload
         .validate()
         .map_err(|e| ApiError::bad_request(format!("验证错误: {}", e)))?;
@@ -329,23 +391,30 @@ pub async fn upsert_realm_config(
     );
 
     let config_type = parse_config_type(payload.config_type)?;
-    if is_empty_stripe_secret(&config_type, &payload.config_key, &payload.config_value) {
+    if let Some(provider_type) =
+        is_empty_secret_to_preserve(&config_type, &payload.config_key, &payload.config_value)
+    {
         let existing = realm_config_service
-            .get_config(identity, realm_id, "stripe".to_string(), payload.config_key)
+            .get_config(
+                identity,
+                realm_id,
+                provider_type.to_string(),
+                payload.config_key,
+            )
             .await
             .map_err(|e| match e {
                 herald_core::domain::common::entities::app_errors::CoreError::Forbidden(msg) => {
                     ApiError::forbidden(msg)
                 }
                 herald_core::domain::common::entities::app_errors::CoreError::NotFound => {
-                    ApiError::bad_request("Stripe secret value is required")
+                    ApiError::bad_request("Secret value is required")
                 }
                 _ => {
-                    tracing::error!("Failed to load existing Stripe secret: {e}");
-                    ApiError::internal("Failed to load existing Stripe secret")
+                    tracing::error!("Failed to load existing provider secret: {e}");
+                    ApiError::internal("Failed to load existing provider secret")
                 }
             })?
-            .ok_or_else(|| ApiError::bad_request("Stripe secret value is required"))?;
+            .ok_or_else(|| ApiError::bad_request("Secret value is required"))?;
         return Ok(Json(to_response(existing)));
     }
 
@@ -415,8 +484,6 @@ pub async fn batch_upsert_realm_configs(
         config_count = payload.configs.len(),
         "Received batch upsert request"
     );
-
-    // 验证请求
     payload
         .validate()
         .map_err(|e| ApiError::bad_request(format!("验证错误: {}", e)))?;
@@ -436,12 +503,14 @@ pub async fn batch_upsert_realm_configs(
     let mut requests: Vec<UpsertRealmConfigRequest> = Vec::new();
     for r in payload.configs {
         let config_type = parse_config_type(r.config_type)?;
-        if is_empty_stripe_secret(&config_type, &r.config_key, &r.config_value) {
+        if let Some(provider_type) =
+            is_empty_secret_to_preserve(&config_type, &r.config_key, &r.config_value)
+        {
             let existing = realm_config_service
                 .get_config(
                     identity.clone(),
                     realm_id.clone(),
-                    "stripe".to_string(),
+                    provider_type.to_string(),
                     r.config_key,
                 )
                 .await
@@ -450,14 +519,14 @@ pub async fn batch_upsert_realm_configs(
                         msg,
                     ) => ApiError::forbidden(msg),
                     herald_core::domain::common::entities::app_errors::CoreError::NotFound => {
-                        ApiError::bad_request("Stripe secret value is required")
+                        ApiError::bad_request("Secret value is required")
                     }
                     _ => {
-                        tracing::error!("Failed to load existing Stripe secret: {e}");
-                        ApiError::internal("Failed to load existing Stripe secret")
+                        tracing::error!("Failed to load existing provider secret: {e}");
+                        ApiError::internal("Failed to load existing provider secret")
                     }
                 })?
-                .ok_or_else(|| ApiError::bad_request("Stripe secret value is required"))?;
+                .ok_or_else(|| ApiError::bad_request("Secret value is required"))?;
             skipped_existing.push(existing);
             continue;
         }
@@ -486,7 +555,6 @@ pub async fn batch_upsert_realm_configs(
         }
     }
 
-    // Log the requests for debugging
     for (index, req) in requests.iter().enumerate() {
         tracing::debug!(
             index = index,
@@ -593,8 +661,8 @@ pub async fn delete_realm_config(
         "Deleting realm config"
     );
 
-    if parse_config_type(config_type.clone())? == ConfigType::Stripe {
-        ensure_stripe_config_deletable(&state, &realm_id).await?;
+    if let Ok(parsed) = parse_config_type(config_type.clone()) {
+        ensure_provider_config_deletable(&state, &realm_id, &parsed).await?;
     }
 
     realm_config_service

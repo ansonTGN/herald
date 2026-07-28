@@ -5,23 +5,26 @@ use axum::{
 };
 use serde::Serialize;
 use uuid::Uuid;
+use validator::Validate;
 
 use crate::credit_bucket_handlers::require_points_manage_permission;
 use crate::handlers::require_billing_permission;
 use crate::types::{
     BatchUpdateEntitlementMappingsRequest, BatchUpdateEntitlementMappingsResponse,
-    EntitlementMappingListResponse, EntitlementMappingQuery, EntitlementMappingResponse,
-    EntitlementQuotaWindowResponse, OneTimeMappingItem, OneTimeMappingListResponse,
-    PartialSyncError, ProviderProductInfo, SyncProviderRequest, SyncProviderResponse,
-    UpdateEntitlementMappingRequest,
+    CreateEntitlementMappingRequest, EntitlementMappingListResponse, EntitlementMappingQuery,
+    EntitlementMappingResponse, EntitlementQuotaWindowResponse, OneTimeMappingItem,
+    OneTimeMappingListResponse, PartialSyncError, ProviderProductInfo, SyncProviderRequest,
+    SyncProviderResponse, UpdateEntitlementMappingRequest,
 };
 use herald_api_base::application::http::server::api_entities::ApiError;
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
+use herald_core::domain::billing::CreateEntitlementMappingInput;
 use herald_core::domain::billing::entities::EntitlementMapping;
 use herald_core::domain::billing::{
     BatchMappingError, BillingRepository, SyncStatus, validate_granted_role_ids,
 };
+use herald_core::domain::common::entities::app_errors::CoreError;
 use herald_core::domain::points::derive_window_key;
 use herald_core::domain::points::entities::QuotaWindow;
 
@@ -201,6 +204,129 @@ pub async fn get_entitlement_mapping(
     }
 
     Ok(Json(mapping_to_response(mapping)))
+}
+
+/// Create an entitlement mapping (design support-iap §4.2.2 / A2).
+///
+/// Generic over provider (IAP, Stripe, Creem). Required permission:
+/// `billing.manage`; credit-strategy fields (`pointsPerPeriod` /
+/// `grantOnSubscribe` / `validityDays`) additionally require `points.manage`
+/// (mirrors the batch update permission model). A duplicate
+/// `(realm, provider, product, price)` row violates
+/// `uq_pem_realm_provider_product_price` and surfaces as HTTP 409.
+#[utoipa::path(
+    post,
+    path = "/api/bill/{realmId}/entitlement-mappings",
+    tag = "billing",
+    params(
+        ("realmId" = String, Path, description = "Realm ID")
+    ),
+    request_body = CreateEntitlementMappingRequest,
+    responses(
+        (status = 201, description = "Entitlement mapping created", body = EntitlementMappingResponse),
+        (status = 400, description = "Bad request - invalid billing_type / billing_period combo", body = herald_api_base::application::http::server::api_entities::ErrorResponse),
+        (status = 401, description = "Unauthorized", body = herald_api_base::application::http::server::api_entities::ErrorResponse),
+        (status = 403, description = "Forbidden - missing billing.manage (or points.manage for credit fields)", body = herald_api_base::application::http::server::api_entities::ErrorResponse),
+        (status = 409, description = "Conflict - mapping already exists for this provider+product+price", body = herald_api_base::application::http::server::api_entities::ErrorResponse),
+        (status = 500, description = "Internal server error", body = herald_api_base::application::http::server::api_entities::ErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn create_entitlement_mapping(
+    State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
+    Path(realm_id): Path<String>,
+    Json(request): Json<CreateEntitlementMappingRequest>,
+) -> Result<(StatusCode, Json<EntitlementMappingResponse>), ApiError> {
+    tracing::info!(
+        provider = %request.payment_provider,
+        external_product_id = %request.external_product_id,
+        "Create entitlement mapping for realm {}", realm_id
+    );
+
+    // 1. billing.manage (realm boundary + business permission).
+    require_billing_permission(&state, &identity, &realm_id, "manage").await?;
+
+    // 2. points.manage if any credit-strategy field is present (mirrors batch
+    //    update permission model, design §4.2.2).
+    let touches_credit_fields = request.points_per_period.is_some()
+        || request.grant_on_subscribe.is_some()
+        || request.validity_days.is_some();
+    if touches_credit_fields {
+        require_points_manage_permission(&state, &identity, &realm_id).await?;
+    }
+
+    // 3. Credit-strategy field validation.
+    if let Some(points) = request.points_per_period
+        && points < 0
+    {
+        return Err(ApiError::bad_request(
+            "points_per_period must be non-negative".to_string(),
+        ));
+    }
+    if let Some(validity) = request.validity_days
+        && validity < 0
+    {
+        return Err(ApiError::bad_request(
+            "validity_days must be non-negative".to_string(),
+        ));
+    }
+
+    request
+        .validate()
+        .map_err(|e| ApiError::bad_request(format!("Invalid request: {}", e)))?;
+
+    // 4. Realm-membership validation for grantedRoleIds (design §4.2.2 / §5.2).
+    if !request.granted_role_ids.is_empty() {
+        validate_granted_role_ids(
+            &realm_id,
+            &request.granted_role_ids,
+            state.role_policy_repository.as_ref(),
+        )
+        .await
+        .map_err(map_batch_error)?;
+    }
+
+    // 5. billing_type parse + billing_period guard.
+    let billing_type = request
+        .billing_type
+        .parse::<herald_core::domain::billing::entities::BillingType>()
+        .map_err(|e| ApiError::bad_request(format!("invalid billing_type: {e}")))?;
+
+    let mapping = state
+        .entitlement_mapping_service
+        .create_mapping(
+            identity,
+            &realm_id,
+            CreateEntitlementMappingInput {
+                payment_provider: request.payment_provider,
+                external_product_id: request.external_product_id,
+                external_price_id: request.external_price_id,
+                entitlement_key: request.entitlement_key,
+                bucket_id: request.bucket_id,
+                billing_type,
+                billing_period: request.billing_period,
+                points_per_period: request.points_per_period,
+                grant_on_subscribe: request.grant_on_subscribe,
+                validity_days: request.validity_days,
+                granted_role_ids: request.granted_role_ids,
+                enabled: request.enabled,
+            },
+        )
+        .await
+        .map_err(|e| match e {
+            CoreError::Conflict(_) => ApiError::conflict(
+                "mapping already exists for this provider+product+price".to_string(),
+            ),
+            other => {
+                herald_api_base::application::http::common::error_helpers::core_error_to_api_error(
+                    other,
+                    "create entitlement mapping",
+                )
+            }
+        })?;
+
+    Ok((StatusCode::CREATED, Json(mapping_to_response(mapping))))
 }
 
 /// Update an entitlement mapping

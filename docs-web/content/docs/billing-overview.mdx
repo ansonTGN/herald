@@ -56,9 +56,9 @@ Each mapping includes:
 
 | Field | Description |
 |------|------|
-| `payment_provider` | Provider name (stripe, creem) |
-| `external_product_id` | Product ID on the provider side (e.g. `prod_xxxx`) |
-| `external_price_id` | Price ID on the provider side (Stripe has this; not applicable to Creem) |
+| `payment_provider` | Provider name (stripe, creem, apple, google) |
+| `external_product_id` | Product ID on the provider side (e.g. `prod_xxxx`; store product ID for IAP) |
+| `external_price_id` | Price ID on the provider side (Stripe has this; not applicable to Creem or IAP) |
 | `entitlement_key` | Internal Herald entitlement identifier (e.g. `pro-plan`) |
 | `bucket_id` | Owning Credit Account. After purchasing this product, credits go into this account's pool |
 | `billing_type` | Billing type: Recurring or OneTime |
@@ -82,10 +82,11 @@ Display info is overwritten by the provider's current value on every re-sync; bu
 
 The billing period (from Stripe) and the quota rolling window (`quota_windows`, e.g. 5 hours / week) are two independent concepts, deliberately decoupled. The billing period decides when Stripe charges and when it fires the renewal webhook; the quota window decides how much quota a user can spend within a rolling window. The two do not need to be equal, to divide evenly, or to align. A long billing period (yearly) can still carry rolling limits (monthly / weekly windows). Quota grants are driven by renewal webhook events, anchored to one entitlement period using the provider-returned `(period_start, period_end)`; the full-period total is never pre-granted, and there is no fixed-calendar-day reset.
 
-Mappings are produced in two ways:
+Mappings are produced in three ways:
 
-1. **Admin manual sync**: calls the provider's Product API, pulls all products, and auto-creates or updates mappings. Newly created mappings are first bound to this Realm's registration receiving pool; afterwards the admin can move them to another Credit Account.
-2. **Webhook incremental update**: when a payment event fires, info is extracted from the webhook payload to update the cache.
+1. **Admin manual sync**: calls the provider's Product API, pulls all products, and auto-creates or updates mappings. Newly created mappings are first bound to this Realm's registration receiving pool; afterwards the admin can move them to another Credit Account. Applies to Stripe and Creem.
+2. **Admin manual create**: IAP providers (App Store / Google Play) have no catalog sync, so the admin creates the mapping directly with the store product ID.
+3. **Webhook incremental update**: when a payment event fires, info is extracted from the webhook payload to update the cache.
 
 When sync fails, the local cache keeps serving — there is no silent degradation.
 
@@ -185,12 +186,15 @@ When a third-party app spends credits through the SDK, it passes only the Client
 |--------|---------|------|---------------------|--------------|
 | Stripe | Product / Price API | Checkout Session + Subscription | Payment Intent | Supported on Product/Price/Checkout/Subscription |
 | Creem | Product API | Checkout | Checkout | Checkout metadata, returned in webhook |
+| Apple App Store IAP | App Store Connect (no sync; manual mapping) | StoreKit 2 + Server Notifications V2 | Consumable, fulfilled on receipt submission | User binding via `appAccountToken` |
+| Google Play Billing | Play Console (no sync; manual mapping) | Play Billing + scheduled polling (no RTDN) | Consumable, fulfilled on receipt submission | User binding via `obfuscatedExternalAccountId` |
 
-Stripe and Creem are initiator-style platforms; the payment process is unified through PaymentAttempt.
+Stripe and Creem are initiator-style platforms; the payment process is unified through PaymentAttempt. IAP also settles through PaymentAttempt, but fulfillment is triggered by the mobile app submitting the purchase proof (Apple `jwsRepresentation` / Google `purchaseToken`) instead of a checkout webhook — the platform notifications (Apple) and the scheduled polling (Google) only drive the lifecycle after that. See the [IAP integration guide](/docs/billing-iap).
 
 ## Related docs
 
 - [Credit Account user stories](https://github.com/timzaak/cas-2/blob/main/docs/user-stories/billing/credit-bucket.md) — acceptance scenarios for the Credit Account catalog, coverage sets, purchase-to-pool, cross-pool consumption, and the subscription lifecycle
 - [Stripe integration guide](/docs/billing-stripe-payment) — Stripe provider configuration and webhook handling
 - [Creem integration guide](/docs/billing-creem-payment) — Creem provider configuration and webhook handling
+- [IAP integration guide](/docs/billing-iap) — App Store / Google Play in-app purchase configuration, receipt submission, and lifecycle handling
 - [Invoice management](/docs/billing-invoice) — Invoice creation, issuance, and PDF generation

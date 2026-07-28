@@ -8,6 +8,7 @@ pub mod entitlement_mapping_handlers;
 pub mod feature_availability;
 pub mod handlers;
 pub mod handlers_history;
+pub mod iap_handlers;
 pub mod invoice_eligibility;
 pub mod invoice_handlers;
 pub mod invoice_types;
@@ -16,6 +17,7 @@ pub mod provider_common_types;
 pub mod provider_handlers;
 pub mod purchase_handlers;
 pub mod routes;
+pub mod shared_fulfillment;
 pub mod stripe_webhook_handlers;
 pub mod types;
 pub mod types_history;
@@ -37,6 +39,9 @@ pub mod webhook_handlers;
         crate::entitlement_mapping_handlers::sync_provider_products,
         crate::entitlement_mapping_handlers::list_one_time_mappings,
         crate::entitlement_mapping_handlers::batch_update_entitlement_mappings,
+        crate::entitlement_mapping_handlers::create_entitlement_mapping,
+        crate::iap_handlers::submit_iap_receipt,
+        crate::iap_handlers::handle_apple_webhook,
         crate::handlers::list_subscriptions,
         crate::handlers::get_subscription,
         crate::handlers::get_subscription_for_client_app,
@@ -99,6 +104,9 @@ pub mod webhook_handlers;
         crate::types::EntitlementQuotaWindowResponse,
         crate::types::BatchUpdateEntitlementMappingsRequest,
         crate::types::BatchUpdateEntitlementMappingsResponse,
+        crate::types::CreateEntitlementMappingRequest,
+        crate::iap_handlers::IapReceiptRequest,
+        crate::iap_handlers::IapReceiptResponse,
         crate::types::PurchaseOptionView,
         crate::types::PurchaseOptionListResponse,
         crate::types::SubscriptionDetailResponse,

@@ -2,7 +2,9 @@ import {
   calculatePasswordStrength,
   type PasswordConfig,
   type PasswordStrength,
+  type PasswordStrengthMessageKey,
 } from '@/lib/password-strength'
+import { m } from '@/paraglide/messages'
 
 interface PasswordStrengthMeterProps {
   password: string
@@ -14,6 +16,13 @@ const COLOR_CLASSES: Record<PasswordStrength['color'], string> = {
   orange: 'bg-orange-500',
   yellow: 'bg-yellow-500',
   green: 'bg-green-500',
+}
+
+function translateUnmet(item: { key: PasswordStrengthMessageKey; length?: number }): string {
+  const key = item.key
+  return key === 'min_length'
+    ? m['auth.register.password_strength.min_length']({ length: item.length ?? 0 })
+    : m[`auth.register.password_strength.${key}`]()
 }
 
 export function PasswordStrengthMeter({ password, config }: PasswordStrengthMeterProps) {
@@ -29,13 +38,15 @@ export function PasswordStrengthMeter({ password, config }: PasswordStrengthMete
             style={{ width: `${(strength.score / 4) * 100}%` }}
           />
         </div>
-        <span className="text-sm font-medium">{strength.label}</span>
+        <span className="text-sm font-medium">
+          {m[`auth.register.password_strength.${strength.level}`]()}
+        </span>
       </div>
 
-      {strength.suggestions.length > 0 && (
+      {strength.unmet.length > 0 && (
         <ul className="mt-2 text-sm text-gray-600">
-          {strength.suggestions.map((suggestion) => (
-            <li key={suggestion}>• {suggestion}</li>
+          {strength.unmet.map((item) => (
+            <li key={item.key}>• {translateUnmet(item)}</li>
           ))}
         </ul>
       )}

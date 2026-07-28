@@ -56,9 +56,9 @@ Entitlement Mapping 是一张映射表，把支付方的外部商品 ID 映射�
 
 | 字段 | 说明 |
 |------|------|
-| `payment_provider` | 支付方名称（stripe、creem） |
-| `external_product_id` | 支付方侧的商品 ID（如 `prod_xxxx`） |
-| `external_price_id` | 支付方侧的价格 ID（Stripe 有，Creem 不适用） |
+| `payment_provider` | 支付方名称（stripe、creem、apple、google） |
+| `external_product_id` | 支付方侧的商品 ID（如 `prod_xxxx`；IAP 为商店商品 ID） |
+| `external_price_id` | 支付方侧的价格 ID（Stripe 有，Creem 和 IAP 不适用） |
 | `entitlement_key` | Herald 内部的权益标识（如 `pro-plan`） |
 | `bucket_id` | 归属的积分账户。购买该商品后积分进入这个积分账户的池 |
 | `billing_type` | 计费类型：Recurring 或 OneTime |
@@ -82,10 +82,11 @@ Entitlement Mapping 是一张映射表，把支付方的外部商品 ID 映射�
 
 计费周期（来自 Stripe）和额度滚动窗口（`quota_windows`，如 5 小时 / 周）是两个独立概念，刻意解耦。计费周期决定 Stripe 何时扣款、何时发续费 webhook；额度窗口决定用户在滚动窗口内可用多少额度，两者不要求相等、不要求整除、不做对齐。长计费周期（年付）里仍可配滚动限额（月窗 / 周窗）。额度授予由续费 webhook 事件驱动，按 provider 返回的 `(period_start, period_end)` 锚定一期权益，不预发整周期总额、不按日历固定日清零。
 
-映射通过两种方式产生：
+映射通过三种方式产生：
 
-1. **管理员手动同步**：调用支付方 Product API，拉取所有商品，自动创建或更新映射。新建的映射先绑定到本 Realm 的注册接收池，之后管理员可以把它挪到别的积分账户。
-2. **Webhook 增量更新**：支付事件触发时从 webhook payload 提取信息更新缓存。
+1. **管理员手动同步**：调用支付方 Product API，拉取所有商品，自动创建或更新映射。新建的映射先绑定到本 Realm 的注册接收池，之后管理员可以把它挪到别的积分账户。适用于 Stripe 和 Creem。
+2. **管理员手工创建**：IAP 支付方（App Store / Google Play）没有商品目录同步，管理员直接用商店商品 ID 建映射。
+3. **Webhook 增量更新**：支付事件触发时从 webhook payload 提取信息更新缓存。
 
 同步失败时本地缓存继续服务，不会静默降级。
 
@@ -185,12 +186,15 @@ flowchart LR
 |--------|---------|------|---------------------|--------------|
 | Stripe | Product / Price API | Checkout Session + Subscription | Payment Intent | Product/Price/Checkout/Subscription 均支持 |
 | Creem | Product API | Checkout | Checkout | Checkout metadata，webhook 返回 |
+| Apple App Store IAP | App Store Connect（无同步，手工建映射） | StoreKit 2 + 服务端通知 V2 | 消耗型，凭 receipt 提交履约 | 经 `appAccountToken` 绑定用户 |
+| Google Play Billing | Play Console（无同步，手工建映射） | Play Billing + 定时轮询（无 RTDN） | 消耗型，凭 receipt 提交履约 | 经 `obfuscatedExternalAccountId` 绑定用户 |
 
-Stripe、Creem 是发起式平台，通过 PaymentAttempt 统一管理支付过程。
+Stripe、Creem 是发起式平台，通过 PaymentAttempt 统一管理支付过程。IAP 同样经 PaymentAttempt 入账，但履约由移动 App 提交购买凭证（Apple `jwsRepresentation` / Google `purchaseToken`）触发，而不是 checkout webhook——平台通知（Apple）和定时轮询（Google）只负责之后的生命周期。详见 [IAP 对接指南](/docs/billing-iap)。
 
 ## 相关文档
 
 - [积分账户用户故事](https://github.com/timzaak/cas-2/blob/main/docs/user-stories/billing/credit-bucket.md) — 积分账户目录、覆盖集、购买入池、跨池消费、订阅生命周期的验收场景
 - [Stripe 对接指南](/docs/billing-stripe-payment) — Stripe 支付方配置和 Webhook 处理
 - [Creem 对接指南](/docs/billing-creem-payment) — Creem 支付方配置和 Webhook 处理
+- [IAP 对接指南](/docs/billing-iap) — App Store / Google Play 内购配置、receipt 提交与生命周期处理
 - [发票管理](/docs/billing-invoice) — 发票创建、开票、PDF 生成

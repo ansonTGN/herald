@@ -1,13 +1,11 @@
-// Purchase domain module - unified fulfillment logic for subscriptions and one-time purchases
-
 pub mod errors;
 pub mod ports;
 pub mod services;
 
-// Re-export commonly used types
 pub use errors::{ALREADY_OWNED_MARKER, PurchaseErrorExt, PurchaseResult};
 pub use ports::{FulfillmentResult, FulfillmentService, FulfillmentType, PointsGrant};
 pub use services::{
-    CompletePaymentAttemptInput, CreatedPaymentAttempt, PaymentCompletionSource,
-    PreparePaymentAttemptInput, PreparedPaymentAttempt, PurchaseTargetSnapshot, metadata_keys,
+    CompletePaymentAttemptInput, CreateIapAttemptInput, CreatedPaymentAttempt,
+    PaymentCompletionSource, PreparePaymentAttemptInput, PreparedPaymentAttempt,
+    PurchaseTargetSnapshot, metadata_keys,
 };

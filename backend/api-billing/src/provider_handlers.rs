@@ -1,8 +1,9 @@
 //! Payment provider directory handlers.
 //!
-//! Lists all configured payment providers for a realm (Stripe / Creem).
-//! These handlers are provider-agnostic; per-provider CRUD lives in the
-//! dedicated `<provider>_config_handlers` modules.
+//! Lists all configured payment providers for a realm (Stripe / Creem /
+//! Apple IAP / Google Play Billing). These handlers are provider-agnostic;
+//! per-provider CRUD lives in the dedicated `<provider>_config_handlers`
+//! modules.
 
 use axum::{
     Json,
@@ -47,99 +48,76 @@ pub async fn list_payment_providers(
         "list payment providers",
     )?;
 
-    let mut providers = Vec::new();
-
-    if let Some(stripe_config) = get_stripe_config_for_providers(&state, &realm_id).await? {
-        providers.push(stripe_config);
-    }
-
-    if let Some(creem_config) = get_creem_config_for_providers(&state, &realm_id).await? {
-        providers.push(creem_config);
-    }
+    // The four provider-config lookups are independent; run them concurrently
+    // rather than as four sequential DB roundtrips. A provider appears in the
+    // directory iff its "configured-signal" key is present in realm_config:
+    //   stripe → publishable_key, creem → api_key,
+    //   apple  → issuer_id,        google → service_account_json.
+    let (stripe, creem, apple, google) = tokio::try_join!(
+        load_configured_provider(
+            &state,
+            &realm_id,
+            "stripe",
+            "publishable_key",
+            Some("Stripe webhooks configured".to_string()),
+        ),
+        load_configured_provider(
+            &state,
+            &realm_id,
+            "creem",
+            "api_key",
+            Some("Creem webhooks configured".to_string()),
+        ),
+        load_configured_provider(
+            &state,
+            &realm_id,
+            "apple",
+            "issuer_id",
+            Some(format!("/api/third/pay/{}/apple/webhooks", realm_id)),
+        ),
+        load_configured_provider(&state, &realm_id, "google", "service_account_json", None,),
+    )?;
+    let providers: Vec<PaymentProviderInfo> = [stripe, creem, apple, google]
+        .into_iter()
+        .flatten()
+        .collect();
 
     Ok(Json(PaymentProvidersResponse { providers }))
 }
 
-pub async fn get_stripe_config_for_providers(
+/// Load a single provider's directory entry. Returns `None` when the realm has
+/// no `config_type = <provider>` rows or the configured-signal key is absent.
+///
+/// `webhook_endpoint` is the human-readable / URL hint surfaced in the
+/// directory: Stripe/Creem get a static "configured" label, Apple gets its SSV
+/// V2 webhook URL, Google gets `None` (lifecycle is driven by polling, design
+/// support-iap §5.7).
+async fn load_configured_provider(
     state: &AppState,
     realm_id: &str,
+    provider: &str,
+    configured_key: &str,
+    webhook_endpoint: Option<String>,
 ) -> Result<Option<PaymentProviderInfo>, ApiError> {
     let configs = state
         .realm_config_repository
-        .get_by_type(realm_id.to_string(), "stripe".to_string())
+        .get_by_type(realm_id.to_string(), provider.to_string())
         .await
         .map_err(|e| {
-            tracing::error!("Failed to load Stripe configuration: {}", e);
-            ApiError::internal(format!("Database error: {}", e))
+            tracing::error!("Failed to load {provider} configuration: {e}");
+            ApiError::internal(format!("Database error: {e}"))
         })?;
 
-    if configs.is_empty() {
+    if !configs.iter().any(|rc| rc.config_key == configured_key) {
         return Ok(None);
     }
 
-    let mut last_updated: Option<chrono::DateTime<chrono::Utc>> = None;
-    let mut has_config = false;
-
-    for rc in &configs {
-        last_updated =
-            Some(last_updated.map_or(rc.updated_at, |current| current.max(rc.updated_at)));
-
-        if rc.config_key == "publishable_key" {
-            has_config = true;
-        }
-    }
-
-    if !has_config {
-        return Ok(None);
-    }
+    let last_updated = configs.iter().map(|rc| rc.updated_at).max();
 
     Ok(Some(PaymentProviderInfo {
-        platform: "stripe".to_string(),
-        shop_domain: None,
-        api_version: None,
-        webhook_endpoint: Some("Stripe webhooks configured".to_string()),
+        platform: provider.to_string(),
+        webhook_endpoint,
         last_updated: last_updated.map(|dt| dt.to_rfc3339()),
-    }))
-}
-
-pub async fn get_creem_config_for_providers(
-    state: &AppState,
-    realm_id: &str,
-) -> Result<Option<PaymentProviderInfo>, ApiError> {
-    let configs = state
-        .realm_config_repository
-        .get_by_type(realm_id.to_string(), "creem".to_string())
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to load Creem configuration: {}", e);
-            ApiError::internal(format!("Database error: {}", e))
-        })?;
-
-    if configs.is_empty() {
-        return Ok(None);
-    }
-
-    let mut last_updated: Option<chrono::DateTime<chrono::Utc>> = None;
-    let mut has_config = false;
-
-    for rc in &configs {
-        last_updated =
-            Some(last_updated.map_or(rc.updated_at, |current| current.max(rc.updated_at)));
-
-        if rc.config_key == "api_key" {
-            has_config = true;
-        }
-    }
-
-    if !has_config {
-        return Ok(None);
-    }
-
-    Ok(Some(PaymentProviderInfo {
-        platform: "creem".to_string(),
-        shop_domain: None,
-        api_version: None,
-        webhook_endpoint: Some("Creem webhooks configured".to_string()),
-        last_updated: last_updated.map(|dt| dt.to_rfc3339()),
+        ..Default::default()
     }))
 }

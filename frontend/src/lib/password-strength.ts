@@ -1,9 +1,22 @@
+export type PasswordStrengthLevel = 'weak' | 'fair' | 'good' | 'strong'
+
 export interface PasswordStrength {
   score: number
-  label: 'Weak' | 'Fair' | 'Good' | 'Strong'
+  level: PasswordStrengthLevel
   color: 'red' | 'orange' | 'yellow' | 'green'
-  suggestions: string[]
+  /**
+   * Unmet requirements, as keys into the `auth.register.password_strength.*`
+   * i18n namespace. `{length}` is parameterized for the min-length message.
+   */
+  unmet: Array<{ key: PasswordStrengthMessageKey; length?: number }>
 }
+
+export type PasswordStrengthMessageKey =
+  | 'min_length'
+  | 'require_uppercase'
+  | 'require_lowercase'
+  | 'require_number'
+  | 'require_special_char'
 
 export interface PasswordConfig {
   minLength: number
@@ -13,13 +26,16 @@ export interface PasswordConfig {
   requireSpecialChar: boolean
 }
 
-type PasswordLevel = { label: PasswordStrength['label']; color: PasswordStrength['color'] }
+type PasswordLevel = {
+  level: PasswordStrengthLevel
+  color: PasswordStrength['color']
+}
 
 const PASSWORD_LEVELS: PasswordLevel[] = [
-  { label: 'Weak', color: 'red' },
-  { label: 'Fair', color: 'orange' },
-  { label: 'Good', color: 'yellow' },
-  { label: 'Strong', color: 'green' },
+  { level: 'weak', color: 'red' },
+  { level: 'fair', color: 'orange' },
+  { level: 'good', color: 'yellow' },
+  { level: 'strong', color: 'green' },
 ]
 
 function checkRequirement(password: string, regex: RegExp, required: boolean): boolean {
@@ -32,30 +48,30 @@ export function calculatePasswordStrength(
   config: PasswordConfig
 ): PasswordStrength {
   let score = 0
-  const suggestions: string[] = []
+  const unmet: PasswordStrength['unmet'] = []
 
   if (password.length >= config.minLength) {
     score += 1
   } else {
-    suggestions.push(`Password must be at least ${config.minLength} characters`)
+    unmet.push({ key: 'min_length', length: config.minLength })
   }
 
   const requirements = [
     {
       check: config.requireUppercase && !checkRequirement(password, /[A-Z]/, true),
-      message: 'Password must contain uppercase letters',
+      key: 'require_uppercase' as const,
     },
     {
       check: config.requireLowercase && !checkRequirement(password, /[a-z]/, true),
-      message: 'Password must contain lowercase letters',
+      key: 'require_lowercase' as const,
     },
     {
       check: config.requireNumber && !checkRequirement(password, /[0-9]/, true),
-      message: 'Password must contain numbers',
+      key: 'require_number' as const,
     },
     {
       check: config.requireSpecialChar && !checkRequirement(password, /[^A-Za-z0-9]/, true),
-      message: 'Password must contain special characters',
+      key: 'require_special_char' as const,
     },
   ]
 
@@ -63,7 +79,7 @@ export function calculatePasswordStrength(
     if (!req.check) {
       score += 1
     } else {
-      suggestions.push(req.message)
+      unmet.push({ key: req.key })
     }
   })
 
@@ -72,8 +88,8 @@ export function calculatePasswordStrength(
 
   return {
     score,
-    label: level.label,
+    level: level.level,
     color: level.color,
-    suggestions,
+    unmet,
   }
 }

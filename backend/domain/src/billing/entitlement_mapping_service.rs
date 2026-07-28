@@ -8,7 +8,6 @@ use crate::common::entities::app_errors::CoreError;
 use crate::common::policies::ensure_policy;
 use crate::points::entities::QuotaWindow;
 
-/// Input for updating an entitlement mapping
 #[derive(Debug, Clone)]
 pub struct UpdateEntitlementMappingInput {
     pub entitlement_key: Option<String>,
@@ -21,7 +20,36 @@ pub struct UpdateEntitlementMappingInput {
     pub quota_windows: Option<Option<Vec<QuotaWindow>>>,
 }
 
-/// EntitlementMappingService - Business logic for entitlement mapping management
+/// Input for creating an entitlement mapping (design support-iap §4.2.2 / A2).
+///
+/// The generic `POST /api/bill/{realmId}/entitlement-mappings` endpoint accepts
+/// this shape for any provider (IAP, Stripe, Creem). Required identity fields
+/// (`payment_provider`, `external_product_id`, `entitlement_key`, `bucket_id`,
+/// `billing_type`) are non-optional; everything else defaults. The
+/// `uq_pem_realm_provider_product_price` unique constraint is enforced by the
+/// repository and surfaces as a 409 conflict at the HTTP layer.
+#[derive(Debug, Clone)]
+pub struct CreateEntitlementMappingInput {
+    pub payment_provider: String,
+    pub external_product_id: String,
+    /// Stripe Price ID for Stripe; `None` for IAP / Creem (price-less).
+    pub external_price_id: Option<String>,
+    pub entitlement_key: String,
+    pub bucket_id: uuid::Uuid,
+    pub billing_type: crate::billing::entities::BillingType,
+    /// Required when `billing_type == Recurring`.
+    pub billing_period: Option<String>,
+    /// Credit-strategy field (requires `points.manage`).
+    pub points_per_period: Option<i64>,
+    /// Credit-strategy field.
+    pub grant_on_subscribe: Option<bool>,
+    /// One-time validity window (days).
+    pub validity_days: Option<i64>,
+    /// Roles auto-granted on payment success.
+    pub granted_role_ids: Vec<uuid::Uuid>,
+    pub enabled: bool,
+}
+
 pub struct EntitlementMappingService<R, P>
 where
     R: BillingRepository,
@@ -40,7 +68,6 @@ where
         Self { repository, policy }
     }
 
-    /// List entitlement mappings for a realm
     pub async fn list_mappings(
         &self,
         identity: Identity,
@@ -66,7 +93,6 @@ where
             .await
     }
 
-    /// Get a single entitlement mapping by ID
     pub async fn get_mapping(
         &self,
         identity: Identity,
@@ -97,7 +123,82 @@ where
         Ok(mapping)
     }
 
-    /// Update an entitlement mapping
+    /// Create a new entitlement mapping (design support-iap §4.2.2 / A2).
+    ///
+    /// Caller is responsible for:
+    /// - enforcing `billing.manage` (and `points.manage` when credit-strategy
+    ///   fields are present) before invoking,
+    /// - validating `granted_role_ids` realm membership,
+    /// - `billing_period` presence when `billing_type == Recurring`.
+    ///
+    /// The `uq_pem_realm_provider_product_price` unique constraint is enforced
+    /// by the repository; a violation surfaces as `CoreError::Conflict` and the
+    /// handler maps it to HTTP 409.
+    pub async fn create_mapping(
+        &self,
+        identity: Identity,
+        realm_id: &str,
+        input: CreateEntitlementMappingInput,
+    ) -> Result<EntitlementMapping, CoreError> {
+        ensure_policy(
+            self.policy.can_manage_billing(identity.clone()).await,
+            "Insufficient permissions to manage billing",
+        )?;
+
+        if !identity.has_access_to_realm(realm_id) {
+            return Err(CoreError::Forbidden(
+                "Access denied: cannot access billing from a different realm".to_string(),
+            ));
+        }
+
+        Self::validate_entitlement_key(&input.entitlement_key)?;
+        if !matches!(
+            input.payment_provider.as_str(),
+            "stripe" | "creem" | "apple" | "google"
+        ) {
+            return Err(CoreError::BadRequest(format!(
+                "Unsupported payment provider: {}",
+                input.payment_provider
+            )));
+        }
+        if matches!(
+            input.billing_type,
+            crate::billing::entities::BillingType::Recurring
+        ) && input.billing_period.as_deref().unwrap_or("").is_empty()
+        {
+            return Err(CoreError::BadRequest(
+                "billing_period is required for recurring billing_type".to_string(),
+            ));
+        }
+
+        let now = chrono::Utc::now();
+        let mapping = EntitlementMapping {
+            id: uuid::Uuid::now_v7(),
+            realm_id: realm_id.to_string(),
+            payment_provider: input.payment_provider,
+            external_product_id: input.external_product_id,
+            external_price_id: input.external_price_id,
+            bucket_id: input.bucket_id,
+            entitlement_key: input.entitlement_key,
+            billing_type: Some(input.billing_type),
+            billing_period: input.billing_period,
+            points_per_period: input.points_per_period,
+            grant_period_type: None,
+            validity_days: input.validity_days,
+            grant_on_subscribe: input.grant_on_subscribe.unwrap_or(false),
+            max_periods: None,
+            enabled: input.enabled,
+            provider_product_info: None,
+            quota_windows: None,
+            granted_role_ids: input.granted_role_ids,
+            synced_at: None,
+            created_at: now,
+            updated_at: now,
+        };
+
+        self.repository.create_entitlement_mapping(mapping).await
+    }
+
     pub async fn update_mapping(
         &self,
         identity: Identity,
@@ -168,7 +269,6 @@ where
         self.repository.update_entitlement_mapping(updated).await
     }
 
-    /// Find mapping by provider and external product ID
     pub async fn find_mapping_by_provider_product(
         &self,
         realm_id: &str,
@@ -185,7 +285,6 @@ where
             .await
     }
 
-    /// Find mapping by entitlement key
     pub async fn find_mapping_by_entitlement_key(
         &self,
         realm_id: &str,

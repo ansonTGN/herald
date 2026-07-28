@@ -4,11 +4,13 @@ import {
   updateEntitlementMapping,
   syncProviderProducts,
   batchUpdateEntitlementMappings,
+  createEntitlementMapping,
 } from '@/lib/api-generated'
 import type {
   UpdateEntitlementMappingRequest,
   BatchUpdateEntitlementMappingsRequest,
   BatchUpdateEntitlementMappingsResponse,
+  CreateEntitlementMappingRequest,
 } from '@/lib/api-generated'
 import { getErrorMessage } from '@/lib/error-utils'
 import { m } from '@/paraglide/messages'
@@ -207,6 +209,99 @@ export function useBatchUpdateEntitlementMappings(realmId: string) {
       }
       const errorMessage = getErrorMessage(error)
       toast.error(`Failed to save mappings: ${errorMessage}`)
+    },
+  })
+}
+
+// ==================== Create (single mapping) ====================
+//
+// `createEntitlementMapping` POSTs a single entitlement mapping. Two distinct
+// server-side failure modes (design support-iap §4.2.2) MUST be surfaced
+// differently in the dialog:
+// - 409 Conflict: a row already exists for this
+//   `(realm, provider, product, price)` tuple — i.e. a violation of
+//   `uq_pem_realm_provider_product_price`. Actionable as "this product id
+//   already exists"; the admin edits the inputs.
+// - 23514 / non-4xx: a DB CHECK / internal-server defense (the backend maps a
+//   Postgres CHECK failure to a 23514-style payload / 500). Surfaced as
+//   "configuration error" and must NOT be confused with the 409 duplicate
+//   branch. 401/403 are authz failures and fall through to the generic path.
+//
+// The thrown value is the generated client's `response.error` (an
+// `ErrorResponse`-shaped object carrying `status`). These helpers narrow on
+// that `status` field the same way `payment-providers-page.tsx` does
+// (`error?.status === 409`); the hook does NOT toast for 409 or the
+// 23514/non-4xx case so the dialog can branch (mirrors the
+// `useBatchUpdateEntitlementMappings` "don't toast for the caller-handled
+// error" precedent).
+
+/**
+ * Returns true when the thrown create-mapping error is the 409 duplicate
+ * (`uq_pem_realm_provider_product_price` violation). The caller should surface
+ * the `billing.create_mapping_duplicate` message.
+ */
+export function isCreateMappingDuplicateError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  return (error as { status?: unknown }).status === 409
+}
+
+/**
+ * Error code the backend surfaces verbatim when a create-mapping row fails a
+ * DB CHECK constraint (the Postgres `check_violation` SQLSTATE 23514, mapped to
+ * a body tag per design §4.2.2). Extracted as a named constant so a backend
+ * rename surfaces here rather than only as a silent magic-string match.
+ */
+export const CREATE_MAPPING_CONFIG_ERROR_CODE = '23514' as const
+
+/**
+ * Returns true when the thrown create-mapping error is a DB CHECK / server
+ * defense (design §4.2.2). The backend maps a Postgres CHECK failure (23514)
+ * to either a 23514-tagged body or a non-4xx (e.g. 500). Surfaced as
+ * `billing.create_mapping_config_error` and intentionally kept distinct from
+ * the 409 duplicate branch. Authz failures (401/403) and the 400 validation
+ * branch are NOT "config errors" — they fall through to the generic path.
+ */
+export function isCreateMappingConfigError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const e = error as { status?: unknown; code?: unknown }
+  if (e.code === CREATE_MAPPING_CONFIG_ERROR_CODE) return true
+  const status = e.status
+  // Any non-4xx server-class failure is treated as a configuration error per
+  // design §4.2.2 (covers the 500 mapping of a CHECK/DB defense).
+  return typeof status === 'number' && status >= 500
+}
+
+/**
+ * Create a single entitlement mapping (POST /entitlement-mappings). Used by the
+ * "Create Mapping" dialog (FE-D03). The hook only invalidates the list on
+ * success; 409 and 23514/non-4xx branches are intentionally NOT toasted here —
+ * the dialog branches on them (see `isCreateMappingDuplicateError` /
+ * `isCreateMappingConfigError`). Other errors fall through to a generic toast.
+ */
+export function useCreateEntitlementMapping(realmId: string) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (body: CreateEntitlementMappingRequest) => {
+      const response = await createEntitlementMapping({
+        path: { realmId },
+        body,
+      })
+      if (response.error) throw response.error
+      return response.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.entitlementMappings(realmId, {}),
+      })
+    },
+    onError: (error) => {
+      // 409 duplicate and 23514/non-4xx config errors are handled by the
+      // dialog; do not toast for them here.
+      if (isCreateMappingDuplicateError(error)) return
+      if (isCreateMappingConfigError(error)) return
+      const errorMessage = getErrorMessage(error)
+      toast.error(`${m['billing.create_mapping_failed']()}: ${errorMessage}`)
     },
   })
 }

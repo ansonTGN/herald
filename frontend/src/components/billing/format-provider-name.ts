@@ -1,9 +1,12 @@
 import { capitalize } from '@/lib/utils'
 
+const PROVIDER_NAMES: Record<string, string> = {
+  stripe: 'Stripe',
+  creem: 'Creem',
+  apple: 'App Store',
+  google: 'Google Play',
+}
+
 export function formatProviderName(name: string): string {
-  const providerNames: Record<string, string> = {
-    stripe: 'Stripe',
-    creem: 'Creem',
-  }
-  return providerNames[name] || capitalize(name)
+  return PROVIDER_NAMES[name] || capitalize(name)
 }

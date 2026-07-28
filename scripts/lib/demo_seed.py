@@ -68,6 +68,7 @@ ADMIN_REALM = "admin"
 ADMIN_EMAIL = "admin@cas.com"
 ADMIN_PASSWORD = "password"
 ADMIN_CLIENT_ID = "admin-web-console"
+APP_CLIENT_ID = "fornetcode-app"
 
 # FirstParty OAuth callback. Must equal `{backend config [frontend].url}/callback`
 # to pass `validate_first_party_redirect` (token.rs:233). Demo `backend/config/demo.toml`
@@ -82,7 +83,6 @@ POINTS_USER_EMAIL = "user@realm-001.com"
 POINTS_USER_PASSWORD = "password"
 POINTS_CLIENT_APP_ID = "points-demo-app"
 
-# Subscription history demo data constants
 SUBSCRIPTION_TEST_USER_EMAIL = "user1@demo.com"
 SUBSCRIPTION_TEST_USER_PASSWORD = "password123"
 SUBSCRIPTION_TEST_CLIENT_ID = "admin-web-console"
@@ -96,6 +96,7 @@ def ensure_demo_seed_data(logger: "Logger | None" = None) -> bool:
     """Ensure the reusable demo environment contains deterministic demo seed data."""
     try:
         _info(logger, "Ensuring demo seed data for realm-001...")
+        _ensure_app_client_and_registration(logger)
         # Pre-establish admin@cas.com legal consent BEFORE logging in. When the
         # admin realm has global legal-agreement versions, login returns
         # consentRequired=true and never issues a browser access token, so the
@@ -123,8 +124,7 @@ def ensure_demo_seed_data(logger: "Logger | None" = None) -> bool:
         # app not yet seeded" warning. This second pass is the one that actually
         # writes `credit_bucket_client_apps` rows on every seed run, making the
         # coverage set deterministic without requiring a manual second re-seed.
-        # (In-slot seed fix; admin realm has no points-demo-app so its pass
-        # no-ops cleanly.)
+        # (The admin realm has no points-demo-app, so its pass no-ops cleanly.)
         for realm_id in (POINTS_REALM_ID, ADMIN_REALM):
             _ensure_realm_bucket_directory(realm_id, logger)
 
@@ -138,15 +138,12 @@ def ensure_demo_seed_data(logger: "Logger | None" = None) -> bool:
         # handled by `_ensure_realm001_subscription_data` above.
         _ensure_payment_provider_config(logger)
 
-        # Ensure realm default points config for admin realm
         _info(logger, "Ensuring admin realm default points config...")
         _ensure_admin_realm_points_config(logger)
 
-        # Ensure audit seed data for admin realm (realm_management events)
         _info(logger, "Ensuring admin realm audit seed data...")
         _ensure_admin_realm_audit_events(logger)
 
-        # Ensure invoice seller config for realm-001
         _info(logger, "Ensuring invoice seller config for realm-001...")
         _ensure_invoice_seller_config(logger)
 
@@ -155,6 +152,42 @@ def ensure_demo_seed_data(logger: "Logger | None" = None) -> bool:
     except SeedError as exc:
         _error(logger, f"Demo seed failed: {exc}")
         return False
+
+
+def _ensure_app_client_and_registration(logger: "Logger | None") -> None:
+    """Ensure the admin realm accepts the Flutter app's auth flows."""
+    _info(logger, f"Ensuring {APP_CLIENT_ID} client and registration...")
+    _sql_exec(
+        f"""
+        INSERT INTO client_app (
+            id, realm_id, client_id, name, description, redirect_uris, enabled
+        )
+        VALUES (
+            uuidv7(), '{ADMIN_REALM}', '{APP_CLIENT_ID}', 'Fornetcode App',
+            'Native Flutter client for Fornetcode', '[]'::jsonb, true
+        )
+        ON CONFLICT (realm_id, client_id) DO UPDATE SET
+            name = EXCLUDED.name,
+            description = EXCLUDED.description,
+            redirect_uris = EXCLUDED.redirect_uris,
+            enabled = true,
+            updated_at = now();
+
+        INSERT INTO realm_config (
+            realm_id, config_type, config_key, config_value,
+            is_secret, enabled, metadata
+        )
+        VALUES (
+            '{ADMIN_REALM}', 'registration', 'enabled', 'true',
+            false, true, '{{}}'::jsonb
+        )
+        ON CONFLICT (realm_id, config_type, config_key) DO UPDATE SET
+            config_value = 'true',
+            enabled = true,
+            updated_at = now();
+        """
+    )
+    _info(logger, f"[OK] {APP_CLIENT_ID} client and registration ready")
 
 
 def _login(realm_id: str, email: str, password: str) -> urllib.request.OpenerDirector:
@@ -837,7 +870,6 @@ DECLARE
     v_subscription_id UUID;
     v_test_timestamp TIMESTAMPTZ := TIMESTAMPTZ '2026-03-24 12:00:00+00';
 BEGIN
-    -- Get existing client app
     SELECT id INTO v_client_app_id
     FROM client_app
     WHERE realm_id = '{POINTS_REALM_ID}' AND client_id = '{POINTS_CLIENT_APP_ID}'
@@ -873,7 +905,6 @@ BEGIN
             billing_type = EXCLUDED.billing_type,
             enabled = TRUE;
 
-    -- Create subscription
     DELETE FROM subscription WHERE client_app_id = v_client_app_id;
 
     INSERT INTO subscription (
@@ -896,7 +927,6 @@ BEGIN
     )
     RETURNING id INTO v_subscription_id;
 
-    -- Create subscription history events
     DELETE FROM subscription_history WHERE subscription_id = v_subscription_id;
 
     INSERT INTO subscription_history (
@@ -1061,7 +1091,6 @@ def _ensure_admin_realm_audit_events(logger: "Logger | None") -> None:
 
 def _ensure_subscription_history_demo_data(admin_opener: urllib.request.OpenerDirector, logger: "Logger | None") -> None:
     """Ensure subscription history demo data exists for the admin realm."""
-    # Check if test user exists
     test_user_id = _sql_scalar(
         "SELECT id::text FROM account "
         f"WHERE realm_id = '{ADMIN_REALM}' AND email = '{SUBSCRIPTION_TEST_USER_EMAIL}' "
@@ -1069,10 +1098,8 @@ def _ensure_subscription_history_demo_data(admin_opener: urllib.request.OpenerDi
     )
 
     if not test_user_id:
-        # Create test user via API
         _info(logger, f"Creating {SUBSCRIPTION_TEST_USER_EMAIL} via HTTP API...")
 
-        # Get user role for admin realm
         user_role_id = _sql_scalar(
             "SELECT id::text FROM roles "
             f"WHERE realm_id = '{ADMIN_REALM}' AND name = 'user' AND client_id = '{ADMIN_CLIENT_ID}' "
@@ -1103,7 +1130,6 @@ def _ensure_subscription_history_demo_data(admin_opener: urllib.request.OpenerDi
         test_user_id = body.get("data", {}).get("id") or body.get("id")
 
     if not test_user_id:
-        # Query again to get the user ID
         test_user_id = _sql_scalar(
             "SELECT id::text FROM account "
             f"WHERE realm_id = '{ADMIN_REALM}' AND email = '{SUBSCRIPTION_TEST_USER_EMAIL}' "
@@ -1115,7 +1141,6 @@ def _ensure_subscription_history_demo_data(admin_opener: urllib.request.OpenerDi
 
     _info(logger, f"Ensuring subscription history test data for {SUBSCRIPTION_TEST_USER_EMAIL}...")
 
-    # Use SQL to create or update subscription demo data
     # Post-entitlement-migration: no products/subscription_plan tables.
     # The subscription table uses entitlement_key instead of plan_id/tier/billing_period.
     bucket_id = _default_bucket_id(ADMIN_REALM)
@@ -1127,7 +1152,6 @@ DECLARE
     v_subscription_id UUID;
     v_test_timestamp TIMESTAMPTZ := TIMESTAMPTZ '2026-03-24 12:00:00+00';
 BEGIN
-    -- Get or create client app (use admin-web-console)
     SELECT id INTO v_client_app_id
     FROM client_app
     WHERE realm_id = '{ADMIN_REALM}' AND client_id = '{SUBSCRIPTION_TEST_CLIENT_ID}'
@@ -1137,7 +1161,6 @@ BEGIN
         RAISE EXCEPTION 'Client app {SUBSCRIPTION_TEST_CLIENT_ID} not found in {ADMIN_REALM}';
     END IF;
 
-    -- Ensure entitlement mapping exists for admin realm
     -- external_price_id added; ON CONFLICT targets the new 4-column unique key.
     -- Single-price subscription row; NULL external_price_id matches on re-seed
     -- via NULLS NOT DISTINCT.
@@ -1161,7 +1184,6 @@ BEGIN
             billing_type = EXCLUDED.billing_type,
             enabled = TRUE;
 
-    -- Create subscription
     DELETE FROM subscription WHERE client_app_id = v_client_app_id;
 
     INSERT INTO subscription (
@@ -1184,7 +1206,6 @@ BEGIN
     )
     RETURNING id INTO v_subscription_id;
 
-    -- Create subscription history events
     DELETE FROM subscription_history WHERE subscription_id = v_subscription_id;
 
     INSERT INTO subscription_history (
@@ -1486,7 +1507,6 @@ def _migrate_legacy_default_buckets(logger: "Logger | None") -> None:
                 """
             )
 
-            # Drop the legacy bucket's coverage bindings, then the bucket row.
             _sql_exec(
                 f"""
                 DELETE FROM credit_bucket_client_apps WHERE bucket_id = '{legacy_id}'::uuid;
@@ -1626,4 +1646,3 @@ def _ensure_invoice_seller_config(logger: "Logger | None") -> None:
         """
         _sql_exec(sql)
     _info(logger, "[OK] Invoice seller config ready for admin and realm-001")
-

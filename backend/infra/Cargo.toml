@@ -13,6 +13,7 @@ herald-domain = { path = "../domain" }
 herald-entity = { path = "../entity" }
 herald-infra-stripe = { path = "../infra-stripe" }
 herald-infra-creem = { path = "../infra-creem" }
+herald-infra-iap = { path = "../infra-iap" }
 sea-orm = { workspace = true }
 sqlx = { workspace = true }
 redis = { workspace = true }

@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
+use crate::provider_common_types::validate_payment_provider_value;
+
 /// Structured view of the `provider_product_info` JSONB synced from the
 /// provider (design §5.7).
 ///
@@ -119,6 +121,59 @@ pub struct UpdateEntitlementMappingRequest {
     /// `Some([...])` ⟺ replace. Same validation as batch update.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quota_windows: Option<Vec<QuotaWindowInput>>,
+}
+
+/// Request to create an entitlement mapping (design support-iap §4.2.2 / A2).
+///
+/// Generic over provider (IAP, Stripe, Creem). The
+/// `uq_pem_realm_provider_product_price` unique constraint is enforced by the
+/// repository and surfaces as HTTP 409. Credit-strategy fields
+/// (`pointsPerPeriod` / `grantOnSubscribe` / `validityDays`) additionally
+/// require the `points.manage` permission.
+#[derive(Debug, Deserialize, ToSchema, validator::Validate)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateEntitlementMappingRequest {
+    /// `"apple"` / `"google"` / `"stripe"` / `"creem"`.
+    #[validate(custom(function = "validate_payment_provider_value"))]
+    pub payment_provider: String,
+    pub external_product_id: String,
+    /// Stripe Price ID for Stripe; `None` for IAP / Creem.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub external_price_id: Option<String>,
+    pub entitlement_key: String,
+    pub bucket_id: Uuid,
+    /// `"recurring"` / `"one_time"`.
+    #[validate(custom(function = "validate_create_billing_type"))]
+    pub billing_type: String,
+    /// Required when `billing_type == "recurring"`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub billing_period: Option<String>,
+    /// Credit-strategy field (requires `points.manage`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub points_per_period: Option<i64>,
+    /// Credit-strategy field.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grant_on_subscribe: Option<bool>,
+    /// One-time validity window (days).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub validity_days: Option<i64>,
+    /// Roles auto-granted on payment success.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub granted_role_ids: Vec<Uuid>,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn validate_create_billing_type(billing_type: &str) -> Result<(), validator::ValidationError> {
+    if matches!(billing_type, "recurring" | "one_time") {
+        Ok(())
+    } else {
+        Err(validator::ValidationError::new("invalid_billing_type"))
+    }
 }
 
 /// Request to sync provider products
@@ -261,8 +316,6 @@ pub struct CancelSubscriptionResponse {
     pub message: String,
 }
 
-/// Request to create checkout session.
-///
 /// Input for one quota window in a mapping batch save (design §4.3.2).
 ///
 /// Carries only the editable fields; the stable display `key` is derived by

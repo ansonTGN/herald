@@ -67,7 +67,6 @@ export function RegisterForm({ realmId, onSuccess }: RegisterFormProps) {
 
   const { isSubmitting, mutate } = useFormMutation({
     mutationFn: async (data: RegisterFormData) => {
-      // Transform form data to API request format
       const apiData: RegisterRequest = {
         clientId: FIRST_PARTY_CLIENT_ID,
         email: data.email,
@@ -129,7 +128,7 @@ export function RegisterForm({ realmId, onSuccess }: RegisterFormProps) {
         <TextField
           form={form}
           name="nickname"
-          label={`${m['auth.register.title']()} (${m['common.optional']()})`}
+          label={m['auth.register.nickname_label']()}
           dataTestId="register-nickname-input"
           disabled={isSubmitting}
         />
@@ -137,7 +136,7 @@ export function RegisterForm({ realmId, onSuccess }: RegisterFormProps) {
         <form.Field name="password">
           {(field) => (
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password">{m['auth.register.password_label']()}</Label>
               <Input
                 id="password"
                 type="password"
@@ -158,7 +157,7 @@ export function RegisterForm({ realmId, onSuccess }: RegisterFormProps) {
         <TextField
           form={form}
           name="confirmPassword"
-          label="Confirm Password"
+          label={m['auth.register.confirm_password_label']()}
           type="password"
           dataTestId="register-confirm-password-input"
           disabled={isSubmitting}
@@ -168,7 +167,7 @@ export function RegisterForm({ realmId, onSuccess }: RegisterFormProps) {
           <form.Field name="turnstileToken">
             {(field) => (
               <div className="space-y-2">
-                <Label>Complete security verification</Label>
+                <Label>{m['auth.register.security_verification']()}</Label>
                 <TurnstileWidget
                   siteKey={turnstileStatus.siteKey || ''}
                   onTokenChange={(token) => field.handleChange(token || '')}
@@ -223,7 +222,7 @@ export function RegisterForm({ realmId, onSuccess }: RegisterFormProps) {
           disabled={isSubmitting}
           className="w-full"
         >
-          {isSubmitting ? 'Registering...' : 'Register'}
+          {isSubmitting ? m['auth.register.registering']() : m['auth.register.submit']()}
         </Button>
       </form>
     </AppForm>

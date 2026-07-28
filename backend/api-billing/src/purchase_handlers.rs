@@ -1,5 +1,3 @@
-// Purchase API Handlers
-
 use axum::{
     Json,
     extract::{Extension, Path, Query, State},
@@ -26,6 +24,7 @@ use herald_core::domain::purchase::{
 };
 
 use crate::payment_email::formal_payment_email;
+use crate::provider_common_types::validate_payment_provider_value;
 
 // ============================================================================
 // Types
@@ -37,7 +36,7 @@ pub struct CreatePaymentAttemptRequest {
     #[validate(custom(function = "validate_purchasable_target"))]
     pub target_type: String,
     pub target_id: Uuid,
-    #[validate(custom(function = "validate_payment_provider"))]
+    #[validate(custom(function = "validate_payment_provider_value"))]
     pub payment_provider: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
@@ -187,13 +186,8 @@ fn validate_purchasable_target(target_type: &str) -> Result<(), validator::Valid
     }
 }
 
-fn validate_payment_provider(payment_provider: &str) -> Result<(), validator::ValidationError> {
-    if matches!(payment_provider, "stripe" | "creem") {
-        Ok(())
-    } else {
-        Err(validator::ValidationError::new("invalid payment_provider"))
-    }
-}
+// `validate_payment_provider_value` (provider_common_types) covers the
+// payment_provider whitelist; the IAP-query-path rationale is documented there.
 
 // ============================================================================
 // Conversion Helpers

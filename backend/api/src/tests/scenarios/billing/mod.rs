@@ -2,18 +2,10 @@
 // Billing Security Tests
 // =============================================================================
 //
-// Tests for:
-// 1. Permission checks (billing.view, billing.manage)
-// 2. Webhook signature verification
-// 3. Entitlement mapping CRUD + sync
-// 4. Invoice tests
-// 5. Points package tests
-//
 // User Story: docs/user-stories/06-billing-user-stories.md
 //
 // =============================================================================
 
-// New entitlement mapping CRUD + sync scenario tests
 pub mod entitlement_mapping_crud_scenarios;
 
 // Paywall M1 role-grant config dimension scenario tests (support-paywall)
@@ -56,7 +48,6 @@ pub mod paywall_m4_revoke_sweep_scenarios;
 //         JSONB; re-sync takes the latest metadata.
 pub mod provider_product_sync_scenarios;
 
-// Webhook entitlement scenarios
 pub mod webhook_entitlement_scenarios;
 
 // Creem webhook one-time dispatch scenarios
@@ -69,7 +60,6 @@ pub mod creem_webhook_one_time_scenarios;
 // Covers: Design section 5.1 "PurchaseService + FulfillmentService"
 pub mod one_time_fulfillment_scenarios;
 
-// Entitlement subscription scenarios
 pub mod entitlement_subscription_scenarios;
 
 // Stripe webhook mode dispatch scenarios (payment vs subscription)
@@ -77,25 +67,18 @@ pub mod entitlement_subscription_scenarios;
 // Covers: Design section 5.1
 pub mod stripe_webhook_mode_scenarios;
 
-// Subscription points entitlement scenarios
 pub mod subscription_points_entitlement_scenarios;
 
-// Invoice Admin scenario tests
 pub mod invoice_admin_scenarios;
 
-// Invoice PDF scenario tests
 pub mod invoice_pdf_scenarios;
 
-// Invoice Provider & Policy Guard scenario tests
 pub mod invoice_provider_policy_scenarios;
 
-// Invoice External Sync scenario tests
 pub mod invoice_external_sync_scenarios;
 
-// Invoice User scenario tests
 pub mod invoice_user_scenarios;
 
-// Invoice Overdue Job scenario tests
 pub mod invoice_overdue_scenarios;
 
 // One-time API endpoint scenario tests
@@ -127,7 +110,6 @@ pub mod async_payment_points_strategy_scenarios;
 // Covers: Design sections 4.1, 4.3, 5.1
 pub mod async_payment_revocation_scenarios;
 
-// Payment attempt status guard scenario tests
 pub mod payment_attempt_status_guard_scenarios;
 
 // Webhook grant idempotency scenario tests
@@ -178,3 +160,39 @@ pub mod stripe_subscription_renewal_scenarios;
 // Covers: Design §5.4 (attribution backfill + upsert COALESCE),
 //         §6.1 (attribution + regression cases), §6.3 (COALESCE non-clobber)
 pub mod external_invoice_attribution_scenarios;
+
+// =============================================================================
+// IAP (App Store / Google Play) scenario tests (support-iap)
+// =============================================================================
+
+// IAP receipt submission scenario tests (Apple jwsRepresentation + Google
+// purchaseToken → verify → resolve mapping → create attempt → fulfil +
+// Google ack/consume; §6.3 ack-failure rollback).
+// User Story: US-IAP-003 (client credential submission triggers fulfilment)
+// Covers: design support-iap §4.2.2 (receipt endpoint contract), §5.2,
+//         §6.1, §6.3 (Google ack-failure rollback regression).
+pub mod iap_receipt_scenarios;
+
+// Apple SSV V2 webhook scenario tests (always-200 receiver; JWS verification
+// is the trust root; §6.3 tampered-leaf regression).
+// User Story: US-IAP-004 (Apple server notifications drive lifecycle + catch-up)
+// Covers: design support-iap §4.2.2 (webhook contract), §5.5, §6.1, §6.3.
+pub mod apple_webhook_scenarios;
+
+// IAP entitlement mapping create scenario tests (POST /entitlement-mappings;
+// 201 / 409 duplicate / 403 billing.manage / 403 credit fields w/o points.manage).
+// User Story: US-IAP-002 (build IAP product → entitlement mapping)
+// Covers: design support-iap §4.2.2 (mapping-create contract), §4.3.3, §6.1.
+pub mod iap_entitlement_mapping_create_scenarios;
+
+// IAP reconciliation job scenario tests (IapReconciliationJob::run with a
+// MockProcessor; failure isolation structural contract).
+// User Story: US-IAP-006 (scheduled reconciliation)
+// Covers: design support-iap §5.7, §6.1.
+pub mod iap_reconciliation_scenarios;
+
+// IAP provider CHECK constraint migration regression (post-migration state
+// only — rollback state intentionally not covered per design §6.1 / §7).
+// User Story: n/a (DB regression)
+// Covers: design support-iap §4.3.3, §6.1 (DB migration regression).
+pub mod iap_provider_check_migration_scenarios;

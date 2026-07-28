@@ -138,14 +138,19 @@ export class BasePage {
     await locator.selectText()
     await locator.fill(value)
 
-    // Trigger blur to run field-level validation
     await locator.blur()
 
-    // Wait for React state update by checking if value is committed
+    // Wait for React state update by checking if value is committed.
+    // NOTE: multi-line secrets (e.g. Apple .p8 private keys) are entered into a
+    // single-line <input>, where the browser normalizes "\n" to a space per the
+    // HTML spec for input.value. Comparing the committed value therefore
+    // collapses internal whitespace runs; we compare on that normalized form so
+    // the self-check does not false-fail on legitimate secret content.
     if (waitForValidation) {
+      const collapseWs = (s: string) => s.replace(/\s+/g, ' ').trim()
       await expect(async () => {
         const inputValue = await locator.inputValue()
-        expect(inputValue).toBe(value)
+        expect(collapseWs(inputValue)).toBe(collapseWs(value))
       }).toPass({ timeout: 2000 })
     }
   }
@@ -165,7 +170,6 @@ export class BasePage {
    * @see .claude/mistakes/demo-repair.md - CHECKBOX_STATE_CHANGE_FAILURE
    */
   protected async setCheckbox(locator: Locator, checked: boolean): Promise<void> {
-    // Wait for checkbox to be visible and stable
     await expect(locator).toBeVisible()
 
     const isChecked = await locator.isChecked()
@@ -174,8 +178,6 @@ export class BasePage {
       // Use click() instead of setChecked() to avoid state detection issues
       await locator.click({ force: true })
 
-      // Use assertion-based waiting to wait for state update
-      // This eliminates fixed delay and uses Playwright's intelligent retry mechanism
       await expect(async () => {
         const newCheckedState = await locator.isChecked()
         expect(newCheckedState).toBe(checked)

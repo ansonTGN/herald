@@ -61,6 +61,12 @@ export class EntitlementMappingsPage extends BasePage {
   readonly protectedPriceActiveSubs: Locator
   readonly protectedPriceConfirmCancel: Locator
 
+  // Create-mapping dialog entry. The dialog is rendered by
+  // CreateEntitlementMappingDialog (frontend/src/components/billing/
+  // create-entitlement-mapping-dialog.tsx) and opened from this page's toolbar.
+  readonly createMappingButton: Locator
+  readonly createMappingDialog: Locator
+
   constructor(page: Page, logger?: UnifiedLogger) {
     super(page, logger)
     this.container = page.locator(SELECTORS.multiPriceMapping.page)
@@ -99,6 +105,9 @@ export class EntitlementMappingsPage extends BasePage {
     this.protectedPriceConfirmCancel = page.locator(
       SELECTORS.multiPriceMapping.protectedPriceConfirmCancel,
     )
+
+    this.createMappingButton = page.locator(SELECTORS.iap.createMappingButton)
+    this.createMappingDialog = page.locator(SELECTORS.iap.createMappingDialog)
   }
 
   /**
@@ -339,7 +348,6 @@ export class EntitlementMappingsPage extends BasePage {
     const field = this.getGrantedRolesField(priceKey)
     await expect(field).toBeVisible()
 
-    // Open the popover.
     const trigger = field.locator(SELECTORS.apiKeyRoles.roleSelectorTrigger)
     await this.smartClick(trigger)
     await expect(this.page.getByTestId('role-selector-search')).toBeVisible({
@@ -578,5 +586,253 @@ export class EntitlementMappingsPage extends BasePage {
       productsSynced: productsMatch ? Number(productsMatch[0]) : 0,
       pricesSynced: pricesMatch ? Number(pricesMatch[0]) : 0,
     }
+  }
+
+  // ==================== Create-mapping dialog ====================
+
+  /**
+   * Open the Create Entitlement Mapping dialog from the toolbar.
+   *
+   * Clicks the `create-mapping-button` (rendered only when `billing.manage`
+   * is held) and waits for `create-entitlement-mapping-dialog` to be visible.
+   *
+   * Shared open entry for US-IAP-002. The full field-fill helpers below
+   * (provider/bucket/billing-type selects, product/price/entitlement-key
+   * inputs, points strategy) consume `SELECTORS.iap.createMapping*`.
+   */
+  async openCreateMappingDialog(): Promise<void> {
+    await expect(this.createMappingButton).toBeVisible()
+    await this.smartClick(this.createMappingButton)
+    await expect(this.createMappingDialog).toBeVisible({ timeout: 5000 })
+  }
+
+  /**
+   * Pick an option from a create-mapping Radix Select by its visible option name.
+   *
+   * Radix renders SelectItem options with role="option"; the accessible name is
+   * the item's child text (e.g. "App Store", "Recurring", "Month", "Primary
+   * Pool"). Precedent: `PaymentProvidersPage.selectAppleEnvironment` +
+   * `admin-subscription-history-demo.e2e.ts:226`.
+   *
+   * @param triggerTestId The `data-testid` on the SelectTrigger.
+   * @param optionName   The visible name of the option to click (exact).
+   */
+  private async pickCreateMappingSelectOption(
+    triggerTestId: string,
+    optionName: string,
+  ): Promise<void> {
+    // `triggerTestId` is a full attribute selector (e.g.
+    // '[data-testid="create-mapping-provider-select"]') stored in SELECTORS.iap,
+    // matching the codebase convention of `page.locator(SELECTORS...)`. Route it
+    // through `locator()` (NOT `getByTestId`, which expects a bare testid and
+    // would double-wrap the attribute, matching nothing).
+    await this.smartClick(this.page.locator(triggerTestId))
+    // Radix Select content is portaled; the option carries role="option". Match
+    // the visible name exactly so "Month" does not also match "Year"-adjacent
+    // text.
+    const option = this.page.getByRole('option', { name: optionName, exact: true })
+    await expect(option).toBeVisible({ timeout: 5000 })
+    await option.click()
+  }
+
+  /**
+   * Resolve + select the credit bucket by its display NAME (not UUID — bucket ids
+   * are dynamic). If `bucketName` is supplied it is selected directly; otherwise
+   * the FIRST available option is chosen (fallback when the seed bucket display
+   * name is not stable across envs — recorded gap).
+   *
+   * @returns the display name of the bucket actually selected (for caller logs).
+   */
+  private async selectCreateMappingBucket(bucketName?: string): Promise<string> {
+    await this.smartClick(this.page.locator(SELECTORS.iap.createMappingBucketSelect))
+    if (bucketName) {
+      const named = this.page.getByRole('option', { name: bucketName, exact: true })
+      await expect(named).toBeVisible({ timeout: 5000 })
+      await named.click()
+      return bucketName
+    }
+    // Fallback: pick the first option. `getByRole('option')` resolves lazily, so
+    // wait for at least one to be visible first.
+    const firstOption = this.page.getByRole('option').first()
+    await expect(firstOption).toBeVisible({ timeout: 5000 })
+    const name = (await firstOption.textContent())?.trim() ?? '<first-bucket>'
+    await firstOption.click()
+    return name
+  }
+
+  /**
+   * Fill the create-mapping dialog (US-IAP-002). Opens the dialog via
+   * `openCreateMappingDialog()`, drives the Radix selects by visible option
+   * name, fills the text inputs by canonical testid, and toggles grant-on-
+   * subscribe when relevant. Does NOT click submit — the caller drives the
+   * outcome assertion (success → list row / closed dialog, or duplicate →
+   * `create-mapping-submit-error`).
+   *
+   * Select option names (en locale, the admin realm default):
+   *   - provider:   'App Store' (apple) | 'Google Play' (google)
+   *   - billingType: 'Recurring' | 'One-time'
+   *   - billingPeriod (recurring only): 'Month' (monthly) | 'Year' (yearly)
+   *
+   * Bucket is resolved by display name (the seeded registration pool display
+   * name is "Primary Pool" — `scripts/lib/demo_seed.py::CREDIT_BUCKET_NAME_PRIMARY`,
+   * mirrored in `helpers/bucket-seed-ids.ts::CREDIT_BUCKET_NAMES.PRIMARY_POOL`).
+   * If `bucketName` is omitted, the first bucket option is selected as a
+   * documented fallback.
+   *
+   * Conditionally-rendered fields:
+   *   - `billingPeriod` is only set when `billingType === 'recurring'`.
+   *   - `validityDays` only renders for one_time + canManagePoints (admin has
+   *     points.manage). Filled when provided.
+   *   - `pointsPerPeriod` only renders for recurring + canManagePoints. Filled
+   *     when provided.
+   *   - `grantOnSubscribe` only renders for recurring + canManagePoints. Toggled
+   *     ON when `true`; left untouched otherwise (default false).
+   */
+  async fillCreateMappingDialog(values: {
+    /** 'apple' → 'App Store', 'google' → 'Google Play'. */
+    provider: 'apple' | 'google'
+    externalProductId: string
+    entitlementKey: string
+    /** Display name to match against the bucket option (e.g. 'Primary Pool'). */
+    bucketName?: string
+    billingType: 'recurring' | 'one_time'
+    /** 'monthly' → 'Month', 'yearly' → 'Year'. Required for recurring. */
+    billingPeriod?: 'monthly' | 'yearly'
+    /** One-time validity days (one_time + canManagePoints only). */
+    validityDays?: number
+    /** Recurring points grant per period (recurring + canManagePoints only). */
+    pointsPerPeriod?: number
+    /** Optional Stripe price id. IAP/Creem leave it empty. */
+    externalPriceId?: string
+    /** Recurring grant-on-subscribe toggle (recurring + canManagePoints only). */
+    grantOnSubscribe?: boolean
+  }): Promise<void> {
+    await this.openCreateMappingDialog()
+
+    const providerOptionName =
+      values.provider === 'apple' ? 'App Store' : 'Google Play'
+    await this.pickCreateMappingSelectOption(
+      SELECTORS.iap.createMappingProviderSelect,
+      providerOptionName,
+    )
+
+    await this.fillField(
+      this.page.locator(SELECTORS.iap.createMappingExternalProductIdInput),
+      values.externalProductId,
+    )
+
+    if (values.externalPriceId !== undefined) {
+      await this.fillField(
+        this.page.locator(SELECTORS.iap.createMappingExternalPriceIdInput),
+        values.externalPriceId,
+      )
+    }
+
+    await this.fillField(
+      this.page.locator(SELECTORS.iap.createMappingEntitlementKeyInput),
+      values.entitlementKey,
+    )
+
+    await this.selectCreateMappingBucket(values.bucketName)
+
+    const billingTypeOptionName =
+      values.billingType === 'recurring' ? 'Recurring' : 'One-time'
+    await this.pickCreateMappingSelectOption(
+      SELECTORS.iap.createMappingBillingTypeSelect,
+      billingTypeOptionName,
+    )
+
+    // Billing Period — recurring only. 'monthly' → 'Month', 'yearly' → 'Year'
+    // (SelectItem text from billing.billing_period_month / _year).
+    if (values.billingType === 'recurring' && values.billingPeriod) {
+      const periodOptionName = values.billingPeriod === 'monthly' ? 'Month' : 'Year'
+      await this.pickCreateMappingSelectOption(
+        SELECTORS.iap.createMappingBillingPeriodSelect,
+        periodOptionName,
+      )
+    }
+
+    if (values.billingType === 'one_time' && values.validityDays !== undefined) {
+      await this.fillField(
+        this.page.locator(SELECTORS.iap.createMappingValidityDaysInput),
+        String(values.validityDays),
+      )
+    }
+
+    if (
+      values.billingType === 'recurring' &&
+      values.pointsPerPeriod !== undefined
+    ) {
+      await this.fillField(
+        this.page.locator(SELECTORS.iap.createMappingPointsPerPeriodInput),
+        String(values.pointsPerPeriod),
+      )
+    }
+
+    // Grant on subscribe — recurring + canManagePoints. Toggle ON when requested.
+    // Radix Switch exposes `data-state`; only click when the target differs from
+    // the current state (default is unchecked/false).
+    if (
+      values.billingType === 'recurring' &&
+      values.grantOnSubscribe === true
+    ) {
+      const toggle = this.page.locator(SELECTORS.iap.createMappingGrantOnSubscribeToggle)
+      await expect(toggle).toBeVisible({ timeout: 5000 })
+      const state = await toggle.getAttribute('data-state')
+      if (state !== 'checked') {
+        await this.smartClick(toggle)
+        await expect(toggle).toHaveAttribute('data-state', 'checked', {
+          timeout: 3000,
+        })
+      }
+    }
+
+    // Submit is intentionally NOT clicked here — the caller drives the outcome.
+  }
+
+  /**
+   * Click the create-mapping submit button. The caller then asserts the outcome
+   * via `expectCreateMappingDialogClosed()` (success) or
+   * `expectCreateMappingDuplicateError()` (409).
+   */
+  async submitCreateMapping(): Promise<void> {
+    const submit = this.page.locator(SELECTORS.iap.createMappingSubmitButton)
+    await expect(submit).toBeVisible()
+    await submit.click()
+  }
+
+  /**
+   * Assert the 409 duplicate inline error region is visible. The backend rejects
+   * a create whose (provider, externalProductId) collides with an existing row
+   * (design §4.2 unique constraint); the dialog surfaces
+   * `create-mapping-submit-error` inline (NOT a toast — toasts are auto-dismissed
+   * and must not be the primary assertion). The dialog remains open on failure.
+   */
+  async expectCreateMappingDuplicateError(): Promise<void> {
+    await expect(
+      this.page.locator(SELECTORS.iap.createMappingSubmitError),
+    ).toBeVisible({ timeout: 10000 })
+  }
+
+  /**
+   * Assert the create-mapping dialog has closed (success path). On a successful
+   * create the mutation invalidates `['entitlement-mappings']` and the dialog
+   * dismisses itself; the master list refreshes with the new product row.
+   */
+  async expectCreateMappingDialogClosed(): Promise<void> {
+    await expect(
+      this.page.locator(SELECTORS.iap.createMappingDialog),
+    ).toBeHidden({ timeout: 10000 })
+  }
+
+  /**
+   * Assert the create-mapping dialog REMAINS open (failed submit does not close
+   * the dialog). Used alongside `expectCreateMappingDuplicateError` to pin the
+   * "stays open on error" UX contract.
+   */
+  async expectCreateMappingDialogOpen(): Promise<void> {
+    await expect(
+      this.page.locator(SELECTORS.iap.createMappingDialog),
+    ).toBeVisible()
   }
 }

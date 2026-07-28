@@ -112,11 +112,31 @@ pub async fn run_template_migrations(pool: &PgPool, schema_name: &str) {
             .await
             .unwrap_or_else(|_| panic!("Failed to read migration file: {}", file_path));
 
-        let up_section = sql
-            .lines()
-            .take_while(|line| !line.trim().to_lowercase().contains("down migration"))
-            .collect::<Vec<_>>()
-            .join("\n");
+        // Split off an optional "down migration" section if present.
+        //
+        // The repository uses unidirectional sqlx migrations (no down scripts),
+        // so this split is only a defensive guard against a future migration
+        // that follows the sqlx-cli template (`-- Add down migration script
+        // here ...`). The match MUST be a standalone comment header to avoid
+        // accidentally truncating a migration whose *prose comment* happens to
+        // contain the phrase "down migration" (this was the root cause of the
+        // 0010_iap_provider_check CHECK-constraint regression: its rationale
+        // comment said "Down migration is intentionally not provided", which
+        // the old loose `contains("down migration")` substring match treated
+        // as the section boundary and discarded the entire `ALTER TABLE`
+        // body, leaving the `chk_*_payment_provider` CHECK at the old
+        // `('stripe','creem')` value set and breaking every IAP insert).
+        let down_marker_idx = sql.lines().position(|line| {
+            let trimmed = line.trim().to_lowercase();
+            trimmed == "-- add down migration script here."
+                || trimmed == "-- add down migration script here"
+                || trimmed == "-- down migration"
+                || trimmed == "-- down migrations"
+        });
+        let up_section = match down_marker_idx {
+            Some(idx) => sql.lines().take(idx).collect::<Vec<_>>().join("\n"),
+            None => sql.clone(),
+        };
 
         full_sql.push_str(&up_section);
         full_sql.push('\n');

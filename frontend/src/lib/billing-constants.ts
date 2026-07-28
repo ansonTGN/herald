@@ -1,14 +1,8 @@
-/**
- * Billing and payment provider constants
- * Provides type-safe constants for payment providers and error codes
- */
-
-/**
- * Payment provider types
- */
 export const PAYMENT_PROVIDERS = {
   CREEM: 'creem',
   STRIPE: 'stripe',
+  APPLE: 'apple',
+  GOOGLE: 'google',
 } as const
 
 export const STRIPE_CONFIG_KEYS = {
@@ -19,11 +13,21 @@ export const STRIPE_CONFIG_KEYS = {
   ASYNC_POINTS_STRATEGY: 'async_points_strategy',
 } as const
 
+export const APPLE_CONFIG_KEYS = {
+  BUNDLE_ID: 'bundle_id',
+  ISSUER_ID: 'issuer_id',
+  KEY_ID: 'key_id',
+  PRIVATE_KEY_P8: 'private_key_p8',
+  ENVIRONMENT: 'environment',
+} as const
+
+export const GOOGLE_CONFIG_KEYS = {
+  PACKAGE_NAME: 'package_name',
+  SERVICE_ACCOUNT_JSON: 'service_account_json',
+} as const
+
 export type PaymentProvider = (typeof PAYMENT_PROVIDERS)[keyof typeof PAYMENT_PROVIDERS]
 
-/**
- * Stripe-specific error codes
- */
 export const STRIPE_ERROR_CODES = {
   INVALID_API_KEY: 'INVALID_API_KEY',
   WEBHOOK_NOT_CONFIGURED: 'WEBHOOK_NOT_CONFIGURED',
@@ -37,18 +41,12 @@ export const STRIPE_ERROR_CODES = {
   NETWORK_ERROR: 'NETWORK_ERROR',
 } as const
 
-/**
- * Stripe API key prefixes
- */
 export const STRIPE_KEY_PREFIXES = {
   PUBLISHABLE: 'pk_',
   SECRET: 'sk_',
   WEBHOOK: 'whsec_',
 } as const
 
-/**
- * Billing period types
- */
 export const BILLING_PERIODS = {
   MONTHLY: 'monthly',
   YEARLY: 'yearly',
@@ -56,9 +54,6 @@ export const BILLING_PERIODS = {
 
 export type BillingPeriod = (typeof BILLING_PERIODS)[keyof typeof BILLING_PERIODS]
 
-/**
- * Plan tier types
- */
 export const PLAN_TIERS = {
   FREE: 'free',
   PRO: 'pro',

@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { PageHeader } from '@/components/shared'
 import { ProviderSyncButton } from '@/components/billing/provider-sync-button'
+import { CreateEntitlementMappingDialog } from '@/components/billing/create-entitlement-mapping-dialog'
 import { formatProviderName } from '@/components/billing/format-provider-name'
 import {
   readProviderProductInfo,
@@ -81,6 +82,10 @@ export function EntitlementMappingsPage({ realmId }: EntitlementMappingsPageProp
   // callback (after awaiting the refetch) rather than via an effect, to
   // comply with the no-setState-in-effect rule.
   const [nextStepOpen, setNextStepOpen] = useState(false)
+
+  // Create-mapping dialog (FE-D03): manual mapping creation for providers
+  // without product sync (notably IAP / App Store / Google Play).
+  const [createOpen, setCreateOpen] = useState(false)
 
   const { data, isLoading } = useQuery({
     ...entitlementMappingsQueryOptions(realmId, {}),
@@ -155,8 +160,16 @@ export function EntitlementMappingsPage({ realmId }: EntitlementMappingsPageProp
         </div>
       )}
 
-      {/* Toolbar: provider sync only (filters removed — the product list is the navigation). */}
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-2">
+        {canManage && (
+          <Button
+            variant="default"
+            onClick={() => setCreateOpen(true)}
+            data-testid="create-mapping-button"
+          >
+            {m['billing.create_mapping_button']()}
+          </Button>
+        )}
         <ProviderSyncButton realmId={realmId} onSyncComplete={handleSyncComplete} />
       </div>
 
@@ -166,7 +179,6 @@ export function EntitlementMappingsPage({ realmId }: EntitlementMappingsPageProp
         <EmptyState onSync={() => undefined} canTriggerSync={canManage} />
       ) : (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr]">
-          {/* Master: product list */}
           <Card>
             <CardHeader>
               <CardTitle>Products</CardTitle>
@@ -241,11 +253,18 @@ export function EntitlementMappingsPage({ realmId }: EntitlementMappingsPageProp
       />
 
       <SyncNextStepDialog open={nextStepOpen} onOpenChange={setNextStepOpen} />
+
+      {canManage && (
+        <CreateEntitlementMappingDialog
+          open={createOpen}
+          onOpenChange={setCreateOpen}
+          realmId={realmId}
+          canManagePoints={canManagePoints}
+        />
+      )}
     </div>
   )
 }
-
-// ==================== Detail panel (multi-price editor) ====================
 
 interface DetailPanelProps {
   realmId: string
@@ -286,7 +305,6 @@ function DetailPanel({
       externalProductId: group.externalProductId,
       updates: rows.map(toPriceMappingUpdate),
     }
-    // Validate the whole batch before submit.
     const parsed = batchEntitlementMappingsSchema.safeParse(request)
     if (!parsed.success) {
       // Surface the first validation issue via toast through the mutation's
@@ -393,8 +411,6 @@ function DetailPanel({
     </Card>
   )
 }
-
-// ==================== Single price edit row ====================
 
 interface PriceEditRowProps {
   realmId: string
@@ -644,7 +660,6 @@ function PriceEditRow({
               </Field>
             )}
 
-            {/* Quota windows span the full width of the advanced grid. */}
             {!isOneTime && (
               <div className="sm:col-span-2">
                 <Label className="mb-2 block text-xs font-medium text-muted-foreground">
@@ -688,8 +703,6 @@ function Field({
     </div>
   )
 }
-
-// ==================== Empty state ====================
 
 function EmptyState({ onSync, canTriggerSync }: { onSync: () => void; canTriggerSync: boolean }) {
   return (
@@ -738,8 +751,6 @@ function LoadingSkeleton() {
     </div>
   )
 }
-
-// ==================== helpers ====================
 
 /**
  * Flatten the (optional) `productMetadata` + `priceMetadata` maps from the

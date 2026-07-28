@@ -948,19 +948,16 @@ async fn handle_checkout_completed(
                     })
                     .unwrap_or_else(Utc::now);
 
-                app_state
-                    .purchase_service
-                    .complete_succeeded_payment_attempt(CompletePaymentAttemptInput {
-                        attempt_id,
-                        provider_status: "succeeded".to_string(),
-                        provider_transaction_id,
-                        completed_at,
-                        source: PaymentCompletionSource::ProviderWebhook {
-                            provider: "creem".to_string(),
-                        },
-                        billing_type_override: Some(BillingType::OneTime),
-                    })
-                    .await?;
+                crate::shared_fulfillment::fulfill_provider_event(
+                    &app_state,
+                    attempt_id,
+                    "creem",
+                    "succeeded",
+                    provider_transaction_id,
+                    completed_at,
+                    Some(BillingType::OneTime),
+                )
+                .await?;
 
                 info!(
                     realm_id = %realm_id,

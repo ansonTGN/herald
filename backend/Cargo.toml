@@ -5,6 +5,7 @@ members = [
     "domain",
     "infra",
     "infra-creem",
+    "infra-iap",
     "infra-stripe",
     "infra-shopify",
     "core",
@@ -140,6 +141,15 @@ hex = "0.4"
 # webauthn-rs 0.5 hard-depends on openssl via webauthn-rs-core; passkey-auth
 # uses RustCrypto (p256 / ed25519-dalek / sha2) end-to-end.
 passkey-auth = "0.1"
+
+# App Store Server API + JWS/x5c verification (ES256 + Apple Root CA self-managed).
+# RustCrypto p256, MIT, no openssl. See `.ai/design/support-iap.md` §5.1.
+# `api-client-reqwest` enables the App Store Server API client + reqwest transport.
+# `ocsp` is intentionally NOT enabled — verification is offline (trust anchor self-managed).
+app-store-server-library = { version = "4.3", features = ["api-client-reqwest"] }
+
+# `http` types are surfaced by the app-store-server-library Transport trait.
+http = "1.4"
 
 # URL parsing
 url = "2.5"

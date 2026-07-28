@@ -297,6 +297,60 @@ pub enum ConfigType {
     /// ```
     Stripe,
 
+    /// App Store IAP (Apple) payment provider configuration
+    ///
+    /// Per design support-iap §4.3.2 / §5.4. Reuses the `realm_config` KV
+    /// table; no separate IAP table is created.
+    ///
+    /// Valid config_key values:
+    /// - `bundle_id`: App Bundle ID (non-secret)
+    /// - `issuer_id`: App Store Connect Issuer ID (non-secret)
+    /// - `key_id`: App Store Connect Key ID (non-secret)
+    /// - `private_key_p8`: `.p8` private key in PEM form (secret, mark
+    ///   is_secret=true; view masked, edit-leave-empty-keep)
+    /// - `environment`: notification environment, `sandbox` / `production`
+    ///   (non-secret)
+    ///
+    /// Example `.p8` configuration:
+    /// ```json
+    /// {
+    ///   "config_type": "apple",
+    ///   "config_key": "private_key_p8",
+    ///   "config_value": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----",
+    ///   "is_secret": true,
+    ///   "enabled": true
+    /// }
+    /// ```
+    ///
+    /// `list_payment_providers` treats Apple as configured iff a config row
+    /// with `config_key == "issuer_id"` exists.
+    Apple,
+
+    /// Google Play Billing (Google) payment provider configuration
+    ///
+    /// Per design support-iap §4.3.2 / §5.4. Reuses the `realm_config` KV
+    /// table; no separate IAP table is created.
+    ///
+    /// Valid config_key values:
+    /// - `package_name`: Play application package name (non-secret)
+    /// - `service_account_json`: Service Account JSON (secret, mark
+    ///   is_secret=true; view masked, edit-leave-empty-keep)
+    ///
+    /// Example service-account configuration:
+    /// ```json
+    /// {
+    ///   "config_type": "google",
+    ///   "config_key": "service_account_json",
+    ///   "config_value": "{ \"type\": \"service_account\", ... }",
+    ///   "is_secret": true,
+    ///   "enabled": true
+    /// }
+    /// ```
+    ///
+    /// `list_payment_providers` treats Google as configured iff a config row
+    /// with `config_key == "service_account_json"` exists.
+    Google,
+
     /// Email provider configuration
     ///
     /// Valid config_key values:
@@ -405,6 +459,8 @@ impl ConfigType {
             "totp_key" => ConfigType::TotpKey,
             "creem" => ConfigType::Creem,
             "stripe" => ConfigType::Stripe,
+            "apple" => ConfigType::Apple,
+            "google" => ConfigType::Google,
             "email" => ConfigType::Email,
             "invoice_policy" => ConfigType::InvoicePolicy,
             "email_otp" => ConfigType::EmailOtp,
@@ -412,29 +468,12 @@ impl ConfigType {
         };
         Ok(config_type)
     }
-}
 
-impl From<ConfigType> for String {
-    fn from(ct: ConfigType) -> Self {
-        match ct {
-            ConfigType::Turnstile => "turnstile".to_string(),
-            ConfigType::Registration => "registration".to_string(),
-            ConfigType::Totp => "totp".to_string(),
-            ConfigType::Passkey => "passkey".to_string(),
-            ConfigType::WhiteLabel => "white_label".to_string(),
-            ConfigType::CustomDomain => "custom_domain".to_string(),
-            ConfigType::TotpKey => "totp_key".to_string(),
-            ConfigType::Creem => "creem".to_string(),
-            ConfigType::Stripe => "stripe".to_string(),
-            ConfigType::Email => "email".to_string(),
-            ConfigType::InvoicePolicy => "invoice_policy".to_string(),
-            ConfigType::EmailOtp => "email_otp".to_string(),
-        }
-    }
-}
-
-impl AsRef<str> for ConfigType {
-    fn as_ref(&self) -> &str {
+    /// The canonical lowercase string for this config type — the single source
+    /// of truth. `AsRef<str>` and `From<ConfigType> for String` both delegate
+    /// here. Returns a `'static` literal so callers can feed it to APIs that
+    /// require a `'static` provider/config name.
+    pub fn as_static_str(&self) -> &'static str {
         match self {
             ConfigType::Turnstile => "turnstile",
             ConfigType::Registration => "registration",
@@ -445,10 +484,24 @@ impl AsRef<str> for ConfigType {
             ConfigType::TotpKey => "totp_key",
             ConfigType::Creem => "creem",
             ConfigType::Stripe => "stripe",
+            ConfigType::Apple => "apple",
+            ConfigType::Google => "google",
             ConfigType::Email => "email",
             ConfigType::InvoicePolicy => "invoice_policy",
             ConfigType::EmailOtp => "email_otp",
         }
+    }
+}
+
+impl From<ConfigType> for String {
+    fn from(ct: ConfigType) -> Self {
+        ct.as_static_str().to_owned()
+    }
+}
+
+impl AsRef<str> for ConfigType {
+    fn as_ref(&self) -> &str {
+        self.as_static_str()
     }
 }
 
@@ -779,6 +832,47 @@ mod config_type_tests {
             ConfigType::try_from_str("EMAIL_OTP").unwrap(),
             ConfigType::EmailOtp
         );
+    }
+
+    // IAP providers (design support-iap §5.4 / §6.3 regression point).
+    #[test]
+    fn apple_round_trip() {
+        assert_eq!(ConfigType::Apple.as_ref(), "apple");
+        assert_eq!(String::from(ConfigType::Apple), "apple");
+        assert_eq!(
+            ConfigType::try_from_str("apple").unwrap(),
+            ConfigType::Apple
+        );
+        // case-insensitive parse, mirrors the email_otp guard.
+        assert_eq!(
+            ConfigType::try_from_str("APPLE").unwrap(),
+            ConfigType::Apple
+        );
+    }
+
+    #[test]
+    fn google_round_trip() {
+        assert_eq!(ConfigType::Google.as_ref(), "google");
+        assert_eq!(String::from(ConfigType::Google), "google");
+        assert_eq!(
+            ConfigType::try_from_str("google").unwrap(),
+            ConfigType::Google
+        );
+        assert_eq!(
+            ConfigType::try_from_str("GOOGLE").unwrap(),
+            ConfigType::Google
+        );
+    }
+
+    /// Guards the `From<String> -> ConfigType::Turnstile` fallback quirk
+    /// (design support-iap §6.3): an unknown config_type string must still
+    /// resolve to the default `Turnstile` branch, NOT silently become a new
+    /// IAP variant.
+    #[test]
+    fn unknown_config_type_falls_back_to_turnstile() {
+        let ct: ConfigType = "definitely_not_a_real_config_type".to_string().into();
+        assert_eq!(ct, ConfigType::Turnstile);
+        assert!(ConfigType::try_from_str("definitely_not_a_real_config_type").is_err());
     }
 }
 

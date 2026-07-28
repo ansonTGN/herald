@@ -1,20 +1,3 @@
-// =============================================================================
-// 通用辅助函数模块
-// =============================================================================
-//
-// 提供跨模块共享的测试辅助函数，减少重复代码。
-//
-// **Module Organization**:
-// - auth_helpers: Authentication and session management
-// - billing_helpers: Billing-specific test helpers (plans, subscriptions)
-// - client_helpers: Client app helpers
-// - rbac_helpers: RBAC/permission helpers
-// - test_setup_helpers: Common test setup helpers (authentication, requests, validation)
-// - user_helpers: User management helpers
-// - test_constants: Common test constants
-//
-// =============================================================================
-
 pub mod async_payment_helpers;
 pub mod auth_helpers;
 pub mod billing_helpers;
@@ -23,8 +6,14 @@ pub mod client_helpers;
 pub mod credit_bucket_helpers;
 #[cfg(test)]
 pub mod creem_mocks;
+// IAP test-only helpers (Apple JWS fixtures + Google Play Developer API
+// wiremock + realm_config inserters). Not exported via `pub use` — imported
+// explicitly by `scenarios/billing/iap_*_scenarios.rs`, mirroring the
+// `creem_mocks` / `otp_helpers` pattern.
 pub mod device_code_helpers;
 pub mod email_config_helpers;
+#[cfg(test)]
+pub mod iap_mocks;
 pub mod oauth_pkce_helpers;
 pub mod oauth_test_helpers;
 #[cfg(test)]
@@ -52,7 +41,6 @@ pub mod otp_helpers;
 #[cfg(test)]
 pub mod google_one_tap_helpers;
 
-// 重新导出常用函数
 pub use auth_helpers::*;
 pub use billing_helpers::*;
 pub use client_helpers::*;

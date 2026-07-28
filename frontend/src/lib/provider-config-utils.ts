@@ -15,10 +15,6 @@ interface BuildItem {
   enabled: boolean
 }
 
-/**
- * Parse realm configs into a typed form object.
- * Filters configs by provider type, then maps config keys to form fields.
- */
 export function parseProviderConfig<T extends Record<string, unknown>>(
   configs: RealmConfigResponse[],
   providerType: string,
@@ -31,12 +27,15 @@ export function parseProviderConfig<T extends Record<string, unknown>>(
     return defaults
   }
 
-  const getValue = (key: string): string | undefined =>
-    providerConfigs.find((c) => c.configKey === key)?.configValue ?? undefined
-
   const result = { ...defaults }
   for (const mapping of keyMappings) {
-    const rawValue = getValue(mapping.configKey)
+    const row = providerConfigs.find((c) => c.configKey === mapping.configKey)
+    // Preserve the default when the row is absent (e.g. secrets not echoed by
+    // the backend, or an unset environment). Only overwrite when the row exists.
+    if (row === undefined) {
+      continue
+    }
+    const rawValue = row.configValue ?? undefined
     result[mapping.fieldName as keyof T] = (
       mapping.transform ? mapping.transform(rawValue) : rawValue
     ) as T[keyof T]

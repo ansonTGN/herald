@@ -42,6 +42,13 @@ vi.mock('@/data/query-options', () => ({
     queryKey: ['roles', 'realm-1'],
     queryFn: async () => roleItemsHolder.current,
   }),
+  // FE-D03: the Create-mapping dialog reads the credit-bucket list. Stubbed
+  // empty so the dialog renders without a real query (its own test slot covers
+  // populated buckets).
+  creditBucketsListQueryOptions: () => ({
+    queryKey: ['credit-buckets', 'realm-1'],
+    queryFn: async () => [],
+  }),
 }))
 
 // Mutations: controllable from each test. Use vi.hoisted so the factory
@@ -108,6 +115,14 @@ vi.mock('@/data/entitlement-mapping-mutations', async () => {
     isProtectedPriceError: mockIsProtectedPriceError,
     isRoleNotInRealmError: mockIsRoleNotInRealmError,
     extractActiveSubscriptions: mockExtractActiveSubscriptions,
+    // FE-D03: the Create-mapping dialog now renders inside the page and calls
+    // `useCreateEntitlementMapping`. Stub it as a no-op mutation so existing
+    // page tests (which never open the dialog) keep passing. The dialog's own
+    // create/409/23514 behavior is covered by the dedicated test slot.
+    useCreateEntitlementMapping: () => ({
+      mutate: () => undefined,
+      isPending: false,
+    }),
   }
 })
 
@@ -139,7 +154,6 @@ function makeMapping(overrides: Partial<EntitlementMappingResponse>): Entitlemen
   } as EntitlementMappingResponse
 }
 
-// Inject canned data into the query cache before render.
 function seedData(client: QueryClient, items: EntitlementMappingResponse[]) {
   client.setQueryData(['entitlement-mappings', 'realm-1'], { items, total: items.length })
 }
@@ -206,14 +220,12 @@ describe('EntitlementMappingsPage (master-detail)', () => {
       }),
     ])
 
-    // Two product rows.
     expect(await screen.findByTestId('mapping-product-row-prod_pro')).toBeTruthy()
     expect(screen.getByTestId('mapping-product-row-prod_starter')).toBeTruthy()
 
     // Clicking prod_starter swaps the detail panel (client state, no nav).
     await userEvent.click(screen.getByTestId('mapping-product-row-prod_starter'))
     expect(screen.getByTestId('mapping-detail-panel')).toBeTruthy()
-    // Its single price row renders.
     expect(screen.getByTestId('price-edit-row-price_once')).toBeTruthy()
   })
 
@@ -263,7 +275,6 @@ describe('EntitlementMappingsPage (master-detail)', () => {
     await waitFor(() => {
       expect(screen.getByTestId('protected-price-confirm-dialog')).toBeTruthy()
     })
-    // Active-subscription count surfaced.
     expect(screen.getByTestId('protected-price-active-subs').textContent).toContain('28')
   })
 
@@ -305,7 +316,6 @@ describe('EntitlementMappingsPage (master-detail)', () => {
       }),
     ])
     expect(await screen.findByTestId('webhook-price-unresolved-banner')).toBeTruthy()
-    // The matching price row is present.
     expect(screen.getByTestId('price-edit-row-price_webhook_only')).toBeTruthy()
   })
 
@@ -343,9 +353,7 @@ describe('EntitlementMappingsPage (master-detail)', () => {
     ])
 
     expect(await screen.findByTestId('readonly-perm-banner')).toBeTruthy()
-    // No save button in read-only mode.
     expect(screen.queryByTestId('save-mapping-button')).toBeNull()
-    // The enabled toggle is disabled.
     const toggle = screen.getByTestId('price-enabled-toggle-price_monthly')
     expect(toggle.hasAttribute('disabled')).toBe(true)
   })
@@ -353,7 +361,6 @@ describe('EntitlementMappingsPage (master-detail)', () => {
   it('renders the empty-state CTA when no mappings are loaded', async () => {
     renderPage([])
     expect(await screen.findByTestId('entitlement-mappings-empty-state')).toBeTruthy()
-    // Admin (billing.manage) sees the empty sync CTA.
     expect(screen.getByTestId('empty-sync-button')).toBeTruthy()
   })
 })
@@ -399,7 +406,6 @@ describe('EntitlementMappingsPage — primary label', () => {
 
     const row = await screen.findByTestId('mapping-product-row-prod_pro')
     expect(row.textContent).toContain('prod_pro')
-    // And the detail head mirrors the fallback.
     const head = await screen.findByTestId('detail-head')
     expect(head.textContent).toContain('prod_pro')
   })
@@ -636,7 +642,6 @@ describe('EntitlementMappingsPage — role-grant dimension', () => {
 
     const row = await screen.findByTestId('price-granted-roles-price_monthly')
 
-    // Add a role: open the selector and toggle it on.
     await userEvent.click(within(row).getByTestId('role-selector-trigger'))
     await userEvent.click(await screen.findByTestId('role-selector-item-role-admin'))
     // Close the popover so the save button is clickable (Radix Popover focus).
@@ -683,7 +688,6 @@ describe('EntitlementMappingsPage — role-grant dimension', () => {
 
     await userEvent.click(await screen.findByTestId('save-mapping-button'))
 
-    // The dedicated role_not_in_realm toast fired with its i18n body.
     await waitFor(() => {
       expect(toast.error).toHaveBeenCalledWith(m['billing.role_not_in_realm_error']())
     })

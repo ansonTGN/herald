@@ -1,0 +1,204 @@
+---
+title: App Store / Google Play 内购(IAP)对接
+description: "面向 Realm Admin 的 IAP 对接操作指南。跟着做完，你的移动 App 用户就能通过 App Store 和 Google Play 内购完成订阅和积分包购买。"
+---
+
+面向 Realm Admin 的 IAP 对接操作指南。跟着做完，你的移动 App 用户就能通过 App Store 和 Google Play 内购完成订阅和积分包购买。
+
+## 给谁看
+
+负责管理 Herald 计费配置的 Realm Admin，以及在客户端对接购买流程的移动 App 开发者。移动 App 受 Apple / Google 数字商品政策约束，用不了 Stripe / Creem 的 Checkout 页面——内购（IAP）是与它们并列的独立支付渠道。
+
+## 前置条件
+
+- Herald 管理后台可以正常访问，你有带 `billing.manage` 权限的管理员账号
+- 已创建至少一个 Realm 和一个 Client App
+- 已有 Apple Developer 账号，App 已在 App Store Connect 建好
+- 已有 Google Play Developer 账号，App 已在 Play Console 建好
+- 移动 App 已自行集成 StoreKit 2（iOS）或 Google Play Billing（Android）。Herald 不提供移动 SDK，商店侧购买 UI 由 App 集成方自己实现
+
+## 核心概念
+
+IAP 同样不维护本地商品目录。你在 App Store Connect 和 Play Console 里建商品，然后在 Herald 里建一条 Entitlement Mapping，告诉系统"商店商品 `pro_monthly` 对应 Herald 的 `pro` 权益"。和 Stripe / Creem 不同的是，IAP 商品不能一键同步进 Herald——没有值得轮询的目录 API，映射靠手工创建。
+
+履约链路和 Web 支付不一样，开工前先把这段弄明白：
+
+1. 用户在你的移动 App 里完成购买（StoreKit 2 / Play Billing）。
+2. App 把购买凭证提交给 Herald——Apple 的 `jwsRepresentation` 或 Google 的 `purchaseToken`。Herald 本地验签（用 Apple Root CA 验 JWS）或调 Google Play Developer API 回查，然后履约。**这次提交是购买履约的权威触发源。**
+3. 首次购买之后的生命周期由平台驱动：Apple 推 App Store Server Notifications V2（续费、退款、取消，外加漏发购买的兜底）；Google 在本对接里没有服务端通知，由 Herald 定时轮询 Developer API 驱动。Google 的事件最迟在下一个轮询周期落到 Herald。
+
+所有路径都以 Apple `originalTransactionId` / Google `purchaseToken` 幂等去重。同一笔交易，客户端提交和平台通知各履约一次，不会重复发放。
+
+---
+
+## Step 1: 配置 Apple App Store 连接
+
+1. 在 Herald 管理后台左侧菜单找到 **Payment Providers**，点击进入
+2. 找到 **App Store**，点击 **Configure**
+3. 填写配置表单：
+   - **Bundle ID**（必填）：App 的 Bundle ID，如 `com.example.myapp`
+   - **Issuer ID**（必填）：App Store Connect → 用户和访问 → 集成 → App Store Connect API，页面顶部的 Issuer ID
+   - **Key ID**（必填）：在同一页面创建 API 密钥（团队密钥），记下 Key ID
+   - **Private Key (.p8)**（必填）：创建密钥时下载的 `.p8` 文件，粘贴完整 PEM 内容。Apple 只允许下载一次
+   - **Environment**：测试用 `sandbox`，正式上架用 `production`
+4. 点击 **Save**
+
+私钥加密存储、脱敏显示；之后编辑时留空即保留旧值。保存成功后 Herald 会提示你去 App Store Connect 设置服务端通知 URL，即 Step 3。
+
+## Step 2: 配置 Google Play 连接
+
+1. 在 Play Console 进入 **设置 → API 访问权限**，关联一个 Google Cloud 项目
+2. 在该 Cloud 项目里创建 Service Account，下载 JSON 密钥
+3. 回到 Play Console → **用户和权限**，邀请该 Service Account 并授予查看财务数据、管理订单和订阅的权限
+4. 在 Herald 管理后台 → **Payment Providers**，找到 **Google Play**，点击 **Configure**
+5. 填写配置表单：
+   - **Package Name**（必填）：App 包名，如 `com.example.myapp`
+   - **Service Account JSON**（必填）：粘贴完整 JSON 密钥内容
+6. 点击 **Save**
+
+JSON 加密存储、脱敏显示；编辑时留空即保留旧值。本期不需要配置 RTDN / Pub/Sub——Google 生命周期由 Herald 定时轮询驱动。
+
+## Step 3: 设置 Apple 服务端通知 URL
+
+Apple 通过 App Store Server Notifications V2 把订阅生命周期事件推给 Herald。
+
+1. 打开 App Store Connect → 你的 App → **App 信息**
+2. 找到 **App Store 服务器通知**
+3. 把生产和沙盒两个服务器 URL 都填成：
+
+   `https://你的Herald域名/api/third/pay/{realmId}/apple/webhooks`
+
+   把 `{realmId}` 替换成你的 realm ID，比如 `admin`。Herald 只暴露一个端点，靠通知 payload 里的 `environment` 字段区分 sandbox 和 production，不靠 URL 区分。
+4. 通知版本保持 **V2**
+
+这个端点故意不做 HTTP 鉴权——每条通知上的 JWS 签名（用 Apple Root CA 验证）就是信任根。验签失败的通知直接丢弃并记录诊断。
+
+## Step 4: 在商店侧创建商品
+
+商品先在商店侧建好。定价、订阅周期、退款规则、佣金档位都由商店管理，Herald 不镜像这些数据。
+
+### App Store Connect
+
+- **自动续期订阅**：你的 App → 订阅 → 建订阅组，再建订阅（如 `pro_monthly`）
+- **消耗型项目**（积分包）：你的 App → App 内购买项目 → 消耗型（如 `points_pack_1000`）
+
+### Play Console
+
+- **订阅**：创收 → 商品 → 订阅，配好基础方案（如 `pro_monthly`）
+- **一次性商品**：创收 → 商品 → 一次性商品，积分包要标记为消耗型（如 `points_pack_1000`）
+
+记下准确的商品 ID——下一步的映射按它匹配，同一 provider + 商品 ID 在同一 Realm 内只能映射一次。
+
+非消耗型买断和非续期订阅目前不在 Herald 履约模型支持范围内。
+
+## Step 5: 创建 Entitlement Mapping
+
+1. 在 Herald 管理后台左侧菜单找到 **Entitlement Mappings**，点击进入
+2. 点击 **Create Mapping**
+3. 在弹窗里填写：
+   - **Provider**：`App Store` 或 `Google Play`
+   - **External Product ID**：Step 4 的商店商品 ID，如 `pro_monthly`
+   - **Entitlement Key**：你自己好记的标识，如 `pro`。SDK 查询和积分策略都用它，建好后尽量别改
+   - **Credit Account**：购买后积分进哪个池
+   - **Billing Type**：订阅选 `Recurring`，消耗型积分包选 `OneTime`
+   - **Billing Period**（仅 recurring）：订阅周期
+   - **Points Per Period** / **Grant On Subscribe**：积分策略（需要 `points.manage` 权限）
+   - **Validity Days**（仅 one_time）：积分有效期，0 或留空表示永不过期
+4. 提交
+
+同一 provider + 商品 ID 重复创建会被拒绝，弹窗内直接显示重复错误。之后禁用某条映射，通知仍会更新订阅投影，但不再发放积分。
+
+## Step 6: 移动 App 内的购买流程
+
+用户在 App 里付款后，把购买凭证提交给 Herald：
+
+```
+POST /api/bill/{realmId}/purchase/iap/receipt
+Authorization: Bearer <带 PurchaseInitiate scope 的浏览器 token>
+```
+
+```json
+{
+  "provider": "apple",
+  "receipt": "<StoreKit 2 的 jwsRepresentation>",
+  "productId": "pro_monthly",
+  "targetType": "entitlement_mapping",
+  "targetId": "<从列表接口拿到的 entitlement mapping id>",
+  "productType": "recurring"
+}
+```
+
+Google Play 则传 `"provider": "google"`，`receipt` 填 Play Billing 的 `purchaseToken`。
+
+Herald 收到后做什么：
+
+- **Apple**：本地验 JWS（x5c 证书链 + ES256 + Apple Root CA），不需要回调 Apple。用户绑定来自你发起 StoreKit 购买时设置的 `appAccountToken`——把它设成 Herald 用户 ID。
+- **Google**：调 Developer API（`subscriptionsv2.get` / `products.get`）回查真实状态。用户绑定来自 `obfuscatedExternalAccountId`——同样设成 Herald 用户 ID。校验成功后 Herald 在**履约事务内**立即 acknowledge（订阅）或 consume（消耗型）。Google 有 3 天确认硬截止，超期会静默退款，所以这一步刻意不做异步延迟。
+
+响应里带支付尝试结果：
+
+| 字段 | 含义 |
+|------|------|
+| `attemptId` | 支付尝试 ID（新建的，或已履约命中的那条） |
+| `status` | `succeeded` / `pending` / `failed` |
+| `entitlementKey` | 履约成功时返回映射的 entitlement key |
+| `billingType` | `recurring` / `one_time` |
+| `failureReason` | 失败原因：`invalid_receipt` / `ownership_mismatch` / `already_consumed` / `no_mapping` / `verification_failed` |
+
+App 可以用 `PurchaseStatusRead` scope 调既有 attempt 查询接口轮询状态。如果同一笔交易已经履约过（客户端重试，或 Apple 通知先到），提交只返回当前状态，不会重复发放。
+
+## Step 7: 首次购买之后的生命周期
+
+- **Apple**：续费、取消、退款、宽限期变化都以服务端通知到达，落到订阅投影上。如果客户端始终没提交凭证（App 被卸载、网络丢失），通知自己会兜底履约这笔购买。沙盒环境通知丢失、乱序是常态，漏掉的部分由定时拉取在下一周期补上。
+- **Google**：没有服务端通知。定时任务对每个活跃订阅 token 调 `subscriptionsv2.get` 刷新状态，并拉取 `voidedpurchases.list` 发现退款。续费、取消、退款最迟在下一个轮询周期反映到 Herald。你的 App 查询权益状态时，要把这个延迟当作契约的一部分。
+
+两条路径复用与 receipt 端点相同的幂等履约，路径重叠不会重复发放。
+
+## Step 8: 确认结果
+
+1. 在 **Payment Providers** 页确认 App Store / Google Play 显示已配置
+2. 在 **Entitlement Mappings** 页确认映射行存在、已启用、计费类型和积分策略正确
+3. 做一笔沙盒购买（iOS 用沙盒 Apple ID，Android 用许可测试账号），从 App 提交 receipt，确认响应 `status` 为 `succeeded` 且 `entitlementKey` 正确
+4. 在 **Subscriptions** 页确认投影里的 `entitlement_key`、`status`、`payment_provider`（`apple` / `google`）正确
+5. 订阅类商品等一次续费（沙盒续费按加速时钟走）或发起一笔退款，确认状态变化出现在 **Subscription History** 里
+
+---
+
+## 常见问题
+
+### 提交 receipt 返回 404 "iap credentials not configured"
+
+本 Realm 还没保存该 provider 的凭证，或环境不匹配。检查 Payment Providers 页；Apple 侧要确认你打的是当前构建签名对应的环境（sandbox 还是 production）。
+
+### `ownership_mismatch`（409）
+
+凭证有效，但不属于当前 Herald 用户。发起购买时设置的 `appAccountToken`（Apple）/ `obfuscatedExternalAccountId`（Google）必须是提交 receipt 这个账号的 Herald 用户 ID。
+
+### `already_consumed` / `verification_failed`（422）
+
+商品已被消耗（Google 消耗型），或凭证校验没过——JWS 被篡改、购买被撤销、Google API 回查不是已购状态。attempt 标记为 failed，之后的定时拉取或平台通知仍可能把它结清。
+
+### Google 购买几天后被退款了
+
+订阅没在 3 天内 acknowledge，或消耗型没在 3 天内 consume，Google 静默退款。Herald 在履约事务内就做这一步，所以真看到这种情况，说明履约本身失败了——查 attempt 的 `failureReason` 和提交时点前后的后端日志。
+
+### 创建映射时提示重复
+
+同一 provider + 商品 ID 在本 Realm 已有映射。改已有那条，别再建新的。
+
+### Apple 事件没到达
+
+确认 App Store Connect 里的通知 URL realm ID 正确、你的公网地址对 Apple 可达。另外记住沙盒通知天生会丢——先别急着当 bug 查，看看定时拉取是不是已经在下个周期把事件补上了。
+
+---
+
+## 操作清单
+
+- [ ] Payment Providers 页完成 App Store 配置（Bundle ID、Issuer ID、Key ID、.p8、environment）
+- [ ] 完成 Google Play 配置（Package Name、Service Account JSON），Service Account 已在 Play Console 授权
+- [ ] App Store Connect 设置服务端通知 URL（生产 + 沙盒），版本 V2
+- [ ] App Store Connect / Play Console 建好商品，记下商品 ID
+- [ ] 每个商品都建了 Entitlement Mapping（provider、商品 ID、entitlement key、计费类型、积分账户）
+- [ ] 移动 App 发起购买时把 `appAccountToken` / `obfuscatedExternalAccountId` 设为 Herald 用户 ID
+- [ ] 沙盒完成一笔完整购买：提交 receipt、attempt `succeeded`、SDK 查询能看到权益
+- [ ] 通过 Apple 通知 / Google 轮询观察到一次续费或退款

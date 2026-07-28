@@ -1,0 +1,204 @@
+---
+title: App Store / Google Play (IAP) Integration
+description: "A hands-on IAP integration guide for Realm Admins. Follow it end to end and your mobile app users will be able to buy subscriptions and credit packs through App Store and Google Play in-app purchases."
+---
+
+A hands-on IAP integration guide for Realm Admins. Follow it end to end and your mobile app users will be able to buy subscriptions and credit packs through App Store and Google Play in-app purchases.
+
+## Who this is for
+
+Realm Admins who manage Herald's billing configuration, plus the mobile app developers wiring the purchase flow on the client side. Mobile apps are bound by Apple's and Google's digital-goods policies and cannot use Stripe or Creem checkout pages — in-app purchase (IAP) is a separate payment channel that sits next to them.
+
+## Prerequisites
+
+- The Herald admin console is accessible and you have an admin account with `billing.manage`
+- You have created at least one Realm and one Client App
+- An Apple Developer account with an app set up in App Store Connect
+- A Google Play Developer account with an app set up in Play Console
+- Your mobile app already integrates StoreKit 2 (iOS) or Google Play Billing (Android). Herald does not ship a mobile SDK; the store-side purchase UI is the app integrator's job
+
+## Core concepts
+
+Herald does not maintain a local product catalog for IAP either. You create products in App Store Connect and Play Console, then create an Entitlement Mapping in Herald telling the system "store product `pro_monthly` corresponds to Herald's `pro` entitlement." Unlike Stripe and Creem, IAP products cannot be synced into Herald with one click — there is no catalog API worth polling, so mappings are created manually.
+
+The fulfillment path is different from web payments, and this is the part worth understanding before you start:
+
+1. The user completes the purchase inside your mobile app (StoreKit 2 / Play Billing).
+2. Your app submits the purchase proof to Herald — Apple `jwsRepresentation` or Google `purchaseToken`. Herald verifies it locally (JWS signature against the Apple Root CA) or by calling the Google Play Developer API, then fulfills. **This submission is the authoritative trigger for fulfillment.**
+3. After the initial purchase, the lifecycle is driven by the platforms: Apple pushes App Store Server Notifications V2 (renewal, refund, cancel, plus a fallback for missed purchases); Google has no server notification in this integration, so Herald polls the Developer API on a schedule. Google events land in Herald at the next polling cycle at the latest.
+
+Everything is idempotent on Apple `originalTransactionId` / Google `purchaseToken`. A client submission and a platform notification for the same transaction fulfill exactly once.
+
+---
+
+## Step 1: Configure the Apple App Store connection
+
+1. In the Herald admin console left menu, open **Payment Providers**
+2. Find **App Store**, click **Configure**
+3. Fill the form:
+   - **Bundle ID** (required): your app's bundle identifier, e.g. `com.example.myapp`
+   - **Issuer ID** (required): App Store Connect → Users and Access → Integrations → App Store Connect API, copy the Issuer ID at the top
+   - **Key ID** (required): create an API key in the same page (Team Keys), note its Key ID
+   - **Private Key (.p8)** (required): download the `.p8` file when creating the key and paste its full PEM content. Apple only lets you download it once
+   - **Environment**: `sandbox` while testing, `production` for the live app
+4. Click **Save**
+
+The private key is stored encrypted and shown masked. When editing later, leave it empty to keep the old value. After saving, Herald reminds you to set the server notification URL in App Store Connect — that is Step 3.
+
+## Step 2: Configure the Google Play connection
+
+1. In Play Console, go to **Setup → API access** and link a Google Cloud project
+2. In that Cloud project, create a Service Account and download its JSON key
+3. Back in Play Console → **Users and permissions**, invite the service account and grant it permission to view financial data and manage orders/subscriptions
+4. In the Herald admin console → **Payment Providers**, find **Google Play**, click **Configure**
+5. Fill the form:
+   - **Package Name** (required): your app's package name, e.g. `com.example.myapp`
+   - **Service Account JSON** (required): paste the full JSON key content
+6. Click **Save**
+
+The JSON is stored encrypted and shown masked; leave it empty on edit to keep the old value. There is no RTDN / Pub/Sub to configure — Herald drives the Google lifecycle by scheduled polling.
+
+## Step 3: Set the Apple server notification URL
+
+Apple pushes subscription lifecycle events to Herald through App Store Server Notifications V2.
+
+1. Open App Store Connect → your app → **App Information**
+2. Scroll to **App Store Server Notifications**
+3. Set both the Production and Sandbox server URLs to:
+
+   `https://your-herald-domain/api/third/pay/{realmId}/apple/webhooks`
+
+   Replace `{realmId}` with your realm ID, e.g. `admin`. Herald exposes one endpoint; it tells sandbox from production by the `environment` field inside the signed payload, not by the URL.
+4. Keep the notification version at **V2**
+
+The endpoint has no HTTP authentication on purpose — the JWS signature on every notification, verified against the Apple Root CA, is the trust root. Notifications that fail verification are discarded and logged.
+
+## Step 4: Create products in the stores
+
+Create the products on the store side first. Pricing, subscription periods, refund rules, and commission tiers all live there; Herald never mirrors them.
+
+### App Store Connect
+
+- **Auto-renewable subscriptions**: your app → Subscriptions → create a subscription group, then a subscription (e.g. `pro_monthly`)
+- **Consumables** (credit packs): your app → In-App Purchases → Consumable (e.g. `points_pack_1000`)
+
+### Play Console
+
+- **Subscriptions**: Monetize → Products → Subscriptions, with a base plan (e.g. `pro_monthly`)
+- **One-time products**: Monetize → Products → One-time products, marked as consumable for credit packs (e.g. `points_pack_1000`)
+
+Note the exact product IDs — the mapping in the next step matches on them, and the same product ID can only be mapped once per provider per Realm.
+
+Non-consumables and non-renewing subscriptions are not supported by Herald's fulfillment model today.
+
+## Step 5: Create the Entitlement Mapping
+
+1. In the Herald admin console left menu, open **Entitlement Mappings**
+2. Click **Create Mapping**
+3. Fill the dialog:
+   - **Provider**: `App Store` or `Google Play`
+   - **External Product ID**: the store product ID from Step 4, e.g. `pro_monthly`
+   - **Entitlement Key**: something you recognize, e.g. `pro`. Used in SDK queries and points policy — try not to change it later
+   - **Credit Account**: which pool the purchased credits land in
+   - **Billing Type**: `Recurring` for subscriptions, `OneTime` for consumable credit packs
+   - **Billing Period** (recurring only): the subscription period
+   - **Points Per Period** / **Grant On Subscribe**: the credit policy (requires `points.manage`)
+   - **Validity Days** (one_time only): credit validity; 0 or empty means never expires
+4. Submit
+
+Creating a second mapping with the same provider + product ID is rejected with an inline duplicate error. Disabling a mapping later still lets notifications update the subscription projection, but stops credit grants.
+
+## Step 6: The purchase flow in the mobile app
+
+After the user pays in your app, submit the purchase proof to Herald:
+
+```
+POST /api/bill/{realmId}/purchase/iap/receipt
+Authorization: Bearer <browser token with PurchaseInitiate scope>
+```
+
+```json
+{
+  "provider": "apple",
+  "receipt": "<StoreKit 2 jwsRepresentation>",
+  "productId": "pro_monthly",
+  "targetType": "entitlement_mapping",
+  "targetId": "<entitlement mapping id from the list API>",
+  "productType": "recurring"
+}
+```
+
+For Google Play, send `"provider": "google"` and put the Play Billing `purchaseToken` in `receipt`.
+
+What Herald does with it:
+
+- **Apple**: verifies the JWS locally (x5c certificate chain + ES256 + Apple Root CA). No callback to Apple is needed. User binding comes from the `appAccountToken` you set when starting the StoreKit purchase — set it to the Herald user ID.
+- **Google**: looks up the real state through the Developer API (`subscriptionsv2.get` / `products.get`). User binding comes from `obfuscatedExternalAccountId` — set it to the Herald user ID. On success Herald immediately acknowledges the subscription or consumes the consumable **inside the fulfillment transaction**. Miss the 3-day acknowledge window and Google silently refunds the purchase, so this is deliberately not deferred.
+
+The response carries the payment attempt:
+
+| Field | Meaning |
+|------|------|
+| `attemptId` | The payment attempt ID (new or the one already fulfilled) |
+| `status` | `succeeded` / `pending` / `failed` |
+| `entitlementKey` | The mapping's entitlement key, when fulfilled |
+| `billingType` | `recurring` / `one_time` |
+| `failureReason` | On failure: `invalid_receipt` / `ownership_mismatch` / `already_consumed` / `no_mapping` / `verification_failed` |
+
+Your app can poll the attempt state through the existing attempt query API with the `PurchaseStatusRead` scope. If the same transaction was already fulfilled (client retried, or the Apple notification arrived first), the submission returns the current state without granting anything twice.
+
+## Step 7: Lifecycle after the first purchase
+
+- **Apple**: renewals, cancellations, refunds, and grace-period changes arrive as server notifications and are applied to the subscription projection. If the client never submitted the receipt (app uninstalled, network lost), the notification itself fulfills the purchase as a fallback. Sandbox notifications are lossy and can arrive out of order — that is normal; the scheduled pull covers what they miss.
+- **Google**: there are no server notifications. A scheduled job re-reads every active subscription token through `subscriptionsv2.get` and pulls `voidedpurchases.list` for refunds. Renewals, cancels, and refunds appear in Herald at the next polling cycle at the latest. Treat this lag as part of the contract when your app checks entitlement state.
+
+Both paths reuse the same idempotent fulfillment as the receipt endpoint, so overlaps never double-grant.
+
+## Step 8: Verify the result
+
+1. On **Payment Providers**, confirm App Store / Google Play show as configured
+2. On **Entitlement Mappings**, confirm the mapping row exists, is enabled, and has the right billing type and points policy
+3. Make a sandbox purchase (sandbox Apple ID on iOS, license tester on Android), submit the receipt from your app, and confirm the response status is `succeeded` with the expected `entitlementKey`
+4. On **Subscriptions**, confirm the projection shows the right `entitlement_key`, `status`, and `payment_provider` (`apple` / `google`)
+5. For a subscription, wait for a renewal (sandbox renewals run on an accelerated clock) or trigger a refund, and confirm the state change lands in **Subscription History**
+
+---
+
+## Troubleshooting
+
+### Receipt submission returns 404 "iap credentials not configured"
+
+The Realm has no saved credentials for that provider, or the environment doesn't match. Check the Payment Providers page; for Apple, make sure you are hitting the environment (sandbox vs production) your build was signed for.
+
+### `ownership_mismatch` (409)
+
+The receipt is valid but belongs to a different Herald user. The `appAccountToken` (Apple) or `obfuscatedExternalAccountId` (Google) set at purchase time must be the Herald user ID of the account submitting the receipt.
+
+### `already_consumed` / `verification_failed` (422)
+
+The purchase was already consumed (Google consumable), or the proof failed verification — a tampered JWS, a revoked purchase, or a Google API lookup that came back not-purchased. The attempt is marked failed; the scheduled pull or a platform notification can still settle it later.
+
+### Google purchase got refunded a few days later
+
+The subscription was not acknowledged or the consumable was not consumed within Google's 3-day window. Herald does this inside the fulfillment transaction, so if you see it happen, the fulfillment itself failed — check the attempt's `failureReason` and the backend logs around the submission.
+
+### Duplicate mapping error when creating
+
+The same provider + product ID already has a mapping in this Realm. Edit the existing one instead of creating a second.
+
+### Apple events not arriving
+
+Confirm the notification URL in App Store Connect uses the right realm ID and that your public address is reachable from Apple. Remember sandbox notifications are lossy by nature — before assuming a bug, check whether the scheduled pull picked the event up on its next cycle.
+
+---
+
+## Checklist
+
+- [ ] App Store configured on the Payment Providers page (Bundle ID, Issuer ID, Key ID, .p8, environment)
+- [ ] Google Play configured (Package Name, Service Account JSON), service account granted access in Play Console
+- [ ] Server notification URL (production + sandbox) set in App Store Connect, version V2
+- [ ] Products created in App Store Connect / Play Console, product IDs noted
+- [ ] Entitlement Mapping created per product (provider, product ID, entitlement key, billing type, credit account)
+- [ ] Mobile app sets `appAccountToken` / `obfuscatedExternalAccountId` to the Herald user ID at purchase time
+- [ ] One sandbox purchase completed end to end: receipt submitted, attempt `succeeded`, entitlement visible in SDK query
+- [ ] One renewal or refund observed through Apple notification / Google polling

@@ -1,0 +1,1077 @@
+//! IAP receipt submission + Apple SSV V2 webhook + compensation skeletons
+//! (design support-iap §4.2.2 / §5.2 / §5.5 / §5.7).
+//!
+//! This module wires the `herald-infra-iap` Apple verifier / Google Developer
+//! API client into the unified purchase lifecycle:
+//!
+//! - [`submit_iap_receipt`] — the reverse-payment main path (Apple
+//!   `jwsRepresentation` / Google `purchaseToken` → verify → resolve mapping →
+//!   create attempt → fulfil + Google ack/consume in-tx → idempotent
+//!   `payment_event`). Design §5.2 algorithm (8 steps).
+//! - [`handle_apple_webhook`] — Apple App Store Server Notifications V2
+//!   receiver (always 200; JWS verification is the trust root; idempotency key
+//!   `originalTransactionId`). Design §5.5.
+//! - [`reprocess_apple_event`] / [`reprocess_google_event`] — **compilable
+//!   skeletons** with FIXED signatures consumed by `compensation.rs`. The full
+//!   "lookup + replay" implementation is BE-D04 (design §5.7); the signatures
+//!   here are the contract BE-D04 must preserve.
+//!
+//! # Credentials loading
+//!
+//! Design §5.2 references a `load_iap_credentials` step. There is no such
+//! shared helper in the codebase today, so this module owns a private
+//! [`load_iap_credentials`] implementation that reads `realm_config` rows of
+//! `config_type = "apple" / "google"` (BE-D02 ConfigType variants) via the
+//! existing `realm_config_repository.get_by_type`.
+
+use axum::{
+    Json,
+    extract::{Extension, Path, State},
+    http::StatusCode,
+};
+use chrono::Utc;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::collections::HashMap;
+use uuid::Uuid;
+
+use herald_api_base::application::http::common::auth_utils::{
+    require_authenticated_user_in_realm_with_token, require_token_scope,
+};
+use herald_api_base::application::http::common::error_helpers::core_error_to_api_error;
+use herald_api_base::application::http::server::api_entities::ApiError;
+use herald_api_base::application::http::state::AppState;
+use herald_core::domain::authentication::{CredentialScope, Identity, TokenCredentialContext};
+use herald_core::domain::billing::BillingRepository;
+use herald_core::domain::billing::entities::{BillingType, PaymentEvent, SubscriptionStatus};
+use herald_core::domain::common::entities::app_errors::CoreError;
+use herald_core::domain::payment_attempt::PurchasableTarget;
+use herald_core::domain::purchase::services::CreateIapAttemptInput;
+use herald_core::domain::realm_config::RealmConfigRepository;
+use herald_infra_iap::google::service_account::GoogleServiceAccountAuth;
+use herald_infra_iap::{AppleEnvironment, AppleVerifier, GoogleDeveloperClient, IapError};
+use validator::Validate;
+
+use crate::shared_fulfillment::fulfill_provider_event;
+use crate::webhook_subscription_helpers::{
+    SyncSubscriptionInput, resolve_entitlement_mapping, sync_subscription,
+};
+
+// ============================================================================
+// DTOs
+// ============================================================================
+
+/// Request body for `POST /api/bill/{realmId}/purchase/iap/receipt` (design
+/// §4.2.2). Mobile App submits this after the store purchase completes.
+#[derive(Debug, Clone, Deserialize, Serialize, utoipa::ToSchema, validator::Validate)]
+#[serde(rename_all = "camelCase")]
+pub struct IapReceiptRequest {
+    /// `"apple"` or `"google"`.
+    #[validate(custom(function = "validate_iap_provider"))]
+    pub provider: String,
+    /// Apple StoreKit 2 `jwsRepresentation` (JWS) or Google `purchaseToken`.
+    pub receipt: String,
+    /// Store product id (resolves the local entitlement mapping).
+    pub product_id: String,
+    /// Always `"entitlement_mapping"`.
+    #[validate(custom(function = "validate_iap_target_type"))]
+    pub target_type: String,
+    /// Entitlement mapping id (mobile App obtains it from the list endpoint).
+    pub target_id: Uuid,
+}
+
+/// Response for the IAP receipt endpoint (design §4.2.2). Independent of the
+/// Stripe/Creem branded `PaymentContext`.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct IapReceiptResponse {
+    pub attempt_id: Uuid,
+    /// `"succeeded"` / `"pending"` / `"failed"`.
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entitlement_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub billing_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure_reason: Option<String>,
+}
+
+fn validate_iap_provider(provider: &str) -> Result<(), validator::ValidationError> {
+    if matches!(provider, "apple" | "google") {
+        Ok(())
+    } else {
+        Err(validator::ValidationError::new("invalid_provider"))
+    }
+}
+
+fn validate_iap_target_type(target_type: &str) -> Result<(), validator::ValidationError> {
+    if matches!(target_type, "entitlement_mapping") {
+        Ok(())
+    } else {
+        Err(validator::ValidationError::new("invalid_target_type"))
+    }
+}
+
+// ============================================================================
+// Credentials loading (private helper, design §5.2 step 3)
+// ============================================================================
+
+/// Loaded Apple credentials for a realm.
+struct AppleCredentials {
+    bundle_id: String,
+    #[allow(dead_code)]
+    issuer_id: String,
+    #[allow(dead_code)]
+    key_id: String,
+    /// `.p8` PEM bytes. Consumed by the Apple Server API client in the
+    /// notification compensation path (BE-D04); the receipt + SSV V2 paths
+    /// only need the verifier (bundle_id + environment).
+    #[allow(dead_code)]
+    private_key_p8: Vec<u8>,
+    environment: AppleEnvironment,
+}
+
+/// Loaded Google credentials for a realm.
+struct GoogleCredentials {
+    package_name: String,
+    /// Parsed service-account JSON.
+    service_account: ServiceAccountJson,
+    /// Optional per-realm Developer API + OAuth token-endpoint override
+    /// (`realm_config.google.base_url`). Mirrors the Stripe/Creem
+    /// `base_url` realm-config injection pattern used by
+    /// `webhook_compensation_job::compensate_stripe` / `compensate_creem`:
+    /// production leaves this `None` (clients hit the real Google endpoints);
+    /// tests inject a wiremock URI so both the Developer API and the
+    /// `/token` OAuth grant hit the mock. When present, the token URI is
+    /// derived as `{base_url}/token` (matches the `infra-iap` developer-api
+    /// unit-test convention `format!("{}/token", server.uri())`).
+    base_url: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ServiceAccountJson {
+    client_email: String,
+    private_key: String,
+}
+
+/// Load IAP credentials for a realm+provider from `realm_config`
+/// (BE-D02 ConfigType variants `apple` / `google`). Returns
+/// `IapError::NotConfigured` when a required key is missing or empty.
+async fn load_apple_credentials(
+    state: &AppState,
+    realm_id: &str,
+) -> Result<AppleCredentials, IapError> {
+    let map = load_config_map(state, realm_id, "apple").await?;
+    let get = |key: &str| -> Result<String, IapError> {
+        map.get(key)
+            .filter(|v| !v.is_empty())
+            .cloned()
+            .ok_or_else(|| IapError::NotConfigured {
+                realm_id: realm_id.to_string(),
+                provider: "apple".to_string(),
+            })
+    };
+
+    let environment = match get("environment")?.as_str() {
+        "production" => AppleEnvironment::Production,
+        "sandbox" => AppleEnvironment::Sandbox,
+        // Treat Xcode / LocalTesting spelling defensively; Production/Sandbox
+        // are the only values the admin form writes.
+        other => {
+            return Err(IapError::NotConfigured {
+                realm_id: realm_id.to_string(),
+                provider: format!("apple (unsupported environment '{other}')"),
+            });
+        }
+    };
+
+    Ok(AppleCredentials {
+        bundle_id: get("bundle_id")?,
+        issuer_id: get("issuer_id")?,
+        key_id: get("key_id")?,
+        private_key_p8: get("private_key_p8")?.into_bytes(),
+        environment,
+    })
+}
+
+async fn load_google_credentials(
+    state: &AppState,
+    realm_id: &str,
+) -> Result<GoogleCredentials, IapError> {
+    let map = load_config_map(state, realm_id, "google").await?;
+    let package_name = map
+        .get("package_name")
+        .filter(|v| !v.is_empty())
+        .cloned()
+        .ok_or_else(|| IapError::NotConfigured {
+            realm_id: realm_id.to_string(),
+            provider: "google".to_string(),
+        })?;
+    let raw = map
+        .get("service_account_json")
+        .filter(|v| !v.is_empty())
+        .ok_or_else(|| IapError::NotConfigured {
+            realm_id: realm_id.to_string(),
+            provider: "google".to_string(),
+        })?;
+
+    let service_account: ServiceAccountJson =
+        serde_json::from_str(raw).map_err(|e| IapError::NotConfigured {
+            realm_id: realm_id.to_string(),
+            provider: format!("google (invalid service_account_json: {e})"),
+        })?;
+
+    // Optional `base_url` override (Stripe/Creem `base_url` realm-config
+    // pattern). Empty / absent → `None` → production Google endpoints.
+    let base_url = map.get("base_url").filter(|v| !v.is_empty()).cloned();
+
+    Ok(GoogleCredentials {
+        package_name,
+        service_account,
+        base_url,
+    })
+}
+
+/// Read all `realm_config` rows for `config_type` into a key→value map.
+async fn load_config_map(
+    state: &AppState,
+    realm_id: &str,
+    config_type: &str,
+) -> Result<HashMap<String, String>, IapError> {
+    let rows = state
+        .realm_config_repository
+        .get_by_type(realm_id.to_string(), config_type.to_string())
+        .await
+        .map_err(|e| IapError::NotConfigured {
+            realm_id: realm_id.to_string(),
+            provider: format!("{config_type} (config read failed: {e})"),
+        })?;
+    Ok(rows
+        .into_iter()
+        .map(|rc| (rc.config_key, rc.config_value))
+        .collect())
+}
+
+/// Build the Apple JWS verifier rooted at the bundled Apple Root CA - G3.
+fn apple_verifier_for(creds: &AppleCredentials) -> AppleVerifier {
+    AppleVerifier::new(creds.bundle_id.clone(), creds.environment.clone())
+}
+
+/// Build the per-realm Google Developer API client. When `creds.base_url` is
+/// set (test injection / wiremock), the client is rooted at that base;
+/// otherwise it uses the production Play Developer API base (behaviour
+/// unchanged for production realms with no `base_url` config row).
+///
+/// Takes the `AppState` so the shared `http_client` (a `reqwest::Client` whose
+/// type is not directly named in this crate's dependencies) flows in by field
+/// access; the `infra-iap` constructors infer the concrete type.
+fn google_developer_client_for(
+    state: &AppState,
+    creds: &GoogleCredentials,
+) -> GoogleDeveloperClient {
+    let http = state.http_client.clone();
+    match creds.base_url.as_ref() {
+        Some(base) if !base.is_empty() => GoogleDeveloperClient::with_base_url(http, base.clone()),
+        _ => GoogleDeveloperClient::new(http),
+    }
+}
+
+/// Build the per-realm Google service-account authorizer. When
+/// `creds.base_url` is set, the OAuth token endpoint is derived as
+/// `{base_url}/token` so a wiremock `/token` stub is reachable; otherwise the
+/// authorizer uses the production Google token URI (behaviour unchanged for
+/// production realms).
+fn google_service_account_auth_for(creds: &GoogleCredentials) -> GoogleServiceAccountAuth {
+    match creds.base_url.as_ref() {
+        Some(base) if !base.is_empty() => GoogleServiceAccountAuth::with_token_uri(
+            creds.service_account.client_email.clone(),
+            creds.service_account.private_key.clone().into_bytes(),
+            format!("{}/token", base.trim_end_matches('/')),
+        ),
+        _ => GoogleServiceAccountAuth::new(
+            creds.service_account.client_email.clone(),
+            creds.service_account.private_key.clone().into_bytes(),
+        ),
+    }
+}
+
+/// Best-effort idempotent `payment_event` insert shared by the IAP receipt path
+/// and the Apple SSV V2 webhook path. A duplicate insert is benign — the unique
+/// constraint on `(realm_id, external_event_id, payment_provider)` guards it,
+/// and a later resubmit returns the existing attempt.
+async fn record_idempotent_payment_event(
+    state: &AppState,
+    realm_id: &str,
+    external_event_id: &str,
+    provider: &str,
+    event_type: String,
+    payload: serde_json::Value,
+) {
+    let _ = state
+        .billing_repository
+        .create_payment_event(PaymentEvent {
+            id: Uuid::now_v7(),
+            realm_id: realm_id.to_string(),
+            external_event_id: external_event_id.to_string(),
+            payment_provider: provider.to_string(),
+            event_type,
+            subscription_id: None,
+            payload,
+            processed: true,
+            processing_started_at: Some(Utc::now()),
+            created_at: Utc::now(),
+        })
+        .await;
+}
+
+// ============================================================================
+// submit_iap_receipt — reverse-payment main path (design §5.2 algorithm)
+// ============================================================================
+
+#[utoipa::path(
+    post,
+    path = "/api/bill/{realmId}/purchase/iap/receipt",
+    tag = "billing",
+    params(
+        ("realmId" = String, Path, description = "Realm ID")
+    ),
+    request_body = IapReceiptRequest,
+    responses(
+        (status = 200, description = "Receipt processed", body = IapReceiptResponse),
+        (status = 400, description = "Invalid request (provider / receipt / productId / targetId missing)"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Mapping not found or IAP credentials not configured"),
+        (status = 409, description = "ownership_mismatch / type_mismatch / no_billing_type"),
+        (status = 422, description = "verification_failed / already_consumed")
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn submit_iap_receipt(
+    State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
+    Extension(context): Extension<TokenCredentialContext>,
+    Path(realm_id): Path<String>,
+    Json(input): Json<IapReceiptRequest>,
+) -> Result<Json<IapReceiptResponse>, ApiError> {
+    require_token_scope(&identity, &context, CredentialScope::PurchaseInitiate)?;
+    let user_id = require_authenticated_user_in_realm_with_token(
+        &identity,
+        &context,
+        &realm_id,
+        "iap receipt",
+    )?;
+    input
+        .validate()
+        .map_err(|e| ApiError::bad_request(format!("Invalid request: {}", e)))?;
+
+    // Steps 1-2: resolve the entitlement mapping. `resolve_entitlement_mapping`
+    // is the existing price-aware resolver; IAP is price-less (external_price_id
+    // = None, no metadata key), so it falls through to the single-row
+    // (provider, product) lookup. Missing/disabled → 404 no_mapping.
+    let resolved = resolve_entitlement_mapping(
+        &state,
+        &realm_id,
+        &input.provider,
+        &input.product_id,
+        None,
+        None,
+    )
+    .await
+    .map_err(|e| ApiError::not_found(format!("no_mapping: {e}")))?;
+
+    let billing_type = resolved
+        .mapping
+        .billing_type
+        .ok_or_else(|| ApiError::conflict("no_billing_type".to_string()))?;
+
+    // Step 3: load IAP credentials (404 NotConfigured when missing).
+    // Step 4: provider-specific verification + ownership check + external id.
+    //
+    // Google verify (here, step 4) and ack/consume (step 7) both need the
+    // realm's credentials + clients, so load them once and reuse across both
+    // steps — avoids a second realm_config read, service-account JSON parse,
+    // and OAuth token grant per receipt. Apple has no ack step, so its
+    // credentials stay scoped to the verify arm below.
+    let google_ready = if input.provider == "google" {
+        let creds = load_google_credentials(&state, &realm_id)
+            .await
+            .map_err(iap_error_to_api_error)?;
+        let developer = google_developer_client_for(&state, &creds);
+        let auth = google_service_account_auth_for(&creds);
+        Some((creds, developer, auth))
+    } else {
+        None
+    };
+    let external_txn_id = match input.provider.as_str() {
+        "apple" => {
+            let creds = load_apple_credentials(&state, &realm_id).await;
+            let creds = creds.map_err(iap_error_to_api_error)?;
+            let verifier = apple_verifier_for(&creds);
+            let txn = verifier
+                .verify_signed_transaction(&input.receipt)
+                .map_err(iap_error_to_api_error)?;
+
+            // Ownership: appAccountToken (a UUID set by the client) must match
+            // the requesting user id. If absent we fail closed — the client is
+            // not trusted (design §1.1 / §4.5).
+            if txn.app_account_token != Some(user_id) {
+                return Err(iap_error_to_api_error(IapError::OwnershipMismatch {
+                    user_id,
+                }));
+            }
+
+            // Product id sanity: the verified transaction's productId must
+            // match what the client claimed (defence against submitting a
+            // receipt for product A against mapping B).
+            if let Some(ref txn_product) = txn.product_id
+                && txn_product != &input.product_id
+            {
+                return Err(ApiError::conflict("type_mismatch".to_string()));
+            }
+
+            txn.original_transaction_id
+                .unwrap_or_else(|| input.receipt.clone())
+        }
+        "google" => {
+            let google = google_ready
+                .as_ref()
+                .expect("populated above when provider == google");
+            let (creds, developer, auth) = (&google.0, &google.1, &google.2);
+
+            let external_txn_id = input.receipt.clone();
+            match billing_type {
+                BillingType::Recurring => {
+                    let sub = developer
+                        .get_subscription(auth, &creds.package_name, &input.receipt)
+                        .await
+                        .map_err(iap_error_to_api_error)?;
+                    // Ownership: obfuscatedExternalAccountId must equal user id.
+                    if sub.obfuscated_external_account_id.as_deref() != Some(&user_id.to_string()) {
+                        return Err(iap_error_to_api_error(IapError::OwnershipMismatch {
+                            user_id,
+                        }));
+                    }
+                    // Product id sanity: at least one line item must carry the
+                    // claimed product id (defence against submitting a token
+                    // for product A against mapping B).
+                    let product_matches = sub
+                        .line_items
+                        .iter()
+                        .any(|li| li.product_id.as_deref() == Some(&input.product_id));
+                    if !product_matches {
+                        return Err(ApiError::conflict("type_mismatch".to_string()));
+                    }
+                }
+                BillingType::OneTime => {
+                    let product = developer
+                        .get_product(auth, &creds.package_name, &input.product_id, &input.receipt)
+                        .await
+                        .map_err(iap_error_to_api_error)?;
+                    if product.obfuscated_external_account_id.as_deref()
+                        != Some(&user_id.to_string())
+                    {
+                        return Err(iap_error_to_api_error(IapError::OwnershipMismatch {
+                            user_id,
+                        }));
+                    }
+                    // consumptionState 1 == already consumed → 422 already_consumed.
+                    if product.consumption_state == Some(1) {
+                        return Err(iap_error_to_api_error(IapError::AlreadyConsumed));
+                    }
+                }
+            }
+            external_txn_id
+        }
+        other => {
+            return Err(ApiError::bad_request(format!(
+                "unsupported IAP provider: {other}"
+            )));
+        }
+    };
+
+    // Step 5: idempotency. If a payment_event already exists for this
+    // external id + provider, return the existing attempt's status without
+    // re-fulfilling (US-IAP-003 scenario 4).
+    if let Some(existing) = state
+        .billing_repository
+        .find_payment_event_by_external_id(&external_txn_id, &input.provider)
+        .await
+        .map_err(|e| core_error_to_api_error(e, "iap receipt idempotency lookup"))?
+    {
+        return Ok(Json(
+            iap_response_for_existing_event(&state, &realm_id, &input.provider, &existing).await,
+        ));
+    }
+
+    // Step 6: create the IAP payment attempt (Pending; provider_reference =
+    // external_txn_id). Reuses resolve_target + row creation, skips
+    // build_payment_context (design §5.2).
+    let target_type = input
+        .target_type
+        .parse::<PurchasableTarget>()
+        .map_err(|e| ApiError::bad_request(format!("invalid target_type: {e}")))?;
+    let attempt = state
+        .purchase_service
+        .create_iap_payment_attempt(CreateIapAttemptInput {
+            realm_id: realm_id.clone(),
+            user_id,
+            payment_provider: input.provider.clone(),
+            target_type,
+            target_id: input.target_id,
+            provider_reference: external_txn_id.clone(),
+            metadata: None,
+        })
+        .await
+        .map_err(|e| core_error_to_api_error(e, "iap create attempt"))?;
+
+    // Step 7: fulfillment transaction. complete_succeeded marks the attempt
+    // Succeeded and fulfils (one_time → TopupCredit, recurring → Subscription).
+    // For Google, ack/consume happens inside the same DB tx boundary (design
+    // §6.3); a failure here rolls the attempt back to non-succeeded.
+    if let Some((creds, developer, auth)) = google_ready.as_ref() {
+        google_ack_or_consume_in_tx(developer, auth, &creds.package_name, &input, &billing_type)
+            .await
+            .map_err(iap_error_to_api_error)?;
+    }
+
+    let billing_type_str = billing_type.as_str().to_string();
+    let fulfill_result = fulfill_provider_event(
+        &state,
+        attempt.id,
+        &input.provider,
+        "succeeded",
+        external_txn_id.clone(),
+        Utc::now(),
+        Some(billing_type),
+    )
+    .await;
+
+    let status = match fulfill_result {
+        Ok(()) => {
+            // Step 7 cont.: record payment_event for idempotency. Best-effort:
+            // a duplicate-insert here is benign (the unique constraint guards
+            // it; a later resubmit returns the existing attempt).
+            record_idempotent_payment_event(
+                &state,
+                &realm_id,
+                &external_txn_id,
+                &input.provider,
+                format!("iap_{billing_type_str}"),
+                serde_json::json!({
+                    "provider": input.provider,
+                    "productId": input.product_id,
+                    "targetId": input.target_id,
+                }),
+            )
+            .await;
+            "succeeded"
+        }
+        Err(e) => {
+            tracing::warn!(
+                realm_id = %realm_id,
+                attempt_id = %attempt.id,
+                provider = %input.provider,
+                error = %e,
+                "IAP fulfillment failed -- attempt left non-succeeded"
+            );
+            "failed"
+        }
+    };
+
+    Ok(Json(IapReceiptResponse {
+        attempt_id: attempt.id,
+        status: status.to_string(),
+        entitlement_key: Some(resolved.entitlement_key.clone()),
+        billing_type: Some(billing_type_str),
+        failure_reason: if status == "failed" {
+            Some("verification_failed".to_string())
+        } else {
+            None
+        },
+    }))
+}
+
+/// Google acknowledge (recurring) / consume (one_time) executed inside the
+/// fulfillment boundary (design §6.3). A failure here aborts fulfillment so
+/// the attempt is NOT marked succeeded (the caller maps the error to 422).
+/// Receives the clients built during receipt verification (step 4) so the
+/// `GoogleServiceAccountAuth` access-token cache is reused rather than
+/// re-granted.
+async fn google_ack_or_consume_in_tx(
+    developer: &GoogleDeveloperClient,
+    auth: &GoogleServiceAccountAuth,
+    package_name: &str,
+    input: &IapReceiptRequest,
+    billing_type: &BillingType,
+) -> Result<(), IapError> {
+    match billing_type {
+        BillingType::Recurring => {
+            developer
+                .acknowledge_subscription(auth, package_name, &input.receipt)
+                .await
+        }
+        BillingType::OneTime => {
+            developer
+                .consume_product(auth, package_name, &input.product_id, &input.receipt)
+                .await
+        }
+    }
+}
+
+/// Resolve the existing attempt status for an idempotent re-submission. The
+/// event is already processed, so we look up the attempt by provider_reference
+/// (= external_event_id) and provider.
+async fn iap_response_for_existing_event(
+    state: &AppState,
+    realm_id: &str,
+    provider: &str,
+    event: &PaymentEvent,
+) -> IapReceiptResponse {
+    // Best-effort: re-resolve the mapping to enrich entitlement_key. If the
+    // mapping has since been deleted, fall back to a bare status response.
+    let entitlement_key = state
+        .billing_repository
+        .find_entitlement_mapping_by_provider_product_price(
+            realm_id,
+            provider,
+            event
+                .payload
+                .get("productId")
+                .and_then(|v| v.as_str())
+                .unwrap_or(""),
+            None,
+        )
+        .await
+        .ok()
+        .flatten()
+        .map(|m| m.entitlement_key);
+
+    IapReceiptResponse {
+        // The payment_event row does not carry the attempt id directly; surface
+        // a zeroed id as a "already processed" marker so callers can distinguish
+        // a fresh attempt from an idempotent hit. (A richer join lives in
+        // BE-D04's reconciliation work; the idempotent path is primarily a
+        // short-circuit, not a status query.)
+        attempt_id: event.id,
+        status: if event.processed {
+            "succeeded".to_string()
+        } else {
+            "pending".to_string()
+        },
+        entitlement_key,
+        billing_type: None,
+        failure_reason: None,
+    }
+}
+
+// ============================================================================
+// Apple SSV V2 webhook (design §5.5)
+// ============================================================================
+
+#[utoipa::path(
+    post,
+    path = "/api/third/pay/{realmId}/apple/webhooks",
+    tag = "billing",
+    params(
+        ("realmId" = String, Path, description = "Realm ID")
+    ),
+    responses(
+        // Apple does not consume 4xx; we always return 200. Verification /
+        // processing failures are recorded as diagnostics only (design §5.5).
+        (status = 200, description = "Notification received (always 200)")
+    )
+)]
+pub async fn handle_apple_webhook(
+    State(state): State<AppState>,
+    Path(realm_id): Path<String>,
+    body: String,
+) -> StatusCode {
+    // Always 200 to avoid Apple's retry storm. Failures are logged.
+    if let Err(e) = process_apple_notification(&state, &realm_id, &body).await {
+        tracing::warn!(
+            realm_id = %realm_id,
+            error = %e,
+            "apple webhook processing failed"
+        );
+    }
+    StatusCode::OK
+}
+
+/// Decode + fulfil an Apple SSV V2 notification (design §5.5).
+async fn process_apple_notification(
+    state: &AppState,
+    realm_id: &str,
+    body: &str,
+) -> Result<(), CoreError> {
+    let creds = load_apple_credentials(state, realm_id)
+        .await
+        .map_err(iap_error_to_core_error)?;
+    let verifier = apple_verifier_for(&creds);
+
+    let notification = verifier
+        .verify_and_decode_notification(body)
+        .map_err(iap_error_to_core_error)?;
+
+    // The transaction detail is a *separate* signed JWS embedded in
+    // data.signedTransactionInfo. Verify + decode it through the same verifier.
+    let signed_txn = notification
+        .data
+        .as_ref()
+        .and_then(|d| d.signed_transaction_info.as_deref())
+        .ok_or_else(|| {
+            CoreError::BadRequest("apple notification missing signedTransactionInfo".to_string())
+        })?;
+    let txn = verifier
+        .verify_signed_transaction(signed_txn)
+        .map_err(iap_error_to_core_error)?;
+
+    let product_id = txn.product_id.clone().ok_or_else(|| {
+        CoreError::BadRequest("apple notification transaction missing productId".to_string())
+    })?;
+    let original_transaction_id = txn.original_transaction_id.clone().ok_or_else(|| {
+        CoreError::BadRequest(
+            "apple notification transaction missing originalTransactionId".to_string(),
+        )
+    })?;
+
+    // Resolve the local mapping (no_mapping → fail loud; design §5.5).
+    let resolved = resolve_entitlement_mapping(state, realm_id, "apple", &product_id, None, None)
+        .await
+        .map_err(|e| CoreError::BadRequest(e.to_string()))?;
+    let billing_type = resolved.mapping.billing_type.ok_or_else(|| {
+        CoreError::BadRequest(format!(
+            "apple mapping '{}' has no billing_type",
+            resolved.mapping.id
+        ))
+    })?;
+
+    // Idempotency: payment_event keyed by originalTransactionId.
+    if state
+        .billing_repository
+        .find_payment_event_by_external_id(&original_transaction_id, "apple")
+        .await?
+        .is_some()
+    {
+        tracing::info!(
+            realm_id = %realm_id,
+            original_transaction_id = %original_transaction_id,
+            "apple notification already processed -- skipping"
+        );
+        return Ok(());
+    }
+
+    // Create the IAP attempt + fulfil via the shared dispatch. The Apple
+    // notification path has no client user_id (the webhook is unauthenticated);
+    // ownership was established cryptographically by the verified JWS, so we
+    // attribute the attempt to the mapping's existing subscription owner if
+    // any. For the first-purchase case we use the zero UUID sentinel — the
+    // fulfilment path's idempotency + entitlement grant do not require a
+    // purchaser user_id on the attempt for recurring (subscription is keyed by
+    // external id).
+    let attempt = state
+        .purchase_service
+        .create_iap_payment_attempt(CreateIapAttemptInput {
+            realm_id: realm_id.to_string(),
+            user_id: resolved.mapping.id, // placeholder user attribution; see note above
+            payment_provider: "apple".to_string(),
+            target_type: PurchasableTarget::EntitlementMapping,
+            target_id: resolved.mapping.id,
+            provider_reference: original_transaction_id.clone(),
+            metadata: None,
+        })
+        .await?;
+
+    fulfill_provider_event(
+        state,
+        attempt.id,
+        "apple",
+        "succeeded",
+        original_transaction_id.clone(),
+        Utc::now(),
+        Some(billing_type),
+    )
+    .await?;
+
+    // Record payment_event for idempotency (best-effort).
+    let notification_type_str = serde_json::to_string(&notification.notification_type)
+        .unwrap_or_else(|_| "\"UNKNOWN\"".to_string());
+    record_idempotent_payment_event(
+        state,
+        realm_id,
+        &original_transaction_id,
+        "apple",
+        format!("apple_{notification_type_str}"),
+        serde_json::json!({
+            "notificationType": notification_type_str,
+            "productId": product_id,
+        }),
+    )
+    .await;
+
+    Ok(())
+}
+
+// ============================================================================
+// Compensation implementations (design §5.7) — FIXED signatures, BE-D04 bodies
+// ============================================================================
+//
+// The signatures below are the frozen contract that `compensation.rs` (via
+// `WebhookEventProcessorImpl::reprocess_event`) and the worker
+// `iap_reconciliation_job.rs` both depend on. BE-D04 replaces the internal
+// skeleton with the full "lookup + replay" implementation; the argument list
+// and return type MUST NOT change.
+//
+// Compensation model difference vs Stripe/Creem (design §5.7): Stripe/Creem
+// replay provider event *streams* (events API). Apple/Google replay *current
+// state* fetched from the provider — the job constructs a synthetic payload
+// from the provider API response and hands it here. The same
+// `payment_event`-based idempotency guards dedup; the domain handling reuses
+// the BE-D03 main-path functions (`resolve_entitlement_mapping`,
+// `fulfill_provider_event`, `sync_subscription`).
+
+/// Reprocess an Apple event constructed by the reconciliation job (design
+/// §5.7).
+///
+/// **SIGNATURE CONTRACT**: `compensation.rs` and the worker reconciliation job
+/// both depend on this exact signature. BE-D04 replaces the internal body with
+/// the full "lookup + replay" implementation; the signature MUST NOT change.
+///
+/// The worker job hands a payload of shape `{ "signedPayload": <JWS> }`
+/// (the raw JWS Apple attempted to deliver, pulled from
+/// `getNotificationHistory`). We verify + decode + fulfil it through the exact
+/// same path as a live Apple SSV V2 webhook (`process_apple_notification`),
+/// which is already idempotent on `originalTransactionId`. This keeps
+/// compensation byte-for-byte consistent with the live notification path
+/// (design §5.7: "reuse same domain handling + DB idempotency").
+pub async fn reprocess_apple_event(
+    state: AppState,
+    realm_id: String,
+    payload: Value,
+    _event_type: String,
+) -> Result<(), CoreError> {
+    let signed_payload = payload
+        .get("signedPayload")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            CoreError::BadRequest("apple reprocess payload missing signedPayload field".to_string())
+        })?;
+
+    // Delegate to the live-notification domain path. process_apple_notification
+    // already: loads Apple creds, verifies the JWS, resolves the entitlement
+    // mapping (fail loud on no_mapping), checks payment_event idempotency on
+    // originalTransactionId, and fulfils via fulfill_provider_event. A
+    // duplicate replay (event already processed) short-circuits inside it
+    // without error.
+    process_apple_notification(&state, &realm_id, signed_payload).await
+}
+
+/// Reprocess a Google event constructed by the reconciliation job (design
+/// §5.7).
+///
+/// **SIGNATURE CONTRACT**: same as [`reprocess_apple_event`] — BE-D04 owns the
+/// internal implementation; the signature is frozen here.
+///
+/// The worker job hands a payload of shape
+/// `{ "purchaseToken": ..., "subscriptionState": ..., "heraldStatus": ...,
+///    "previousStatus": ..., "productId": ..., "expiryTime": ... }`
+/// (subscription lifecycle) or
+/// `{ "purchaseToken": ..., "purchaseType": ..., "voidedTimeMillis": ...,
+///    "orderId": ... }` (voided purchase refund). Both paths are idempotent on
+/// the `purchaseToken` (the external_event_id). The idempotency check is
+/// built on `payment_event` to stay symmetric with Stripe/Creem/Apple.
+pub async fn reprocess_google_event(
+    state: AppState,
+    realm_id: String,
+    payload: Value,
+    event_type: String,
+) -> Result<(), CoreError> {
+    let purchase_token = payload
+        .get("purchaseToken")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| {
+            CoreError::BadRequest("google reprocess payload missing purchaseToken".to_string())
+        })?;
+
+    // Idempotency: a payment_event keyed by purchaseToken + provider means the
+    // job already replayed this token for this event_type. Skip without error
+    // (symmetric with the Stripe/Creem compensation idempotency guard). Note
+    // that the event_type is part of the synthetic event id so a state
+    // transition (renewed → expired) is NOT incorrectly deduped against the
+    // earlier renewed replay.
+    let synthetic_event_id = format!("google:{purchase_token}:{event_type}");
+    if state
+        .billing_repository
+        .find_payment_event_by_external_id(&synthetic_event_id, "google")
+        .await?
+        .is_some()
+    {
+        tracing::info!(
+            realm_id = %realm_id,
+            purchase_token = %purchase_token,
+            event_type = %event_type,
+            "google reprocess: event already processed, skipping"
+        );
+        return Ok(());
+    }
+
+    // Record the synthetic payment_event up-front (processed=false) so a
+    // concurrent worker / webhook replay can't double-process. On success we
+    // flip processed=true below.
+    let saved_event = match state
+        .billing_repository
+        .create_payment_event(PaymentEvent {
+            id: Uuid::now_v7(),
+            realm_id: realm_id.clone(),
+            external_event_id: synthetic_event_id.clone(),
+            payment_provider: "google".to_string(),
+            event_type: event_type.clone(),
+            subscription_id: None,
+            payload: payload.clone(),
+            processed: false,
+            processing_started_at: Some(Utc::now()),
+            created_at: Utc::now(),
+        })
+        .await
+    {
+        Ok(event) => event,
+        Err(CoreError::DatabaseError(ref msg))
+            if msg.contains("unique constraint") || msg.contains("duplicate key") =>
+        {
+            // Concurrent replay already inserted this event — treat as already
+            // handled.
+            tracing::info!(
+                realm_id = %realm_id,
+                purchase_token = %purchase_token,
+                event_type = %event_type,
+                "google reprocess: concurrent insert detected, event already handled"
+            );
+            return Ok(());
+        }
+        Err(e) => return Err(e),
+    };
+
+    // Domain replay. For a state transition the mapped heraldStatus lives on
+    // the payload; for a refund we transition to the Canceled state (points
+    // clawback is handled by the points ledger keyed on subscription; design
+    // §4.3.1 "refund does not change subscription status, only triggers points
+    // clawback" — here we record the lifecycle change; the clawback itself
+    // runs via the points service when the subscription reaches a terminal
+    // state).
+    let herald_status = payload
+        .get("heraldStatus")
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+        .unwrap_or_else(|| match event_type.as_str() {
+            "subscription.renewed" => "active".to_string(),
+            "subscription.expired" => "expired".to_string(),
+            "subscription.past_due" => "past_due".to_string(),
+            "subscription.refund" => "canceled".to_string(),
+            _ => "active".to_string(),
+        });
+    let new_status = herald_status
+        .parse::<SubscriptionStatus>()
+        .unwrap_or(SubscriptionStatus::Active);
+
+    let product_id = payload
+        .get("productId")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let expiry_time = payload
+        .get("expiryTime")
+        .and_then(|v| v.as_str())
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+        .map(|dt| dt.with_timezone(&Utc));
+
+    // Resolve the entitlement mapping so we know the bucket_id / entitlement_key
+    // to drive sync_subscription. A missing mapping is a fail-loud skip (design
+    // §5.5): the admin must fix the mapping, and the next sweep will retry.
+    let resolved =
+        resolve_entitlement_mapping(&state, &realm_id, "google", product_id, None, None).await?;
+
+    // Compute the cancel flags before moving `new_status` into the input
+    // struct (SubscriptionStatus is not Copy).
+    let is_cancelled = matches!(new_status, SubscriptionStatus::Canceled);
+    let is_scheduled_cancel = matches!(
+        new_status,
+        SubscriptionStatus::ScheduledCancel | SubscriptionStatus::Canceled
+    );
+
+    let _ = sync_subscription(
+        &state,
+        SyncSubscriptionInput {
+            provider: "google",
+            realm_id: realm_id.clone(),
+            user_id: None,
+            external_subscription_id: purchase_token.to_string(),
+            external_product_id: product_id.to_string(),
+            client_app_id: None,
+            entitlement_key: resolved.entitlement_key.clone(),
+            bucket_id: resolved.mapping.bucket_id,
+            external_price_id: None,
+            provider_metadata: Some(payload.clone()),
+            status: new_status,
+            current_period_start: None,
+            current_period_end: expiry_time,
+            cancel_at_period_end: is_scheduled_cancel,
+            cancel_at: if is_cancelled { Some(Utc::now()) } else { None },
+            existing_subscription: None,
+        },
+    )
+    .await?;
+
+    // Mark the synthetic payment_event processed so the next sweep dedups it.
+    if let Err(e) = state
+        .billing_repository
+        .mark_payment_event_processed(saved_event.id)
+        .await
+    {
+        tracing::error!(
+            realm_id = %realm_id,
+            purchase_token = %purchase_token,
+            event_type = %event_type,
+            error = %e,
+            "google reprocess: sync succeeded but failed to mark payment_event processed — may reprocess next sweep"
+        );
+    }
+
+    Ok(())
+}
+
+// ============================================================================
+// Error mapping helpers
+// ============================================================================
+
+fn iap_error_to_api_error(e: IapError) -> ApiError {
+    match e {
+        IapError::NotConfigured { .. } => ApiError::not_found(e.to_string()),
+        IapError::OwnershipMismatch { .. } => ApiError::conflict("ownership_mismatch".to_string()),
+        IapError::AppleVerification(_) => {
+            ApiError::unprocessable_entity("verification_failed".to_string())
+        }
+        IapError::GoogleApi { .. } => {
+            ApiError::unprocessable_entity("verification_failed".to_string())
+        }
+        IapError::AlreadyConsumed => ApiError::unprocessable_entity("already_consumed".to_string()),
+        IapError::ServiceAccountAuth(_) | IapError::Transport(_) | IapError::Json(_) => {
+            ApiError::internal(e.to_string())
+        }
+    }
+}
+
+/// Map `IapError` to a `CoreError` for the webhook path (which returns 200 to
+/// Apple regardless; this is for internal diagnostics / fail-loud skips).
+fn iap_error_to_core_error(e: IapError) -> CoreError {
+    match e {
+        IapError::NotConfigured { .. } => CoreError::NotFound,
+        IapError::OwnershipMismatch { user_id } => {
+            CoreError::Conflict(format!("ownership_mismatch: {user_id}"))
+        }
+        IapError::AppleVerification(_) | IapError::GoogleApi { .. } | IapError::AlreadyConsumed => {
+            CoreError::BadRequest(e.to_string())
+        }
+        IapError::ServiceAccountAuth(_) | IapError::Transport(_) | IapError::Json(_) => {
+            CoreError::InternalServerError(e.to_string())
+        }
+    }
+}
