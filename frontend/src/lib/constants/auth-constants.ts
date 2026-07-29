@@ -138,7 +138,21 @@ export const AUTH_STORE_NAME = 'AuthStore'
  * The built-in FirstParty OAuth Client App `client_id` for the Herald console.
  * Bound to the PKCE flow and to refresh-token families issued by the console.
  */
-export const FIRST_PARTY_CLIENT_ID = 'admin-web-console'
+export const ADMIN_WEB_CONSOLE_CLIENT_ID = 'admin-web-console'
+export const USER_ACCOUNT_CENTER_CLIENT_ID = 'user-account-center'
+
+export type FirstPartyClientId =
+  | typeof ADMIN_WEB_CONSOLE_CLIENT_ID
+  | typeof USER_ACCOUNT_CENTER_CLIENT_ID
+
+export function firstPartyClientForPath(path: string | undefined): FirstPartyClientId {
+  return path?.match(/(?:^|\/)manage(?:\/|$)/)
+    ? ADMIN_WEB_CONSOLE_CLIENT_ID
+    : USER_ACCOUNT_CENTER_CLIENT_ID
+}
+
+/** Default first-party identity for realm roots and self-service auth pages. */
+export const FIRST_PARTY_CLIENT_ID = USER_ACCOUNT_CENTER_CLIENT_ID
 
 /**
  * Default redirect path for regular users

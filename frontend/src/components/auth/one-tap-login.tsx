@@ -1,5 +1,5 @@
 /**
- * Google One Tap entry for the Herald login page (design §4.4.3).
+ * Google One Tap entry for the Herald login page.
  *
  * Renders the GIS prompt overlay (`google.accounts.id.prompt`) — the prompt
  * itself is positioned and shown by Google, so this component emits only a
@@ -37,6 +37,8 @@ const GIS_SCRIPT_SRC = 'https://accounts.google.com/gsi/client'
 
 export interface OneTapLoginProps {
   realmId: string
+  /** Herald first-party product Client App the issued token is bound to. */
+  clientId: string
   /** Google OAuth client_id for this realm (from `publicConfig.oauthProviders`). */
   googleClientId: string
   /** Invoked once the backend issues the direct-session token set. */
@@ -50,6 +52,7 @@ export interface OneTapLoginProps {
 
 export function OneTapLogin({
   realmId,
+  clientId,
   googleClientId,
   onSuccess,
   onUnavailable,
@@ -61,6 +64,7 @@ export function OneTapLogin({
 
   const oneTapMutation = useOneTapLoginMutation({
     realmId,
+    clientId,
     onSuccess: (tokenResponse) => {
       onSuccess(tokenResponse)
     },

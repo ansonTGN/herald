@@ -14,6 +14,9 @@ use herald_core::domain::authentication::{
     CredentialClass, CredentialScope, Identity, TokenCredentialContext,
 };
 use herald_core::domain::authorization::permission_service::PermissionService;
+use herald_core::domain::client::ADMIN_WEB_CONSOLE_CLIENT_ID;
+#[cfg(test)]
+use herald_core::domain::client::USER_ACCOUNT_CENTER_CLIENT_ID;
 use uuid::Uuid;
 
 #[derive(Debug, Clone)]
@@ -172,6 +175,18 @@ pub fn require_first_party_credential(
     Ok(())
 }
 
+pub fn require_admin_console_credential(
+    credential_context: &TokenCredentialContext,
+) -> Result<(), ApiError> {
+    require_first_party_credential(credential_context)?;
+    if credential_context.client_id != ADMIN_WEB_CONSOLE_CLIENT_ID {
+        return Err(ApiError::forbidden(
+            "Access denied: admin console credential required",
+        ));
+    }
+    Ok(())
+}
+
 pub fn require_authenticated_user_in_realm_with_token(
     identity: &Identity,
     credential_context: &TokenCredentialContext,
@@ -303,8 +318,13 @@ mod tests {
         credential_class: CredentialClass,
         allowed_scopes: impl IntoIterator<Item = CredentialScope>,
     ) -> TokenCredentialContext {
+        let client_id = match credential_class {
+            CredentialClass::FirstParty => ADMIN_WEB_CONSOLE_CLIENT_ID,
+            CredentialClass::CustomUserUi => "custom-user-ui",
+        };
         TokenCredentialContext {
             client_app_id: generate_uuid_v7(),
+            client_id: client_id.to_string(),
             family_id: generate_uuid_v7(),
             credential_class,
             allowed_scopes: HashSet::from_iter(allowed_scopes),
@@ -358,6 +378,20 @@ mod tests {
         let error = AdminIdentity::require(identity, "realm2", "admin")
             .expect_err("scope bypass must not bypass the existing realm/RBAC entry gate");
         assert!(error.to_string().contains("different realm"));
+    }
+
+    #[test]
+    fn admin_console_rejects_personal_center_first_party_credential() {
+        let mut context = token_context(CredentialClass::FirstParty, []);
+        context.client_id = USER_ACCOUNT_CENTER_CLIENT_ID.to_string();
+
+        let error = require_admin_console_credential(&context)
+            .expect_err("personal-center credentials must not enter admin routes");
+        assert!(
+            error
+                .to_string()
+                .contains("admin console credential required")
+        );
     }
 
     #[test]

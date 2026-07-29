@@ -1,5 +1,24 @@
 import { describe, it, expect } from 'vitest'
-import { PERMISSION, ADMIN_PERMISSIONS } from '@/lib/constants/auth-constants'
+import {
+  PERMISSION,
+  ADMIN_PERMISSIONS,
+  ADMIN_WEB_CONSOLE_CLIENT_ID,
+  USER_ACCOUNT_CENTER_CLIENT_ID,
+  firstPartyClientForPath,
+} from '@/lib/constants/auth-constants'
+
+describe('first-party product routing', () => {
+  it('binds both scoped and realm-prefixed manage paths to the admin console', () => {
+    expect(firstPartyClientForPath('/manage/users')).toBe(ADMIN_WEB_CONSOLE_CLIENT_ID)
+    expect(firstPartyClientForPath('/tenant-a/manage/users')).toBe(ADMIN_WEB_CONSOLE_CLIENT_ID)
+  })
+
+  it('defaults roots, auth pages, and personal pages to the account center', () => {
+    expect(firstPartyClientForPath('/')).toBe(USER_ACCOUNT_CENTER_CLIENT_ID)
+    expect(firstPartyClientForPath('/auth/login')).toBe(USER_ACCOUNT_CENTER_CLIENT_ID)
+    expect(firstPartyClientForPath('/tenant-a/user/profile')).toBe(USER_ACCOUNT_CENTER_CLIENT_ID)
+  })
+})
 
 describe('PERMISSION constant object', () => {
   it('does NOT contain legacy REALM_ADMIN or REALM_CREATE keys', () => {

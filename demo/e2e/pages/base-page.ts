@@ -141,16 +141,10 @@ export class BasePage {
     await locator.blur()
 
     // Wait for React state update by checking if value is committed.
-    // NOTE: multi-line secrets (e.g. Apple .p8 private keys) are entered into a
-    // single-line <input>, where the browser normalizes "\n" to a space per the
-    // HTML spec for input.value. Comparing the committed value therefore
-    // collapses internal whitespace runs; we compare on that normalized form so
-    // the self-check does not false-fail on legitimate secret content.
     if (waitForValidation) {
-      const collapseWs = (s: string) => s.replace(/\s+/g, ' ').trim()
       await expect(async () => {
         const inputValue = await locator.inputValue()
-        expect(collapseWs(inputValue)).toBe(collapseWs(value))
+        expect(inputValue).toBe(value)
       }).toPass({ timeout: 2000 })
     }
   }

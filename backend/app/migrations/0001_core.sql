@@ -155,13 +155,14 @@ CREATE TABLE client_app (
     CONSTRAINT chk_client_app_browser_refresh_absolute_ttl
         CHECK (browser_refresh_absolute_ttl_seconds BETWEEN 86400 AND 7776000),
     CONSTRAINT chk_client_app_first_party_reserved
-        CHECK (NOT is_first_party OR client_id = 'admin-web-console')
+        CHECK (
+            NOT is_first_party
+            OR client_id IN ('admin-web-console', 'user-account-center')
+        )
 );
 
 CREATE INDEX client_app_id_realm_id_index ON client_app(id, realm_id);
 CREATE INDEX idx_client_app_realm_enabled ON client_app(realm_id, enabled);
-CREATE UNIQUE INDEX uniq_client_app_first_party_realm
-    ON client_app(realm_id) WHERE is_first_party;
 COMMENT ON TABLE client_app IS 'OAuth client applications';
 COMMENT ON COLUMN client_app.turnstile_enabled IS
     'Whether Cloudflare Turnstile human-verification is enforced for this Client App';
@@ -176,13 +177,12 @@ COMMENT ON COLUMN client_app.allowed_origins IS 'Normalized exact origins allowe
 COMMENT ON COLUMN client_app.email_verify_return_url IS 'Pre-registered return URL for email verification results';
 COMMENT ON COLUMN client_app.password_reset_return_url IS 'Pre-registered return URL for password reset results';
 COMMENT ON COLUMN client_app.browser_refresh_absolute_ttl_seconds IS 'Absolute browser refresh token family lifetime in seconds (1-90 days)';
-COMMENT ON COLUMN client_app.is_first_party IS 'Internal trust marker reserved for the built-in admin-web-console';
+COMMENT ON COLUMN client_app.is_first_party IS 'Internal trust marker reserved for built-in Herald browser clients';
 COMMENT ON COLUMN client_app.enabled IS 'Whether the client app is enabled, OAuth authorization cannot be completed when disabled';
 COMMENT ON COLUMN client_app.icon_url IS 'App icon URL, optional';
 COMMENT ON COLUMN client_app.client_secret IS 'OAuth client secret, UUID auto-generated on creation';
 COMMENT ON INDEX client_app_realm_client_idx IS 'Unique constraint on (realm_id, client_id) for external lookups';
 COMMENT ON INDEX idx_client_app_realm_enabled IS 'Index for filtering enabled client apps by realm';
-COMMENT ON INDEX uniq_client_app_first_party_realm IS 'Only one first-party client app per realm';
 
 -- ====================================
 -- RBAC Tables (Role-Based Access Control)
@@ -526,6 +526,10 @@ VALUES ('admin', 'Admin');
 -- Insert default admin client app
 INSERT INTO client_app (id, realm_id, client_id, name, is_first_party)
 VALUES (uuidv7(), 'admin', 'admin-web-console', 'Admin Client App', true);
+
+-- Insert default personal account-center client app
+INSERT INTO client_app (id, realm_id, client_id, name, is_first_party)
+VALUES (uuidv7(), 'admin', 'user-account-center', 'User Account Center', true);
 
 -- Insert built-in API Key Client App for the admin realm
 INSERT INTO client_app (id, realm_id, client_id, name, description, enabled, redirect_uris)

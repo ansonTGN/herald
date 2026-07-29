@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { ProfileSidebar } from '../profile-sidebar'
 import type { ReactNode } from 'react'
@@ -15,6 +15,7 @@ let featureData = {
     invoicesVisible: false,
   },
 }
+let permissions: string[] = []
 
 vi.mock('@tanstack/react-query', () => ({
   useQuery: () => ({ data: featureData }),
@@ -31,6 +32,7 @@ vi.mock('@tanstack/react-router', () => ({
 
 vi.mock('@/stores/auth-store', () => ({
   useRealmId: () => 'test-realm',
+  usePermissions: () => permissions,
 }))
 
 vi.mock('@/lib/auth-utils', () => ({
@@ -42,6 +44,32 @@ vi.mock('@/data/query-options', () => ({
 }))
 
 describe('ProfileSidebar', () => {
+  beforeEach(() => {
+    permissions = []
+  })
+
+  it('shows the explicit admin-console entry only to an eligible administrator', () => {
+    permissions = ['dashboard.view']
+
+    render(
+      <LocaleProvider>
+        <ProfileSidebar />
+      </LocaleProvider>
+    )
+
+    expect(screen.getByTestId('profile-admin-console-link')).toHaveAttribute('href', '/manage')
+  })
+
+  it('does not expose the admin dashboard entry without an admin permission', () => {
+    render(
+      <LocaleProvider>
+        <ProfileSidebar />
+      </LocaleProvider>
+    )
+
+    expect(screen.queryByTestId('profile-admin-console-link')).not.toBeInTheDocument()
+  })
+
   it('shows points and purchase records together when points area is available', () => {
     // After the gate merge, `pointsVisible` drives both the Points and the
     // PurchaseRecords entries — they belong to the same points area and no

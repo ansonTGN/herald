@@ -41,6 +41,7 @@ pub use login::{LoginRequestPayload, LoginResponse};
 
 // Re-export utoipa path markers
 pub use browser_token::__path_refresh as __path_browser_token_refresh;
+pub use browser_token::__path_switch_client as __path_browser_token_switch_client;
 pub use change_email::__path_confirm as __path_change_email_confirm;
 pub use change_email::__path_request as __path_change_email_request;
 pub use email_otp::__path_send as __path_email_otp_send;
@@ -79,6 +80,7 @@ pub use verify_totp::__path_handle_verify_totp as __path_verify_totp;
     paths(
         crate::login::login,
         crate::browser_token::refresh,
+        crate::browser_token::switch_client,
         crate::email_otp::send,
         crate::email_otp::verify,
         crate::email_otp::status,
@@ -116,6 +118,8 @@ pub use verify_totp::__path_handle_verify_totp as __path_verify_totp;
         crate::login::LoginResponse,
         crate::browser_token::BrowserTokenResponse,
         crate::browser_token::RefreshBrowserTokenRequest,
+        crate::browser_token::SwitchClientRequest,
+        crate::browser_token::SwitchClientResponse,
         crate::email_otp::EmailOtpSendRequest,
         crate::email_otp::EmailOtpSendResponse,
         crate::email_otp::EmailOtpVerifyRequest,
@@ -228,6 +232,10 @@ pub fn browser_token_router() -> Router<AppState> {
 /// Routes whose realm and Client App are derived exclusively from a Bearer token.
 pub fn token_router() -> Router<AppState> {
     Router::new()
+        .route(
+            "/browser-token/switch-client",
+            post(browser_token::switch_client),
+        )
         .route("/logout", post(logout::logout))
         .route("/status", get(status::status))
 }

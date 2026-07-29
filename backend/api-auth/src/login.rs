@@ -229,9 +229,11 @@ pub async fn login(
                     target_id: actor_id,
                     target_name: None,
                     result: AuditResult::Failure,
-                    details: Some(
-                        serde_json::json!({"method": "password", "reason": "invalid_credentials"}),
-                    ),
+                    details: Some(serde_json::json!({
+                        "method": "password",
+                        "reason": "invalid_credentials",
+                        "client_id": payload.client_id,
+                    })),
                     ip_address: Some(ip.clone()),
                     user_agent: user_agent.clone(),
                     trace_id: None,
@@ -275,7 +277,7 @@ pub async fn login(
     // Check if user has passkeys registered for second-factor login.
     //
     // This passkey lookup is a best-effort probe to decide whether passkey is
-    // *one of several* optional second factors (design §4.1: credentials →
+    // *one of several* optional second factors (credentials →
     // TOTP → consent → session). A password-only login must NEVER depend on
     // global passkey RP config (`RP_ID`/`RP_ORIGIN`) being set. So if RP
     // resolution fails — most importantly because those env vars are unset,
@@ -374,6 +376,7 @@ pub async fn login(
                 result: AuditResult::Success,
                 details: Some(serde_json::json!({
                     "method": "password",
+                    "client_id": payload.client_id,
                     "totp_required": has_totp,
                     "passkey_required": has_passkey,
                 })),
@@ -416,7 +419,7 @@ pub async fn login(
         "Login successful (no TOTP)"
     );
 
-    // Order: credentials → TOTP → consent → session (design §4.1/§5.1). We
+    // Order: credentials → TOTP → consent → session. We
     // only reach here after credentials AND TOTP have passed, so it is safe to
     // evaluate consent now. `consent_status` resolves each type's current
     // effective version and compares to the user's recorded consent; any item
@@ -560,7 +563,11 @@ pub async fn login(
                 target_id: user.id.to_string(),
                 target_name: Some(user.email.clone()),
                 result: AuditResult::Success,
-                details: Some(serde_json::json!({"method": "password", "oauth": true})),
+                details: Some(serde_json::json!({
+                    "method": "password",
+                    "client_id": payload.client_id,
+                    "oauth": true,
+                })),
                 ip_address: Some(ip.clone()),
                 user_agent: user_agent.clone(),
                 trace_id: None,
@@ -611,7 +618,10 @@ pub async fn login(
             target_id: user.id.to_string(),
             target_name: Some(user.email.clone()),
             result: AuditResult::Success,
-            details: Some(serde_json::json!({"method": "password"})),
+            details: Some(serde_json::json!({
+                "method": "password",
+                "client_id": payload.client_id,
+            })),
             ip_address: Some(ip.clone()),
             user_agent: user_agent.clone(),
             trace_id: None,

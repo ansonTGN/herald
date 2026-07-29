@@ -8,6 +8,10 @@ import {
 import { Toaster } from '@/components/ui/sonner'
 import { useQuery, useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { initializeAuth, checkAdminPermission, logoutFlow } from '@/lib/auth-utils'
+import {
+  ADMIN_WEB_CONSOLE_CLIENT_ID,
+  USER_ACCOUNT_CENTER_CLIENT_ID,
+} from '@/lib/constants/auth-constants'
 import { useIsAuthenticated, useRealmId } from '@/stores/auth-store'
 import { ReconsentDialog } from '@/components/legal/ReconsentDialog'
 import {
@@ -62,7 +66,10 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 
     try {
       // Initialize auth and populate Zustand store
-      const result = await initializeAuth(realmId)
+      const targetClientId = isManageRoute
+        ? ADMIN_WEB_CONSOLE_CLIENT_ID
+        : USER_ACCOUNT_CENTER_CLIENT_ID
+      const result = await initializeAuth(realmId, targetClientId)
       const authenticated = result.authenticated
 
       // Route redirect logic using Zustand state
@@ -77,19 +84,15 @@ export const Route = createRootRouteWithContext<RouterContext>()({
           })
         }
 
-        // Redirect to appropriate page based on permissions (from Zustand state)
-        const targetPath = checkAdminPermission() ? '/manage' : '/user/profile'
         throw redirect({
-          to: realmPath(realmContext, targetPath),
+          to: realmPath(realmContext, '/user/profile'),
         })
       }
 
-      // Realm root path (e.g., /admin, /admin/, /user, /user/): redirect authenticated users based on permissions
+      // Realm root is the personal product entry point.
       if (isRealmRootPath && authenticated) {
-        const hasAdmin = checkAdminPermission()
-        const targetPath = hasAdmin ? '/manage' : '/user/profile'
         throw redirect({
-          to: realmPath(realmContext, targetPath),
+          to: realmPath(realmContext, '/user/profile'),
         })
       }
 
@@ -113,7 +116,10 @@ export const Route = createRootRouteWithContext<RouterContext>()({
       }
 
       // Manage route: require admin permission (only for authenticated users)
-      if (isManageRoute && !checkAdminPermission()) {
+      if (
+        isManageRoute &&
+        (result.clientId !== ADMIN_WEB_CONSOLE_CLIENT_ID || !checkAdminPermission())
+      ) {
         throw redirect({
           to: realmPath(realmContext, '/user/profile'),
         })

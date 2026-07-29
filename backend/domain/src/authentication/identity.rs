@@ -43,6 +43,7 @@ pub enum CredentialScope {
 #[derive(Debug, Clone)]
 pub struct TokenCredentialContext {
     pub client_app_id: Uuid,
+    pub client_id: String,
     pub family_id: Uuid,
     pub credential_class: CredentialClass,
     pub allowed_scopes: HashSet<CredentialScope>,

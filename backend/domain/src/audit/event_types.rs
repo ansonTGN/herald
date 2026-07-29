@@ -48,6 +48,8 @@ pub enum AuditAction {
     AuthLogin,
     #[serde(rename = "auth.logout")]
     AuthLogout,
+    #[serde(rename = "auth.client_switch")]
+    AuthClientSwitch,
     #[serde(rename = "auth.login_failed")]
     AuthLoginFailed,
     #[serde(rename = "product.create")]
@@ -129,6 +131,7 @@ mod tests {
             (AuditAction::RealmRbacInit, "realm.rbac_init"),
             (AuditAction::AuthLogin, "auth.login"),
             (AuditAction::AuthLogout, "auth.logout"),
+            (AuditAction::AuthClientSwitch, "auth.client_switch"),
             (AuditAction::AuthLoginFailed, "auth.login_failed"),
             (AuditAction::OAuthConfigCreate, "oauth_config.create"),
             (AuditAction::OAuthConfigUpdate, "oauth_config.update"),

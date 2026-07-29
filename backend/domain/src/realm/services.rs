@@ -6,7 +6,9 @@ use crate::audit::{
 };
 use crate::authentication::Identity;
 use crate::authorization::{AssignRoleToUserRequest, RoleRepository, UserRoleRepository};
-use crate::client::ports::ClientRepository;
+use crate::client::{
+    ADMIN_WEB_CONSOLE_CLIENT_ID, USER_ACCOUNT_CENTER_CLIENT_ID, ports::ClientRepository,
+};
 use crate::client_api_keys::constants::ADMIN_API_CLIENT_ID;
 use crate::common::entities::app_errors::CoreError;
 use crate::common::policies::{RealmPolicy, ensure_policy};
@@ -195,7 +197,7 @@ where
         // 1. Query admin-web-console client, create if doesn't exist
         let web_console = self
             .client_repository
-            .get_client_app_by_client_id(&realm.id, "admin-web-console")
+            .get_client_app_by_client_id(&realm.id, ADMIN_WEB_CONSOLE_CLIENT_ID)
             .await;
 
         let client = match web_console {
@@ -216,7 +218,7 @@ where
                     .client_repository
                     .create_client_app(crate::client::value_objects::CreateClientAppRequest {
                         realm_id: realm.id.clone(),
-                        client_id: "admin-web-console".to_string(),
+                        client_id: ADMIN_WEB_CONSOLE_CLIENT_ID.to_string(),
                         name: "Admin Web Console".to_string(),
                         description: Some("Admin web console client application".to_string()),
                         redirect_uris: None,
@@ -254,6 +256,45 @@ where
 
         self.client_repository
             .set_first_party(client.id, true)
+            .await?;
+
+        let account_center = self
+            .client_repository
+            .get_client_app_by_client_id(&realm.id, USER_ACCOUNT_CENTER_CLIENT_ID)
+            .await;
+        let account_center = match account_center {
+            Ok(client) => client,
+            Err(_) => self
+                .client_repository
+                .create_client_app(crate::client::value_objects::CreateClientAppRequest {
+                    realm_id: realm.id.clone(),
+                    client_id: USER_ACCOUNT_CENTER_CLIENT_ID.to_string(),
+                    name: "User Account Center".to_string(),
+                    description: Some(
+                        "Built-in personal account center client application".to_string(),
+                    ),
+                    redirect_uris: None,
+                    allowed_origins: None,
+                    email_verify_return_url: None,
+                    password_reset_return_url: None,
+                    browser_refresh_absolute_ttl_seconds: Some(2_592_000),
+                    enabled: Some(true),
+                    icon_url: None,
+                    device_code_grant_enabled: None,
+                    turnstile_enabled: None,
+                    turnstile_site_key: None,
+                    turnstile_secret_key: None,
+                })
+                .await
+                .map_err(|e| {
+                    CoreError::InternalServerError(format!(
+                        "Failed to create user-account-center client for realm {}: {}",
+                        realm.id, e
+                    ))
+                })?,
+        };
+        self.client_repository
+            .set_first_party(account_center.id, true)
             .await?;
 
         // 2. Call RBAC initialization (failure should rollback realm creation)
@@ -434,7 +475,7 @@ where
                     realm_id: realm.id.clone(),
                     user_id: user.id,
                     role_id: role.id,
-                    client_id: "admin-web-console".to_string(),
+                    client_id: ADMIN_WEB_CONSOLE_CLIENT_ID.to_string(),
                 })
                 .await
             {

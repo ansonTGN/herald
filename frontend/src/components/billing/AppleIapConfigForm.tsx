@@ -17,7 +17,7 @@ import {
 import { Label } from '@/components/ui/label'
 import { PageHeader } from '@/components/shared/page-header'
 import { FormActionBar } from '@/components/shared/form-action-bar'
-import { PasswordField, TextField } from '@/components/shared/form-fields'
+import { TextField, TextareaField } from '@/components/shared/form-fields'
 import { batchUpsertRealmConfigs } from '@/lib/api-generated/sdk.gen'
 import { buildAppleConfigRequest } from '@/lib/apple-config-utils'
 import { requireFieldOnCreate } from '@/lib/form-utils'
@@ -166,13 +166,14 @@ export function AppleIapConfigFormPage({
               required={!isEditing}
             />
 
-            <PasswordField
+            <TextareaField
               form={form}
               name="privateKeyP8"
               label={m['billing.apple_private_key_p8']()}
               dataTestId="apple-private-key-p8-input"
               placeholder="-----BEGIN PRIVATE KEY-----"
               helpText={privateKeyHelpText}
+              rows={8}
               required={!isEditing}
             />
 

@@ -1,4 +1,6 @@
-use crate::application::http::common::auth_utils::require_first_party_credential;
+use crate::application::http::common::auth_utils::{
+    require_admin_console_credential, require_first_party_credential,
+};
 use crate::application::http::server::api_entities::ApiError;
 use crate::application::http::state::AppState;
 use axum::{
@@ -55,8 +57,8 @@ pub async fn authenticate_bearer(
         })?
         .ok_or_else(|| ApiError::unauthorized("invalid bearer token"))?;
 
-    let client_enabled = sqlx::query_scalar::<_, bool>(
-        "SELECT enabled FROM client_app WHERE id = $1 AND realm_id = $2",
+    let client = sqlx::query_as::<_, (bool, String)>(
+        "SELECT enabled, client_id FROM client_app WHERE id = $1 AND realm_id = $2",
     )
     .bind(token_data.client_app_id)
     .bind(&token_data.realm_id)
@@ -66,8 +68,8 @@ pub async fn authenticate_bearer(
         tracing::error!(%error, "Browser token Client App lookup failed");
         ApiError::internal("Internal server error")
     })?
-    .unwrap_or(false);
-    if !client_enabled {
+    .ok_or_else(|| ApiError::unauthorized("invalid bearer token"))?;
+    if !client.0 {
         return Err(ApiError::unauthorized("invalid bearer token"));
     }
 
@@ -92,11 +94,24 @@ pub async fn authenticate_bearer(
 
     let credential_context = TokenCredentialContext {
         client_app_id: token_data.client_app_id,
+        client_id: client.1,
         family_id: token_data.family_id,
         credential_class: token_data.credential_class,
         allowed_scopes: token_data.allowed_scopes,
     };
     Ok((Identity::User(user), credential_context))
+}
+
+pub async fn require_admin_console_token(
+    req: Request,
+    next: Next,
+) -> Result<impl IntoResponse, ApiError> {
+    let credential_context = req
+        .extensions()
+        .get::<TokenCredentialContext>()
+        .ok_or_else(|| ApiError::unauthorized("missing bearer token context"))?;
+    require_admin_console_credential(credential_context)?;
+    Ok(next.run(req).await)
 }
 
 /// Reject browser credentials that were not issued to Herald's first-party UI.

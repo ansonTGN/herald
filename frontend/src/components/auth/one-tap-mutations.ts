@@ -1,5 +1,5 @@
 /**
- * Google One Tap login mutation (design §4.4.3, PRD `docs/prd/auth/google-one-tap.md`).
+ * Google One Tap login mutation (PRD `docs/prd/auth/google-one-tap.md`).
  *
  * Mirrors `src/components/auth/email-otp-mutations.ts`: TanStack `useMutation`
  * over the generated `googleOneTap` SDK, surfacing errors via the caller's
@@ -12,10 +12,10 @@
  * `BrowserTokenSet` — the same shape Email-OTP verify returns. The mutation
  * therefore hands the raw `OneTapDirectResponse` to the caller's `onSuccess`;
  * the route owns token storage (`completeLoginAfterOneTap`) + navigation,
- * matching the Email-OTP boundary (design §4.1).
+ * matching the Email-OTP boundary.
  *
- * `clientId` is the Herald Client App id (`FIRST_PARTY_CLIENT_ID` on the
- * first-party login page) the token family is bound to — NOT the Google
+ * `clientId` is the selected Herald first-party product Client App id the
+ * token family is bound to — NOT the Google
  * `client_id` used to initialize GIS (that comes from `publicConfig` and is
  * consumed inside `one-tap-login.tsx`).
  *
@@ -29,16 +29,16 @@
 import { useMutation } from '@tanstack/react-query'
 import { googleOneTap } from '@/lib/api-generated'
 import type { OneTapDirectResponse } from '@/lib/api-generated'
-import { FIRST_PARTY_CLIENT_ID } from '@/lib/constants/auth-constants'
-
 export interface UseOneTapLoginMutationOptions {
   realmId: string
+  clientId: string
   onSuccess?: (tokenResponse: OneTapDirectResponse) => void
   onError?: (error: unknown) => void
 }
 
 export function useOneTapLoginMutation({
   realmId,
+  clientId,
   onSuccess,
   onError,
 }: UseOneTapLoginMutationOptions) {
@@ -48,7 +48,7 @@ export function useOneTapLoginMutation({
         path: { realmId },
         body: {
           credential: payload.credential,
-          clientId: FIRST_PARTY_CLIENT_ID,
+          clientId,
         },
       })
       if (response.error) throw response.error

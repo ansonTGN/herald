@@ -18,6 +18,7 @@ import {
   login,
   logout,
   refresh,
+  switchClient,
   oauthToken,
 } from '@/lib/api-generated'
 import type {
@@ -26,8 +27,8 @@ import type {
   LoginResponse,
   UserProfile,
   BrowserTokenResponse,
+  SwitchClientResponse,
 } from '@/lib/api-generated'
-import { FIRST_PARTY_CLIENT_ID } from '@/lib/constants/auth-constants'
 
 /**
  * Extended status response with permissions
@@ -151,6 +152,31 @@ export async function refreshBrowserToken(refreshToken: string): Promise<Browser
 }
 
 /**
+ * Replace the active first-party token family with one bound to another
+ * built-in Herald product.
+ */
+export class ClientSwitchError extends Error {
+  constructor(
+    public readonly status: number,
+    cause?: unknown
+  ) {
+    super('Client switch failed', { cause })
+  }
+}
+
+export async function switchFirstPartyClient(
+  targetClientId: string
+): Promise<SwitchClientResponse> {
+  const { data, error, response } = await switchClient({
+    body: { targetClientId },
+  })
+  if (!data) {
+    throw new ClientSwitchError(response.status, error)
+  }
+  return data
+}
+
+/**
  * Input for the FirstParty PKCE token exchange.
  */
 export interface PkceTokenExchangeInput {
@@ -160,6 +186,8 @@ export interface PkceTokenExchangeInput {
   codeVerifier: string
   /** The pre-registered `redirect_uri` the code was issued for. */
   redirectUri: string
+  /** First-party product Client App the authorization code was issued for. */
+  clientId: string
 }
 
 /**
@@ -167,8 +195,8 @@ export interface PkceTokenExchangeInput {
  *
  * Wraps the generated `oauthToken` SDK function (`POST /api/oauth/{realmId}/
  * token`). The token endpoint verifies the PKCE `code_verifier` against the
- * stored S256 challenge, then issues a `FirstParty` token set (full RBAC) for
- * the built-in `admin-web-console` Client App. The response uses OAuth
+ * stored S256 challenge, then issues a `FirstParty` token set for the selected
+ * built-in product Client App. The response uses OAuth
  * snake_case field names (`access_token`, `refresh_token`, ...) per RFC 6749.
  *
  * @param realmId - The realm ID the code was issued in.
@@ -186,9 +214,7 @@ export async function performPkceTokenExchange(
       code: input.code,
       code_verifier: input.codeVerifier,
       redirect_uri: input.redirectUri,
-      // `client_id` is the OAuth Client App the code was bound to — the built-in
-      // Herald console Client App.
-      client_id: FIRST_PARTY_CLIENT_ID,
+      client_id: input.clientId,
     },
   })
   if (error) {

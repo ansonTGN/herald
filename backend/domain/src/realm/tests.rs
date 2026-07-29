@@ -30,7 +30,7 @@ mod realm_admin_tests {
     use crate::user::ports::{MockUserRepository, MockUserService};
     use chrono::Utc;
     use mockall::predicate::eq;
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
 
     // =========================================================================
     // Test Fixtures
@@ -220,6 +220,7 @@ mod realm_admin_tests {
         let mut mock_role_repo = MockRoleRepository::new();
         let mut mock_user_role_repo = MockUserRoleRepository::new();
         let mut mock_client_repo = MockClientRepository::new();
+        let created_client_ids = Arc::new(Mutex::new(Vec::new()));
         let mut mock_rbac_init = MockRealmInitializationService::new();
         let mock_policy = policy_fixture();
 
@@ -230,14 +231,31 @@ mod realm_admin_tests {
 
         mock_client_repo
             .expect_get_client_app_by_client_id()
+            .times(3)
             .returning(|_, _| Box::pin(async { Err(CoreError::NotFound) }));
 
+        let captured_client_ids = created_client_ids.clone();
         mock_client_repo
             .expect_create_client_app()
-            .returning(|_| Box::pin(async { Ok(client_fixture()) }));
+            .times(3)
+            .returning(move |request| {
+                if matches!(
+                    request.client_id.as_str(),
+                    "admin-web-console" | "user-account-center"
+                ) {
+                    captured_client_ids
+                        .lock()
+                        .unwrap()
+                        .push(request.client_id.clone());
+                }
+                let mut client = client_fixture();
+                client.client_id = request.client_id;
+                Box::pin(async move { Ok(client) })
+            });
 
         mock_client_repo
             .expect_set_first_party()
+            .times(2)
             .returning(|_, _| Box::pin(async { Ok(()) }));
 
         mock_rbac_init
@@ -322,6 +340,16 @@ mod realm_admin_tests {
         let realm = result.unwrap();
         assert_eq!(realm.id, "test-realm");
         assert_eq!(realm.name, "Test Realm");
+        let mut client_ids = created_client_ids.lock().unwrap().clone();
+        client_ids.sort();
+        assert_eq!(
+            client_ids,
+            vec![
+                "admin-web-console".to_string(),
+                "user-account-center".to_string()
+            ],
+            "every new realm must receive separate admin and personal first-party clients"
+        );
     }
 
     // =========================================================================

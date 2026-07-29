@@ -1777,6 +1777,7 @@ mod tests {
     fn browser_scope_invoice_rejects_missing_invoice_read_before_lookup() {
         let context = TokenCredentialContext {
             client_app_id: Uuid::now_v7(),
+            client_id: "custom-user-ui".to_string(),
             family_id: Uuid::now_v7(),
             credential_class: CredentialClass::CustomUserUi,
             allowed_scopes: HashSet::new(),

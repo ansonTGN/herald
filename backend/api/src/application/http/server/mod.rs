@@ -27,7 +27,7 @@ use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::application::http::auth::identity_middleware::{
-    inject_token_identity, require_first_party_token,
+    inject_token_identity, require_admin_console_token,
 };
 use crate::application::http::state::AppState;
 
@@ -538,8 +538,8 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
             "/api/public-config/{realmId}",
             get(super::public_config::get_public_config),
         )
-        // Internal Caddy On-Demand TLS ask authorization endpoint
-        // (design §4.2.2, BE-D07). Top-level (NOT under /api/realms → no
+        // Internal Caddy On-Demand TLS ask authorization endpoint.
+        // Top-level (NOT under /api/realms → no
         // Bearer middleware). Uses the X-Herald-Ask-Key shared secret checked
         // in-handler. The public host→realmId resolve endpoint remains
         // separate: the SPA needs it before a custom-domain visitor has a
@@ -617,7 +617,7 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
                         .put(oauth::update_oauth_config)
                         .delete(oauth::delete_oauth_config),
                 )
-                .layer(axum::middleware::from_fn(require_first_party_token))
+                .layer(axum::middleware::from_fn(require_admin_console_token))
                 .layer(from_fn_with_state((*state).clone(), inject_token_identity)),
         )
         // Realm Config routes
@@ -643,7 +643,7 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
                     "/{realmId}/{configType}/{configKey}",
                     get(realm_config::get_realm_config).delete(realm_config::delete_realm_config),
                 )
-                .layer(axum::middleware::from_fn(require_first_party_token))
+                .layer(axum::middleware::from_fn(require_admin_console_token))
                 .layer(from_fn_with_state((*state).clone(), inject_token_identity)),
         )
         // Auth routes
@@ -662,19 +662,19 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
         .nest(
             "/api/permission",
             permission::permission_router()
-                .layer(axum::middleware::from_fn(require_first_party_token))
+                .layer(axum::middleware::from_fn(require_admin_console_token))
                 .layer(from_fn_with_state((*state).clone(), inject_token_identity)),
         )
         .nest(
             "/api/client/{realmId}",
             client_apps::router()
-                .layer(axum::middleware::from_fn(require_first_party_token))
+                .layer(axum::middleware::from_fn(require_admin_console_token))
                 .layer(from_fn_with_state((*state).clone(), inject_token_identity)),
         )
         .nest(
             "/api/api-keys/{realmId}",
             api_keys::router()
-                .layer(axum::middleware::from_fn(require_first_party_token))
+                .layer(axum::middleware::from_fn(require_admin_console_token))
                 .layer(from_fn_with_state((*state).clone(), inject_token_identity)),
         )
         .nest("/api/roles", admin_routes)
@@ -693,13 +693,13 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
         .nest(
             "/api/users/{realmId}",
             admin::admin_users::router()
-                .layer(axum::middleware::from_fn(require_first_party_token))
+                .layer(axum::middleware::from_fn(require_admin_console_token))
                 .layer(from_fn_with_state((*state).clone(), inject_token_identity)),
         )
         .nest(
             "/api/realms",
             realm_routes
-                .layer(axum::middleware::from_fn(require_first_party_token))
+                .layer(axum::middleware::from_fn(require_admin_console_token))
                 .layer(from_fn_with_state((*state).clone(), inject_token_identity)),
         )
         // Self-service consent endpoints (WITH bearer identity).
@@ -745,21 +745,21 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
                     "/agreements/{agreementType}/publish",
                     axum::routing::post(legal::admin_publish_from_draft),
                 )
-                .layer(axum::middleware::from_fn(require_first_party_token))
+                .layer(axum::middleware::from_fn(require_admin_console_token))
                 .layer(from_fn_with_state((*state).clone(), inject_token_identity)),
         )
         // Audit log query routes
         .nest(
             "/api/audit/{realmId}",
             audit_routes
-                .layer(axum::middleware::from_fn(require_first_party_token))
+                .layer(axum::middleware::from_fn(require_admin_console_token))
                 .layer(from_fn_with_state((*state).clone(), inject_token_identity)),
         )
         // Dashboard statistics routes
         .nest(
             "/api/dashboard/{realmId}",
             dashboard::dashboard_router()
-                .layer(axum::middleware::from_fn(require_first_party_token))
+                .layer(axum::middleware::from_fn(require_admin_console_token))
                 .layer(from_fn_with_state((*state).clone(), inject_token_identity)),
         )
         .merge(billing::billing_public_routes())
@@ -770,7 +770,7 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
         )
         .merge(
             billing_routes
-                .layer(axum::middleware::from_fn(require_first_party_token))
+                .layer(axum::middleware::from_fn(require_admin_console_token))
                 .layer(from_fn_with_state((*state).clone(), inject_token_identity)),
         )
         // Points endpoints - flexible authentication (session or API key)

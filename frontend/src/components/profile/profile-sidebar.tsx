@@ -1,9 +1,19 @@
 import { Link, useLocation } from '@tanstack/react-router'
-import { User, Shield, Coins, CreditCard, FileText, LogOut, type LucideIcon } from 'lucide-react'
+import {
+  User,
+  Shield,
+  Coins,
+  CreditCard,
+  FileText,
+  LayoutDashboard,
+  LogOut,
+  type LucideIcon,
+} from 'lucide-react'
 import { useCallback, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useRealmId } from '@/stores/auth-store'
+import { usePermissions, useRealmId } from '@/stores/auth-store'
 import { logoutFlow } from '@/lib/auth-utils'
+import { hasAdminPermission } from '@/lib/constants/auth-constants'
 import { featureAvailabilityQueryOptions } from '@/data/query-options'
 import { m } from '@/paraglide/messages'
 import { LanguageSwitcher } from '@/components/shared/language-switcher'
@@ -21,6 +31,8 @@ export function ProfileSidebar() {
   const storeRealmId = useRealmId()
   const realmContext = resolvedRealmFromPath(location.pathname)
   const realmId = realmContext.realmId || storeRealmId || 'admin'
+  const permissions = usePermissions()
+  const canAccessAdminConsole = hasAdminPermission(permissions)
   const { data: features } = useQuery(featureAvailabilityQueryOptions(realmId))
   const userFeatures = features?.user
 
@@ -107,6 +119,16 @@ export function ProfileSidebar() {
       </nav>
 
       <div className="px-3 pb-3">
+        {canAccessAdminConsole && (
+          <a
+            href={realmPath({ ...realmContext, realmId }, '/manage')}
+            data-testid="profile-admin-console-link"
+            className="mb-2 flex items-center px-3 py-2 text-sm font-medium text-sidebar-foreground/70 rounded-md hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors"
+          >
+            <LayoutDashboard className="w-5 h-5 mr-3" />
+            {m['nav.dashboard']()}
+          </a>
+        )}
         <LanguageSwitcher />
       </div>
 

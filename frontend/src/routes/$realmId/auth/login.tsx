@@ -21,10 +21,9 @@ import {
   completeLoginAfterOneTap,
   isConsentRequired,
   getSafeRedirect,
-  checkAdminPermission,
   validateOAuthParams,
-  FIRST_PARTY_CLIENT_ID,
 } from '@/lib/auth-utils'
+import { firstPartyClientForPath } from '@/lib/constants/auth-constants'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -133,20 +132,20 @@ export function LoginPage() {
   const [oneTapAvailable, setOneTapAvailable] = useState(true)
   // Email-OTP mode toggle. `false` (default) shows the password form; `true`
   // swaps the card body for `EmailOtpLoginForm`. The toggle is only rendered
-  // when the public OTP-status query reports `enabled` (design §4.4.1), so the
+  // when the public OTP-status query reports `enabled`, so the
   // entry is hidden entirely for realms with OTP login off.
   const [otpMode, setOtpMode] = useState(false)
 
   const { data: publicConfig, isLoading } = useQuery(publicConfigQueryOptions(realmId))
   // Resolved Client App id used for both the password form's Turnstile status
   // and (when OTP mode is active) the OTP form. The Turnstile status endpoint
-  // is clientId-keyed (design §4.2/§4.5).
-  const resolvedClientId = search.clientId || FIRST_PARTY_CLIENT_ID
+  // is clientId-keyed.
+  const resolvedClientId = search.clientId || firstPartyClientForPath(search.redirect)
   const { data: turnstileStatus, isLoading: loadingTurnstile } = useQuery(
     turnstileStatusQueryOptions(realmId, resolvedClientId)
   )
-  // Public OTP-login enablement flag. Gates the "Email code" entry visibility
-  // (design §4.4.1). Anonymous; safe to query unconditionally.
+  // Public OTP-login enablement flag. Gates the "Email code" entry visibility.
+  // Anonymous; safe to query unconditionally.
   const { data: emailOtpStatus } = useQuery(emailOtpStatusQueryOptions(realmId))
   const emailOtpEnabled = emailOtpStatus?.enabled === true
 
@@ -163,7 +162,7 @@ export function LoginPage() {
 
   // Per-realm white-label config. Derived once so every auth
   // sub-state (consent, TOTP, passkey 2FA, main form) reuses the same brand
-  // presentation — missing one would silently drop the brand (design §6.3 risk).
+  // presentation — missing one would silently drop the brand.
   const whiteLabel = publicConfig?.whiteLabel ?? null
 
   const oauthProviders = publicConfig?.oauthProviders ?? []
@@ -208,7 +207,7 @@ export function LoginPage() {
       setConsentStep(null)
       const { response } = data.result
 
-      // --- Second-factor routing (design §5.3, backward compatible) ----------
+      // --- Second-factor routing (backward compatible) ----------
       // Read order: prefer `secondFactors` when present and non-empty; only
       // when it is ABSENT do we fall back to the legacy `requiresTotp` path.
       // This keeps the existing password+TOTP login 100% unchanged for any
@@ -261,7 +260,7 @@ export function LoginPage() {
       redirectPath = getSafeRedirect(redirectPath)
 
       if (redirectPath === '/') {
-        redirectPath = checkAdminPermission() ? '/manage' : '/user/profile'
+        redirectPath = data.result.redirectPath
       }
 
       if (redirectPath.startsWith('http://') || redirectPath.startsWith('https://')) {
@@ -336,7 +335,7 @@ export function LoginPage() {
     let safeRedirectPath = getSafeRedirect(search.redirect, redirectPath)
 
     if (safeRedirectPath === '/') {
-      safeRedirectPath = checkAdminPermission() ? '/manage' : '/user/profile'
+      safeRedirectPath = redirectPath || '/user/profile'
     }
 
     if (safeRedirectPath.startsWith('http://') || safeRedirectPath.startsWith('https://')) {
@@ -385,7 +384,7 @@ export function LoginPage() {
   /**
    * Completion handler for an Email-OTP login. Mirrors `handlePasskeySuccess`
    * minus the PKCE/`redirectTo` branch — OTP verify returns a direct
-   * `BrowserTokenResponse` (design §4.1 boundary), so only the
+   * `BrowserTokenResponse`, so only the
    * safe-internal-redirect path applies. The route owns token storage
    * (`completeLoginAfterEmailOtp`) + navigation; the `EmailOtpLoginForm`
    * handed up the raw verify response via its `onSuccess` prop.
@@ -703,7 +702,7 @@ export function LoginPage() {
                 </div>
               )}
 
-              {/* Google One Tap prompt entry (design §4.4.3). Only offered
+              {/* Google One Tap prompt entry. Only offered
               when the realm has Google enabled with a client_id and this is
               not a third-party OAuth downstream login. The GIS prompt overlay
               is rendered/positioned by Google; the component emits only an
@@ -714,6 +713,7 @@ export function LoginPage() {
                 <div className="mt-4">
                   <OneTapLogin
                     realmId={realmId}
+                    clientId={resolvedClientId}
                     googleClientId={googleProvider!.clientId!}
                     onSuccess={handleOneTapSuccess}
                     onUnavailable={() => setOneTapAvailable(false)}

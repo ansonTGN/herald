@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { OneTapDirectResponse } from '@/lib/api-generated'
 
 /**
- * Google One Tap login entry (design §4.4.3).
+ * Google One Tap login entry.
  *
  * These tests encode the WHY of the integration, not just its mechanics:
  *
@@ -80,6 +80,7 @@ function renderOneTap(overrides: { onUnavailable?: () => void } = {}) {
     <QueryClientProvider client={createTestQueryClient()}>
       <OneTapLogin
         realmId="test-realm"
+        clientId="user-account-center"
         googleClientId="google-client-123"
         onSuccess={onSuccess}
         onUnavailable={onUnavailable}
@@ -182,7 +183,7 @@ describe('OneTapLogin', () => {
         path: { realmId: 'test-realm' },
         body: {
           credential: 'id-token-jwt',
-          clientId: 'admin-web-console', // FIRST_PARTY_CLIENT_ID
+          clientId: 'user-account-center',
           // downstreamState MUST be absent → direct-session branch.
         },
       })

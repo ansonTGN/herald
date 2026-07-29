@@ -5,7 +5,7 @@
  * These functions coordinate between the auth service and Zustand store
  * to provide convenient APIs for authentication operations.
  *
- * Herald FirstParty login (design §4.4) follows OAuth Authorization Code + PKCE:
+ * Herald FirstParty login follows OAuth Authorization Code + PKCE:
  *   generate verifier/challenge → seed OAuth state via `/authorize` → submit
  *   login with the OAuth/clientId params → on `redirectTo` extract the code →
  *   `oauthToken` PKCE exchange → store AT in memory + RT in store. 2FA detours
@@ -22,13 +22,18 @@ import type {
 } from '@/lib/api-generated'
 import {
   fetchAuthData,
+  ClientSwitchError,
   performLogin,
   performLogout,
   performPkceTokenExchange,
   refreshBrowserToken,
+  switchFirstPartyClient,
 } from '@/lib/auth-service'
 import { useAuthStore, clearAuthStorage, accessTokenHolder } from '@/stores/auth-store'
 import {
+  ADMIN_WEB_CONSOLE_CLIENT_ID,
+  USER_ACCOUNT_CENTER_CLIENT_ID,
+  type FirstPartyClientId,
   hasAdminPermission,
   DEFAULT_USER_REDIRECT,
   DEFAULT_ADMIN_REDIRECT,
@@ -49,6 +54,10 @@ const FIRST_PARTY_CALLBACK_PATH = '/callback'
 export interface LoginFlowResult {
   response: LoginResponse
   redirectPath: string
+}
+
+function redirectPathForPermissions(permissions: string[]): string {
+  return hasAdminPermission(permissions) ? DEFAULT_ADMIN_REDIRECT : DEFAULT_USER_REDIRECT
 }
 
 /**
@@ -75,6 +84,7 @@ export function isConsentRequired(response: {
  * not re-fetch on every page switch) but resets on a full page reload (F5).
  */
 let initializedRealm: string | null = null
+let initializedClientId: string | null = null
 
 /**
  * Build the FirstParty OAuth `redirect_uri`. It must exactly equal
@@ -96,13 +106,16 @@ function firstPartyRedirectUri(): string {
  * the authorize seed call fails); the caller then falls back to a non-PKCE
  * direct login, which yields a CustomUserUi-scoped token set.
  */
-export async function beginFirstPartyPkceFlow(realmId: string): Promise<{
+export async function beginFirstPartyPkceFlow(
+  realmId: string,
+  clientId: string = FIRST_PARTY_CLIENT_ID
+): Promise<{
   oauthClientId: string
   redirectUri: string
   state: string
 } | null> {
   const existing = useAuthStore.getState().getPkceState()
-  if (existing) {
+  if (existing?.clientId === clientId) {
     return {
       oauthClientId: existing.clientId,
       redirectUri: existing.redirectUri,
@@ -122,7 +135,7 @@ export async function beginFirstPartyPkceFlow(realmId: string): Promise<{
     const result = await oauthAuthorize({
       path: { realmId },
       query: {
-        client_id: FIRST_PARTY_CLIENT_ID,
+        client_id: clientId,
         redirect_uri: redirectUri,
         state,
         response_type: 'code',
@@ -140,12 +153,12 @@ export async function beginFirstPartyPkceFlow(realmId: string): Promise<{
 
   useAuthStore.getState().setPkceState({
     codeVerifier,
-    clientId: FIRST_PARTY_CLIENT_ID,
+    clientId,
     redirectUri,
     state,
   })
 
-  return { oauthClientId: FIRST_PARTY_CLIENT_ID, redirectUri, state }
+  return { oauthClientId: clientId, redirectUri, state }
 }
 
 /**
@@ -177,6 +190,7 @@ async function tryCompletePkceExchange(
       code: parsed.code,
       codeVerifier: pkce.codeVerifier,
       redirectUri: pkce.redirectUri,
+      clientId: pkce.clientId,
     })
     useAuthStore.getState().setTokens({
       accessToken: tokenSet.accessToken,
@@ -203,33 +217,38 @@ async function tryCompletePkceExchange(
  * realm. Subsequent calls for the same realm reuse the store state.
  *
  * @param realmId - The realm ID to initialize auth for
+ * @param targetClientId - Product Client App required by the destination route
  * @param forceRefresh - Force a fresh fetch even if already initialized (default: false)
  * @returns Object containing auth status and redirect path
  */
 export async function initializeAuth(
   realmId: string,
+  targetClientId: FirstPartyClientId = USER_ACCOUNT_CENTER_CLIENT_ID,
   forceRefresh: boolean = false
 ): Promise<{
   authenticated: boolean
   redirectPath: string
+  clientId: string | null
 }> {
   const store = useAuthStore.getState()
 
   // Reuse already-initialized store state for this realm (skip on full reload)
-  if (initializedRealm === realmId && !forceRefresh) {
-    const redirectPath = hasAdminPermission(store.permissions)
-      ? DEFAULT_ADMIN_REDIRECT
-      : DEFAULT_USER_REDIRECT
+  if (initializedRealm === realmId && initializedClientId === targetClientId && !forceRefresh) {
+    const redirectPath =
+      store.refreshClientId === ADMIN_WEB_CONSOLE_CLIENT_ID && hasAdminPermission(store.permissions)
+        ? DEFAULT_ADMIN_REDIRECT
+        : DEFAULT_USER_REDIRECT
     return {
       authenticated: store.isAuthenticated,
       redirectPath,
+      clientId: initializedClientId,
     }
   }
 
   store.setIsLoading(true)
 
   try {
-    // --- Startup refresh-first restore (design §4.4) ---
+    // --- Startup refresh-first restore ---
     // If a refresh token is persisted but there is no in-memory access token
     // (the normal case after a full page reload), refresh before checking
     // status so the session can be restored instead of appearing logged out.
@@ -245,35 +264,66 @@ export async function initializeAuth(
         // Refresh failed (reuse/expiry/revocation) → force full re-login.
         store.logout()
         initializedRealm = null
+        initializedClientId = null
         return {
           authenticated: false,
           redirectPath: DEFAULT_USER_REDIRECT,
+          clientId: null,
         }
       }
     }
 
-    const { authStatus, userPermissions, userProfile } = await fetchAuthData()
+    let { authStatus, userPermissions, userProfile } = await fetchAuthData()
+
+    if (authStatus.authenticated && authStatus.clientId !== targetClientId) {
+      try {
+        const tokenSet = await switchFirstPartyClient(targetClientId)
+        store.setTokens({
+          accessToken: tokenSet.accessToken,
+          refreshToken: tokenSet.refreshToken,
+          clientId: tokenSet.clientId,
+        })
+        ;({ authStatus, userPermissions, userProfile } = await fetchAuthData())
+      } catch (error) {
+        // A denied admin switch is an authorization outcome, not a logout.
+        // Keep the source product session so the root route can safely send
+        // the user back to their personal center.
+        if (
+          targetClientId !== ADMIN_WEB_CONSOLE_CLIENT_ID ||
+          !(error instanceof ClientSwitchError) ||
+          error.status !== 403
+        ) {
+          throw error
+        }
+      }
+    }
 
     store.setAuthStatus(authStatus.authenticated, authStatus.realmId || realmId)
     store.setUserPermissions(userPermissions.permissions, userPermissions.roles)
     store.setUserProfile(userProfile)
 
     initializedRealm = realmId
+    initializedClientId = authStatus.clientId
 
-    const redirectPath = hasAdminPermission(userPermissions.permissions)
-      ? DEFAULT_ADMIN_REDIRECT
-      : DEFAULT_USER_REDIRECT
+    const redirectPath =
+      store.refreshClientId === ADMIN_WEB_CONSOLE_CLIENT_ID &&
+      hasAdminPermission(userPermissions.permissions)
+        ? DEFAULT_ADMIN_REDIRECT
+        : DEFAULT_USER_REDIRECT
 
     return {
       authenticated: authStatus.authenticated,
       redirectPath,
+      clientId: authStatus.clientId,
     }
   } catch {
     store.reset()
     initializedRealm = null
+    initializedClientId = null
     return {
       authenticated: false,
       redirectPath: DEFAULT_USER_REDIRECT,
+      clientId: null,
     }
   } finally {
     store.setIsLoading(false)
@@ -295,6 +345,7 @@ async function hydrateAuthenticatedSession(
   store.setUserPermissions(fetched.userPermissions.permissions, fetched.userPermissions.roles)
   store.setUserProfile(fetched.userProfile)
   initializedRealm = realmId
+  initializedClientId = fetched.authStatus.clientId
   return fetched
 }
 
@@ -323,7 +374,7 @@ export async function loginFlow(
     // an explicit OAuth context (third-party OAuth clients keep their own).
     let loginCredentials = credentials
     if (!credentials.oauthClientId) {
-      const pkceParams = await beginFirstPartyPkceFlow(realmId)
+      const pkceParams = await beginFirstPartyPkceFlow(realmId, credentials.clientId)
       if (pkceParams) {
         loginCredentials = {
           ...credentials,
@@ -353,10 +404,7 @@ export async function loginFlow(
         const userRealmId = loginResponse.realmId || realmId
         store.login(userRealmId)
         const { userPermissions } = await hydrateAuthenticatedSession(store, userRealmId)
-
-        const redirectPath = hasAdminPermission(userPermissions.permissions)
-          ? DEFAULT_ADMIN_REDIRECT
-          : DEFAULT_USER_REDIRECT
+        const redirectPath = redirectPathForPermissions(userPermissions.permissions)
         // Return the response with redirectTo nulled so the caller proceeds to
         // its post-login redirect logic instead of navigating to /callback.
         return {
@@ -375,10 +423,7 @@ export async function loginFlow(
     store.login(userRealmId)
 
     const { userPermissions } = await hydrateAuthenticatedSession(store, userRealmId)
-
-    const redirectPath = hasAdminPermission(userPermissions.permissions)
-      ? DEFAULT_ADMIN_REDIRECT
-      : DEFAULT_USER_REDIRECT
+    const redirectPath = redirectPathForPermissions(userPermissions.permissions)
 
     return { response: loginResponse, redirectPath }
   } catch (error) {
@@ -409,6 +454,7 @@ export async function logoutFlow(realmId: string): Promise<void> {
     // persisted storage (refresh token + PKCE state).
     store.reset()
     initializedRealm = null
+    initializedClientId = null
     store.setIsLoading(false)
 
     clearAuthStorage()
@@ -426,9 +472,7 @@ export function checkAdminPermission(): boolean {
 }
 
 export function getRedirectPath(): string {
-  const hasAdmin = checkAdminPermission()
-  const redirectPath = hasAdmin ? DEFAULT_ADMIN_REDIRECT : DEFAULT_USER_REDIRECT
-  return redirectPath
+  return redirectPathForPermissions(useAuthStore.getState().permissions)
 }
 
 /**
@@ -464,8 +508,8 @@ export async function completeLoginAfterTotp(
     const exchanged = await tryCompletePkceExchange(realmId, verifyResponse.redirectTo)
     if (exchanged) {
       const store = useAuthStore.getState()
-      await hydrateAuthenticatedSession(store, realmId)
-      return { redirectPath: getRedirectPath() }
+      const { userPermissions } = await hydrateAuthenticatedSession(store, realmId)
+      return { redirectPath: redirectPathForPermissions(userPermissions.permissions) }
     }
     // Not a PKCE redirect — return it so the caller can navigate externally.
     return { redirectTo: verifyResponse.redirectTo }
@@ -478,9 +522,8 @@ export async function completeLoginAfterTotp(
   const store = useAuthStore.getState()
 
   try {
-    await hydrateAuthenticatedSession(store, realmId)
-
-    return { redirectPath: getRedirectPath() }
+    const { userPermissions } = await hydrateAuthenticatedSession(store, realmId)
+    return { redirectPath: redirectPathForPermissions(userPermissions.permissions) }
   } catch (error) {
     store.logout()
     throw error
@@ -509,8 +552,8 @@ export async function completeLoginAfterPasskey(
     const exchanged = await tryCompletePkceExchange(realmId, verifyResponse.redirectTo)
     if (exchanged) {
       const store = useAuthStore.getState()
-      await hydrateAuthenticatedSession(store, realmId)
-      return { redirectPath: getRedirectPath() }
+      const { userPermissions } = await hydrateAuthenticatedSession(store, realmId)
+      return { redirectPath: redirectPathForPermissions(userPermissions.permissions) }
     }
     return { redirectTo: verifyResponse.redirectTo }
   }
@@ -522,9 +565,8 @@ export async function completeLoginAfterPasskey(
   const store = useAuthStore.getState()
 
   try {
-    await hydrateAuthenticatedSession(store, realmId)
-
-    return { redirectPath: getRedirectPath() }
+    const { userPermissions } = await hydrateAuthenticatedSession(store, realmId)
+    return { redirectPath: redirectPathForPermissions(userPermissions.permissions) }
   } catch (error) {
     store.logout()
     throw error
@@ -535,7 +577,7 @@ export async function completeLoginAfterPasskey(
  * Complete login after an Email-OTP verify that returned a direct
  * `BrowserTokenResponse`.
  *
- * OTP login does NOT go through PKCE/OAuth (design §4.1 boundary) and the
+ * OTP login does NOT go through PKCE/OAuth and the
  * verify response carries no `redirectTo` and no consent step (the send-phase
  * consent gate is the only consent for auto-register; login-as-consent for
  * existing users is enforced server-side). This therefore mirrors only the
@@ -570,9 +612,8 @@ export async function completeLoginAfterEmailOtp(
     })
     store.login(realmId)
 
-    await hydrateAuthenticatedSession(store, realmId)
-
-    return { redirectPath: getRedirectPath() }
+    const { userPermissions } = await hydrateAuthenticatedSession(store, realmId)
+    return { redirectPath: redirectPathForPermissions(userPermissions.permissions) }
   } catch (error) {
     store.logout()
     throw error
@@ -618,9 +659,8 @@ export async function completeLoginAfterOneTap(
     })
     store.login(realmId)
 
-    await hydrateAuthenticatedSession(store, realmId)
-
-    return { redirectPath: getRedirectPath() }
+    const { userPermissions } = await hydrateAuthenticatedSession(store, realmId)
+    return { redirectPath: redirectPathForPermissions(userPermissions.permissions) }
   } catch (error) {
     store.logout()
     throw error

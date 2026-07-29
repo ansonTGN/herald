@@ -7,6 +7,10 @@
 
 import { redirect } from '@tanstack/react-router'
 import { checkAdminPermission, getRedirectPath } from '@/lib/auth-utils'
+import {
+  ADMIN_WEB_CONSOLE_CLIENT_ID,
+  firstPartyClientForPath,
+} from '@/lib/constants/auth-constants'
 
 // Type for redirect options - using TanStack Router's internal types
 type RedirectOptions = {
@@ -32,7 +36,7 @@ export async function requireAuthentication(realmId: string, currentPath: string
   const { initializeAuth } = await import('@/lib/auth-utils')
   const store = await import('@/stores/auth-store').then((m) => m.useAuthStore)
 
-  const { authenticated } = await initializeAuth(realmId)
+  const { authenticated } = await initializeAuth(realmId, firstPartyClientForPath(currentPath))
 
   if (!authenticated) {
     // Extract relative path (without realm prefix)
@@ -65,7 +69,7 @@ export async function requireAdminPermission(realmId: string): Promise<void> {
   // Import here to avoid circular dependency
   const { initializeAuth } = await import('@/lib/auth-utils')
 
-  const { authenticated } = await initializeAuth(realmId)
+  const { authenticated, clientId } = await initializeAuth(realmId, ADMIN_WEB_CONSOLE_CLIENT_ID)
 
   if (!authenticated) {
     createRedirect({
@@ -74,7 +78,7 @@ export async function requireAdminPermission(realmId: string): Promise<void> {
     })
   }
 
-  if (!checkAdminPermission()) {
+  if (clientId !== ADMIN_WEB_CONSOLE_CLIENT_ID || !checkAdminPermission()) {
     createRedirect({
       to: `/${realmId}/user/profile`,
     })
@@ -106,7 +110,7 @@ export async function redirectIfAuthenticated(
   // Import here to avoid circular dependency
   const { initializeAuth } = await import('@/lib/auth-utils')
 
-  const { authenticated } = await initializeAuth(realmId)
+  const { authenticated } = await initializeAuth(realmId, firstPartyClientForPath(redirectPath))
 
   if (authenticated) {
     const targetPath = redirectPath || getRedirectPath()

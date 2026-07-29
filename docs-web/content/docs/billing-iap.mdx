@@ -89,7 +89,7 @@ Create the products on the store side first. Pricing, subscription periods, refu
 - **Subscriptions**: Monetize → Products → Subscriptions, with a base plan (e.g. `pro_monthly`)
 - **One-time products**: Monetize → Products → One-time products, marked as consumable for credit packs (e.g. `points_pack_1000`)
 - **Buyouts**: use a non-consumable one-time product (e.g. `lifetime_pro`)
-- **Non-renewing subscriptions**: use a one-time product with the fixed service period configured in Herald
+- **Non-renewing subscriptions**: create a subscription product with a prepaid (non-auto-renewing) base plan, then configure the fixed service period in Herald
 
 Note the exact product IDs — the mapping in the next step matches on them, and the same product ID can only be mapped once per provider per Realm.
 

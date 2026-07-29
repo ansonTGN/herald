@@ -4,6 +4,7 @@ use uuid::Uuid;
 
 use herald_domain::client::{
     entities::ClientApp,
+    is_builtin_first_party_client,
     ports::ClientRepository,
     value_objects::{CreateClientAppRequest, UpdateClientAppRequest},
 };
@@ -256,10 +257,9 @@ impl ClientRepository for PostgresClientRepository {
             .await?
             .ok_or(CoreError::NotFound)?;
 
-        // Check if this is the admin-web-console client
-        if client.client_id == "admin-web-console" {
+        if is_builtin_first_party_client(&client.client_id) {
             return Err(CoreError::BadRequest(
-                "Cannot delete the admin-web-console client app".to_string(),
+                "Cannot delete a built-in first-party client app".to_string(),
             ));
         }
 
@@ -273,9 +273,9 @@ impl ClientRepository for PostgresClientRepository {
             .one(&*self.db)
             .await?
             .ok_or(CoreError::NotFound)?;
-        if is_first_party && model.client_id != "admin-web-console" {
+        if is_first_party && !is_builtin_first_party_client(&model.client_id) {
             return Err(CoreError::Forbidden(
-                "First-party flag is reserved for the admin-web-console client".to_string(),
+                "First-party flag is reserved for built-in Herald clients".to_string(),
             ));
         }
         let mut active_model: client_app::ActiveModel = model.into();

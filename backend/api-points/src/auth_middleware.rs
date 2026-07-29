@@ -213,6 +213,7 @@ pub async fn flexible_auth_middleware(
             req.extensions_mut().insert(identity.clone());
             req.extensions_mut().insert(TokenCredentialContext {
                 client_app_id: Uuid::nil(),
+                client_id: String::new(),
                 family_id: Uuid::nil(),
                 credential_class: CredentialClass::CustomUserUi,
                 allowed_scopes: HashSet::new(),

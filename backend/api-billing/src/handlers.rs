@@ -499,6 +499,7 @@ mod browser_scope_tests {
     fn context(client_app_id: Uuid) -> TokenCredentialContext {
         TokenCredentialContext {
             client_app_id,
+            client_id: "custom-user-ui".to_string(),
             family_id: Uuid::now_v7(),
             credential_class: CredentialClass::CustomUserUi,
             allowed_scopes: HashSet::new(),

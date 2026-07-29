@@ -9,7 +9,7 @@ import {
 } from '@/lib/schemas/google-config'
 import { PageHeader } from '@/components/shared/page-header'
 import { FormActionBar } from '@/components/shared/form-action-bar'
-import { PasswordField, TextField } from '@/components/shared/form-fields'
+import { TextField, TextareaField } from '@/components/shared/form-fields'
 import { batchUpsertRealmConfigs } from '@/lib/api-generated/sdk.gen'
 import { buildGoogleConfigRequest } from '@/lib/google-config-utils'
 import { requireFieldOnCreate } from '@/lib/form-utils'
@@ -116,13 +116,14 @@ export function GooglePlayConfigFormPage({
               required={!isEditing}
             />
 
-            <PasswordField
+            <TextareaField
               form={form}
               name="serviceAccountJson"
               label={m['billing.google_service_account_json']()}
               dataTestId="google-service-account-json-input"
               placeholder='{ "type": "service_account", ... }'
               helpText={serviceAccountHelpText}
+              rows={10}
               required={!isEditing}
             />
           </div>

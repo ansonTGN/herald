@@ -4,7 +4,7 @@ use uuid::Uuid;
 use crate::authentication::Identity;
 use crate::client::{
     entities::ClientApp,
-    normalize_origins,
+    is_builtin_first_party_client, normalize_origins,
     ports::{ClientRepository, ClientService},
     validate_redirect_uri, validate_redirect_uris,
     value_objects::{CreateClientAppRequest, UpdateClientAppRequest},
@@ -81,7 +81,7 @@ where
         }
 
         // Reserved client IDs are not available to realm admins.
-        if request.client_id == "admin-web-console" {
+        if is_builtin_first_party_client(&request.client_id) {
             return Err(CoreError::Forbidden(
                 "Reserved client id cannot be used".to_string(),
             ));

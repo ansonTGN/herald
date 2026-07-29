@@ -1,5 +1,5 @@
 /**
- * Tests for OAuth-related login logic (Herald FirstParty PKCE — design §4.4):
+ * Tests for OAuth-related login logic (Herald FirstParty PKCE):
  * - loginSearchSchema parsing (backward compatibility + OAuth fields)
  * - loginFlow redirectTo branching
  * - completeLoginAfterTotp redirectTo branching
@@ -351,6 +351,23 @@ describe('completeLoginAfterTotp redirectTo logic', () => {
     expect(storeMock.setUserProfile).toHaveBeenCalled()
   })
 
+  it('returns the admin dashboard when the authenticated user has an admin permission', async () => {
+    const storeMock = makeStoreMock()
+    vi.mocked(useAuthStore.getState).mockReturnValue(
+      storeMock as ReturnType<typeof useAuthStore.getState>
+    )
+    vi.mocked(fetchAuthData).mockResolvedValue(
+      makeAuthDataResponse({ permissions: ['dashboard.view'] })
+    )
+
+    const result = await completeLoginAfterTotp(
+      'realm1',
+      makeVerifyTotpResponse({ redirectTo: undefined })
+    )
+
+    expect(result.redirectPath).toBe('/manage')
+  })
+
   it('when redirectTo is null, same as absent — runs existing logic', async () => {
     const storeMock = makeStoreMock()
     vi.mocked(useAuthStore.getState).mockReturnValue(
@@ -506,7 +523,9 @@ describe('loginFlow Herald FirstParty PKCE exchange', () => {
       expiresIn: 900,
       refreshExpiresIn: 2592000,
     })
-    vi.mocked(fetchAuthData).mockResolvedValue(makeAuthDataResponse())
+    vi.mocked(fetchAuthData).mockResolvedValue(
+      makeAuthDataResponse({ permissions: ['dashboard.view'] })
+    )
 
     // No explicit oauthClientId → loginFlow bootstraps Herald PKCE, but since
     // PKCE state is already "active" (getPkceState), it reuses it instead of
@@ -522,6 +541,7 @@ describe('loginFlow Herald FirstParty PKCE exchange', () => {
       code: 'ac_123',
       codeVerifier: 'verifier-xyz',
       redirectUri: 'http://localhost/callback',
+      clientId: 'admin-web-console',
     })
     // Tokens stored: AT in memory + RT in store.
     expect(storeMock.setTokens).toHaveBeenCalledWith(
@@ -536,7 +556,7 @@ describe('loginFlow Herald FirstParty PKCE exchange', () => {
     // redirectTo is nulled in the returned response so the caller proceeds to
     // its post-login redirect logic instead of navigating to /callback.
     expect(result.response.redirectTo).toBeNull()
-    expect(result.redirectPath).toBe('/user/profile')
+    expect(result.redirectPath).toBe('/manage')
   })
 
   it('preserves redirectTo when no PKCE state is active (external OAuth client)', async () => {
@@ -763,6 +783,7 @@ describe('loginFlow Herald FirstParty PKCE seeding', () => {
       code: 'ac_reuse',
       codeVerifier: 'existing-verifier',
       redirectUri: 'http://localhost/callback',
+      clientId: 'admin-web-console',
     })
   })
 })
@@ -843,6 +864,7 @@ describe('2FA detour carries pending PKCE state', () => {
       code: 'ac_after_totp',
       codeVerifier: 'pending-verifier',
       redirectUri: 'http://localhost/callback',
+      clientId: 'admin-web-console',
     })
     expect(storeMock.setTokens).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -892,6 +914,7 @@ describe('2FA detour carries pending PKCE state', () => {
       code: 'ac_after_passkey',
       codeVerifier: 'pending-verifier',
       redirectUri: 'http://localhost/callback',
+      clientId: 'admin-web-console',
     })
     expect(storeMock.setTokens).toHaveBeenCalledWith(
       expect.objectContaining({ clientId: 'admin-web-console' })

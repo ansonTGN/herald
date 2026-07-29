@@ -56,7 +56,9 @@ pub async fn logout(
             target_id: user.id.to_string(),
             target_name: Some(user.email.clone()),
             result: AuditResult::Success,
-            details: None,
+            details: Some(serde_json::json!({
+                "client_id": context.client_id,
+            })),
             ip_address: Some(ip),
             user_agent,
             trace_id: None,
