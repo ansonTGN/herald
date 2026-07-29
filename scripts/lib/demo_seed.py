@@ -910,7 +910,8 @@ BEGIN
     INSERT INTO subscription (
         id, realm_id, user_id, external_subscription_id, external_product_id,
         payment_provider, status, entitlement_key,
-        current_period_start, current_period_end, client_app_id, bucket_id
+        current_period_start, current_period_end, client_app_id, bucket_id,
+        billing_type
     ) VALUES (
         uuidv7(),
         '{POINTS_REALM_ID}',
@@ -923,7 +924,8 @@ BEGIN
         v_test_timestamp - INTERVAL '30 days',
         v_test_timestamp + INTERVAL '30 days',
         v_client_app_id,
-        '{bucket_id}'::uuid
+        '{bucket_id}'::uuid,
+        'recurring'
     )
     RETURNING id INTO v_subscription_id;
 
@@ -1189,7 +1191,8 @@ BEGIN
     INSERT INTO subscription (
         id, realm_id, user_id, external_subscription_id, external_product_id,
         payment_provider, status, entitlement_key,
-        current_period_start, current_period_end, client_app_id, bucket_id
+        current_period_start, current_period_end, client_app_id, bucket_id,
+        billing_type
     ) VALUES (
         uuidv7(),
         '{ADMIN_REALM}',
@@ -1202,7 +1205,8 @@ BEGIN
         v_test_timestamp - INTERVAL '30 days',
         v_test_timestamp + INTERVAL '30 days',
         v_client_app_id,
-        '{bucket_id}'::uuid
+        '{bucket_id}'::uuid,
+        'recurring'
     )
     RETURNING id INTO v_subscription_id;
 

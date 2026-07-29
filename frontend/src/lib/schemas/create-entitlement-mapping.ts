@@ -3,7 +3,6 @@ import { BILLING_PERIODS } from '@/lib/billing-constants'
 import { m } from '@/paraglide/messages'
 
 /**
- * Create-entitlement-mapping form schema (design support-iap §4.4.2 / §4.2.2).
  *
  * Kept as its own file (NOT merged into `billing-forms.ts`) because the field
  * set (paymentProvider / externalProductId / entitlementKey / bucketId /
@@ -12,10 +11,12 @@ import { m } from '@/paraglide/messages'
  * (batch-update, price-granularity PATCH) family that lives there. Merging
  * would conflate single-create vs batch-update semantics.
  *
- * Refinements (mirror the backend constraints in §4.2.2):
  * - `billingType === 'recurring'` ⇒ `billingPeriod` is required (monthly/yearly).
  * - `billingType === 'one_time'` ⇒ `validityDays` is optional-but-fillable;
  *   `billingPeriod` is dropped on submit.
+ * - `billingType === 'non_renewing'` ⇒ `serviceDurationDays` is required (≥1),
+ *   and `billingPeriod` is mutually exclusive (rejected at the billingPeriod
+ *   path so the message can name the conflict, not the recurring-required wording).
  *
  * `externalPriceId` is optional: IAP (apple/google) and Creem leave it empty;
  * Stripe requires it (the backend enforces — we don't hard-fail client-side to
@@ -48,6 +49,9 @@ export const createEntitlementMappingSchema = z
     pointsPerPeriod: z.number().int().min(0).nullable().optional(),
     grantOnSubscribe: z.boolean().nullable().optional(),
     validityDays: z.number().int().min(1).nullable().optional(),
+    // column, semantically isolated from `validityDays`). Same shape as
+    // validityDays so the form-level value is always a number | null.
+    serviceDurationDays: z.number().int().min(1).nullable().optional(),
     grantedRoleIds: z.array(z.string()).optional(),
     enabled: z.boolean().optional(),
   })
@@ -59,6 +63,23 @@ export const createEntitlementMappingSchema = z
         message: m['billing.create_mapping_billing_period_required'](),
       })
     }
+    if (data.billingType === 'non_renewing' && !data.serviceDurationDays) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['serviceDurationDays'],
+        message: m['billing.create_mapping_service_duration_days_required'](),
+      })
+    }
+    // Non-renewing + billingPeriod is a billing-semantics conflict: a dedicated
+    // mutually-exclusive key (NOT the recurring-required wording, which mentions
+    // 'recurring' and reads as "missing required", not "not allowed").
+    if (data.billingType === 'non_renewing' && data.billingPeriod) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['billingPeriod'],
+        message: m['billing.create_mapping_billing_period_mutually_exclusive'](),
+      })
+    }
   })
 
 export type CreateEntitlementMappingFormData = z.infer<typeof createEntitlementMappingSchema>
@@ -66,7 +87,7 @@ export type CreateEntitlementMappingFormData = z.infer<typeof createEntitlementM
 /**
  * Default form values for the create-mapping dialog. `billingPeriod` /
  * `externalPriceId` / credit fields start null/empty; the dialog reveals the
- * recurring/one_time-specific ones conditionally.
+ * recurring/one_time/non_renewing-specific ones conditionally.
  */
 export function getCreateEntitlementMappingDefaults(): CreateEntitlementMappingFormData {
   return {
@@ -80,6 +101,7 @@ export function getCreateEntitlementMappingDefaults(): CreateEntitlementMappingF
     pointsPerPeriod: null,
     grantOnSubscribe: false,
     validityDays: null,
+    serviceDurationDays: null,
     grantedRoleIds: [],
     enabled: true,
   }

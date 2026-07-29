@@ -12,7 +12,6 @@
 //
 // The Herald Apple verifier (`herald_infra_iap::AppleVerifier`) wraps the
 // upstream `app-store-server-library` `SignedDataVerifier`, rooted at the
-// bundled Apple Root CA - G3 with OCSP off (design support-iap §5.1). The
 // upstream verifier only accepts a fabricated JWS under its **`LocalTesting`**
 // environment (it skips the cryptographic chain check there); under
 // `Production` / `Sandbox` it demands a real Apple-signed ES256 x5c chain,
@@ -77,7 +76,6 @@ pub fn decode_jws_payload(jws: &str) -> Option<Value> {
     serde_json::from_slice(&bytes).ok()
 }
 
-/// Fixture set: three JWS shapes covering the design §6.1 Apple verifier
 /// three-state coverage.
 pub struct AppleJwsFixtures {
     /// A well-formed JWS whose decoded payload matches `bundle_id` /
@@ -90,7 +88,6 @@ pub struct AppleJwsFixtures {
     pub tampered_payload: String,
     /// A JWS whose payload claims a different `bundleId` than the verifier
     /// expects. Maps to the upstream `InvalidAppIdentifier` rejection — this
-    /// stands in for the "wrong trust anchor / app" case (design §6.3).
     pub wrong_trust_anchor: String,
 }
 
@@ -355,7 +352,6 @@ impl GooglePlayMockServer {
     }
 
     /// Mount a 500 for `subscriptions.acknowledge` to drive the
-    /// ack-failure rollback regression (design §6.3).
     pub async fn mount_subscription_acknowledge_failure(&self, package_name: &str, token: &str) {
         Mock::given(method("POST"))
             .and(path(format!(
@@ -440,6 +436,46 @@ impl GooglePlayMockServer {
         Mock::given(method("POST"))
             .and(path(format!(
                 "/{package_name}/purchases/products/{product_id}/tokens/{token}:consume"
+            )))
+            .respond_with(ResponseTemplate::new(500).set_body_string("backend unavailable"))
+            .mount(&self.server)
+            .await;
+    }
+
+    /// Mount a successful 204 for `products.acknowledge` — the endpoint
+    /// `google_ack_or_consume_in_tx` selects for an `OneTime` mapping whose
+    /// `points_per_period` is 0/NULL (i.e. a non-consumable / buyout product
+    /// that must NOT be consumed). The URI mirrors
+    /// `GoogleDeveloperClient::acknowledge_product`
+    /// (`infra-iap/src/google/developer_api_client.rs:96`):
+    /// `/{package_name}/purchases/products/{product_id}/tokens/{token}:acknowledge`.
+    pub async fn mount_product_acknowledge_success(
+        &self,
+        package_name: &str,
+        product_id: &str,
+        token: &str,
+    ) {
+        Mock::given(method("POST"))
+            .and(path(format!(
+                "/{package_name}/purchases/products/{product_id}/tokens/{token}:acknowledge"
+            )))
+            .respond_with(ResponseTemplate::new(204))
+            .mount(&self.server)
+            .await;
+    }
+
+    /// Mount a 500 for `products.acknowledge` to drive the ack-failure
+    /// rollback regression for the buyout (non-consumable) path. Mirrors the
+    /// subscription ack-failure stub but for the product acknowledge endpoint.
+    pub async fn mount_product_acknowledge_failure(
+        &self,
+        package_name: &str,
+        product_id: &str,
+        token: &str,
+    ) {
+        Mock::given(method("POST"))
+            .and(path(format!(
+                "/{package_name}/purchases/products/{product_id}/tokens/{token}:acknowledge"
             )))
             .respond_with(ResponseTemplate::new(500).set_body_string("backend unavailable"))
             .mount(&self.server)

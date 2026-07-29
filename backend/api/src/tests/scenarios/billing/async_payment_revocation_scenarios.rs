@@ -11,7 +11,6 @@
 // - US-AP-004: Debt recording when insufficient balance
 //
 // User Story: US-AP-002, US-AP-003, US-AP-004
-// Covers: Design sections 4.1, 4.3, 5.1
 // =============================================================================
 
 #[cfg(test)]
@@ -219,11 +218,11 @@ mod tests {
                  payment_provider, status, entitlement_key, external_price_id,
                  provider_metadata, synced_at, current_period_start, current_period_end,
                  cancel_at_period_end, client_app_id, cancel_at, created_at, updated_at,
-                 bucket_id)
+                 bucket_id, billing_type)
              VALUES ($1, $2, $3, $4, $5,
                      $6, $7, $8, NULL,
                      NULL, NOW(), NOW(), NOW() + INTERVAL '30 days',
-                     false, $9, NULL, NOW(), NOW(), $10)",
+                     false, $9, NULL, NOW(), NOW(), $10, 'recurring')",
         )
         .bind(subscription_id)
         .bind(realm_id)
@@ -355,7 +354,6 @@ mod tests {
     // =========================================================================
 
     /// User Story: US-AP-002
-    /// Covers: Design 5.1 "Idempotent async_payment_succeeded skips when already Succeeded"
     ///
     /// Given: A realm with eager strategy, a one-time mapping (500 points), a user + wallet,
     ///        and a payment attempt already Succeeded from eager fulfillment (topup_balance = 500)
@@ -438,7 +436,6 @@ mod tests {
     // =========================================================================
 
     /// User Story: US-AP-002
-    /// Covers: Design 5.1 "Conservative strategy: async_payment_succeeded fulfills Pending attempt"
     ///
     /// Given: A realm with conservative strategy (no eager config), a one-time mapping (500 points),
     ///        a user + wallet, and a Pending payment attempt
@@ -503,7 +500,6 @@ mod tests {
     // =========================================================================
 
     /// User Story: US-AP-003
-    /// Covers: Design 5.1 "Conservative: async_payment_failed marks Pending attempt Failed, no revocation"
     ///
     /// Given: A realm with conservative strategy, a one-time mapping, a user + wallet,
     ///        and a Pending payment attempt
@@ -567,7 +563,6 @@ mod tests {
     // =========================================================================
 
     /// User Story: US-AP-003
-    /// Covers: Design 5.1 "One-time: revoke TopupCredit when async_payment_failed on Succeeded attempt"
     ///
     /// Given: A realm with eager strategy, a one-time mapping (500 points), a user + wallet,
     ///        and a payment attempt already Succeeded from eager fulfillment (topup_balance = 500)
@@ -639,7 +634,6 @@ mod tests {
     // =========================================================================
 
     /// User Story: US-AP-003
-    /// Covers: Design 5.1 "Subscription: cancel + revoke SubscriptionCredit on async_payment_failed"
     ///
     /// Given: A realm with eager strategy, a recurring mapping (500 points), a user + wallet,
     ///        a payment attempt already Succeeded, an active subscription, and subscription_balance = 500
@@ -744,7 +738,6 @@ mod tests {
     // =========================================================================
 
     /// User Story: US-AP-004
-    /// Covers: Design 4.3 "Debt recording when total_revoked < original_points"
     ///
     /// Given: A realm with eager strategy, a one-time mapping (500 points), a user + wallet,
     ///        a payment attempt already Succeeded (topup_balance = 500), but the user
@@ -848,6 +841,356 @@ mod tests {
             debt.1.contains("async_payment_failed_insufficient_balance"),
             "Debt reason should contain async_payment_failed_insufficient_balance, got: {}",
             debt.1
+        );
+    }
+
+    // =========================================================================
+    // pay_model — Stripe one_time refund / async-failed role revocation
+    // =========================================================================
+
+    /// Create a one-time entitlement mapping that grants `role_ids` (and
+    /// optional `points`) under the Stripe provider. Mirrors
+    /// `paywall_w1_m2_grant_scenarios::create_one_time_mapping_with_role` — the
+    /// shared `async_payment_helpers::create_one_time_mapping` helper does not
+    /// bind `granted_role_ids`, which the role-revocation tests require.
+    async fn create_one_time_mapping_with_role(
+        ctx: &RevocationTestContext,
+        realm_id: &str,
+        entitlement_key: &str,
+        points: Option<i64>,
+        role_ids: &[Uuid],
+    ) -> Uuid {
+        let mapping_id = Uuid::now_v7();
+        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+            &ctx.app_state.pool,
+            realm_id,
+        )
+        .await;
+        sqlx::query(
+            "INSERT INTO provider_entitlement_mappings
+                (id, realm_id, payment_provider, external_product_id, entitlement_key,
+                 billing_type, points_per_period, grant_on_subscribe, enabled, bucket_id,
+                 granted_role_ids, created_at, updated_at)
+             VALUES ($1, $2, 'stripe', $3, $4, 'one_time', $5, true, true, $6, $7, NOW(), NOW())",
+        )
+        .bind(mapping_id)
+        .bind(realm_id)
+        .bind(format!("prod_stripe_{entitlement_key}"))
+        .bind(entitlement_key)
+        .bind(points)
+        .bind(bucket_id)
+        .bind(role_ids)
+        .execute(&ctx.app_state.pool)
+        .await
+        .expect("Failed to create one-time mapping with granted_role_ids");
+        mapping_id
+    }
+
+    /// Create a Stripe `payment_attempts` snapshot in the Succeeded state with
+    /// `provider_reference = charge_id` so the Stripe refund handler can resolve
+    /// the attempt + routing bucket (mirrors the Creem
+    /// `create_payment_attempt_snapshot` but for `payment_provider='stripe'`).
+    async fn create_stripe_succeeded_attempt(
+        ctx: &RevocationTestContext,
+        realm_id: &str,
+        user_id: Uuid,
+        mapping_id: Uuid,
+        charge_id: &str,
+        amount: i64,
+    ) -> Uuid {
+        let attempt_id = Uuid::now_v7();
+        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+            &ctx.app_state.pool,
+            realm_id,
+        )
+        .await;
+        sqlx::query(
+            "INSERT INTO payment_attempts
+                (id, realm_id, user_id, payment_provider, target_type, target_id,
+                 bucket_id, amount, currency, status, provider_reference,
+                 provider_status, expires_at, created_at, updated_at)
+             VALUES ($1, $2, $3, 'stripe', 'entitlement_mapping', $4,
+                     $5, $6, 'usd', 'Succeeded', $7,
+                     'succeeded', NOW() + INTERVAL '1 hour', NOW(), NOW())",
+        )
+        .bind(attempt_id)
+        .bind(realm_id)
+        .bind(user_id)
+        .bind(mapping_id)
+        .bind(bucket_id)
+        .bind(amount)
+        .bind(charge_id)
+        .execute(&ctx.app_state.pool)
+        .await
+        .expect("Failed to create Stripe succeeded payment_attempt snapshot");
+        attempt_id
+    }
+
+    /// Count `user_roles` rows for a user with `source='payment'` and a given
+    /// `source_id`. Mirrors `paywall_m4_revoke_sweep_scenarios`.
+    async fn count_payment_roles_by_source_id(
+        ctx: &RevocationTestContext,
+        user_id: Uuid,
+        source_id: &str,
+    ) -> i64 {
+        sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM user_roles
+             WHERE user_id = $1 AND source = 'payment' AND source_id = $2",
+        )
+        .bind(user_id)
+        .bind(source_id)
+        .fetch_one(&ctx.app_state.pool)
+        .await
+        .unwrap()
+    }
+
+    /// Build a `charge.refunded` Stripe webhook event for a one-time (topup)
+    /// refund. The handler (`handle_charge_refunded` topup branch) resolves the
+    /// originating attempt via `provider_reference = charge_id` and revokes the
+    /// payment-source roles keyed by `attempt.id`.
+    fn build_stripe_charge_refunded_topup(
+        event_id: &str,
+        realm_id: &str,
+        user_id: Uuid,
+        charge_id: &str,
+        amount: i64,
+    ) -> serde_json::Value {
+        json!({
+            "id": event_id,
+            "object": "event",
+            "type": "charge.refunded",
+            "api_version": "2020-08-27",
+            "created": chrono::Utc::now().timestamp(),
+            "data": {
+                "object": {
+                    "id": charge_id,
+                    "object": "charge",
+                    "amount": amount,
+                    "amount_refunded": amount,
+                    "metadata": {
+                        "attemptId": charge_id,
+                        "herald_realm_id": realm_id,
+                        "herald_user_id": user_id.to_string(),
+                        "userId": user_id.to_string(),
+                        "refundType": "topup",
+                    },
+                    "created": chrono::Utc::now().timestamp(),
+                }
+            }
+        })
+    }
+
+    /// User Story: US-PM-008 (Stripe one_time refund → permanent role revoked;
+    ///             points revoked; manual grants untouched).
+    ///
+    /// A Succeeded one_time (buyout) payment grants a permanent payment-source
+    /// role + topup points. A `charge.refunded` webhook (refundType=topup) must
+    /// channel role clawback), while a manual grant for the same role survives
+    /// (source='payment' filter). This is the regression anchor for the new
+    /// role-revocation behaviour that previously leaked the role on refund.
+    #[test_context(RevocationTestContext)]
+    #[tokio::test]
+    async fn test_pay_model_stripe_one_time_refund_revokes_role(ctx: &mut RevocationTestContext) {
+        let app = ctx.create_unified_test_router();
+        let webhook_secret = "whsec_pm_stripe_refund_role";
+        let realm_id = ctx._realm_id.clone();
+        let entitlement_key = "pm-stripe-refund-role";
+
+        setup_stripe_config(ctx, &realm_id, "sk_test_pm_refund_role", webhook_secret).await;
+
+        // Buyout role in this realm.
+        let token = crate::tests::helpers::billing_helpers::setup_billing_admin_session(
+            ctx,
+            "pm-stripe-refund-role-admin@test.com",
+        )
+        .await;
+        let role_id = crate::tests::helpers::rbac_helpers::create_role(
+            ctx,
+            &realm_id,
+            &token,
+            "pm-stripe-refund-role",
+            "pay_model one_time refund role",
+        )
+        .await;
+
+        // One-time mapping: grants the role + 500 points.
+        let mapping_id = create_one_time_mapping_with_role(
+            ctx,
+            &realm_id,
+            entitlement_key,
+            Some(500),
+            &[role_id],
+        )
+        .await;
+        let user_id = create_test_user(ctx, &realm_id, "pm-stripe-refund-role@test.com").await;
+        create_points_wallet(ctx, user_id, &realm_id).await;
+
+        // Seed a Succeeded Stripe attempt with provider_reference = charge_id.
+        let charge_id = format!("ch_pm_refund_{}", Uuid::now_v7());
+        let attempt_id =
+            create_stripe_succeeded_attempt(ctx, &realm_id, user_id, mapping_id, &charge_id, 500)
+                .await;
+
+        // Seed the payment-source role grant (source_id = attempt.id) exactly as
+        // the one_time fulfillment path would, plus a topup_credit ledger entry
+        // (500) the proportional revocation will claw back.
+        sqlx::query(
+            "INSERT INTO user_roles
+                (id, user_id, role_id, realm_id, client_id, principal_type, principal_id,
+                 source, source_id, expires_at)
+             VALUES ($1, $2, $3, $4, $5, 'user', $2::text, 'payment', $6, NULL)",
+        )
+        .bind(Uuid::now_v7())
+        .bind(user_id)
+        .bind(role_id)
+        .bind(&realm_id)
+        .bind(&ctx._client_id)
+        .bind(attempt_id.to_string())
+        .execute(&ctx.app_state.pool)
+        .await
+        .expect("seed payment role grant");
+
+        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+            &ctx.app_state.pool,
+            &realm_id,
+        )
+        .await;
+        sqlx::query(
+            "INSERT INTO points_credit_ledger
+                (id, user_id, realm_id, bucket_id, credit_type, source_type, source_id,
+                 granted_amount, used_amount, revoked_amount, status, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, 'topup_credit', 'topup', $5,
+                     500, 0, 0, 'active', NOW(), NOW())",
+        )
+        .bind(Uuid::now_v7())
+        .bind(user_id)
+        .bind(&realm_id)
+        .bind(bucket_id)
+        .bind(attempt_id.to_string())
+        .execute(&ctx.app_state.pool)
+        .await
+        .expect("seed topup_credit ledger entry");
+
+        // Pre-condition: 1 payment role grant.
+        assert_eq!(
+            count_payment_roles_by_source_id(ctx, user_id, &attempt_id.to_string()).await,
+            1,
+            "pre-condition: payment role grant present"
+        );
+
+        // Exercise: charge.refunded (topup).
+        let event_id = generate_test_event_id();
+        let payload =
+            build_stripe_charge_refunded_topup(&event_id, &realm_id, user_id, &charge_id, 500);
+        let response =
+            send_stripe_webhook_with_signature(&app, &realm_id, payload, webhook_secret).await;
+        assert_eq!(response.status(), StatusCode::OK, "Expected 200 OK");
+
+        assert_eq!(
+            count_payment_roles_by_source_id(ctx, user_id, &attempt_id.to_string()).await,
+            0,
+            "Stripe one_time refund must revoke the permanent payment-source role (DEC-pay_model-004)"
+        );
+
+        // And: the topup points were also revoked (decoupled revocation).
+        let topup_after = get_topup_balance(ctx, user_id, &realm_id).await;
+        assert_eq!(
+            topup_after, 0,
+            "Stripe one_time refund must also revoke the topup points"
+        );
+    }
+
+    /// User Story: US-PM-008 (Stripe async_payment_failed one_time → permanent
+    ///             role revoked; points revoked).
+    ///
+    /// Under the eager async-points strategy a one_time (buyout) attempt is
+    /// fulfilled eagerly (role + points granted). A subsequent
+    /// `checkout.session.async_payment_failed` webhook (mode=payment) must
+    /// async-failed counterpart to the charge.refunded role-clawback test.
+    #[test_context(RevocationTestContext)]
+    #[tokio::test]
+    async fn test_pay_model_stripe_async_failed_one_time_revokes_role(
+        ctx: &mut RevocationTestContext,
+    ) {
+        let app = ctx.create_unified_test_router();
+        let webhook_secret = "whsec_pm_async_fail_role";
+        let realm_id = ctx._realm_id.clone();
+        let entitlement_key = "pm-async-fail-role";
+
+        setup_stripe_config(ctx, &realm_id, "sk_test_pm_async_role", webhook_secret).await;
+        set_async_points_strategy(ctx, &realm_id, "eager").await;
+
+        let token = crate::tests::helpers::billing_helpers::setup_billing_admin_session(
+            ctx,
+            "pm-async-fail-role-admin@test.com",
+        )
+        .await;
+        let role_id = crate::tests::helpers::rbac_helpers::create_role(
+            ctx,
+            &realm_id,
+            &token,
+            "pm-async-fail-role",
+            "pay_model async_failed role",
+        )
+        .await;
+
+        // One-time mapping: grants the role + 500 points.
+        let mapping_id = create_one_time_mapping_with_role(
+            ctx,
+            &realm_id,
+            entitlement_key,
+            Some(500),
+            &[role_id],
+        )
+        .await;
+        let user_id = create_test_user(ctx, &realm_id, "pm-async-fail-role@test.com").await;
+        create_points_wallet(ctx, user_id, &realm_id).await;
+
+        // Simulate eager fulfillment: Succeeded attempt with role + 500 topup.
+        let attempt_id =
+            create_succeeded_payment_attempt_with_topup(ctx, &realm_id, user_id, mapping_id, 500)
+                .await;
+        sqlx::query(
+            "INSERT INTO user_roles
+                (id, user_id, role_id, realm_id, client_id, principal_type, principal_id,
+                 source, source_id, expires_at)
+             VALUES ($1, $2, $3, $4, $5, 'user', $2::text, 'payment', $6, NULL)",
+        )
+        .bind(Uuid::now_v7())
+        .bind(user_id)
+        .bind(role_id)
+        .bind(&realm_id)
+        .bind(&ctx._client_id)
+        .bind(attempt_id.to_string())
+        .execute(&ctx.app_state.pool)
+        .await
+        .expect("seed payment role grant");
+
+        // Pre-condition: 1 payment role grant + 500 topup.
+        assert_eq!(
+            count_payment_roles_by_source_id(ctx, user_id, &attempt_id.to_string()).await,
+            1
+        );
+        assert_eq!(get_topup_balance(ctx, user_id, &realm_id).await, 500);
+
+        // Exercise: async_payment_failed with mode=payment.
+        let event_id = generate_test_event_id();
+        let payload =
+            build_stripe_async_payment_failed(&event_id, &realm_id, attempt_id, "payment");
+        let response =
+            send_stripe_webhook_with_signature(&app, &realm_id, payload, webhook_secret).await;
+        assert_eq!(response.status(), StatusCode::OK, "Expected 200 OK");
+
+        assert_eq!(
+            count_payment_roles_by_source_id(ctx, user_id, &attempt_id.to_string()).await,
+            0,
+            "Stripe async_payment_failed one_time must revoke the permanent payment-source role (DEC-pay_model-004)"
+        );
+        // And: points revoked.
+        assert_eq!(
+            get_topup_balance(ctx, user_id, &realm_id).await,
+            0,
+            "Stripe async_payment_failed one_time must also revoke the topup points"
         );
     }
 }

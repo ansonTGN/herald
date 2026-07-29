@@ -364,9 +364,9 @@ pub async fn create_test_subscription(
         "INSERT INTO subscription
             (id, realm_id, user_id, external_subscription_id, external_product_id, payment_provider,
              status, entitlement_key, current_period_start, current_period_end,
-             cancel_at_period_end, client_app_id, created_at, updated_at, bucket_id)
+             cancel_at_period_end, client_app_id, created_at, updated_at, bucket_id, billing_type)
          VALUES ($1, $2, $3, $4, $5, 'creem', 'active', $6, NOW(), NOW() + INTERVAL '30 days',
-                 false, $7, NOW(), NOW(), $8)",
+                 false, $7, NOW(), NOW(), $8, 'recurring')",
     )
     .bind(subscription_id)
     .bind(realm_id)

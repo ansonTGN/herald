@@ -257,11 +257,11 @@ mod tests {
                 (id, realm_id, user_id, external_subscription_id, external_product_id,
                  payment_provider, status, entitlement_key, external_price_id,
                  provider_metadata, synced_at, current_period_start, current_period_end,
-                 cancel_at_period_end, client_app_id, cancel_at, bucket_id, created_at, updated_at)
+                 cancel_at_period_end, client_app_id, cancel_at, bucket_id, created_at, updated_at, billing_type)
              VALUES ($1, $2, $3, $4, $5,
                      $6, $7, $8, NULL,
                      NULL, NOW(), NOW(), NOW() + INTERVAL '30 days',
-                     false, $9, NULL, $10, NOW(), NOW())",
+                     false, $9, NULL, $10, NOW(), NOW(), 'recurring')",
         )
         .bind(subscription_id)
         .bind(realm_id)

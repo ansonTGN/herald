@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::webhook_common::{
     create_placeholder_transaction, metadata_value, parse_attempt_id, parse_event_id,
-    parse_optional_uuid_field, parse_uuid_field,
+    parse_optional_uuid_field, parse_uuid_field, revoke_payment_roles_for_source,
 };
 use crate::webhook_subscription_helpers::{
     ResolvedEntitlement, SyncSubscriptionInput, resolve_bucket_id_for_entitlement,
@@ -1000,6 +1000,21 @@ async fn handle_checkout_completed(
                 TransactionType::SubscriptionGrant,
             ))
         }
+        // Non-renewing fulfillment (create a fixed-duration Subscription) is
+        // fulfill_non_renewing_purchase dispatch.
+        BillingType::NonRenewing => {
+            info!(
+                realm_id = %realm_id,
+                event_id = %event_id,
+                "Non-renewing checkout completed -- fulfillment deferred (pay_model BE-D02)"
+            );
+
+            Ok(create_placeholder_transaction(
+                payload.client_app_id,
+                realm_id,
+                TransactionType::SubscriptionGrant,
+            ))
+        }
     }
 }
 
@@ -1699,9 +1714,7 @@ async fn handle_subscription_canceled(
     )
     .await?;
 
-    // Subscription cancel (BE-D06/D10): revoke the subscription's active quota
     // entitlement by `source_id = subscription_id`. No ledger-row reclaim; the
-    // pre-redesign chained pre-grant reclaim path is retired under the window
     // quota model. Idempotent: no active entitlement ⟹ no-op.
     //
     // PRD §4.1: a missed role/quota revoke on a subscription cancel is a P0
@@ -1826,6 +1839,17 @@ async fn handle_refund_created(
                 )
                 .await?;
 
+            // Revoke payment-granted permanent roles for this one-time attempt
+            // `source_id = attempt.id`, so revoke with the same source id.
+            // Idempotent (NotFound is a no-op); manual grants unaffected.
+            revoke_payment_roles_for_source(
+                &app_state,
+                realm_id,
+                payload.user_id,
+                &attempt.id.to_string(),
+            )
+            .await;
+
             info!(
                 realm_id = %realm_id,
                 user_id = %payload.user_id,
@@ -1836,9 +1860,7 @@ async fn handle_refund_created(
             );
         }
         _ => {
-            // Subscription refund (BE-D06/D10): revoke the originating
             // subscription's active quota entitlement by `source_id =
-            // subscription_id`. The pre-redesign chained pre-grant reclaim +
             // broad `revoke_subscription_unused` ledger-row paths are retired
             // under the window quota model. A refund targets the originating
             // subscription; resolve it by external_subscription_id from the
@@ -2012,7 +2034,6 @@ async fn handle_subscription_lifecycle_status(
             .await?;
     }
 
-    // Subscription Expired (BE-D06/D10): an expired subscription is a
     // terminal lifecycle state; revoke the active quota entitlement
     // immediately so the user's window availability drops to zero. This is
     // idempotent because `revoke_quota_entitlement` is keyed by

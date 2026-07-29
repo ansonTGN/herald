@@ -106,7 +106,6 @@ pub trait ProviderApiPort: Send + Sync {
 ///   `RegistrationPoolResolver` pattern (the same port
 ///   `webhook_subscription_helpers::resolve_bucket_id_for_entitlement` and the
 ///   registration grant path rely on) to pick the realm's single registration
-///   pool. There is no separate "default" / "draft" bucket concept by design.
 pub struct ProviderProductSyncService<R, P, A, B>
 where
     R: BillingRepository,
@@ -210,7 +209,6 @@ where
                         // registration-pool bucket — the same bucket the
                         // registration/free-periodic grant path and the
                         // webhook entitlement resolver use. No
-                        // "default"/"draft" bucket concept exists by design.
                         let bucket_id = self
                                 .bucket_resolver
                                 .resolve_registration_pool_bucket(realm_id)
@@ -259,6 +257,11 @@ where
                         .as_deref()
                         .and_then(|s: &str| s.parse().ok()),
                     billing_period: price.billing_period.clone(),
+                    // Provider product sync never carries a service-period
+                    // length (non_renewing duration is an admin-configured
+                    // concept, not a provider-observed field). Preserve an
+                    // existing mapping's value when re-syncing, else None.
+                    service_duration_days: existing.as_ref().and_then(|m| m.service_duration_days),
                     points_per_period: draft.points_per_period,
                     validity_days: draft.validity_days,
                     grant_on_subscribe: draft.grant_on_subscribe,
@@ -272,7 +275,6 @@ where
                     // the DB value, so this is belt-and-suspenders.
                     quota_windows: existing.as_ref().and_then(|m| m.quota_windows.clone()),
                     // Same preserve-on-resync policy for `granted_role_ids`
-                    // (paywall, design §5.2). New mapping defaults to empty
                     // (no role grant); the DB column default already enforces
                     // `'{}'`, but the domain struct requires a concrete value.
                     granted_role_ids: existing

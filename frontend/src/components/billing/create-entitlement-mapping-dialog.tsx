@@ -81,13 +81,11 @@ function Field({
 }
 
 /**
- * Create-mapping dialog (FE-D03).
  *
  * Hand-builds a single entitlement mapping and POSTs it via
  * `useCreateEntitlementMapping`. On success it closes itself (the mutation
  * already invalidates `['entitlement-mappings']` so the list refreshes).
  *
- * Error branching (design §4.2.2 — kept distinct, NOT conflated):
  * - 409 → `billing.create_mapping_duplicate` ("product id already exists").
  * - 23514 / non-4xx → `billing.create_mapping_config_error`
  *   ("configuration error"; DB CHECK / server defense).
@@ -122,6 +120,7 @@ export function CreateEntitlementMappingDialog({
 
   const isRecurring = values.billingType === 'recurring'
   const isOneTime = values.billingType === 'one_time'
+  const isNonRenewing = values.billingType === 'non_renewing'
 
   const update = <K extends keyof CreateEntitlementMappingFormData>(
     key: K,
@@ -152,9 +151,14 @@ export function CreateEntitlementMappingDialog({
 
     const v = parsed.data
     // Assemble the request body, dropping billing-type-irrelevant fields so we
-    // don't leak a billingPeriod on a one_time row (and vice-versa for
-    // validityDays) — the backend is the authority, but keeping the payload
-    // clean avoids surprising CHECK interactions.
+    // don't leak a billingPeriod on a one_time/non_renewing row (and vice-versa
+    // for validityDays / serviceDurationDays) — the backend is the authority,
+    // but keeping the payload clean avoids surprising CHECK interactions.
+    //
+    // pay_model §5.2: grant_on_subscribe && points_per_period > 0 →
+    // SubscriptionCredit + role), so it gets pointsPerPeriod/grantOnSubscribe
+    // like recurring. It differs only in: no billingPeriod (mutually exclusive),
+    const subscriptionCreditPath = isRecurring || isNonRenewing
     const body: CreateEntitlementMappingRequest = {
       paymentProvider: v.paymentProvider,
       externalProductId: v.externalProductId,
@@ -168,9 +172,10 @@ export function CreateEntitlementMappingDialog({
       // otherwise omitted entirely so the backend doesn't demand points.manage.
       ...(canManagePoints
         ? {
-            pointsPerPeriod: isRecurring ? (v.pointsPerPeriod ?? null) : null,
-            grantOnSubscribe: isRecurring ? (v.grantOnSubscribe ?? null) : null,
+            pointsPerPeriod: subscriptionCreditPath ? (v.pointsPerPeriod ?? null) : null,
+            grantOnSubscribe: subscriptionCreditPath ? (v.grantOnSubscribe ?? null) : null,
             validityDays: isOneTime ? (v.validityDays ?? null) : null,
+            serviceDurationDays: isNonRenewing ? (v.serviceDurationDays ?? null) : null,
           }
         : {}),
       grantedRoleIds: v.grantedRoleIds,
@@ -192,7 +197,6 @@ export function CreateEntitlementMappingDialog({
           return
         }
         // 23514 / non-4xx: DB CHECK / server defense — a configuration error,
-        // NOT a duplicate. Surfaced distinctly per design §4.2.2.
         if (isCreateMappingConfigError(error)) {
           const msg = m['billing.create_mapping_config_error']()
           setSubmitError(msg)
@@ -312,7 +316,9 @@ export function CreateEntitlementMappingDialog({
           >
             <Select
               value={values.billingType ?? ''}
-              onValueChange={(v) => update('billingType', v as 'recurring' | 'one_time')}
+              onValueChange={(v) =>
+                update('billingType', v as 'recurring' | 'one_time' | 'non_renewing')
+              }
             >
               <SelectTrigger
                 id="create-mapping-billing-type"
@@ -323,6 +329,9 @@ export function CreateEntitlementMappingDialog({
               <SelectContent>
                 <SelectItem value="recurring">{m['billing.billing_type_recurring']()}</SelectItem>
                 <SelectItem value="one_time">{m['billing.billing_type_one_time']()}</SelectItem>
+                <SelectItem value="non_renewing">
+                  {m['billing.billing_type_non_renewing']()}
+                </SelectItem>
               </SelectContent>
             </Select>
           </Field>
@@ -377,7 +386,30 @@ export function CreateEntitlementMappingDialog({
             </Field>
           )}
 
-          {isRecurring && canManagePoints && (
+          {isNonRenewing && (
+            <Field
+              label={m['billing.create_mapping_service_duration_days']()}
+              htmlFor="create-mapping-service-duration-days"
+              required
+              error={fieldErrors.serviceDurationDays}
+            >
+              <Input
+                id="create-mapping-service-duration-days"
+                type="number"
+                min={1}
+                value={values.serviceDurationDays ?? ''}
+                onChange={(e) =>
+                  update(
+                    'serviceDurationDays',
+                    e.target.value === '' ? null : Number(e.target.value)
+                  )
+                }
+                data-testid="create-mapping-service-duration-days-input"
+              />
+            </Field>
+          )}
+
+          {(isRecurring || isNonRenewing) && canManagePoints && (
             <Field
               label={m['billing.create_mapping_points_per_period']()}
               htmlFor="create-mapping-points-per-period"
@@ -395,7 +427,7 @@ export function CreateEntitlementMappingDialog({
             </Field>
           )}
 
-          {isRecurring && canManagePoints && (
+          {(isRecurring || isNonRenewing) && canManagePoints && (
             <div className="flex items-center gap-2">
               <Switch
                 id="create-mapping-grant-on-subscribe"

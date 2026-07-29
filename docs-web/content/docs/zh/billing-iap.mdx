@@ -1,9 +1,9 @@
 ---
 title: App Store / Google Play 内购(IAP)对接
-description: "面向 Realm Admin 的 IAP 对接操作指南。跟着做完，你的移动 App 用户就能通过 App Store 和 Google Play 内购完成订阅和积分包购买。"
+description: "面向 Realm Admin 的 IAP 对接操作指南，涵盖订阅、积分包、买断和非续期订阅。"
 ---
 
-面向 Realm Admin 的 IAP 对接操作指南。跟着做完，你的移动 App 用户就能通过 App Store 和 Google Play 内购完成订阅和积分包购买。
+面向 Realm Admin 的 IAP 对接操作指南。移动 App 用户可通过 App Store 和 Google Play 内购完成订阅、积分包、买断和非续期订阅购买。
 
 ## 给谁看
 
@@ -81,15 +81,19 @@ Apple 通过 App Store Server Notifications V2 把订阅生命周期事件推给
 
 - **自动续期订阅**：你的 App → 订阅 → 建订阅组，再建订阅（如 `pro_monthly`）
 - **消耗型项目**（积分包）：你的 App → App 内购买项目 → 消耗型（如 `points_pack_1000`）
+- **非消耗型项目**（买断）：你的 App → App 内购买项目 → 非消耗型（如 `lifetime_pro`）
+- **非续期订阅**：创建对应的固定时长商品，并在 Herald 配置服务期时长
 
 ### Play Console
 
 - **订阅**：创收 → 商品 → 订阅，配好基础方案（如 `pro_monthly`）
 - **一次性商品**：创收 → 商品 → 一次性商品，积分包要标记为消耗型（如 `points_pack_1000`）
+- **买断**：使用非消耗型一次性商品（如 `lifetime_pro`）
+- **非续期订阅**：使用一次性商品，并在 Herald 配置固定服务期
 
 记下准确的商品 ID——下一步的映射按它匹配，同一 provider + 商品 ID 在同一 Realm 内只能映射一次。
 
-非消耗型买断和非续期订阅目前不在 Herald 履约模型支持范围内。
+买断和非续期订阅的权益语义不同于积分包和自动续期订阅，需要在下一步按对应类型配置。
 
 ## Step 5: 创建 Entitlement Mapping
 
@@ -100,10 +104,11 @@ Apple 通过 App Store Server Notifications V2 把订阅生命周期事件推给
    - **External Product ID**：Step 4 的商店商品 ID，如 `pro_monthly`
    - **Entitlement Key**：你自己好记的标识，如 `pro`。SDK 查询和积分策略都用它，建好后尽量别改
    - **Credit Account**：购买后积分进哪个池
-   - **Billing Type**：订阅选 `Recurring`，消耗型积分包选 `OneTime`
+   - **Billing Type**：自动续期订阅选 `Recurring`，消耗型积分包或买断选 `OneTime`，固定时长订阅选 `Non-renewing`
    - **Billing Period**（仅 recurring）：订阅周期
    - **Points Per Period** / **Grant On Subscribe**：积分策略（需要 `points.manage` 权限）
-   - **Validity Days**（仅 one_time）：积分有效期，0 或留空表示永不过期
+   - **Validity Days**（仅 one_time 积分包）：积分有效期，0 或留空表示永不过期
+   - **Service Duration Days**（仅非续期订阅）：固定服务期，必填；未填写不能保存映射
 4. 提交
 
 同一 provider + 商品 ID 重复创建会被拒绝，弹窗内直接显示重复错误。之后禁用某条映射，通知仍会更新订阅投影，但不再发放积分。
@@ -133,7 +138,7 @@ Google Play 则传 `"provider": "google"`，`receipt` 填 Play Billing 的 `purc
 Herald 收到后做什么：
 
 - **Apple**：本地验 JWS（x5c 证书链 + ES256 + Apple Root CA），不需要回调 Apple。用户绑定来自你发起 StoreKit 购买时设置的 `appAccountToken`——把它设成 Herald 用户 ID。
-- **Google**：调 Developer API（`subscriptionsv2.get` / `products.get`）回查真实状态。用户绑定来自 `obfuscatedExternalAccountId`——同样设成 Herald 用户 ID。校验成功后 Herald 在**履约事务内**立即 acknowledge（订阅）或 consume（消耗型）。Google 有 3 天确认硬截止，超期会静默退款，所以这一步刻意不做异步延迟。
+- **Google**：调 Developer API（`subscriptionsv2.get` / `products.get`）回查真实状态。用户绑定来自 `obfuscatedExternalAccountId`——同样设成 Herald 用户 ID。校验成功后 Herald 在**履约事务内**确认订阅和非消耗型买断，只消耗积分包。Google 有 3 天确认硬截止，超期会静默退款，所以这一步刻意不做异步延迟。
 
 响应里带支付尝试结果：
 
@@ -142,7 +147,7 @@ Herald 收到后做什么：
 | `attemptId` | 支付尝试 ID（新建的，或已履约命中的那条） |
 | `status` | `succeeded` / `pending` / `failed` |
 | `entitlementKey` | 履约成功时返回映射的 entitlement key |
-| `billingType` | `recurring` / `one_time` |
+| `billingType` | `recurring` / `one_time` / `non_renewing` |
 | `failureReason` | 失败原因：`invalid_receipt` / `ownership_mismatch` / `already_consumed` / `no_mapping` / `verification_failed` |
 
 App 可以用 `PurchaseStatusRead` scope 调既有 attempt 查询接口轮询状态。如果同一笔交易已经履约过（客户端重试，或 Apple 通知先到），提交只返回当前状态，不会重复发放。
@@ -154,13 +159,21 @@ App 可以用 `PurchaseStatusRead` scope 调既有 attempt 查询接口轮询状
 
 两条路径复用与 receipt 端点相同的幂等履约，路径重叠不会重复发放。
 
+### 买断与非续期订阅
+
+买断使用 `OneTime` 映射，加永久角色授予且不配置积分策略。用户重装或换机后可用同一笔商店交易恢复购买。退款或撤销只回收该笔支付授予的角色，管理员手工授予的同名角色保留。
+
+非续期订阅有固定服务期，到期不会续费。它会在 **Subscriptions** 中显示 `non_renewing` 计费类型和截止时间。Google 对账可将已过期订阅置为失效。Apple 不为这类商品提供服务端到期事件，Herald 不会只依据本地时间强制失效；在收到后续商店证据前，Apple 非续期权益可能仍显示有效。
+
 ## Step 8: 确认结果
 
 1. 在 **Payment Providers** 页确认 App Store / Google Play 显示已配置
 2. 在 **Entitlement Mappings** 页确认映射行存在、已启用、计费类型和积分策略正确
 3. 做一笔沙盒购买（iOS 用沙盒 Apple ID，Android 用许可测试账号），从 App 提交 receipt，确认响应 `status` 为 `succeeded` 且 `entitlementKey` 正确
 4. 在 **Subscriptions** 页确认投影里的 `entitlement_key`、`status`、`payment_provider`（`apple` / `google`）正确
-5. 订阅类商品等一次续费（沙盒续费按加速时钟走）或发起一笔退款，确认状态变化出现在 **Subscription History** 里
+5. 自动续期订阅等一次续费（沙盒续费按加速时钟走）或发起一笔退款，确认状态变化出现在 **Subscription History** 里
+6. 买断商品测试恢复购买及退款或撤销，确认只回收支付来源角色
+7. 非续期订阅在 **Subscriptions** 中确认其截止时间和 `non_renewing` 计费类型
 
 ---
 

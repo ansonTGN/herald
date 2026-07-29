@@ -39,6 +39,7 @@ fn subscription_to_response(sub: &Subscription) -> SubscriptionDetailResponse {
         external_price_id: sub.external_price_id.clone(),
         payment_provider: sub.payment_provider.clone(),
         status: sub.status.as_str().to_string(),
+        billing_type: sub.billing_type.as_str().to_string(),
         current_period_start: sub.current_period_start.map(|dt| dt.to_rfc3339()),
         current_period_end: sub.current_period_end.map(|dt| dt.to_rfc3339()),
         cancel_at: sub.cancel_at.map(|dt| dt.to_rfc3339()),
@@ -179,6 +180,7 @@ pub async fn list_subscriptions(
             external_price_id: sub.external_price_id.clone(),
             payment_provider: sub.payment_provider.clone(),
             status: sub.status.as_str().to_string(),
+            billing_type: sub.billing_type.as_str().to_string(),
             current_period_start: sub.current_period_start.map(|dt| dt.to_rfc3339()),
             current_period_end: sub.current_period_end.map(|dt| dt.to_rfc3339()),
             synced_at: sub.synced_at.map(|dt| dt.to_rfc3339()),
@@ -363,7 +365,6 @@ pub async fn cancel_subscription_for_client_app(
 fn mapping_to_purchase_option(m: EntitlementMapping) -> PurchaseOptionView {
     let info = m.provider_product_info.as_ref();
     // Only the one_time+role combo is the gated one-per-user entitlement
-    // (design §4.3.2 / §5.4). Points packages and subscriptions are never
     // gated, so `grants_role` is `false` for them even if they carry role
     // grants. `already_owned` is computed per-user in the handler; seeded
     // `false` here and overwritten for gated options.
@@ -428,7 +429,6 @@ pub async fn list_purchase_options(
     );
 
     // Purchase-page read is an authenticated-user action. The user id drives
-    // the per-option `alreadyOwned` computation (design §4.2.2).
     require_token_scope(&identity, &context, CredentialScope::PurchaseRead)?;
     let user_id = require_authenticated_user_in_realm_with_token(
         &identity,
@@ -515,6 +515,7 @@ mod browser_scope_tests {
             payment_provider: "stripe".to_string(),
             status: SubscriptionStatus::Active,
             entitlement_key: "plan".to_string(),
+            billing_type: BillingType::Recurring,
             external_price_id: None,
             bucket_id: Uuid::now_v7(),
             provider_metadata: None,

@@ -722,8 +722,8 @@ pub async fn seed_active_subscription_on_bucket(
         r#"INSERT INTO subscription
              (id, realm_id, user_id, external_subscription_id, external_product_id,
               payment_provider, status, entitlement_key, client_app_id, bucket_id,
-              created_at, updated_at)
-           VALUES ($1, $2, $3, $4, 'prod-seed', 'creem', 'active', '', $5, $6, NOW(), NOW())
+              created_at, updated_at, billing_type)
+           VALUES ($1, $2, $3, $4, 'prod-seed', 'creem', 'active', '', $5, $6, NOW(), NOW(), 'recurring')
            RETURNING id"#,
     )
     .bind(subscription_id)
@@ -905,7 +905,6 @@ pub async fn auth_admin_request_via_api(
 // admin-facing query endpoints are served by a single handler at
 // `GET /api/points/{realmId}/wallets` (and `.../transactions`) gated on
 // `points.view`; both group rows by `(bucket_id, user_id)` (the admin view
-// therefore expands per `(user, bucket)`). The design's intended
 // `/users/me/points/wallets` / `/billing/points/wallets` distinct routes are a
 // KNOWN contract gap (recorded in `open_questions`); tests exercise the
 // real route that implements the response contract.

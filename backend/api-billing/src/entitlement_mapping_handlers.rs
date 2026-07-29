@@ -38,7 +38,6 @@ pub struct MappingActiveSubscriptionLockErrorBody {
 }
 
 /// 400 `role_not_in_realm` body for a batch save where a `grantedRoleIds`
-/// entry does not belong to the mapping's realm (design §4.2.2 / §5.2). The
 /// whole batch transaction is rolled back.
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -59,6 +58,7 @@ fn mapping_to_response(m: EntitlementMapping) -> EntitlementMappingResponse {
         entitlement_key: m.entitlement_key,
         billing_type: m.billing_type.map(|bt| bt.as_str().to_string()),
         billing_period: m.billing_period,
+        service_duration_days: m.service_duration_days,
         points_per_period: m.points_per_period,
         validity_days: m.validity_days,
         grant_on_subscribe: m.grant_on_subscribe,
@@ -206,7 +206,6 @@ pub async fn get_entitlement_mapping(
     Ok(Json(mapping_to_response(mapping)))
 }
 
-/// Create an entitlement mapping (design support-iap §4.2.2 / A2).
 ///
 /// Generic over provider (IAP, Stripe, Creem). Required permission:
 /// `billing.manage`; credit-strategy fields (`pointsPerPeriod` /
@@ -248,7 +247,6 @@ pub async fn create_entitlement_mapping(
     require_billing_permission(&state, &identity, &realm_id, "manage").await?;
 
     // 2. points.manage if any credit-strategy field is present (mirrors batch
-    //    update permission model, design §4.2.2).
     let touches_credit_fields = request.points_per_period.is_some()
         || request.grant_on_subscribe.is_some()
         || request.validity_days.is_some();
@@ -276,7 +274,6 @@ pub async fn create_entitlement_mapping(
         .validate()
         .map_err(|e| ApiError::bad_request(format!("Invalid request: {}", e)))?;
 
-    // 4. Realm-membership validation for grantedRoleIds (design §4.2.2 / §5.2).
     if !request.granted_role_ids.is_empty() {
         validate_granted_role_ids(
             &realm_id,
@@ -306,6 +303,7 @@ pub async fn create_entitlement_mapping(
                 bucket_id: request.bucket_id,
                 billing_type,
                 billing_period: request.billing_period,
+                service_duration_days: request.service_duration_days,
                 points_per_period: request.points_per_period,
                 grant_on_subscribe: request.grant_on_subscribe,
                 validity_days: request.validity_days,
@@ -405,7 +403,32 @@ pub async fn update_entitlement_mapping(
         ));
     }
 
-    // Validate and materialize quota_windows (design §4.2.2 / §4.4.3):
+    // is immutable on PATCH, so the NonRenewing invariant must hold for the
+    // *resolved* duration of an existing non_renewing mapping: Some(>=1). For
+    // other billing types the field is forced to None (meaningless outside
+    // non_renewing). 3-state: None = leave unchanged, Some(None) = clear,
+    // Some(Some(n)) = set.
+    let is_non_renewing = matches!(
+        existing.billing_type,
+        Some(herald_core::domain::billing::entities::BillingType::NonRenewing)
+    );
+    let service_duration_days = request
+        .service_duration_days
+        .unwrap_or(existing.service_duration_days);
+    let service_duration_days = if is_non_renewing {
+        match service_duration_days {
+            Some(days) if days >= 1 => Some(days),
+            _ => {
+                return Err(ApiError::bad_request(
+                    "service_duration_days is required and must be >= 1 for non_renewing billing_type"
+                        .to_string(),
+                ));
+            }
+        }
+    } else {
+        None
+    };
+
     // `None` = leave unchanged, `Some([])` = clear, `Some([...])` = replace.
     let quota_windows = match request.quota_windows {
         None => existing.quota_windows.clone(),
@@ -456,6 +479,7 @@ pub async fn update_entitlement_mapping(
         entitlement_key: request.entitlement_key.unwrap_or(existing.entitlement_key),
         billing_type: existing.billing_type,
         billing_period: existing.billing_period,
+        service_duration_days,
         points_per_period: request.points_per_period.or(existing.points_per_period),
         validity_days: request.validity_days.or(existing.validity_days),
         grant_on_subscribe: request
@@ -467,7 +491,6 @@ pub async fn update_entitlement_mapping(
         provider_product_info: existing.provider_product_info,
         quota_windows,
         // The single-PATCH path does not modify `granted_role_ids` (config is
-        // written via the batch endpoint — design §5.2); preserve the existing
         // value so the round-trip is stable.
         granted_role_ids: existing.granted_role_ids,
         synced_at: existing.synced_at,
@@ -673,7 +696,6 @@ pub async fn batch_update_entitlement_mappings(
                 u.mapping_id
             )));
         }
-        // Quota window config validation (design §4.2.2 / §4.4.3): window count
         // ≤ 8, window_seconds > 0, limit >= 0. Matches the points-domain
         // `FREE_PERIODIC_QUOTA_WINDOWS_MAX` cap and the `points_per_period < 0`
         // inline-check style. Invalid → 400.
@@ -732,7 +754,6 @@ pub async fn batch_update_entitlement_mappings(
             .collect(),
     };
 
-    // Realm-membership validation for `grantedRoleIds` (design §4.2.2 / §5.2):
     // any row carrying a non-empty `granted_role_ids` must reference roles that
     // all belong to this realm. Collect the union of provided role IDs across
     // rows (non-empty only) and validate once. Done in the handler (which has

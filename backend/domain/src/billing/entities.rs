@@ -20,6 +20,11 @@ pub struct Subscription {
     pub status: SubscriptionStatus,
     /// Herald entitlement key replacing plan_id + tier
     pub entitlement_key: String,
+    /// Billing type snapshot taken from the entitlement mapping at fulfillment
+    /// here: `Recurring` or `NonRenewing` (one-time purchases never create a
+    /// subscription row). Lets reconciliation/views/api-ext filter without
+    /// joining the mapping.
+    pub billing_type: BillingType,
     /// External price ID from the payment provider
     pub external_price_id: Option<String>,
     /// Credit bucket bound to this subscription (NOT NULL — resolved eagerly
@@ -193,6 +198,10 @@ pub struct EntitlementMapping {
     pub entitlement_key: String,
     pub billing_type: Option<BillingType>,
     pub billing_period: Option<String>,
+    /// Fixed service-period length (days) for non-renewing mappings
+    /// `None` otherwise. Kept semantically isolated from `validity_days`
+    /// (one-time credit expiry) — never overloaded by billing_type.
+    pub service_duration_days: Option<i64>,
     pub points_per_period: Option<i64>,
     pub grant_period_type: Option<String>,
     pub validity_days: Option<i64>,
@@ -200,17 +209,12 @@ pub struct EntitlementMapping {
     pub max_periods: Option<i64>,
     pub enabled: bool,
     pub provider_product_info: Option<serde_json::Value>,
-    /// Subscription quota window definition (design §4.3.2). `None`/empty ⟺
     /// no window-model grant (legacy `points_per_period` pool semantics apply).
     /// Non-empty ⟺ this mapping grants a window entitlement at subscription
     /// lifecycle time (snapshotted — A2). Reuses the points-domain `QuotaWindow`
-    /// (BE-D01) to avoid a duplicate definition.
     pub quota_windows: Option<Vec<crate::points::entities::QuotaWindow>>,
-    /// Role IDs auto-granted on payment success (paywall, design §4.3.2 / §5.2).
     /// Cross-cutting config dimension orthogonal to `billing_type` / points.
     /// Empty ⟺ no role grant (pure points / pure payment record). Non-empty ⟺
-    /// each role is granted to the buyer at fulfillment time (BE-D03). The
-    /// config is validated against realm membership at save time (BE-D02).
     pub granted_role_ids: Vec<Uuid>,
     pub synced_at: Option<chrono::DateTime<chrono::Utc>>,
     pub created_at: chrono::DateTime<chrono::Utc>,
@@ -236,6 +240,10 @@ impl EntitlementMapping {
 pub enum BillingType {
     Recurring,
     OneTime,
+    /// Non-renewing subscription: a single payment for a fixed service period
+    /// `"non_renewing"`; maps to billing_kind `"subscription"` (fulfilled as a
+    /// `Subscription` row with a fixed `current_period_end`).
+    NonRenewing,
 }
 
 impl BillingType {
@@ -243,6 +251,7 @@ impl BillingType {
         match self {
             BillingType::Recurring => "recurring",
             BillingType::OneTime => "one_time",
+            BillingType::NonRenewing => "non_renewing",
         }
     }
 }
@@ -254,6 +263,7 @@ impl std::str::FromStr for BillingType {
         match s.to_ascii_lowercase().as_str() {
             "recurring" => Ok(BillingType::Recurring),
             "one_time" => Ok(BillingType::OneTime),
+            "non_renewing" => Ok(BillingType::NonRenewing),
             _ => Err(CoreError::BadRequest(format!(
                 "Invalid billing type: {}",
                 s
@@ -274,4 +284,85 @@ pub struct FeatureFacts {
     pub has_invoice_seller_config: bool,
     pub has_invoices: bool,
     pub has_subscription_history: bool,
+}
+
+#[cfg(test)]
+mod billing_type_tests {
+    use super::*;
+
+    // The DB↔domain boundary stores `BillingType` as TEXT (postgres_repository
+    // round-trips via `as_str` / `FromStr`). These tests pin the wire shape so a
+    // rename of the enum variant or its serialized form does not silently break
+
+    #[test]
+    fn non_renewing_serializes_to_snake_case_string() {
+        assert_eq!(BillingType::NonRenewing.as_str(), "non_renewing");
+        // Existing variants keep their shape (regression guard).
+        assert_eq!(BillingType::Recurring.as_str(), "recurring");
+        assert_eq!(BillingType::OneTime.as_str(), "one_time");
+    }
+
+    #[test]
+    fn non_renewing_parses_from_string() {
+        assert_eq!(
+            "non_renewing".parse::<BillingType>().unwrap(),
+            BillingType::NonRenewing
+        );
+        // Case-insensitive (matches the existing to_ascii_lowercase normalization).
+        assert_eq!(
+            "Non_Renewing".parse::<BillingType>().unwrap(),
+            BillingType::NonRenewing
+        );
+    }
+
+    #[test]
+    fn unknown_billing_type_is_rejected_as_bad_request() {
+        let err = "lifetime".parse::<BillingType>().unwrap_err();
+        assert!(matches!(err, CoreError::BadRequest(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn billing_kind_classifies_non_renewing_as_subscription() {
+        // billing_kind drives provider metadata classification; non_renewing is
+        // fulfilled as a Subscription, so it must classify as "subscription"
+        let mapping = EntitlementMapping {
+            billing_type: Some(BillingType::NonRenewing),
+            // Only the fields read by billing_kind matter here.
+            ..all_fields_default_mapping()
+        };
+        assert_eq!(mapping.billing_kind(), "subscription");
+    }
+
+    /// Minimal `EntitlementMapping` with non-collection fields defaulted, for the
+    /// `billing_kind` test. Kept local so the test does not depend on a builder.
+    fn all_fields_default_mapping() -> EntitlementMapping {
+        EntitlementMapping {
+            id: Uuid::nil(),
+            realm_id: String::new(),
+            payment_provider: String::new(),
+            external_product_id: String::new(),
+            external_price_id: None,
+            bucket_id: Uuid::nil(),
+            entitlement_key: String::new(),
+            billing_type: None,
+            billing_period: None,
+            service_duration_days: None,
+            points_per_period: None,
+            grant_period_type: None,
+            validity_days: None,
+            grant_on_subscribe: false,
+            max_periods: None,
+            enabled: false,
+            provider_product_info: None,
+            quota_windows: None,
+            granted_role_ids: Vec::new(),
+            synced_at: None,
+            created_at: chrono::DateTime::parse_from_rfc3339("1970-01-01T00:00:00Z")
+                .unwrap()
+                .with_timezone(&chrono::Utc),
+            updated_at: chrono::DateTime::parse_from_rfc3339("1970-01-01T00:00:00Z")
+                .unwrap()
+                .with_timezone(&chrono::Utc),
+        }
+    }
 }

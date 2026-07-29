@@ -1,6 +1,3 @@
-// End-to-end tests for DELETE /api/user (BE-D07).
-// Covers design §6.1「账户注销」and US-RU-014.
-
 use crate::tests::helpers::auth_helpers::{attempt_reauth_verify, obtain_reauth_token};
 use crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm;
 use crate::tests::schema_test_context::SchemaTestContext as TestContext;
@@ -58,7 +55,6 @@ async fn seed_normal_user_with_password(
     .await
     .expect("Failed to create test profile");
 
-    // Seed consent records so the user can log in past the BE-D08 consent gate.
     // The helper resolves the current effective versions (realm custom if any,
     // otherwise the platform default templates) and writes one row per type.
     let tos_id = ctx
@@ -138,9 +134,9 @@ async fn seed_active_subscription(
         "INSERT INTO subscription
             (id, realm_id, user_id, client_app_id, external_subscription_id, external_product_id,
              payment_provider, status, entitlement_key, external_price_id,
-             current_period_start, current_period_end, cancel_at_period_end, created_at, updated_at, bucket_id)
+             current_period_start, current_period_end, cancel_at_period_end, created_at, updated_at, bucket_id, billing_type)
          VALUES ($1, $2, $3, $4, $5, $6, 'creem', $7, $8, $9,
-                 NOW(), NOW() + INTERVAL '30 days', false, NOW(), NOW(), $10)",
+                 NOW(), NOW() + INTERVAL '30 days', false, NOW(), NOW(), $10, 'recurring')",
     )
     .bind(sub_id)
     .bind(realm_id)
@@ -360,7 +356,6 @@ async fn protected_endpoint_status(ctx: &TestContext, token: &str) -> StatusCode
 
 /// ============================================================================
 /// User Story: US-RU-014
-/// Covers: Design §4.2.2 — wrong password returns 401, account unchanged
 /// ============================================================================
 #[test_context(TestContext)]
 #[tokio::test]
@@ -395,7 +390,6 @@ async fn test_delete_account_wrong_password_returns_401(ctx: &mut TestContext) {
 
 /// ============================================================================
 /// User Story: US-RU-014
-/// Covers: Design §4.2.2 / §5.2 — a second delete attempt on an already-deleted
 ///         account is rejected. Because self-delete revokes ALL sessions
 ///         (including the caller's), the reused token is invalidated by the
 ///         auth layer before the endpoint can observe the account state, so the
@@ -429,7 +423,6 @@ async fn test_delete_account_already_deleted_returns_401(ctx: &mut TestContext) 
 
 /// ============================================================================
 /// User Story: US-RU-014
-/// Covers: Design §5.2 — successful deletion anonymizes PII (status=4,
 ///         derived email, NULL password/username, empty provider_ids,
 ///         NULL profile nickname)
 /// ============================================================================
@@ -464,7 +457,6 @@ async fn test_delete_account_success_anonymizes_pii(ctx: &mut TestContext) {
 
 /// ============================================================================
 /// User Story: US-RU-014
-/// Covers: Design §5.2 — TOTP config and backup codes are wiped on deletion
 /// ============================================================================
 #[test_context(TestContext)]
 #[tokio::test]
@@ -494,7 +486,6 @@ async fn test_delete_account_deletes_totp(ctx: &mut TestContext) {
 
 /// ============================================================================
 /// User Story: US-RU-014
-/// Covers: Design §5.2 — in-effect subscriptions are cancelled immediately
 /// ============================================================================
 #[test_context(TestContext)]
 #[tokio::test]
@@ -525,7 +516,6 @@ async fn test_delete_account_cancels_active_subscriptions(ctx: &mut TestContext)
 
 /// ============================================================================
 /// User Story: US-RU-014
-/// Covers: Design §5.2/§6.3 — delete_user_sessions revokes the caller's
 ///         current session and any other session for the user
 /// ============================================================================
 #[test_context(TestContext)]
@@ -566,7 +556,6 @@ async fn test_delete_account_revokes_all_sessions(ctx: &mut TestContext) {
 
 /// ============================================================================
 /// User Story: US-RU-014
-/// Covers: Design §5.2 — user.delete audit event with method=self_service
 ///         and anonymized=true is recorded under Compliance category
 /// ============================================================================
 #[test_context(TestContext)]
@@ -598,7 +587,6 @@ async fn test_delete_account_writes_audit_self_service(ctx: &mut TestContext) {
 
 /// ============================================================================
 /// User Story: US-RU-014
-/// Covers: Design §3.1/§5.2 — deleted account cannot log back in
 /// ============================================================================
 #[test_context(TestContext)]
 #[tokio::test]
@@ -625,7 +613,6 @@ async fn test_login_fails_after_delete(ctx: &mut TestContext) {
 
 /// ============================================================================
 /// User Story: US-RU-014
-/// Covers: Design §5.2/§6.1 — one-time purchases are not refunded on
 ///         self-delete (no refund audit, no change to payment attempt)
 /// ============================================================================
 #[test_context(TestContext)]

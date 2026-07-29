@@ -1,5 +1,4 @@
 //! IAP receipt submission + Apple SSV V2 webhook + compensation skeletons
-//! (design support-iap §4.2.2 / §5.2 / §5.5 / §5.7).
 //!
 //! This module wires the `herald-infra-iap` Apple verifier / Google Developer
 //! API client into the unified purchase lifecycle:
@@ -7,21 +6,15 @@
 //! - [`submit_iap_receipt`] — the reverse-payment main path (Apple
 //!   `jwsRepresentation` / Google `purchaseToken` → verify → resolve mapping →
 //!   create attempt → fulfil + Google ack/consume in-tx → idempotent
-//!   `payment_event`). Design §5.2 algorithm (8 steps).
 //! - [`handle_apple_webhook`] — Apple App Store Server Notifications V2
 //!   receiver (always 200; JWS verification is the trust root; idempotency key
-//!   `originalTransactionId`). Design §5.5.
 //! - [`reprocess_apple_event`] / [`reprocess_google_event`] — **compilable
 //!   skeletons** with FIXED signatures consumed by `compensation.rs`. The full
-//!   "lookup + replay" implementation is BE-D04 (design §5.7); the signatures
-//!   here are the contract BE-D04 must preserve.
 //!
 //! # Credentials loading
 //!
-//! Design §5.2 references a `load_iap_credentials` step. There is no such
 //! shared helper in the codebase today, so this module owns a private
 //! [`load_iap_credentials`] implementation that reads `realm_config` rows of
-//! `config_type = "apple" / "google"` (BE-D02 ConfigType variants) via the
 //! existing `realm_config_repository.get_by_type`.
 
 use axum::{
@@ -29,7 +22,7 @@ use axum::{
     extract::{Extension, Path, State},
     http::StatusCode,
 };
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -61,7 +54,6 @@ use crate::webhook_subscription_helpers::{
 // DTOs
 // ============================================================================
 
-/// Request body for `POST /api/bill/{realmId}/purchase/iap/receipt` (design
 /// §4.2.2). Mobile App submits this after the store purchase completes.
 #[derive(Debug, Clone, Deserialize, Serialize, utoipa::ToSchema, validator::Validate)]
 #[serde(rename_all = "camelCase")]
@@ -80,7 +72,6 @@ pub struct IapReceiptRequest {
     pub target_id: Uuid,
 }
 
-/// Response for the IAP receipt endpoint (design §4.2.2). Independent of the
 /// Stripe/Creem branded `PaymentContext`.
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -113,7 +104,6 @@ fn validate_iap_target_type(target_type: &str) -> Result<(), validator::Validati
 }
 
 // ============================================================================
-// Credentials loading (private helper, design §5.2 step 3)
 // ============================================================================
 
 /// Loaded Apple credentials for a realm.
@@ -124,7 +114,6 @@ struct AppleCredentials {
     #[allow(dead_code)]
     key_id: String,
     /// `.p8` PEM bytes. Consumed by the Apple Server API client in the
-    /// notification compensation path (BE-D04); the receipt + SSV V2 paths
     /// only need the verifier (bundle_id + environment).
     #[allow(dead_code)]
     private_key_p8: Vec<u8>,
@@ -155,7 +144,6 @@ struct ServiceAccountJson {
 }
 
 /// Load IAP credentials for a realm+provider from `realm_config`
-/// (BE-D02 ConfigType variants `apple` / `google`). Returns
 /// `IapError::NotConfigured` when a required key is missing or empty.
 async fn load_apple_credentials(
     state: &AppState,
@@ -325,7 +313,6 @@ async fn record_idempotent_payment_event(
 }
 
 // ============================================================================
-// submit_iap_receipt — reverse-payment main path (design §5.2 algorithm)
 // ============================================================================
 
 #[utoipa::path(
@@ -413,7 +400,6 @@ pub async fn submit_iap_receipt(
 
             // Ownership: appAccountToken (a UUID set by the client) must match
             // the requesting user id. If absent we fail closed — the client is
-            // not trusted (design §1.1 / §4.5).
             if txn.app_account_token != Some(user_id) {
                 return Err(iap_error_to_api_error(IapError::OwnershipMismatch {
                     user_id,
@@ -429,6 +415,24 @@ pub async fn submit_iap_receipt(
                 return Err(ApiError::conflict("type_mismatch".to_string()));
             }
 
+            // §4.1 / §5.4). The store-side product type (Non-Consumable /
+            // Non-Renewing / Auto-Renewable) is a diagnostic only — the
+            // mapping.billing_type is the fulfillment routing authority. On
+            // mismatch we still fulfill per the mapping (the user already
+            // paid) but emit a warn log so config errors surface in ops and
+            // recon.
+            if let Some(ref txn_type) = txn.r#type
+                && !apple_txn_type_matches_billing_type(txn_type, &billing_type)
+            {
+                tracing::warn!(
+                    realm_id = %realm_id,
+                    product_id = %input.product_id,
+                    apple_product_type = ?txn_type,
+                    mapping_billing_type = %billing_type.as_str(),
+                    "Apple product type does not match mapping billing_type — fulfilling per mapping (user already paid)"
+                );
+            }
+
             txn.original_transaction_id
                 .unwrap_or_else(|| input.receipt.clone())
         }
@@ -440,7 +444,9 @@ pub async fn submit_iap_receipt(
 
             let external_txn_id = input.receipt.clone();
             match billing_type {
-                BillingType::Recurring => {
+                // Recurring and NonRenewing both verify through the
+                // as subscription base plans, not as one-time products.
+                BillingType::Recurring | BillingType::NonRenewing => {
                     let sub = developer
                         .get_subscription(auth, &creds.package_name, &input.receipt)
                         .await
@@ -505,7 +511,6 @@ pub async fn submit_iap_receipt(
 
     // Step 6: create the IAP payment attempt (Pending; provider_reference =
     // external_txn_id). Reuses resolve_target + row creation, skips
-    // build_payment_context (design §5.2).
     let target_type = input
         .target_type
         .parse::<PurchasableTarget>()
@@ -526,12 +531,18 @@ pub async fn submit_iap_receipt(
 
     // Step 7: fulfillment transaction. complete_succeeded marks the attempt
     // Succeeded and fulfils (one_time → TopupCredit, recurring → Subscription).
-    // For Google, ack/consume happens inside the same DB tx boundary (design
     // §6.3); a failure here rolls the attempt back to non-succeeded.
     if let Some((creds, developer, auth)) = google_ready.as_ref() {
-        google_ack_or_consume_in_tx(developer, auth, &creds.package_name, &input, &billing_type)
-            .await
-            .map_err(iap_error_to_api_error)?;
+        google_ack_or_consume_in_tx(
+            developer,
+            auth,
+            &creds.package_name,
+            &input,
+            &billing_type,
+            resolved.mapping.points_per_period,
+        )
+        .await
+        .map_err(iap_error_to_api_error)?;
     }
 
     let billing_type_str = billing_type.as_str().to_string();
@@ -591,31 +602,79 @@ pub async fn submit_iap_receipt(
     }))
 }
 
-/// Google acknowledge (recurring) / consume (one_time) executed inside the
-/// fulfillment boundary (design §6.3). A failure here aborts fulfillment so
-/// the attempt is NOT marked succeeded (the caller maps the error to 422).
-/// Receives the clients built during receipt verification (step 4) so the
+/// Google acknowledge (recurring/non_renewing) / consume-or-acknowledge
+/// marked succeeded (the caller maps the error to 422). Receives the clients
+/// built during receipt verification (step 4) so the
 /// `GoogleServiceAccountAuth` access-token cache is reused rather than
 /// re-granted.
+///
+/// points (`points_per_period > 0`) is a consumable points pack → `consume`;
+/// a one-time mapping with no points (buyout / non-consumable) →
+/// `acknowledge_product` so a later "restore purchases" can still see the
+/// owned entitlement.
 async fn google_ack_or_consume_in_tx(
     developer: &GoogleDeveloperClient,
     auth: &GoogleServiceAccountAuth,
     package_name: &str,
     input: &IapReceiptRequest,
     billing_type: &BillingType,
+    points_per_period: Option<i64>,
 ) -> Result<(), IapError> {
     match billing_type {
-        BillingType::Recurring => {
+        // Recurring and NonRenewing both use the subscriptionsv2 acknowledge
+        // One_time is the only consume path.
+        BillingType::Recurring | BillingType::NonRenewing => {
             developer
                 .acknowledge_subscription(auth, package_name, &input.receipt)
                 .await
         }
         BillingType::OneTime => {
-            developer
-                .consume_product(auth, package_name, &input.product_id, &input.receipt)
-                .await
+            match google_one_time_ack_action(points_per_period) {
+                GoogleOneTimeAckAction::Consume => {
+                    // Consumable points pack: consume so it can be re-purchased.
+                    developer
+                        .consume_product(auth, package_name, &input.product_id, &input.receipt)
+                        .await
+                }
+                GoogleOneTimeAckAction::Acknowledge => {
+                    // Buyout / non-consumable: acknowledge only (no consume) so
+                    // "restore purchases" still sees the owned entitlement and
+                    // Google does not auto-refund after 3 days.
+                    developer
+                        .acknowledge_product(auth, package_name, &input.product_id, &input.receipt)
+                        .await
+                }
+            }
         }
     }
+}
+
+/// Cross-check the Apple store-side `ProductType` against the mapping's
+/// semantically aligned. This is a *diagnostic only* — on mismatch the caller
+/// still fulfills per the mapping (the user already paid) and emits a warn log.
+///
+/// Alignment table:
+/// - `AutoRenewableSubscription` ↔ `Recurring`
+/// - `NonRenewingSubscription`    ↔ `NonRenewing`
+/// - `NonConsumable` / `Consumable` ↔ `OneTime`
+fn apple_txn_type_matches_billing_type(
+    txn_type: &herald_infra_iap::apple::models::ProductType,
+    billing_type: &BillingType,
+) -> bool {
+    use herald_infra_iap::apple::models::ProductType;
+    matches!(
+        (txn_type, billing_type),
+        (
+            ProductType::AutoRenewableSubscription,
+            BillingType::Recurring
+        ) | (
+            ProductType::NonRenewingSubscription,
+            BillingType::NonRenewing
+        ) | (
+            ProductType::NonConsumable | ProductType::Consumable,
+            BillingType::OneTime
+        )
+    )
 }
 
 /// Resolve the existing attempt status for an idempotent re-submission. The
@@ -650,7 +709,6 @@ async fn iap_response_for_existing_event(
         // The payment_event row does not carry the attempt id directly; surface
         // a zeroed id as a "already processed" marker so callers can distinguish
         // a fresh attempt from an idempotent hit. (A richer join lives in
-        // BE-D04's reconciliation work; the idempotent path is primarily a
         // short-circuit, not a status query.)
         attempt_id: event.id,
         status: if event.processed {
@@ -665,7 +723,6 @@ async fn iap_response_for_existing_event(
 }
 
 // ============================================================================
-// Apple SSV V2 webhook (design §5.5)
 // ============================================================================
 
 #[utoipa::path(
@@ -677,7 +734,6 @@ async fn iap_response_for_existing_event(
     ),
     responses(
         // Apple does not consume 4xx; we always return 200. Verification /
-        // processing failures are recorded as diagnostics only (design §5.5).
         (status = 200, description = "Notification received (always 200)")
     )
 )]
@@ -697,7 +753,6 @@ pub async fn handle_apple_webhook(
     StatusCode::OK
 }
 
-/// Decode + fulfil an Apple SSV V2 notification (design §5.5).
 async fn process_apple_notification(
     state: &AppState,
     realm_id: &str,
@@ -734,7 +789,6 @@ async fn process_apple_notification(
         )
     })?;
 
-    // Resolve the local mapping (no_mapping → fail loud; design §5.5).
     let resolved = resolve_entitlement_mapping(state, realm_id, "apple", &product_id, None, None)
         .await
         .map_err(|e| CoreError::BadRequest(e.to_string()))?;
@@ -744,6 +798,26 @@ async fn process_apple_notification(
             resolved.mapping.id
         ))
     })?;
+
+    // REFUND / REVOKE notifications are revocation events, not first-purchase
+    // the "create attempt + fulfill" path. They key their own payment_event
+    // idempotency on `{originalTransactionId}:{notificationType}` so they are
+    // NOT deduped against (and do NOT dedupe) the original purchase event.
+    use herald_infra_iap::apple::models::NotificationTypeV2;
+    if matches!(
+        notification.notification_type,
+        NotificationTypeV2::Refund | NotificationTypeV2::Revoke
+    ) {
+        return process_apple_refund_or_revoke(
+            state,
+            realm_id,
+            &original_transaction_id,
+            &billing_type,
+            &notification.notification_type,
+            &product_id,
+        )
+        .await;
+    }
 
     // Idempotency: payment_event keyed by originalTransactionId.
     if state
@@ -811,29 +885,213 @@ async fn process_apple_notification(
     Ok(())
 }
 
+/// payment_attempt (idempotency key = originalTransactionId), then routed by
+/// the mapping's `billing_type`:
+///
+/// `OneTime` revokes permanent payment roles (source_id = attempt.id) plus any
+/// topup credits granted from that attempt. `NonRenewing` sets the subscription
+/// to Expired and revokes its payment roles (source_id = subscription.id).
+/// `Recurring` is a no-op — recurring refund/cancel flows through the existing
+///
+/// Idempotency: a dedicated payment_event keyed on
+/// `{originalTransactionId}:{notificationType}` so a replay does not re-revoke
+/// (and is not deduped against the original purchase event).
+async fn process_apple_refund_or_revoke(
+    state: &AppState,
+    realm_id: &str,
+    original_transaction_id: &str,
+    billing_type: &BillingType,
+    notification_type: &herald_infra_iap::apple::models::NotificationTypeV2,
+    product_id: &str,
+) -> Result<(), CoreError> {
+    let notification_type_str =
+        serde_json::to_string(notification_type).unwrap_or_else(|_| "\"UNKNOWN\"".to_string());
+
+    // Idempotency on a per-notification-type key so a replay of this REFUND /
+    // REVOKE is a no-op, AND so it does not collide with the original purchase
+    // event (which is keyed on the bare originalTransactionId).
+    let synthetic_event_id = format!("apple:{original_transaction_id}:{notification_type_str}");
+    if state
+        .billing_repository
+        .find_payment_event_by_external_id(&synthetic_event_id, "apple")
+        .await?
+        .is_some()
+    {
+        tracing::info!(
+            realm_id = %realm_id,
+            original_transaction_id = %original_transaction_id,
+            notification_type = %notification_type_str,
+            "apple REFUND/REVOKE already processed -- skipping"
+        );
+        return Ok(());
+    }
+
+    // Look up the originating payment_attempt by provider_reference
+    // (= originalTransactionId, the idempotency key used at submit_iap_receipt).
+    let attempt = state
+        .payment_attempt_service
+        .get_payment_attempt_by_provider_reference("apple", original_transaction_id)
+        .await
+        .map_err(|e| {
+            CoreError::InternalServerError(format!(
+                "apple REFUND/REVOKE attempt lookup failed: {e}"
+            ))
+        })?;
+    let attempt = match attempt {
+        Some(a) => a,
+        None => {
+            tracing::warn!(
+                realm_id = %realm_id,
+                original_transaction_id = %original_transaction_id,
+                notification_type = %notification_type_str,
+                "apple REFUND/REVOKE: no payment_attempt found for originalTransactionId — \
+                 cannot revoke; recording event to prevent retry storms"
+            );
+            record_idempotent_payment_event(
+                state,
+                realm_id,
+                &synthetic_event_id,
+                "apple",
+                format!("apple_{notification_type_str}"),
+                serde_json::json!({
+                    "notificationType": notification_type_str,
+                    "productId": product_id,
+                    "outcome": "no_attempt_found",
+                }),
+            )
+            .await;
+            return Ok(());
+        }
+    };
+
+    match billing_type {
+        BillingType::OneTime => {
+            // Revoke topup credits granted from this attempt (source_id =
+            // attempt.id, same as the grant). Best-effort: a missing ledger
+            // (buyout mapping with no points) is a no-op.
+            if let Err(e) = state
+                .points_service
+                .revoke_points_by_source_id(
+                    realm_id,
+                    attempt.user_id,
+                    attempt.bucket_id,
+                    &attempt.id.to_string(),
+                    herald_core::domain::points::entities::RevocationType::RefundRevoke,
+                    format!("Apple {notification_type_str} for attempt {}", attempt.id),
+                )
+                .await
+            {
+                tracing::warn!(
+                    realm_id = %realm_id,
+                    attempt_id = %attempt.id,
+                    error = %e,
+                    "apple REFUND/REVOKE: topup points revoke failed (best-effort)"
+                );
+            }
+
+            crate::webhook_common::revoke_payment_roles_for_source(
+                state,
+                realm_id,
+                attempt.user_id,
+                &attempt.id.to_string(),
+            )
+            .await;
+        }
+        BillingType::NonRenewing => {
+            // Locate the non-renewing subscription by external_subscription_id
+            // (= originalTransactionId at fulfillment time) and mark it Expired.
+            let subscription = state
+                .billing_repository
+                .find_by_external_subscription_id(original_transaction_id, "apple")
+                .await?;
+            if let Some(mut sub) = subscription {
+                // Capture identity before `sub` is moved into update_subscription.
+                let sub_id = sub.id;
+                let sub_user_id = sub.user_id;
+                if sub.status != SubscriptionStatus::Expired {
+                    sub.status = SubscriptionStatus::Expired;
+                    sub.synced_at = Some(Utc::now());
+                    sub.updated_at = Utc::now();
+                    if let Err(e) = state.billing_repository.update_subscription(sub).await {
+                        tracing::warn!(
+                            realm_id = %realm_id,
+                            original_transaction_id = %original_transaction_id,
+                            error = %e,
+                            "apple REFUND/REVOKE: failed to set non-renewing subscription Expired (best-effort)"
+                        );
+                    }
+                }
+                // Revoke the subscription's payment roles regardless of the
+                // update outcome (source_id = subscription.id).
+                crate::webhook_common::revoke_payment_roles_for_source(
+                    state,
+                    realm_id,
+                    sub_user_id,
+                    &sub_id.to_string(),
+                )
+                .await;
+            } else {
+                tracing::warn!(
+                    realm_id = %realm_id,
+                    original_transaction_id = %original_transaction_id,
+                    "apple REFUND/REVOKE: no non-renewing subscription found; revoking roles by attempt only"
+                );
+                crate::webhook_common::revoke_payment_roles_for_source(
+                    state,
+                    realm_id,
+                    attempt.user_id,
+                    &attempt.id.to_string(),
+                )
+                .await;
+            }
+        }
+        BillingType::Recurring => {
+            // "Recurring => 维持现有行为"). Recurring refund/cancel flows through
+            // the existing subscription sync path. Log and treat as processed.
+            tracing::info!(
+                realm_id = %realm_id,
+                original_transaction_id = %original_transaction_id,
+                notification_type = %notification_type_str,
+                "apple REFUND/REVOKE for recurring billing_type — no BE-D02 action (recurring flows through existing sync path)"
+            );
+        }
+    }
+
+    // Record the synthetic payment_event so a replay is deduped.
+    record_idempotent_payment_event(
+        state,
+        realm_id,
+        &synthetic_event_id,
+        "apple",
+        format!("apple_{notification_type_str}"),
+        serde_json::json!({
+            "notificationType": notification_type_str,
+            "productId": product_id,
+            "originalTransactionId": original_transaction_id,
+        }),
+    )
+    .await;
+
+    Ok(())
+}
+
 // ============================================================================
-// Compensation implementations (design §5.7) — FIXED signatures, BE-D04 bodies
 // ============================================================================
 //
 // The signatures below are the frozen contract that `compensation.rs` (via
 // `WebhookEventProcessorImpl::reprocess_event`) and the worker
-// `iap_reconciliation_job.rs` both depend on. BE-D04 replaces the internal
 // skeleton with the full "lookup + replay" implementation; the argument list
 // and return type MUST NOT change.
 //
-// Compensation model difference vs Stripe/Creem (design §5.7): Stripe/Creem
 // replay provider event *streams* (events API). Apple/Google replay *current
 // state* fetched from the provider — the job constructs a synthetic payload
 // from the provider API response and hands it here. The same
 // `payment_event`-based idempotency guards dedup; the domain handling reuses
-// the BE-D03 main-path functions (`resolve_entitlement_mapping`,
 // `fulfill_provider_event`, `sync_subscription`).
 
-/// Reprocess an Apple event constructed by the reconciliation job (design
 /// §5.7).
 ///
 /// **SIGNATURE CONTRACT**: `compensation.rs` and the worker reconciliation job
-/// both depend on this exact signature. BE-D04 replaces the internal body with
 /// the full "lookup + replay" implementation; the signature MUST NOT change.
 ///
 /// The worker job hands a payload of shape `{ "signedPayload": <JWS> }`
@@ -842,7 +1100,6 @@ async fn process_apple_notification(
 /// same path as a live Apple SSV V2 webhook (`process_apple_notification`),
 /// which is already idempotent on `originalTransactionId`. This keeps
 /// compensation byte-for-byte consistent with the live notification path
-/// (design §5.7: "reuse same domain handling + DB idempotency").
 pub async fn reprocess_apple_event(
     state: AppState,
     realm_id: String,
@@ -865,10 +1122,8 @@ pub async fn reprocess_apple_event(
     process_apple_notification(&state, &realm_id, signed_payload).await
 }
 
-/// Reprocess a Google event constructed by the reconciliation job (design
 /// §5.7).
 ///
-/// **SIGNATURE CONTRACT**: same as [`reprocess_apple_event`] — BE-D04 owns the
 /// internal implementation; the signature is frozen here.
 ///
 /// The worker job hands a payload of shape
@@ -953,7 +1208,6 @@ pub async fn reprocess_google_event(
 
     // Domain replay. For a state transition the mapped heraldStatus lives on
     // the payload; for a refund we transition to the Canceled state (points
-    // clawback is handled by the points ledger keyed on subscription; design
     // §4.3.1 "refund does not change subscription status, only triggers points
     // clawback" — here we record the lifecycle change; the clawback itself
     // runs via the points service when the subscription reaches a terminal
@@ -984,41 +1238,48 @@ pub async fn reprocess_google_event(
         .map(|dt| dt.with_timezone(&Utc));
 
     // Resolve the entitlement mapping so we know the bucket_id / entitlement_key
-    // to drive sync_subscription. A missing mapping is a fail-loud skip (design
     // §5.5): the admin must fix the mapping, and the next sweep will retry.
     let resolved =
         resolve_entitlement_mapping(&state, &realm_id, "google", product_id, None, None).await?;
 
-    // Compute the cancel flags before moving `new_status` into the input
-    // struct (SubscriptionStatus is not Copy).
-    let is_cancelled = matches!(new_status, SubscriptionStatus::Canceled);
-    let is_scheduled_cancel = matches!(
-        new_status,
-        SubscriptionStatus::ScheduledCancel | SubscriptionStatus::Canceled
-    );
-
-    let _ = sync_subscription(
-        &state,
-        SyncSubscriptionInput {
-            provider: "google",
-            realm_id: realm_id.clone(),
-            user_id: None,
-            external_subscription_id: purchase_token.to_string(),
-            external_product_id: product_id.to_string(),
-            client_app_id: None,
-            entitlement_key: resolved.entitlement_key.clone(),
-            bucket_id: resolved.mapping.bucket_id,
-            external_price_id: None,
-            provider_metadata: Some(payload.clone()),
-            status: new_status,
-            current_period_start: None,
-            current_period_end: expiry_time,
-            cancel_at_period_end: is_scheduled_cancel,
-            cancel_at: if is_cancelled { Some(Utc::now()) } else { None },
-            existing_subscription: None,
-        },
-    )
-    .await?;
+    // mapping's billing_type is the fulfillment routing authority. OneTime
+    // purchases (consumable points packs and buyouts) never create a
+    // subscription row, so they are handled by an attempt-keyed revoke.
+    // NonRenewing creates a subscription row and is expired in place. Recurring
+    // continues to use the subscription sync path (unchanged).
+    let mapping_billing_type = resolved.mapping.billing_type;
+    match mapping_billing_type {
+        Some(BillingType::OneTime) => {
+            reprocess_google_one_time_revoke(&state, &realm_id, purchase_token, &event_type)
+                .await?;
+        }
+        Some(BillingType::NonRenewing) => {
+            reprocess_google_non_renewing_revoke(
+                &state,
+                &realm_id,
+                purchase_token,
+                &event_type,
+                &resolved.entitlement_key,
+            )
+            .await?;
+        }
+        _ => {
+            // Recurring (or mapping with no billing_type — falls back to the
+            // recurring subscription sync path for backwards compatibility).
+            reprocess_google_recurring_sync(
+                &state,
+                &realm_id,
+                purchase_token,
+                product_id,
+                &resolved.entitlement_key,
+                resolved.mapping.bucket_id,
+                new_status,
+                expiry_time,
+                payload.clone(),
+            )
+            .await?;
+        }
+    }
 
     // Mark the synthetic payment_event processed so the next sweep dedups it.
     if let Err(e) = state
@@ -1035,6 +1296,186 @@ pub async fn reprocess_google_event(
         );
     }
 
+    Ok(())
+}
+
+/// Google one-time revocation (voided purchase / refund): revoke topup credits
+/// and permanent payment roles keyed on the originating payment_attempt
+/// ledger is a no-op, not an error.
+async fn reprocess_google_one_time_revoke(
+    state: &AppState,
+    realm_id: &str,
+    purchase_token: &str,
+    event_type: &str,
+) -> Result<(), CoreError> {
+    // The Google purchaseToken is the provider_reference written at
+    // create_iap_payment_attempt time.
+    let attempt = state
+        .payment_attempt_service
+        .get_payment_attempt_by_provider_reference("google", purchase_token)
+        .await
+        .map_err(|e| {
+            CoreError::InternalServerError(format!(
+                "google one-time revoke: attempt lookup failed: {e}"
+            ))
+        })?;
+    let attempt = match attempt {
+        Some(a) => a,
+        None => {
+            tracing::warn!(
+                realm_id = %realm_id,
+                purchase_token = %purchase_token,
+                event_type = %event_type,
+                "google one-time revoke: no payment_attempt found — nothing to revoke"
+            );
+            return Ok(());
+        }
+    };
+
+    // Revoke topup credits (source_id = attempt.id). Best-effort.
+    if let Err(e) = state
+        .points_service
+        .revoke_points_by_source_id(
+            realm_id,
+            attempt.user_id,
+            attempt.bucket_id,
+            &attempt.id.to_string(),
+            herald_core::domain::points::entities::RevocationType::RefundRevoke,
+            format!(
+                "Google {event_type} voided/refund for attempt {}",
+                attempt.id
+            ),
+        )
+        .await
+    {
+        tracing::warn!(
+            realm_id = %realm_id,
+            attempt_id = %attempt.id,
+            error = %e,
+            "google one-time revoke: points revoke failed (best-effort)"
+        );
+    }
+
+    crate::webhook_common::revoke_payment_roles_for_source(
+        state,
+        realm_id,
+        attempt.user_id,
+        &attempt.id.to_string(),
+    )
+    .await;
+
+    Ok(())
+}
+
+/// Google non-renewing revocation (EXPIRED from polling, or voided/refund):
+/// set the subscription to Expired and revoke its payment roles. Idempotent.
+async fn reprocess_google_non_renewing_revoke(
+    state: &AppState,
+    realm_id: &str,
+    purchase_token: &str,
+    event_type: &str,
+    entitlement_key: &str,
+) -> Result<(), CoreError> {
+    let subscription = state
+        .billing_repository
+        .find_by_external_subscription_id(purchase_token, "google")
+        .await?;
+    let subscription = match subscription {
+        Some(s) => s,
+        None => {
+            tracing::warn!(
+                realm_id = %realm_id,
+                purchase_token = %purchase_token,
+                event_type = %event_type,
+                entitlement_key = %entitlement_key,
+                "google non-renewing revoke: no subscription found — nothing to expire/revoke"
+            );
+            return Ok(());
+        }
+    };
+
+    // Capture identity before the subscription may be moved into update_subscription.
+    let subscription_id = subscription.id;
+    let subscription_user_id = subscription.user_id;
+    if subscription.status != SubscriptionStatus::Expired {
+        let mut sub = subscription;
+        sub.status = SubscriptionStatus::Expired;
+        sub.synced_at = Some(Utc::now());
+        sub.updated_at = Utc::now();
+        if let Err(e) = state.billing_repository.update_subscription(sub).await {
+            tracing::warn!(
+                realm_id = %realm_id,
+                purchase_token = %purchase_token,
+                error = %e,
+                "google non-renewing revoke: failed to set subscription Expired (best-effort)"
+            );
+        }
+    } else {
+        tracing::info!(
+            realm_id = %realm_id,
+            purchase_token = %purchase_token,
+            subscription_id = %subscription_id,
+            "google non-renewing revoke: subscription already Expired"
+        );
+    }
+
+    // Revoke the subscription's payment roles (source_id = subscription.id).
+    crate::webhook_common::revoke_payment_roles_for_source(
+        state,
+        realm_id,
+        subscription_user_id,
+        &subscription_id.to_string(),
+    )
+    .await;
+
+    Ok(())
+}
+
+/// Google recurring state transition: maintain the existing sync_subscription
+/// Pulled out of the main `reprocess_google_event` body so the per-billing-type
+/// routing reads top-down; the sync call itself is byte-equivalent to the
+#[allow(clippy::too_many_arguments)]
+async fn reprocess_google_recurring_sync(
+    state: &AppState,
+    realm_id: &str,
+    purchase_token: &str,
+    product_id: &str,
+    entitlement_key: &str,
+    bucket_id: uuid::Uuid,
+    new_status: SubscriptionStatus,
+    expiry_time: Option<DateTime<Utc>>,
+    payload: Value,
+) -> Result<(), CoreError> {
+    // Compute the cancel flags before moving `new_status` into the input
+    // struct (SubscriptionStatus is not Copy).
+    let is_cancelled = matches!(new_status, SubscriptionStatus::Canceled);
+    let is_scheduled_cancel = matches!(
+        new_status,
+        SubscriptionStatus::ScheduledCancel | SubscriptionStatus::Canceled
+    );
+
+    sync_subscription(
+        state,
+        SyncSubscriptionInput {
+            provider: "google",
+            realm_id: realm_id.to_string(),
+            user_id: None,
+            external_subscription_id: purchase_token.to_string(),
+            external_product_id: product_id.to_string(),
+            client_app_id: None,
+            entitlement_key: entitlement_key.to_string(),
+            bucket_id,
+            external_price_id: None,
+            provider_metadata: Some(payload),
+            status: new_status,
+            current_period_start: None,
+            current_period_end: expiry_time,
+            cancel_at_period_end: is_scheduled_cancel,
+            cancel_at: if is_cancelled { Some(Utc::now()) } else { None },
+            existing_subscription: None,
+        },
+    )
+    .await?;
     Ok(())
 }
 
@@ -1073,5 +1514,108 @@ fn iap_error_to_core_error(e: IapError) -> CoreError {
         IapError::ServiceAccountAuth(_) | IapError::Transport(_) | IapError::Json(_) => {
             CoreError::InternalServerError(e.to_string())
         }
+    }
+}
+
+/// pure function so the routing rule is unit-testable without standing up the
+/// async `GoogleDeveloperClient` mock fixture. A one-time mapping that
+/// configures points (`points_per_period > 0`) is a consumable points pack and
+/// must be consumed so it can be re-purchased; a points-less one-time mapping
+/// (buyout / non-consumable) must be acknowledged only so "restore purchases"
+/// still sees the entitlement and Google does not auto-refund after 3 days.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GoogleOneTimeAckAction {
+    /// Consumable points pack — `purchases.products.consume`.
+    Consume,
+    /// Buyout / non-consumable — `purchases.products.acknowledge`.
+    Acknowledge,
+}
+
+fn google_one_time_ack_action(points_per_period: Option<i64>) -> GoogleOneTimeAckAction {
+    if points_per_period.unwrap_or(0) > 0 {
+        GoogleOneTimeAckAction::Consume
+    } else {
+        GoogleOneTimeAckAction::Acknowledge
+    }
+}
+
+// =============================================================================
+// Unit Tests
+// =============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use herald_infra_iap::apple::models::ProductType;
+
+    // Google purchase is consumed (points pack) or merely acknowledged
+    // (buyout). Reversing this would either block re-purchase of points packs
+    #[test]
+    fn google_one_time_ack_action_consumes_when_points_configured() {
+        // Points pack (consumable): must consume so it can be re-purchased.
+        assert_eq!(
+            google_one_time_ack_action(Some(100)),
+            GoogleOneTimeAckAction::Consume
+        );
+        assert_eq!(
+            google_one_time_ack_action(Some(1)),
+            GoogleOneTimeAckAction::Consume
+        );
+    }
+
+    #[test]
+    fn google_one_time_ack_action_acknowledges_when_no_points() {
+        // Buyout / non-consumable: acknowledge only.
+        assert_eq!(
+            google_one_time_ack_action(Some(0)),
+            GoogleOneTimeAckAction::Acknowledge
+        );
+        assert_eq!(
+            google_one_time_ack_action(None),
+            GoogleOneTimeAckAction::Acknowledge
+        );
+    }
+
+    // is a *diagnostic only* (mismatch does not block fulfillment), but getting
+    // the alignment table wrong would either suppress a real config-error
+    // signal or spam false-positive warns.
+    #[test]
+    fn apple_txn_type_matches_billing_type_aligned_pairs() {
+        assert!(apple_txn_type_matches_billing_type(
+            &ProductType::AutoRenewableSubscription,
+            &BillingType::Recurring
+        ));
+        assert!(apple_txn_type_matches_billing_type(
+            &ProductType::NonRenewingSubscription,
+            &BillingType::NonRenewing
+        ));
+        assert!(apple_txn_type_matches_billing_type(
+            &ProductType::NonConsumable,
+            &BillingType::OneTime
+        ));
+        assert!(apple_txn_type_matches_billing_type(
+            &ProductType::Consumable,
+            &BillingType::OneTime
+        ));
+    }
+
+    #[test]
+    fn apple_txn_type_matches_billing_type_mismatched_pairs() {
+        // Non-consumable against a recurring mapping is a config error
+        // (non-consumable products are not auto-renewable).
+        assert!(!apple_txn_type_matches_billing_type(
+            &ProductType::NonConsumable,
+            &BillingType::Recurring
+        ));
+        // Auto-renewable against a one_time mapping is a config error.
+        assert!(!apple_txn_type_matches_billing_type(
+            &ProductType::AutoRenewableSubscription,
+            &BillingType::OneTime
+        ));
+        // Non-renewing subscription against recurring mapping is a config error.
+        assert!(!apple_txn_type_matches_billing_type(
+            &ProductType::NonRenewingSubscription,
+            &BillingType::Recurring
+        ));
     }
 }

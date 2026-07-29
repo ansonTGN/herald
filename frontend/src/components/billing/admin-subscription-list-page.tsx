@@ -78,6 +78,17 @@ function formatStatusLabel(status: string): string {
   return labels[status] ?? status
 }
 
+function formatBillingTypeLabel(billingType: string): string {
+  switch (billingType) {
+    case 'recurring':
+      return m['billing.billing_type_recurring']()
+    case 'non_renewing':
+      return m['billing.billing_type_non_renewing']()
+    default:
+      return billingType
+  }
+}
+
 interface AdminSubscriptionListPageProps {
   realmId: string
   search: {
@@ -203,6 +214,8 @@ export function AdminSubscriptionListPage({ realmId, search }: AdminSubscription
                     <TableHead>{m['billing.subscription_payment_provider']()}</TableHead>
                     <TableHead>{m['billing.subscription_external_price_id']()}</TableHead>
                     <TableHead>{m['billing.subscription_synced_at']()}</TableHead>
+                    <TableHead>{m['billing.subscription_billing_type']()}</TableHead>
+                    <TableHead>{m['billing.subscription_service_period_end']()}</TableHead>
                     <TableHead>{m['common.status']()}</TableHead>
                     <TableHead>Client App</TableHead>
                   </TableRow>
@@ -241,6 +254,14 @@ function SubscriptionRow({ subscription }: { subscription: SubscriptionListItemR
       <TableCell className="font-mono text-sm">{subscription.externalPriceId ?? '---'}</TableCell>
       <TableCell className="text-sm">
         {subscription.syncedAt ? format(new Date(subscription.syncedAt), 'PP') : '---'}
+      </TableCell>
+      <TableCell className="text-sm" data-testid={`billing-type-${subscription.id}`}>
+        {formatBillingTypeLabel(subscription.billingType)}
+      </TableCell>
+      <TableCell className="text-sm" data-testid={`service-period-end-${subscription.id}`}>
+        {subscription.billingType === 'non_renewing' && subscription.currentPeriodEnd
+          ? format(new Date(subscription.currentPeriodEnd), 'PP')
+          : '---'}
       </TableCell>
       <TableCell>
         <span

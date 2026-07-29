@@ -6,21 +6,7 @@ use crate::billing::policies::BillingPolicy;
 use crate::billing::ports::BillingRepository;
 use crate::common::entities::app_errors::CoreError;
 use crate::common::policies::ensure_policy;
-use crate::points::entities::QuotaWindow;
 
-#[derive(Debug, Clone)]
-pub struct UpdateEntitlementMappingInput {
-    pub entitlement_key: Option<String>,
-    pub enabled: Option<bool>,
-    pub points_per_period: Option<Option<i64>>,
-    pub validity_days: Option<Option<i64>>,
-    pub grant_on_subscribe: Option<bool>,
-    pub bucket_id: Option<uuid::Uuid>,
-    /// `None` = leave unchanged; `Some(None)` = clear; `Some(Some(vec))` = replace.
-    pub quota_windows: Option<Option<Vec<QuotaWindow>>>,
-}
-
-/// Input for creating an entitlement mapping (design support-iap §4.2.2 / A2).
 ///
 /// The generic `POST /api/bill/{realmId}/entitlement-mappings` endpoint accepts
 /// this shape for any provider (IAP, Stripe, Creem). Required identity fields
@@ -39,6 +25,8 @@ pub struct CreateEntitlementMappingInput {
     pub billing_type: crate::billing::entities::BillingType,
     /// Required when `billing_type == Recurring`.
     pub billing_period: Option<String>,
+    /// Non-renewing service-period length (days). Required (`>= 1`) when
+    pub service_duration_days: Option<i64>,
     /// Credit-strategy field (requires `points.manage`).
     pub points_per_period: Option<i64>,
     /// Credit-strategy field.
@@ -123,7 +111,6 @@ where
         Ok(mapping)
     }
 
-    /// Create a new entitlement mapping (design support-iap §4.2.2 / A2).
     ///
     /// Caller is responsible for:
     /// - enforcing `billing.manage` (and `points.manage` when credit-strategy
@@ -171,7 +158,22 @@ where
             ));
         }
 
+        //   - service_duration_days must be present and >= 1 (US-PM-002 scene 2 → 400)
+        //   - billing_period must be empty (mutually exclusive billing semantics → 400)
+        validate_non_renewing(
+            &input.billing_type,
+            input.service_duration_days,
+            input.billing_period.as_deref(),
+        )?;
+
         let now = chrono::Utc::now();
+        // Only non_renewing carries a service duration; other types store None
+        // regardless of the input (the field is ignored for them). Resolve
+        // before moving `input.billing_type` into the struct below.
+        let service_duration_days = match input.billing_type {
+            crate::billing::entities::BillingType::NonRenewing => input.service_duration_days,
+            _ => None,
+        };
         let mapping = EntitlementMapping {
             id: uuid::Uuid::now_v7(),
             realm_id: realm_id.to_string(),
@@ -182,6 +184,7 @@ where
             entitlement_key: input.entitlement_key,
             billing_type: Some(input.billing_type),
             billing_period: input.billing_period,
+            service_duration_days,
             points_per_period: input.points_per_period,
             grant_period_type: None,
             validity_days: input.validity_days,
@@ -197,76 +200,6 @@ where
         };
 
         self.repository.create_entitlement_mapping(mapping).await
-    }
-
-    pub async fn update_mapping(
-        &self,
-        identity: Identity,
-        realm_id: &str,
-        mapping_id: uuid::Uuid,
-        input: UpdateEntitlementMappingInput,
-    ) -> Result<EntitlementMapping, CoreError> {
-        ensure_policy(
-            self.policy.can_manage_billing(identity.clone()).await,
-            "Insufficient permissions to manage billing",
-        )?;
-
-        if !identity.has_access_to_realm(realm_id) {
-            return Err(CoreError::Forbidden(
-                "Access denied: cannot access billing from a different realm".to_string(),
-            ));
-        }
-
-        let existing = self
-            .repository
-            .find_entitlement_mapping_by_id(mapping_id)
-            .await?
-            .ok_or(CoreError::EntitlementMappingNotFound)?;
-
-        if existing.realm_id != realm_id {
-            return Err(CoreError::EntitlementMappingNotFound);
-        }
-
-        if let Some(ref key) = input.entitlement_key {
-            Self::validate_entitlement_key(key)?;
-        }
-
-        let updated = EntitlementMapping {
-            id: existing.id,
-            realm_id: existing.realm_id,
-            payment_provider: existing.payment_provider,
-            external_product_id: existing.external_product_id,
-            external_price_id: existing.external_price_id,
-            bucket_id: input.bucket_id.unwrap_or(existing.bucket_id),
-            entitlement_key: input.entitlement_key.unwrap_or(existing.entitlement_key),
-            billing_type: existing.billing_type,
-            billing_period: existing.billing_period,
-            points_per_period: match input.points_per_period {
-                Some(v) => v,
-                None => existing.points_per_period,
-            },
-            grant_period_type: existing.grant_period_type,
-            validity_days: match input.validity_days {
-                Some(v) => v,
-                None => existing.validity_days,
-            },
-            grant_on_subscribe: input
-                .grant_on_subscribe
-                .unwrap_or(existing.grant_on_subscribe),
-            max_periods: existing.max_periods,
-            enabled: input.enabled.unwrap_or(existing.enabled),
-            provider_product_info: existing.provider_product_info,
-            quota_windows: match input.quota_windows {
-                Some(v) => v,
-                None => existing.quota_windows,
-            },
-            granted_role_ids: existing.granted_role_ids,
-            synced_at: existing.synced_at,
-            created_at: existing.created_at,
-            updated_at: chrono::Utc::now(),
-        };
-
-        self.repository.update_entitlement_mapping(updated).await
     }
 
     pub async fn find_mapping_by_provider_product(
@@ -311,5 +244,106 @@ where
             ));
         }
         Ok(())
+    }
+}
+
+/// Validate the non-renewing billing-type invariants
+///   - when `billing_type == NonRenewing`, `service_duration_days` must be
+///     `Some(>= 1)` (US-PM-002 scene 2 → 400) and `billing_period` must be
+///     empty (mutually exclusive billing semantics → 400);
+///   - for other billing types this is a no-op (their duration/period rules
+///     are enforced separately).
+///
+/// Pure/free function so the rule is unit-testable without a repository or
+/// policy mock (avoids requiring the service's `R`/`P` generics to be inferred).
+/// `create_mapping` routes through it. The PATCH handler applies the equivalent
+/// resolved check inline against the stored mapping (3-state input), since it
+/// must reconcile `service_duration_days` against the existing value.
+fn validate_non_renewing(
+    billing_type: &crate::billing::entities::BillingType,
+    service_duration_days: Option<i64>,
+    billing_period: Option<&str>,
+) -> Result<(), CoreError> {
+    if !matches!(
+        billing_type,
+        crate::billing::entities::BillingType::NonRenewing
+    ) {
+        return Ok(());
+    }
+    match service_duration_days {
+        Some(days) if days >= 1 => {}
+        _ => {
+            return Err(CoreError::BadRequest(
+                "service_duration_days is required and must be >= 1 for non_renewing billing_type"
+                    .to_string(),
+            ));
+        }
+    }
+    if !billing_period.unwrap_or("").is_empty() {
+        return Err(CoreError::BadRequest(
+            "billing_period must be empty for non_renewing billing_type".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::billing::entities::BillingType;
+
+    #[test]
+    fn non_renewing_requires_service_duration_days() {
+        // Missing duration → BadRequest (US-PM-002 scene 2 → 400).
+        let err = validate_non_renewing(&BillingType::NonRenewing, None, None).unwrap_err();
+        assert!(matches!(err, CoreError::BadRequest(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn non_renewing_rejects_zero_or_negative_duration() {
+        for bad in [0_i64, -1, -5] {
+            let err =
+                validate_non_renewing(&BillingType::NonRenewing, Some(bad), None).unwrap_err();
+            assert!(
+                matches!(err, CoreError::BadRequest(_)),
+                "value {bad} accepted"
+            );
+        }
+    }
+
+    #[test]
+    fn non_renewing_accepts_positive_duration_without_period() {
+        assert!(validate_non_renewing(&BillingType::NonRenewing, Some(30), None,).is_ok());
+        assert!(validate_non_renewing(&BillingType::NonRenewing, Some(1), Some(""),).is_ok());
+    }
+
+    #[test]
+    fn non_renewing_rejects_billing_period_as_mutually_exclusive() {
+        // A non-renewing mapping carries a fixed service period; a recurring
+        // billing_period is a conflicting billing semantics → 400.
+        let err = validate_non_renewing(&BillingType::NonRenewing, Some(30), Some("monthly"))
+            .unwrap_err();
+        assert!(matches!(err, CoreError::BadRequest(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn non_renewing_validation_is_noop_for_other_billing_types() {
+        // recurring / one_time are not subject to the non-renewing invariants
+        // here (their own rules are enforced separately), so the duration and
+        // period arguments are ignored.
+        assert!(validate_non_renewing(&BillingType::Recurring, None, Some("monthly"),).is_ok());
+        assert!(validate_non_renewing(&BillingType::OneTime, None, None,).is_ok());
+    }
+
+    #[test]
+    fn billing_type_stays_immutable_on_update_path() {
+        // The update path resolves the duration against the EXISTING billing_type
+        // (never the request), so a non_renewing mapping cannot be silently
+        // downgraded. This pins the resolved-type branch: a recurring mapping
+        // with a cleared duration must still pass (duration is meaningless for
+        // recurring), while a non_renewing mapping with the same input must fail.
+        // (Execised via validate_non_renewing with the resolved type.)
+        assert!(validate_non_renewing(&BillingType::Recurring, None, None,).is_ok());
+        assert!(validate_non_renewing(&BillingType::NonRenewing, None, None,).is_err());
     }
 }

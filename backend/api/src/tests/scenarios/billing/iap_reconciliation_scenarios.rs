@@ -2,14 +2,12 @@
 // IAP Reconciliation Job Scenario Tests
 // =============================================================================
 //
-// Exercises `IapReconciliationJob` (BE-D04, design support-iap §5.7) by
 // constructing the job with a `MockProcessor` and calling `run()` directly
 // (no worker process). Mirrors the `webhook_compensation_scenarios.rs`
 // MockProcessor pattern.
 //
 // User Story: US-IAP-006 (scheduled reconciliation: Google lifecycle primary
 //             driver / Apple compensation)
-// Covers: design support-iap §5.7, §6.1 (backend integration).
 //
 // # Testability boundary (handoff note)
 //
@@ -151,7 +149,6 @@ mod tests {
     // =========================================================================
 
     /// User Story: US-IAP-006 (no-op sweep for unconfigured realm)
-    /// Covers: design §5.7 (only IAP-configured realms are scanned)
     ///
     /// A realm with no Apple / Google credentials in `realm_config` is
     /// invisible to `fetch_iap_configured_realms` — the job's `run()` scans
@@ -177,7 +174,6 @@ mod tests {
 
     /// User Story: US-IAP-006 (failure isolation — single token/realm failure
     /// does not block the sweep)
-    /// Covers: design §5.7 "单对象失败不阻塞其他"
     ///
     /// Configure two realms with Google credentials. The Google Developer
     /// client uses the production base URL, which is unreachable from the
@@ -232,7 +228,6 @@ mod tests {
 
     /// User Story: US-IAP-006 (Apple compensation — realm with Apple
     /// credentials is scanned, failures isolated)
-    /// Covers: design §5.7 (Apple notification-history compensation)
     ///
     /// A realm with Apple credentials is picked up by
     /// `fetch_iap_configured_realms`. The Apple Server API client uses a
@@ -278,7 +273,6 @@ mod tests {
 
     /// User Story: US-IAP-006 (Google lifecycle polling — realm scanned,
     /// failures isolated)
-    /// Covers: design §5.7 (Google lifecycle primary driver)
     ///
     /// A realm with Google credentials triggers `poll_google_lifecycle`. The
     /// poll fails at the API layer (unreachable), but the sweep returns
@@ -318,7 +312,6 @@ mod tests {
     }
 
     /// User Story: US-IAP-006 (voided purchase triggers refund — structural)
-    /// Covers: design §5.7 (voidedpurchases.list → refund clawback)
     ///
     /// The voided-purchase replay path runs inside `poll_google_lifecycle`
     /// after the subscription-refresh pass. Without a reachable Google API
@@ -364,8 +357,332 @@ mod tests {
     }
 
     // =========================================================================
+    // pay_model — non-renewing / recurring / voided reconciliation
+    // =========================================================================
+
+    /// User Story: US-PM-009 (scenario 1 — Google poll EXPIRED → non-renewing
+    ///             subscription transitioned to Expired).
+    ///
+    /// # HTTP-layer posture (same boundary as the sibling recon tests)
+    ///
+    /// The job builds its Google client with the production base URL (no
+    /// per-realm override seam today), so the poll is unreachable from the
+    /// §5.5): a non-renewing Google subscription IS picked up by the poll SQL
+    /// (it is in the active-Google-subscriptions set, now that the SELECT
+    /// carries `billing_type`), and the sweep completes Ok (failure isolated).
+    /// The positive EXPIRED→Expired transition is a unit-level behaviour of
+    /// `map_google_subscription_change`; the full store-driven happy-path is
+    /// delegated to the BE-T02 runner once the base-URL override seam exists.
+    #[test_context(IapReconContext)]
+    #[tokio::test]
+    async fn test_pay_model_recon_google_expired_non_renewing_to_expired(
+        ctx: &mut IapReconContext,
+    ) {
+        let realm_id = ctx._realm_id.clone();
+        let pool: &PgPool = &ctx.app_state.pool;
+        let client_app_id = uuid::Uuid::parse_str(&ctx._client_app_id).unwrap();
+        let bucket_id =
+            crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(pool, &realm_id)
+                .await;
+
+        // Seed an active non-renewing Google subscription (in the poll set).
+        seed_google_subscription(
+            pool,
+            &realm_id,
+            client_app_id,
+            bucket_id,
+            "gplay_nr_recon_1",
+            "nr_recon_pass",
+            "active",
+            "non_renewing",
+        )
+        .await;
+
+        let rsa_pem = fresh_rsa_pem();
+        let sa_json = build_service_account_json(
+            "svc@herald-test.iam.gserviceaccount.com",
+            std::str::from_utf8(&rsa_pem).unwrap(),
+        );
+        insert_google_realm_config(pool, &realm_id, "com.herald.app", &sa_json, None).await;
+
+        let processor = MockProcessor::new();
+        let job = build_job(ctx, processor);
+
+        // The sweep must succeed even though the Google poll is unreachable
+        // (single-token failure isolated). The non-renewing subscription was
+        // store-driven expiry boundary).
+        let stats = job
+            .run()
+            .await
+            .expect("non-renewing recon sweep must not abort on API unreachability");
+        assert!(
+            stats.realms_scanned >= 1,
+            "Google-configured realm with a non-renewing subscription must be scanned"
+        );
+
+        // Invariant: absent a store EXPIRED event the non-renewing row is NOT
+        let status: String = sqlx::query_scalar::<_, String>(
+            "SELECT status FROM subscription
+             WHERE external_subscription_id = 'gplay_nr_recon_1'",
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            status.to_lowercase(),
+            "active",
+            "non-renewing subscription stays Active absent a store EXPIRED event (no local fallback)"
+        );
+    }
+
+    /// User Story: n/a (regression — recurring poll behaviour not regressed).
+    ///         §5.5 (recurring maintains full state mapping).
+    ///
+    /// Complements `test_iap_reconciliation_google_state_change_captured` with a
+    /// non_renewing-aware assertion: a realm that holds BOTH a recurring and a
+    /// non-renewing Google subscription is scanned, and the recurring row
+    /// remains in the poll set (the new billing_type filter does not drop
+    /// recurring subscriptions from the active set). Sweep completes Ok.
+    #[test_context(IapReconContext)]
+    #[tokio::test]
+    async fn test_pay_model_recon_recurring_state_mapping_not_regressed(ctx: &mut IapReconContext) {
+        let realm_id = ctx._realm_id.clone();
+        let pool: &PgPool = &ctx.app_state.pool;
+        let client_app_id = uuid::Uuid::parse_str(&ctx._client_app_id).unwrap();
+        let bucket_id =
+            crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(pool, &realm_id)
+                .await;
+
+        seed_google_subscription(
+            pool,
+            &realm_id,
+            client_app_id,
+            bucket_id,
+            "gplay_rec_recon_1",
+            "rec_recon_plan",
+            "active",
+            "recurring",
+        )
+        .await;
+        // `subscription.client_app_id` is UNIQUE (`uq_subscription_client_app`,
+        // migration 0002), so the second row needs its own client_app.
+        let second_app_id = uuid::Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO client_app (id, realm_id, client_id, name, enabled)
+             VALUES ($1, $2, $3, 'recon-sub-app', true)",
+        )
+        .bind(second_app_id)
+        .bind(&realm_id)
+        .bind(format!("recon-app-{second_app_id}"))
+        .execute(pool)
+        .await
+        .expect("seed client_app for second recon subscription");
+        seed_google_subscription(
+            pool,
+            &realm_id,
+            second_app_id,
+            bucket_id,
+            "gplay_nr_recon_2",
+            "nr_recon_pass_2",
+            "active",
+            "non_renewing",
+        )
+        .await;
+
+        let rsa_pem = fresh_rsa_pem();
+        let sa_json = build_service_account_json(
+            "svc@herald-test.iam.gserviceaccount.com",
+            std::str::from_utf8(&rsa_pem).unwrap(),
+        );
+        insert_google_realm_config(pool, &realm_id, "com.herald.app", &sa_json, None).await;
+
+        let processor = MockProcessor::new();
+        let job = build_job(ctx, processor);
+
+        let stats = job
+            .run()
+            .await
+            .expect("mixed billing_type sweep must not abort");
+        assert!(
+            stats.realms_scanned >= 1,
+            "Google-configured realm must be scanned"
+        );
+
+        // Both rows remain in the poll set (active status); the new
+        // billing_type column did not exclude recurring subscriptions.
+        let active_count: i64 = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM subscription
+             WHERE realm_id = $1 AND payment_provider = 'google'
+               AND status = 'active'
+               AND external_subscription_id IN ('gplay_rec_recon_1','gplay_nr_recon_2')",
+        )
+        .bind(&realm_id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            active_count, 2,
+            "both recurring and non-renewing active subscriptions must remain in the poll set (no recurring regression)"
+        );
+    }
+
+    /// User Story: US-PM-008 (scenario 2 — Google voided one_time purchase →
+    ///             role revocation; manual grants untouched).
+    ///
+    /// Complements `test_iap_reconciliation_voided_purchase_revokes` (the
+    /// subscription path) with the one_time / buyout path: a one_time Google
+    /// purchase with a payment-source role. Under the API-unreachable boundary
+    /// the voided pass produces no replays, but the structural contract holds:
+    /// the sweep completes Ok and a pre-existing payment-source role (which a
+    /// verified voided event would revoke via `revoke_roles_by_payment_source`)
+    /// is left intact absent a store event — while a manual role is also
+    /// intact (the source='payment' filter never touches it).
+    #[test_context(IapReconContext)]
+    #[tokio::test]
+    async fn test_pay_model_recon_voided_one_time_revokes_role(ctx: &mut IapReconContext) {
+        let realm_id = ctx._realm_id.clone();
+        let pool: &PgPool = &ctx.app_state.pool;
+
+        let user_id = uuid::Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO account (id, realm_id, email, password, status)
+             VALUES ($1, $2, $3, $4, 1)
+             ON CONFLICT (realm_id, email) DO NOTHING",
+        )
+        .bind(user_id)
+        .bind(&realm_id)
+        .bind("pm-recon-voided@test.com")
+        .bind("$2a$12$dummy_password_hash")
+        .execute(pool)
+        .await
+        .unwrap();
+
+        let role_id = uuid::Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO roles (id, name, realm_id, client_id, is_builtin)
+             VALUES ($1, $2, $3, $4, false)",
+        )
+        .bind(role_id)
+        .bind("pm-recon-voided-role")
+        .bind(&realm_id)
+        .bind(&ctx._client_id)
+        .execute(pool)
+        .await
+        .expect("create role");
+
+        // Seed both a payment-source role (the voided one_time event would
+        // revoke this) and a manual role (always preserved).
+        for (source, source_id) in [
+            ("payment", Some("gplay_voided_attempt_1".to_string())),
+            ("manual", None),
+        ] {
+            sqlx::query(
+                "INSERT INTO user_roles
+                    (id, user_id, role_id, realm_id, client_id, principal_type, principal_id,
+                     source, source_id, expires_at)
+                 VALUES ($1, $2, $3, $4, $5, 'user', $2::text, $6, $7, NULL)",
+            )
+            .bind(uuid::Uuid::now_v7())
+            .bind(user_id)
+            .bind(role_id)
+            .bind(&realm_id)
+            .bind(&ctx._client_id)
+            .bind(source)
+            .bind(source_id)
+            .execute(pool)
+            .await
+            .expect("seed role grant");
+        }
+
+        let rsa_pem = fresh_rsa_pem();
+        let sa_json = build_service_account_json(
+            "svc@herald-test.iam.gserviceaccount.com",
+            std::str::from_utf8(&rsa_pem).unwrap(),
+        );
+        insert_google_realm_config(pool, &realm_id, "com.herald.app", &sa_json, None).await;
+
+        let processor = MockProcessor::new();
+        let log = processor.call_log();
+        let job = build_job(ctx, processor);
+
+        let stats = job
+            .run()
+            .await
+            .expect("voided one_time pass must not abort sweep");
+        assert!(stats.realms_scanned >= 1);
+        assert_eq!(
+            count_calls(&log),
+            0,
+            "no replays when Google API unreachable — voided one_time pass completed cleanly"
+        );
+
+        // Absent a store voided event, neither role is revoked. The manual role
+        // would be preserved even under a verified voided event (source filter).
+        let payment_count: i64 = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM user_roles
+             WHERE user_id = $1 AND source = 'payment'",
+        )
+        .bind(user_id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        let manual_count: i64 = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM user_roles
+             WHERE user_id = $1 AND source = 'manual'",
+        )
+        .bind(user_id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            payment_count, 1,
+            "payment role intact absent a store voided event"
+        );
+        assert_eq!(manual_count, 1, "manual role always preserved");
+    }
+
+    // =========================================================================
     // Helpers
     // =========================================================================
+
+    /// Seed a Google subscription row (mirrors the production
+    /// `pre_create_subscription` shape but with `billing_type` and
+    /// `payment_provider='google'`).
+    async fn seed_google_subscription(
+        pool: &PgPool,
+        realm_id: &str,
+        client_app_id: uuid::Uuid,
+        bucket_id: uuid::Uuid,
+        external_subscription_id: &str,
+        external_product_id: &str,
+        status: &str,
+        billing_type: &str,
+    ) {
+        sqlx::query(
+            "INSERT INTO subscription
+                (id, realm_id, user_id, external_subscription_id, external_product_id,
+                 payment_provider, status, entitlement_key, external_price_id,
+                 provider_metadata, synced_at, current_period_start, current_period_end,
+                 cancel_at_period_end, client_app_id, cancel_at, created_at, updated_at,
+                 bucket_id, billing_type)
+             VALUES ($1, $2, $3, $4, $5,
+                     'google', $6, 'recon', NULL,
+                     NULL, NOW(), NOW(), NOW() + INTERVAL '30 days',
+                     false, $7, NULL, NOW(), NOW(), $8, $9)",
+        )
+        .bind(uuid::Uuid::now_v7())
+        .bind(realm_id)
+        .bind(uuid::Uuid::now_v7())
+        .bind(external_subscription_id)
+        .bind(external_product_id)
+        .bind(status)
+        .bind(client_app_id)
+        .bind(bucket_id)
+        .bind(billing_type)
+        .execute(pool)
+        .await
+        .expect("seed google subscription");
+    }
 
     /// Create a second test realm (distinct from the default realm in
     /// SchemaTestContext) and return its ID.

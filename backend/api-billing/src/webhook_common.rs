@@ -90,3 +90,47 @@ pub fn parse_attempt_id(value: &Value) -> Option<Uuid> {
         .and_then(|raw| Uuid::parse_str(raw).ok())
         .filter(|id| *id != Uuid::nil())
 }
+
+/// a role revoke failure is logged but NOT propagated, because the role row is
+/// already gone or the next compensation/retry sweep will reconcile. Manual
+/// grants (`source='manual'`) are never affected — the primitive's internal
+/// SQL filters `source='payment'`. Idempotent: NotFound (no payment role /
+/// already revoked) is a no-op, not an error.
+///
+/// `source_id` is the value written at grant time: `attempt.id` for one-time
+/// purchases, `subscription.id` for subscription/non-renewing grants.
+pub async fn revoke_payment_roles_for_source(
+    app_state: &herald_api_base::application::http::state::AppState,
+    realm_id: &str,
+    user_id: Uuid,
+    source_id: &str,
+) {
+    use herald_core::domain::user::UserRoleRepository;
+    match app_state
+        .user_role_repository
+        .revoke_roles_by_payment_source(realm_id, user_id, source_id)
+        .await
+    {
+        Ok(outcome) => {
+            tracing::info!(
+                realm_id = %realm_id,
+                user_id = %user_id,
+                source_id = %source_id,
+                outcome = ?outcome,
+                "Payment-granted roles revoked on refund/revocation"
+            );
+        }
+        Err(e) => {
+            // Best-effort: do not fail the whole webhook over a role revoke
+            // error. The points/subscription revocation above already
+            // succeeded; the compensation sweep will retry the role revoke.
+            tracing::warn!(
+                realm_id = %realm_id,
+                user_id = %user_id,
+                source_id = %source_id,
+                error = %e,
+                "Failed to revoke payment-granted roles (best-effort; compensation sweep will retry)"
+            );
+        }
+    }
+}

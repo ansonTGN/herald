@@ -6,6 +6,7 @@
 //
 // =============================================================================
 
+use crate::billing::entities::BillingType;
 use crate::billing::{PaymentEvent, Subscription, SubscriptionStatus};
 use chrono::Utc;
 use serde_json;
@@ -26,6 +27,7 @@ pub struct SubscriptionBuilder {
     payment_provider: String,
     status: SubscriptionStatus,
     entitlement_key: String,
+    billing_type: BillingType,
     external_price_id: Option<String>,
     provider_metadata: Option<serde_json::Value>,
     synced_at: Option<chrono::DateTime<chrono::Utc>>,
@@ -53,6 +55,7 @@ impl SubscriptionBuilder {
             payment_provider: "creem".to_string(),
             status: SubscriptionStatus::Active,
             entitlement_key: "starter-plan".to_string(),
+            billing_type: BillingType::Recurring,
             external_price_id: None,
             provider_metadata: None,
             synced_at: None,
@@ -101,6 +104,11 @@ impl SubscriptionBuilder {
 
     pub fn with_entitlement_key(mut self, key: impl Into<String>) -> Self {
         self.entitlement_key = key.into();
+        self
+    }
+
+    pub fn with_billing_type(mut self, billing_type: BillingType) -> Self {
+        self.billing_type = billing_type;
         self
     }
 
@@ -169,6 +177,7 @@ impl SubscriptionBuilder {
             payment_provider: self.payment_provider,
             status: self.status,
             entitlement_key: self.entitlement_key,
+            billing_type: self.billing_type,
             external_price_id: self.external_price_id,
             bucket_id: Uuid::now_v7(),
             provider_metadata: self.provider_metadata,

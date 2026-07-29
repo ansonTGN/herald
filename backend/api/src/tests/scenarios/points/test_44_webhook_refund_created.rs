@@ -141,10 +141,10 @@ async fn test_refund_subscription_only_unused(ctx: &mut SchemaTestContext) {
             (id, realm_id, user_id, status, entitlement_key,
              external_subscription_id, external_product_id, payment_provider,
              current_period_start, current_period_end, cancel_at_period_end,
-             bucket_id, created_at, updated_at)
+             bucket_id, created_at, updated_at, billing_type)
          VALUES ($1, $2, $3, 'active', $4, $5, $6, 'creem',
                  NOW() - INTERVAL '1 day', NOW() + INTERVAL '30 days', false,
-                 $7, NOW(), NOW())",
+                 $7, NOW(), NOW(), 'recurring')",
     )
     .bind(subscription_id)
     .bind(&realm_id)
@@ -438,10 +438,10 @@ async fn test_refund_subscription_same_refund_id_different_event_id_is_idempoten
             (id, realm_id, user_id, status, entitlement_key,
              external_subscription_id, external_product_id, payment_provider,
              current_period_start, current_period_end, cancel_at_period_end,
-             bucket_id, created_at, updated_at)
+             bucket_id, created_at, updated_at, billing_type)
          VALUES ($1, $2, $3, 'active', $4, $5, $6, 'creem',
                  NOW() - INTERVAL '1 day', NOW() + INTERVAL '30 days', false,
-                 $7, NOW(), NOW())",
+                 $7, NOW(), NOW(), 'recurring')",
     )
     .bind(subscription_id)
     .bind(&realm_id)

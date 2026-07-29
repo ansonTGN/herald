@@ -7,7 +7,6 @@ use uuid::Uuid;
 use crate::provider_common_types::validate_payment_provider_value;
 
 /// Structured view of the `provider_product_info` JSONB synced from the
-/// provider (design §5.7).
 ///
 /// Field names are intentionally snake_case (no `rename_all`) so they match
 /// the stored JSONB keys written by `build_provider_product_info` — the value
@@ -44,6 +43,9 @@ pub struct EntitlementMappingResponse {
     pub billing_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub billing_period: Option<String>,
+    /// Non-renewing service-period length (days). Present only for
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub service_duration_days: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub points_per_period: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -52,12 +54,10 @@ pub struct EntitlementMappingResponse {
     pub enabled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provider_product_info: Option<ProviderProductInfo>,
-    /// Subscription quota window config (design §4.3.2). `None` ⟺ no
     /// window-model grant. Each window carries the stable display `key`
     /// (derived from `windowSeconds`), the limit, and the window length.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quota_windows: Option<Vec<EntitlementQuotaWindowResponse>>,
-    /// Role IDs auto-granted on payment success (design §5.2). Always present
     /// (not skip-serializing) so the frontend always sees the field; empty
     /// array when no role grant is configured.
     pub granted_role_ids: Vec<Uuid>,
@@ -116,14 +116,17 @@ pub struct UpdateEntitlementMappingRequest {
     pub validity_days: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub grant_on_subscribe: Option<bool>,
-    /// Subscription quota window config (design §4.3.2). `None` ⟺ leave the
+    /// Non-renewing service-period length (days). Same 3-state semantics as
+    /// `quota_windows`: `None` ⟺ leave unchanged; `Some(null)` ⟺ clear (only
+    /// valid when the stored billing_type is not `non_renewing`); `Some(n)` ⟺
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub service_duration_days: Option<Option<i64>>,
     /// stored value untouched; `Some([])` ⟺ clear (no window grant);
     /// `Some([...])` ⟺ replace. Same validation as batch update.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quota_windows: Option<Vec<QuotaWindowInput>>,
 }
 
-/// Request to create an entitlement mapping (design support-iap §4.2.2 / A2).
 ///
 /// Generic over provider (IAP, Stripe, Creem). The
 /// `uq_pem_realm_provider_product_price` unique constraint is enforced by the
@@ -142,12 +145,16 @@ pub struct CreateEntitlementMappingRequest {
     pub external_price_id: Option<String>,
     pub entitlement_key: String,
     pub bucket_id: Uuid,
-    /// `"recurring"` / `"one_time"`.
+    /// `"recurring"` / `"one_time"` / `"non_renewing"`.
     #[validate(custom(function = "validate_create_billing_type"))]
     pub billing_type: String,
-    /// Required when `billing_type == "recurring"`.
+    /// Required when `billing_type == "recurring"`; must be empty for
+    /// `"non_renewing"` (mutually exclusive billing semantics).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub billing_period: Option<String>,
+    /// Non-renewing service-period length (days). Required (`>= 1`) when
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub service_duration_days: Option<i64>,
     /// Credit-strategy field (requires `points.manage`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub points_per_period: Option<i64>,
@@ -169,7 +176,7 @@ fn default_true() -> bool {
 }
 
 fn validate_create_billing_type(billing_type: &str) -> Result<(), validator::ValidationError> {
-    if matches!(billing_type, "recurring" | "one_time") {
+    if matches!(billing_type, "recurring" | "one_time" | "non_renewing") {
         Ok(())
     } else {
         Err(validator::ValidationError::new("invalid_billing_type"))
@@ -239,6 +246,9 @@ pub struct SubscriptionDetailResponse {
     pub external_price_id: Option<String>,
     pub payment_provider: String,
     pub status: String,
+    /// Billing type snapshot (`"recurring"` / `"non_renewing"`). Lets the
+    /// admin subscription view distinguish non-renewing subscriptions and hide
+    pub billing_type: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub current_period_start: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -266,6 +276,9 @@ pub struct SubscriptionListItemResponse {
     pub external_price_id: Option<String>,
     pub payment_provider: String,
     pub status: String,
+    /// Billing type snapshot (`"recurring"` / `"non_renewing"`). Lets the
+    /// admin subscription list distinguish non-renewing subscriptions and hide
+    pub billing_type: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub current_period_start: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -316,7 +329,6 @@ pub struct CancelSubscriptionResponse {
     pub message: String,
 }
 
-/// Input for one quota window in a mapping batch save (design §4.3.2).
 ///
 /// Carries only the editable fields; the stable display `key` is derived by
 /// the backend from `windowSeconds` (via `derive_window_key`) before
@@ -354,12 +366,10 @@ pub struct PriceMappingUpdate {
     pub grant_on_subscribe: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
-    /// Quota window config (design §4.3.2). `None` ⟺ leave unchanged;
     /// `Some([])` ⟺ clear (no window grant); `Some(non-empty)` ⟺ set.
     /// Non-empty triggers the `points.manage` credit-field permission gate.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quota_windows: Option<Vec<QuotaWindowInput>>,
-    /// Role-grant config dimension (design §5.2). `None` ⟺ leave unchanged;
     /// `Some([])` ⟺ clear (no role grant); `Some(non-empty)` ⟺ set.
     /// Non-empty triggers realm-membership validation server-side (does NOT
     /// require `roles.manage`).
@@ -419,13 +429,11 @@ pub struct PurchaseOptionView {
     pub points_per_period: Option<i64>,
     pub enabled: bool,
     /// Whether purchasing this option grants a role that is one-per-user
-    /// (design §4.2.2). True only for the gated combo
     /// `billing_type=one_time` + non-empty `granted_role_ids`; points packages
     /// and subscriptions are never gated, so `grants_role` is `false` for them
     /// even if they happen to carry role grants.
     pub grants_role: bool,
     /// Whether the authenticated user already owns this one-time+role
-    /// entitlement (design §4.2.2). Computed only for the gated combo
     /// (`grants_role == true`); `false` otherwise. Lets the frontend disable the
     /// card pre-purchase. Ownership predicate:
     /// `user_has_any_role(granted_role_ids) || has_succeeded_attempt(target_id)`.

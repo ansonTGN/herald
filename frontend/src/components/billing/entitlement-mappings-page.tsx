@@ -20,6 +20,7 @@ import {
   primaryProductLabel,
   mapBillingPeriodLabel,
   isOneTimeMapping,
+  isNonRenewingMapping,
 } from '@/components/billing/provider-product-info'
 import { formatInvoiceAmount } from '@/lib/invoice-utils'
 import { ProtectedPriceConfirmDialog } from '@/components/billing/entitlement-mapping-detail-dialog'
@@ -39,7 +40,10 @@ import {
   entitlementMappingsQueryOptions,
   queryKeys,
 } from '@/data/query-options'
-import { useBatchUpdateEntitlementMappings } from '@/data/entitlement-mapping-mutations'
+import {
+  useBatchUpdateEntitlementMappings,
+  useUpdateEntitlementMapping,
+} from '@/data/entitlement-mapping-mutations'
 import {
   batchEntitlementMappingsSchema,
   type PriceMappingUpdateFormData,
@@ -83,7 +87,6 @@ export function EntitlementMappingsPage({ realmId }: EntitlementMappingsPageProp
   // comply with the no-setState-in-effect rule.
   const [nextStepOpen, setNextStepOpen] = useState(false)
 
-  // Create-mapping dialog (FE-D03): manual mapping creation for providers
   // without product sync (notably IAP / App Store / Google Play).
   const [createOpen, setCreateOpen] = useState(false)
 
@@ -437,14 +440,23 @@ function PriceEditRow({
   // One-time mappings keep validityDays because one-time fulfillment uses it
   // for topup_credit expiration. Recurring mappings rely on provider period
   // boundaries for validity and only expose the active subscription controls.
+  // render the subscription-only advanced fields (grantOnSubscribe /
+  // quotaWindows / period) for both recurring and non_renewing. Non-renewing's
+  // ONLY difference from recurring is that it shows serviceDurationDays instead
+  // of nothing in the advanced section (recurring has no validity field there).
   const isOneTime = isOneTimeMapping(row.billingType)
+  const isNonRenewing = isNonRenewingMapping(row.billingType)
+
+  // pay_model §4.2.1). Instantiated per-row because the hook signature is
+  // (realmId, mappingId) and only non-renewing rows trigger it. Decoupled from
+  // the batch save (`save-mapping-button`): independent failure / toast /
+  const updateMappingMutation = useUpdateEntitlementMapping(realmId, row.mappingId)
 
   // Per-price synced provider info (JSONB typed `unknown` upstream) — narrowed
   // ONLY here via `readProviderProductInfo` (the single narrowing point).
   const info = readProviderProductInfo(price.providerProductInfo)
   const metadataEntries = buildMetadataEntries(info.productMetadata, info.priceMetadata)
 
-  // Realm roles for the Role-grant dimension (design §4.4). `listRoles` returns
   // `RoleResponse[]` directly (not a paged envelope); builtin roles are filtered
   // out so only admin-defined roles are assignable — mirrors the API-key roles
   // dialog usage. The query is realm-scoped and cached (staleTime 5min).
@@ -482,7 +494,9 @@ function PriceEditRow({
                 ? m['billing.billing_type_recurring']()
                 : row.billingType === 'one_time'
                   ? m['billing.billing_type_one_time']()
-                  : ''
+                  : row.billingType === 'non_renewing'
+                    ? m['billing.billing_type_non_renewing']()
+                    : ''
             }
             readOnly
             placeholder="—"
@@ -520,6 +534,33 @@ function PriceEditRow({
               readOnly
               placeholder="—"
               className="bg-muted/40 text-sm text-muted-foreground"
+            />
+          </Field>
+        )}
+
+        {isNonRenewing && (
+          <Field label={m['billing.field_service_duration_days']()} required>
+            <Input
+              type="number"
+              min={1}
+              value={row.serviceDurationDays ?? ''}
+              onChange={(e) =>
+                onChange({
+                  serviceDurationDays: e.target.value === '' ? null : Number(e.target.value),
+                })
+              }
+              onBlur={() => {
+                // positive integer; empty/invalid input does not fire and the
+                // edit-row local state is left as-is. Decoupled from the batch
+                // save button — independent failure / toast / invalidation.
+                const v = row.serviceDurationDays
+                if (typeof v === 'number' && v >= 1 && Number.isInteger(v)) {
+                  updateMappingMutation.mutate({ serviceDurationDays: v })
+                }
+              }}
+              disabled={editDisabled || updateMappingMutation.isPending}
+              placeholder="—"
+              data-testid={`price-service-duration-days-${price.externalPriceId ?? price.id}`}
             />
           </Field>
         )}
@@ -788,6 +829,9 @@ function seedRows(prices: EntitlementMappingResponse[]): PriceMappingUpdateFormD
     enabled: p.enabled,
     pointsPerPeriod: p.pointsPerPeriod ?? null,
     validityDays: p.validityDays ?? null,
+    // state only; persisted via a separate single-row PUT onBlur, never enters
+    // batch DTO `PriceMappingUpdate` has no such field).
+    serviceDurationDays: p.serviceDurationDays ?? null,
     grantOnSubscribe: p.grantOnSubscribe,
     quotaWindows: p.quotaWindows ?? null,
     // GET response carries the granted role list as a required array (empty when
@@ -814,7 +858,6 @@ function toPriceMappingUpdate(row: PriceMappingUpdateFormData): PriceMappingUpda
       ? undefined
       : (row.quotaWindows?.map((w) => ({ windowSeconds: w.windowSeconds, limit: w.limit })) ??
         undefined),
-    // Role-grant dimension (design §4.4 / §5.2). Orthogonal to billing_type —
     // both one_time and recurring forward the array. Forwarded verbatim from
     // the edit state: [] ⟺ clear, non-empty ⟺ set. Matches the generated
     // `PriceMappingUpdate.grantedRoleIds` (Array<string> | null | undefined).

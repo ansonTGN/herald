@@ -164,8 +164,8 @@ mod tests {
         )
         .await;
         sqlx::query(
-            "INSERT INTO subscription (id, realm_id, external_subscription_id, external_product_id, payment_provider, status, entitlement_key, user_id, created_at, updated_at, bucket_id)
-             VALUES ($1, $2, $3, $4, $5, 'active', 'pro', $6, NOW(), NOW(), $7)"
+            "INSERT INTO subscription (id, realm_id, external_subscription_id, external_product_id, payment_provider, status, entitlement_key, user_id, created_at, updated_at, bucket_id, billing_type)
+             VALUES ($1, $2, $3, $4, $5, 'active', 'pro', $6, NOW(), NOW(), $7, 'recurring')"
         )
         .bind(sub_id)
         .bind(realm_id)
@@ -536,8 +536,8 @@ mod tests {
         )
         .await;
         sqlx::query(
-            "INSERT INTO subscription (id, realm_id, external_subscription_id, external_product_id, payment_provider, status, entitlement_key, user_id, created_at, updated_at, bucket_id)
-             VALUES ($1, $2, $3, $4, 'stripe', 'active', 'pro', $5, NOW(), NOW(), $6)",
+            "INSERT INTO subscription (id, realm_id, external_subscription_id, external_product_id, payment_provider, status, entitlement_key, user_id, created_at, updated_at, bucket_id, billing_type)
+             VALUES ($1, $2, $3, $4, 'stripe', 'active', 'pro', $5, NOW(), NOW(), $6, 'recurring')",
         )
         .bind(sub_id)
         .bind(&realm_id)

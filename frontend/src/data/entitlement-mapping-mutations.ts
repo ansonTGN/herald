@@ -17,16 +17,33 @@ import { m } from '@/paraglide/messages'
 import { queryKeys } from '@/data/query-options'
 
 /**
- * Input shape for the legacy single-row PATCH hook below. The shared schema
- * was removed when the admin editor moved to a batch save; this local type
- * keeps the hook compilable for any remaining non-admin consumer.
+ * Input shape for the single-row PUT hook below. Every field is optional so a
+ * caller can update ONE dimension (e.g. `serviceDurationDays` on a non-renewing
+ * mapping) without touching the others: omitted keys map to `undefined` in the
+ * body, which the backend reads as "leave unchanged" (3-state semantics in
+ * `backend/api-billing/src/types.rs:128`: `None` ⟺ unchanged / `Some(null)` ⟺
+ * clear / `Some(n)` ⟺ set).
+ *
+ * This hook's ONLY consumer is the non-renewing `serviceDurationDays` onBlur
+ * entitlement-mappings editor's other fields (entitlementKey/enabled/
+ * pointsPerPeriod/validityDays/grantOnSubscribe) are persisted via the batch
+ * path (`useBatchUpdateEntitlementMappings`) and are intentionally NOT sent on
+ * this single-row PUT (two-path isolation contract — each path only carries
+ * the dimension it edits).
  */
 interface EntitlementMappingUpdateFormData {
-  entitlementKey: string
-  enabled: boolean
-  pointsPerPeriod: number | null
-  validityDays: number | null
-  grantOnSubscribe: boolean
+  entitlementKey?: string
+  enabled?: boolean
+  pointsPerPeriod?: number | null
+  validityDays?: number | null
+  grantOnSubscribe?: boolean
+  /**
+   * caller supplies a positive integer (maps to the backend `Some(n)` ⟺ set
+   * state). Non-renewing mappings cannot clear this (DB CHECK), so the clear
+   * state `Some(null)` is never produced here. `undefined` ⟺ omit the key ⟺
+   * backend leaves the stored value unchanged.
+   */
+  serviceDurationDays?: number | null
 }
 
 // ==================== Protected-price 409 detection ====================
@@ -76,7 +93,6 @@ export function extractActiveSubscriptions(error: unknown): number | null {
 //
 // When `grantedRoleIds` contains a role that does not belong to the target
 // realm, the batch endpoint answers 400 with
-// `{ code: 'role_not_in_realm', roleId, realmId }` (design §4.2.2). NOTE:
 // `getErrorMessage` only reads `message`/`detail`/`error_description`/`error`
 // — NOT `code` — so a plain toast would fall through to the generic fallback.
 // This helper lets the mutation surface a friendlier, dedicated message
@@ -106,15 +122,24 @@ export function useUpdateEntitlementMapping(realmId: string, mappingId: string) 
 
   return useMutation({
     mutationFn: async (values: EntitlementMappingUpdateFormData) => {
+      // Build a minimal PATCH body: only keys the caller supplied are written,
+      // every other field stays `undefined` ⟺ backend "leave unchanged"
+      // (3-state semantics, `backend/api-billing/src/types.rs:128`). This is the
+      // single-row PUT path; the batch path carries the editor's other fields.
       const body: UpdateEntitlementMappingRequest = {
         entitlementKey: values.entitlementKey,
         enabled: values.enabled,
         pointsPerPeriod: values.pointsPerPeriod ?? undefined,
         validityDays: values.validityDays ?? undefined,
         grantOnSubscribe: values.grantOnSubscribe,
-        // bucketId is intentionally NOT sent: the PATCH handler preserves the
-        // existing attribution (assignment is owned by the Credit Bucket
-        // directory page). See entitlement-mapping-detail-dialog.tsx.
+        // serviceDurationDays: only forward a concrete positive integer
+        // (backend `Some(n)` ⟺ set). A non-renewing mapping cannot clear it
+        // (DB CHECK), so we never emit the `Some(null)` clear state from the
+        // edit path; `undefined`/null input omits the key ⟺ unchanged.
+        serviceDurationDays:
+          typeof values.serviceDurationDays === 'number' && values.serviceDurationDays >= 1
+            ? values.serviceDurationDays
+            : undefined,
       }
       const response = await updateEntitlementMapping({
         path: { realmId, mappingId },
@@ -124,7 +149,7 @@ export function useUpdateEntitlementMapping(realmId: string, mappingId: string) 
       return response.data
     },
     onSuccess: () => {
-      toast.success('Mapping updated')
+      toast.success(m['billing.mapping_update_success']())
       queryClient.invalidateQueries({
         queryKey: queryKeys.entitlementMappings(realmId, {}),
       })
@@ -134,7 +159,7 @@ export function useUpdateEntitlementMapping(realmId: string, mappingId: string) 
     },
     onError: (error) => {
       const errorMessage = getErrorMessage(error)
-      toast.error(`Failed to update mapping: ${errorMessage}`)
+      toast.error(`${m['billing.mapping_update_failed']()}: ${errorMessage}`)
     },
   })
 }
@@ -199,7 +224,6 @@ export function useBatchUpdateEntitlementMappings(realmId: string) {
       // A protected-price 409 is handled by the caller (confirmation dialog);
       // do not toast for it here.
       if (isProtectedPriceError(error)) return
-      // A cross-realm role 400 (design §4.2.2) carries a `code` field that
       // `getErrorMessage` does not read; surface a dedicated, actionable toast
       // instead of the generic fallback. The only fix is re-selecting roles
       // that belong to this realm, so the message names the constraint.
@@ -216,7 +240,6 @@ export function useBatchUpdateEntitlementMappings(realmId: string) {
 // ==================== Create (single mapping) ====================
 //
 // `createEntitlementMapping` POSTs a single entitlement mapping. Two distinct
-// server-side failure modes (design support-iap §4.2.2) MUST be surfaced
 // differently in the dialog:
 // - 409 Conflict: a row already exists for this
 //   `(realm, provider, product, price)` tuple — i.e. a violation of
@@ -248,14 +271,12 @@ export function isCreateMappingDuplicateError(error: unknown): boolean {
 /**
  * Error code the backend surfaces verbatim when a create-mapping row fails a
  * DB CHECK constraint (the Postgres `check_violation` SQLSTATE 23514, mapped to
- * a body tag per design §4.2.2). Extracted as a named constant so a backend
  * rename surfaces here rather than only as a silent magic-string match.
  */
 export const CREATE_MAPPING_CONFIG_ERROR_CODE = '23514' as const
 
 /**
  * Returns true when the thrown create-mapping error is a DB CHECK / server
- * defense (design §4.2.2). The backend maps a Postgres CHECK failure (23514)
  * to either a 23514-tagged body or a non-4xx (e.g. 500). Surfaced as
  * `billing.create_mapping_config_error` and intentionally kept distinct from
  * the 409 duplicate branch. Authz failures (401/403) and the 400 validation
@@ -267,13 +288,11 @@ export function isCreateMappingConfigError(error: unknown): boolean {
   if (e.code === CREATE_MAPPING_CONFIG_ERROR_CODE) return true
   const status = e.status
   // Any non-4xx server-class failure is treated as a configuration error per
-  // design §4.2.2 (covers the 500 mapping of a CHECK/DB defense).
   return typeof status === 'number' && status >= 500
 }
 
 /**
  * Create a single entitlement mapping (POST /entitlement-mappings). Used by the
- * "Create Mapping" dialog (FE-D03). The hook only invalidates the list on
  * success; 409 and 23514/non-4xx branches are intentionally NOT toasted here —
  * the dialog branches on them (see `isCreateMappingDuplicateError` /
  * `isCreateMappingConfigError`). Other errors fall through to a generic toast.

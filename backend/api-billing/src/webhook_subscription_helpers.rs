@@ -4,6 +4,7 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use herald_api_base::application::http::state::AppState;
+use herald_core::domain::billing::entities::BillingType;
 use herald_core::domain::billing::{
     ACTOR_WEBHOOK, BillingRepository, EntitlementMapping, HistoryEventType, Subscription,
     SubscriptionHistoryEvent, calculate_changes, serialize_subscription_state,
@@ -112,11 +113,6 @@ pub(crate) enum ResolveError {
         product: String,
         price: Option<String>,
     },
-    /// Metadata `herald_entitlement_key` missing and no mapping fallback
-    /// produced a projection key. Reserved by the fail-loud error taxonomy; the
-    /// current chain emits `NoMapping`/`AmbiguousPrice` for the equivalent cases.
-    #[allow(dead_code, reason = "reserved by design §5.4 error taxonomy")]
-    MissingEntitlementKey,
 }
 
 impl ResolveError {
@@ -135,10 +131,6 @@ impl ResolveError {
                 format!(
                     "No entitlement mapping for provider '{provider}' product '{product}' price '{price_display}'"
                 )
-            }
-            ResolveError::MissingEntitlementKey => {
-                "Missing herald_entitlement_key in webhook metadata and no mapping fallback"
-                    .to_string()
             }
         }
     }
@@ -481,6 +473,9 @@ pub(crate) async fn sync_subscription(
             payment_provider: provider.to_string(),
             status,
             entitlement_key,
+            // Stripe/Creem webhook sync is the recurring subscription path
+            // (non_renewing is fulfilled via the purchase path, not webhook
+            billing_type: BillingType::Recurring,
             external_price_id,
             bucket_id,
             provider_metadata,
@@ -605,6 +600,9 @@ pub(crate) async fn sync_subscription_in_txn(
             payment_provider: provider.to_string(),
             status,
             entitlement_key,
+            // Stripe/Creem webhook sync is the recurring subscription path
+            // (non_renewing is fulfilled via the purchase path, not webhook
+            billing_type: BillingType::Recurring,
             external_price_id,
             bucket_id,
             provider_metadata,

@@ -19,6 +19,10 @@ pub struct Model {
     pub billing_type: Option<String>,
     #[sea_orm(nullable)]
     pub billing_period: Option<String>,
+    /// Fixed service-period length (days) for non-renewing mappings
+    /// must be `>= 1` (enforced by `chk_pem_service_duration_days`).
+    #[sea_orm(nullable)]
+    pub service_duration_days: Option<i32>,
     #[sea_orm(nullable)]
     pub points_per_period: Option<i32>,
     #[sea_orm(nullable)]
@@ -34,10 +38,8 @@ pub struct Model {
     #[sea_orm(nullable)]
     pub provider_product_info: Option<Json>,
     /// Subscription quota window definition `[{windowSeconds, limit, key}]`
-    /// (design §4.3.2). Nullable; NULL ⟺ no window-model grant.
     #[sea_orm(nullable)]
     pub quota_windows: Option<Json>,
-    /// Role IDs auto-granted on payment success (paywall, design §4.3.2).
     /// Empty array = no role grant. Follows the `account.provider_ids` UUID[]
     /// precedent (account.rs:13-14).
     #[sea_orm(default_value = "ARRAY[]::UUID[]")]

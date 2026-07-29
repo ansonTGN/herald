@@ -1,4 +1,3 @@
-//! IAP reconciliation job (design support-iap §5.7).
 //!
 //! Periodically reconciles Apple + Google IAP state against Herald's view of
 //! the world. Unlike Stripe/Creem compensation (which replays provider event
@@ -6,10 +5,8 @@
 //! "lookup + construct payload + replay through the same
 //! [`WebhookEventProcessor`]". The constructed payloads are consumed by
 //! [`iap_handlers::reprocess_apple_event`] /
-//! [`iap_handlers::reprocess_google_event`] (BE-D03 skeleton signatures, frozen
 //! contract).
 //!
-//! # Cadence (design §5.7 / decision A5)
 //!
 //! - Apple notification compensation: default **1800s** (30 min) — Apple
 //!   notification history retains ~30 days and this cadence bounds
@@ -28,7 +25,6 @@
 //!
 //! Each realm / transaction / token is reconciled independently. A single
 //! failure (provider API error, malformed notification, stale token) is logged
-//! and skipped — it MUST NOT abort the rest of the sweep (design §5.7 "single
 //! object failure does not block others"). This mirrors
 //! `WebhookCompensationJob::compensate_stripe` / `compensate_creem`.
 //!
@@ -36,7 +32,6 @@
 //!
 //! Job-level integration tests (Apple missed-notification compensation, Google
 //! state-change capture, voided refund recovery, single-token failure
-//! isolation) live in the test slot (design §6.1). This file only ships the
 //! production logic + skeleton-level unit tests for the pure helpers
 //! (status mapping, page-token advance).
 
@@ -125,7 +120,6 @@ impl IapReconciliationJob {
     /// Construct the job.
     ///
     /// `apple_interval_secs` / `google_interval_secs` are the *configured*
-    /// intervals (design A5: defaults 1800 / 900). They are only used to size
     /// lookback windows; the actual firing cadence is owned by the worker
     /// `tokio::select!` arm in `lib.rs`.
     pub fn new(
@@ -208,7 +202,6 @@ impl IapReconciliationJob {
     }
 
     /// Scan `realm_config` for realms with Apple and/or Google IAP credentials
-    /// configured (BE-D02 ConfigType variants). A realm is "has_apple" iff the
     /// `issuer_id` row is present and non-empty (mirrors the `configured iff
     // config_key == issuer_id` rule in provider_handlers); "has_google" iff
     /// `service_account_json` is present.
@@ -287,7 +280,6 @@ impl IapReconciliationJob {
         Ok(map.into_values().collect())
     }
 
-    /// Apple notification-history compensation (design §5.7).
     ///
     /// Walks Apple's `POST /inApps/v1/notifications/history` over the lookback
     /// window (`apple_interval_secs × overlap_factor`). For each historical
@@ -326,7 +318,6 @@ impl IapReconciliationJob {
             // panics inside the API call rather than surfacing an `Err`.
             //
             // The job's contract is "single-realm failure must not abort the
-            // sweep" (design §5.7), so we catch the panic at the call boundary
             // and map it to a realm-level `anyhow::Error` — the outer `run()`
             // loop already logs + skips realm-level errors without aborting.
             // `catch_unwind` on the API-call future is the narrowest boundary
@@ -411,7 +402,6 @@ impl IapReconciliationJob {
         Ok(stats)
     }
 
-    /// Google lifecycle polling (design §5.7).
     ///
     /// Two passes:
     /// 1. **Subscription refresh**: for each Herald `Subscription` whose
@@ -697,6 +687,13 @@ fn build_google_client(
 /// This is a deliberately conservative mapper: only the high-signal lifecycle
 /// transitions produce a replay. Exact-match renewals (state + expiry
 /// unchanged) are skipped to avoid no-op replays every cycle.
+///
+/// result is filtered by the subscription's snapshot `billing_type` *before*
+/// any renewal-flow mapping. `non_renewing` subscriptions only ever emit an
+/// expiry transition (Google `EXPIRED`) — ACTIVE / GRACE / CANCELED / PAUSED
+/// and advancing-expiry (renewal) are ignored, so a non-renewing subscription
+/// never enters the renewal state machine. `recurring` (and any future
+/// subscription-shape billing type) retain the full mapping below.
 fn map_google_subscription_change(
     stored: &StoredGoogleSubscription,
     purchase: &SubscriptionPurchaseV2,
@@ -711,6 +708,30 @@ fn map_google_subscription_change(
         .and_then(|li| li.product_id.clone())
         .unwrap_or_else(|| stored.external_product_id.clone());
 
+    // Non-renewing filter: only the EXPIRED transition is actionable from the
+    // poll. The mapped `expired` status covers Google `SUBSCRIPTION_STATE_EXPIRED`
+    // (and any future expiry-shaped state). Everything else — ACTIVE renewal
+    // detection, grace / pause / cancel transitions — is dropped: a
+    // non-renewing subscription has a fixed service window and does not
+    // participate in the renewal flow. Role reclamation on natural expiry is
+    if stored.billing_type == "non_renewing" {
+        return if mapped_status == "expired" && stored.status != "expired" {
+            Some((
+                "subscription.expired".to_string(),
+                google_state_change_payload(
+                    token,
+                    new_state,
+                    "expired",
+                    &stored.status,
+                    &product_id,
+                    purchase,
+                ),
+            ))
+        } else {
+            None
+        };
+    }
+
     // State transition: if Herald's recorded status differs from the mapped
     // Google state, emit the corresponding event.
     if mapped_status != stored.status {
@@ -722,18 +743,14 @@ fn map_google_subscription_change(
         };
         return Some((
             event_type.to_string(),
-            serde_json::json!({
-                "purchaseToken": token,
-                "subscriptionState": new_state,
-                "heraldStatus": mapped_status,
-                "previousStatus": stored.status,
-                "productId": product_id,
-                "expiryTime": purchase
-                    .line_items
-                    .first()
-                    .and_then(|li| li.expiry_time)
-                    .map(|t| t.to_rfc3339()),
-            }),
+            google_state_change_payload(
+                token,
+                new_state,
+                &mapped_status,
+                &stored.status,
+                &product_id,
+                purchase,
+            ),
         ));
     }
 
@@ -756,6 +773,31 @@ fn map_google_subscription_change(
     }
 
     None
+}
+
+/// Build the state-transition payload shared by every Google subscription
+/// state change (recurring transition + non-renewing expiry). The caller picks
+/// the `event_type`; only the payload `Value` is built here.
+fn google_state_change_payload(
+    token: &str,
+    subscription_state: &str,
+    herald_status: &str,
+    previous_status: &str,
+    product_id: &str,
+    purchase: &SubscriptionPurchaseV2,
+) -> serde_json::Value {
+    serde_json::json!({
+        "purchaseToken": token,
+        "subscriptionState": subscription_state,
+        "heraldStatus": herald_status,
+        "previousStatus": previous_status,
+        "productId": product_id,
+        "expiryTime": purchase
+            .line_items
+            .first()
+            .and_then(|li| li.expiry_time)
+            .map(|t| t.to_rfc3339()),
+    })
 }
 
 /// Construct the payload for a 404-induced expiry replay.
@@ -799,10 +841,16 @@ fn google_state_to_herald_status(state: &str) -> String {
 /// A Herald subscription row projected into the minimal fields the Google poll
 /// needs to detect state changes. Kept separate from the domain `Subscription`
 /// to avoid pulling the full entity into the worker's hot loop.
+///
+/// `billing_type` is the snapshot column written at fulfillment time
+/// state transition (renew / cancel / expire / grace), while `non_renewing`
+/// only acts on `EXPIRED` (and a Google 404) — other Google states (ACTIVE /
+/// GRACE / CANCELED / …) are ignored so a non-renewing subscription never
 struct StoredGoogleSubscription {
     external_subscription_id: String,
     external_product_id: String,
     status: String,
+    billing_type: String,
     current_period_end: Option<DateTime<Utc>>,
 }
 
@@ -814,7 +862,15 @@ struct StoredGoogleSubscription {
 /// This is a hand-written projection query (not a repository method) because
 /// the worker must not depend on the Sea-ORM-based
 /// `PostgresBillingRepository::list_subscriptions` (which returns the full
-/// `Subscription` entity); we only need four columns.
+/// `Subscription` entity); we only need the projection below
+/// (`external_subscription_id`, `external_product_id`, `status`,
+/// `billing_type`, `current_period_end`).
+///
+/// `ActiveGoogleSubscriptionRow` is the row tuple alias sqlx decodes into
+/// (kept as a named type to satisfy clippy's `type_complexity` lint once
+/// `billing_type` made this a 5-tuple).
+type ActiveGoogleSubscriptionRow = (String, String, String, String, Option<DateTime<Utc>>);
+
 async fn sqlx_client_list_active_google_subscriptions(
     pg_pool: &PgPool,
     realm_id: &str,
@@ -822,11 +878,12 @@ async fn sqlx_client_list_active_google_subscriptions(
     page_size: u64,
 ) -> anyhow::Result<(Vec<StoredGoogleSubscription>, u64)> {
     let offset = page.saturating_sub(1) * page_size;
-    let rows: Vec<(String, String, String, Option<DateTime<Utc>>)> = sqlx::query_as(
+    let rows: Vec<ActiveGoogleSubscriptionRow> = sqlx::query_as(
         r#"
         SELECT external_subscription_id,
                external_product_id,
                status::text,
+               billing_type,
                current_period_end
         FROM subscription
         WHERE realm_id = $1
@@ -846,13 +903,18 @@ async fn sqlx_client_list_active_google_subscriptions(
     let subs = rows
         .into_iter()
         .map(
-            |(external_subscription_id, external_product_id, status, current_period_end)| {
-                StoredGoogleSubscription {
-                    external_subscription_id,
-                    external_product_id,
-                    status,
-                    current_period_end,
-                }
+            |(
+                external_subscription_id,
+                external_product_id,
+                status,
+                billing_type,
+                current_period_end,
+            )| StoredGoogleSubscription {
+                external_subscription_id,
+                external_product_id,
+                status,
+                billing_type,
+                current_period_end,
             },
         )
         .collect();
@@ -926,7 +988,6 @@ struct GooglePollStats {
 mod tests {
     // Skeleton-level unit tests for the pure mapping helpers.
     //
-    // The four job-level scenarios from design §6.1 (Apple missed-notification
     // compensation, Google state-change capture, voided refund recovery,
     // single-token failure isolation) require a live `WebhookEventProcessor`
     // plus DB + Apple/Google API stubs and are therefore owned by the test
@@ -941,10 +1002,21 @@ mod tests {
         status: &str,
         expiry: Option<DateTime<Utc>>,
     ) -> StoredGoogleSubscription {
+        stored_with_billing(token, status, "recurring", expiry)
+    }
+
+    /// Same as [`stored`] but lets the caller pick the snapshot `billing_type`
+    fn stored_with_billing(
+        token: &str,
+        status: &str,
+        billing_type: &str,
+        expiry: Option<DateTime<Utc>>,
+    ) -> StoredGoogleSubscription {
         StoredGoogleSubscription {
             external_subscription_id: token.to_string(),
             external_product_id: "pro_monthly".to_string(),
             status: status.to_string(),
+            billing_type: billing_type.to_string(),
             current_period_end: expiry,
         }
     }
@@ -1057,5 +1129,107 @@ mod tests {
         assert_eq!(payload["purchaseToken"], "tok-404");
         assert_eq!(payload["reason"], "google_token_not_found");
         assert_eq!(payload["heraldStatus"], "expired");
+    }
+
+    //
+    // A non-renewing subscription has a fixed service window. The reconciliation
+    // poll must only act on Google's EXPIRED transition (plus the 404 path); all
+    // other Google states — ACTIVE renewal, GRACE, CANCELED, PAUSED, advancing
+    // expiry — are dropped so the subscription never enters the renewal flow.
+
+    #[test]
+    fn non_renewing_emits_expired_when_google_reports_expired() {
+        // The one transition that *does* fire for non_renewing: Google reports
+        // EXPIRED while Herald still records the subscription as active.
+        let expiry = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
+        let stored = stored_with_billing("nr-1", "active", "non_renewing", Some(expiry));
+        let purchase = sub_state("SUBSCRIPTION_STATE_EXPIRED", Some(expiry));
+
+        let (event_type, payload) = map_google_subscription_change(&stored, &purchase)
+            .expect("non_renewing EXPIRED transition must produce an expiry replay");
+        assert_eq!(event_type, "subscription.expired");
+        assert_eq!(payload["heraldStatus"], "expired");
+        assert_eq!(payload["previousStatus"], "active");
+        assert_eq!(payload["purchaseToken"], "nr-1");
+    }
+
+    #[test]
+    fn non_renewing_ignores_active_state_transition() {
+        // Non-renewing returning to ACTIVE from a non-active stored status must
+        // NOT replay a "renewed" event — non_renewing never renews.
+        let expiry = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
+        let stored = stored_with_billing("nr-2", "past_due", "non_renewing", Some(expiry));
+        let purchase = sub_state("SUBSCRIPTION_STATE_ACTIVE", Some(expiry));
+        assert!(
+            map_google_subscription_change(&stored, &purchase).is_none(),
+            "non_renewing must ignore the ACTIVE transition"
+        );
+    }
+
+    #[test]
+    fn non_renewing_ignores_grace_pause_cancel_transitions() {
+        // GRACE / PAUSED / CANCELED are renewal-flow states. Non-renewing must
+        // not emit any replay for them.
+        let expiry = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
+        for google_state in [
+            "SUBSCRIPTION_STATE_IN_GRACE_PERIOD",
+            "SUBSCRIPTION_STATE_PAUSED",
+            "SUBSCRIPTION_STATE_CANCELED",
+            "SUBSCRIPTION_STATE_ON_HOLD",
+        ] {
+            let stored = stored_with_billing("nr-3", "active", "non_renewing", Some(expiry));
+            let purchase = sub_state(google_state, Some(expiry));
+            assert!(
+                map_google_subscription_change(&stored, &purchase).is_none(),
+                "non_renewing must ignore state {google_state:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn non_renewing_ignores_advancing_expiry_renewal_detection() {
+        // Same ACTIVE status but a later expiry would be a renewal for recurring.
+        // For non_renewing it must be ignored — the service window is fixed.
+        let old_expiry = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
+        let new_expiry = Utc.timestamp_opt(1_700_086_400, 0).unwrap(); // +1d
+        let stored = stored_with_billing("nr-4", "active", "non_renewing", Some(old_expiry));
+        let purchase = sub_state("SUBSCRIPTION_STATE_ACTIVE", Some(new_expiry));
+        assert!(
+            map_google_subscription_change(&stored, &purchase).is_none(),
+            "non_renewing must not treat advancing expiry as a renewal"
+        );
+    }
+
+    #[test]
+    fn non_renewing_skips_replay_when_already_expired() {
+        // Idempotency: once Herald's stored status is already `expired`, a
+        // subsequent EXPIRED poll must not re-emit (mirrors the recurring
+        // "no no-op churn every cycle" contract).
+        let expiry = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
+        let stored = stored_with_billing("nr-5", "expired", "non_renewing", Some(expiry));
+        let purchase = sub_state("SUBSCRIPTION_STATE_EXPIRED", Some(expiry));
+        assert!(map_google_subscription_change(&stored, &purchase).is_none());
+    }
+
+    #[test]
+    fn recurring_retains_full_state_mapping_after_filter_added() {
+        // the non_renewing branch must not change recurring's behaviour. Same
+        // ACTIVE→EXPIRED transition that produced `subscription.expired` before
+        let expiry = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
+        let stored = stored_with_billing("rec-1", "active", "recurring", Some(expiry));
+        let purchase = sub_state("SUBSCRIPTION_STATE_EXPIRED", Some(expiry));
+
+        let (event_type, payload) = map_google_subscription_change(&stored, &purchase)
+            .expect("recurring EXPIRED must still replay under the new filter");
+        assert_eq!(event_type, "subscription.expired");
+        assert_eq!(payload["heraldStatus"], "expired");
+
+        // And recurring still honours the renewal-detection path.
+        let new_expiry = Utc.timestamp_opt(1_700_086_400, 0).unwrap(); // +1d
+        let stored_renew = stored_with_billing("rec-2", "active", "recurring", Some(expiry));
+        let purchase_renew = sub_state("SUBSCRIPTION_STATE_ACTIVE", Some(new_expiry));
+        let (renew_type, _) = map_google_subscription_change(&stored_renew, &purchase_renew)
+            .expect("recurring advancing-expiry renewal must still fire");
+        assert_eq!(renew_type, "subscription.renewed");
     }
 }

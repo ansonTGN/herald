@@ -187,7 +187,6 @@ where
         Ok(CreatedPaymentAttempt { attempt, context })
     }
 
-    /// Create a payment attempt for an IAP receipt submission (design
     /// support-iap §5.2).
     ///
     /// IAP (Apple App Store / Google Play) is a reverse-payment semantic: the
@@ -201,7 +200,6 @@ where
     /// The attempt is created in `Pending` status; the caller drives it to
     /// `Succeeded` via `complete_succeeded_payment_attempt` inside the
     /// fulfillment transaction (which for Google also performs the in-tx
-    /// `acknowledge` / `consume`, design §6.3).
     pub async fn create_iap_payment_attempt(
         &self,
         input: CreateIapAttemptInput,
@@ -221,7 +219,6 @@ where
         // `payment_attempts` row (the column exists for the Stripe/Creem
         // checkout flow). The `payment_attempts.amount CHECK(amount > 0)`
         // constraint, however, rejects 0. When the entitlement mapping has no
-        // `provider_product_info.price` (design A6: IAP product info is
         // optional / manually entered), `resolve_target` returns amount=0; we
         // coerce to a sentinel `1` so the row satisfies the CHECK without
         // pretending to know the real store price. A non-zero mapping price is
@@ -303,6 +300,13 @@ where
                     .fulfill_subscription_purchase(&attempt, provider_transaction_id)
                     .await
             }
+            // Subscription with a fixed service period that does not auto-renew;
+            // `service_duration_days` from the mapping drives current_period_end.
+            BillingType::NonRenewing => {
+                self.fulfillment_service
+                    .fulfill_non_renewing_purchase(&attempt, provider_transaction_id)
+                    .await
+            }
         }
     }
 
@@ -367,7 +371,6 @@ where
             )));
         }
 
-        // M3 one-time+role anti-repeat (design §4.3.2 / §5.4): only the
         // `billing_type=one_time` + non-empty `granted_role_ids` combo is
         // one-per-user. Points packages and subscriptions remain
         // repeatable/renewable. A user who already owns it — holds any of the
@@ -687,7 +690,6 @@ where
             // IAP providers (apple / google) reach this path via the IAP
             // receipt handler and Apple SSV V2 webhook
             // (`shared_fulfillment::fulfill_provider_event`), in addition to
-            // the Stripe / Creem webhook paths. Design support-iap §4.1 key
             // boundary #2: the short names `apple` / `google` flow through
             // every `payment_provider` match arm alongside `stripe` / `creem`.
             PaymentCompletionSource::ProviderWebhook { provider }

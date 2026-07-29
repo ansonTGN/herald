@@ -15,7 +15,6 @@ vi.mock('@/hooks/use-permission', () => ({
   })),
 }))
 
-// Controllable realm-roles list for the Role-grant dimension (FE-D02). Held in
 // a mutable ref so individual tests can seed real assignable roles before
 // render; defaults to empty so existing tests see the RoleSelector placeholder.
 const { roleItemsHolder } = vi.hoisted(() => ({
@@ -35,14 +34,12 @@ vi.mock('@/data/query-options', () => ({
     queryKey: ['entitlement-mappings', 'realm-1'],
     queryFn: async () => undefined,
   }),
-  // Role-grant dimension (FE-D02): PriceEditRow does
   // `useQuery(adminRolesQueryOptions(realmId))` and filters out builtin roles.
   // Tests mutate `roleItemsHolder.current` before render to drive RoleSelector.
   adminRolesQueryOptions: () => ({
     queryKey: ['roles', 'realm-1'],
     queryFn: async () => roleItemsHolder.current,
   }),
-  // FE-D03: the Create-mapping dialog reads the credit-bucket list. Stubbed
   // empty so the dialog renders without a real query (its own test slot covers
   // populated buckets).
   creditBucketsListQueryOptions: () => ({
@@ -55,11 +52,21 @@ vi.mock('@/data/query-options', () => ({
 // (which Vitest hoists above imports) can reference these bindings.
 const {
   mockBatchMutate,
+  mockUpdateMutate,
+  mockUpdateMutateCalls,
   mockIsProtectedPriceError,
   mockIsRoleNotInRealmError,
   mockExtractActiveSubscriptions,
 } = vi.hoisted(() => {
   const mockBatchMutate = vi.fn()
+  // onBlur edit. Same controller pattern as `mockBatchMutate`: tests inspect the
+  // captured mutate call args to assert the request body without mocking the
+  // internal API function.
+  const mockUpdateMutate = vi.fn()
+  // Tracks the per-row (mappingId, body) tuples so a test can assert the PUT
+  // was wired to the correct row — the body itself does NOT carry mappingId
+  // (it lives in the hook signature / URL path).
+  const mockUpdateMutateCalls: Array<{ mappingId: string; body: unknown }> = []
   const mockIsProtectedPriceError = (e: unknown) =>
     !!e &&
     typeof e === 'object' &&
@@ -71,6 +78,8 @@ const {
     mockIsProtectedPriceError(e) ? (e as { activeSubscriptions: number }).activeSubscriptions : null
   return {
     mockBatchMutate,
+    mockUpdateMutate,
+    mockUpdateMutateCalls,
     mockIsProtectedPriceError,
     mockIsRoleNotInRealmError,
     mockExtractActiveSubscriptions,
@@ -115,12 +124,26 @@ vi.mock('@/data/entitlement-mapping-mutations', async () => {
     isProtectedPriceError: mockIsProtectedPriceError,
     isRoleNotInRealmError: mockIsRoleNotInRealmError,
     extractActiveSubscriptions: mockExtractActiveSubscriptions,
-    // FE-D03: the Create-mapping dialog now renders inside the page and calls
     // `useCreateEntitlementMapping`. Stub it as a no-op mutation so existing
     // page tests (which never open the dialog) keep passing. The dialog's own
     // create/409/23514 behavior is covered by the dedicated test slot.
     useCreateEntitlementMapping: () => ({
       mutate: () => undefined,
+      isPending: false,
+    }),
+    // and the onBlur handler calls `.mutate({ serviceDurationDays })`. Delegated
+    // to the controller so tests can observe the request body. The hook's
+    // (realmId, mappingId) args are captured alongside the body so a test can
+    // assert the PUT is wired to the correct row (the body itself has no
+    // mappingId — it lives in the URL path).
+    useUpdateEntitlementMapping: (_realmId: string, mappingId: string) => ({
+      mutate: (
+        req: unknown,
+        opts: { onSuccess?: () => void; onError?: (error: unknown) => void }
+      ) => {
+        mockUpdateMutateCalls.push({ mappingId, body: req })
+        mockUpdateMutate(req, opts)
+      },
       isPending: false,
     }),
   }
@@ -176,6 +199,9 @@ function renderPage(items: EntitlementMappingResponse[] = [], client?: QueryClie
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // Reset the PUT-call log (it's a plain array, not a vi.fn, so clearAllMocks
+  // does not touch it).
+  mockUpdateMutateCalls.length = 0
   // Default: no assignable roles (existing tests don't touch role selection).
   // Role-related tests override this before render.
   roleItemsHolder.current = []
@@ -365,8 +391,6 @@ describe('EntitlementMappingsPage (master-detail)', () => {
   })
 })
 
-// --- FE-T02: name-first primary label with i18n placeholder fallback -------
-
 describe('EntitlementMappingsPage — primary label', () => {
   it('renders productName as the primary label when present (list row + detail head)', async () => {
     // snake_case JSONB: `readProviderProductInfo` narrows `name` → camelCase.
@@ -410,8 +434,6 @@ describe('EntitlementMappingsPage — primary label', () => {
     expect(head.textContent).toContain('prod_pro')
   })
 })
-
-// --- FE-T02: read-only provider metadata block presence/absence -----------
 
 describe('EntitlementMappingsPage — provider metadata block', () => {
   it('renders the metadata block when productMetadata has keys', async () => {
@@ -476,8 +498,6 @@ describe('EntitlementMappingsPage — provider metadata block', () => {
     expect(screen.queryByTestId('price-metadata-block-price_monthly_b')).toBeNull()
   })
 })
-
-// --- FE-T02: one_time field hiding (§4.5.4) --------------------------------
 
 /**
  * Open the per-price "Advanced" panel for the seeded row so the lazily-mounted
@@ -572,8 +592,6 @@ describe('EntitlementMappingsPage — one_time field hiding', () => {
     expect(within(row).getByTestId('quota-window-editor')).toBeInTheDocument()
   })
 })
-
-// --- FE-T01: Role-grant dimension (design §4.4 / §5.2) ---------------------
 
 /** Two assignable (non-builtin) realm roles for the Role-grant field. */
 const ASSIGNABLE_ROLES = [
@@ -694,5 +712,108 @@ describe('EntitlementMappingsPage — role-grant dimension', () => {
 
     // The 409 protected-price confirmation dialog did NOT open (different path).
     expect(screen.queryByTestId('protected-price-confirm-dialog')).toBeNull()
+  })
+})
+
+//
+// The non-renewing branch renders serviceDurationDays (in place of
+// validityDays), shows the same subscription-only advanced fields as recurring
+
+describe('EntitlementMappingsPage — non_renewing rows', () => {
+  it('renders the service-duration-days field for a non_renewing price row and seeds its value', async () => {
+    renderPage([
+      makeMapping({
+        id: 'm-1',
+        externalProductId: 'prod_pro',
+        externalPriceId: 'price_nr',
+        entitlementKey: 'pro-plan',
+        billingType: 'non_renewing',
+        serviceDurationDays: 30,
+      }),
+    ])
+
+    const input = await screen.findByTestId('price-service-duration-days-price_nr')
+    expect(input).toBeInTheDocument()
+    // Seeded value flows from the GET response into the edit-row local state.
+    expect((input as HTMLInputElement).value).toBe('30')
+  })
+
+  it('shows subscription-only advanced fields for non_renewing but hides validityDays (DEC-pay_model-005, design §5.2)', async () => {
+    renderPage([
+      makeMapping({
+        id: 'm-1',
+        externalProductId: 'prod_pro',
+        externalPriceId: 'price_nr',
+        entitlementKey: 'pro-plan',
+        billingType: 'non_renewing',
+        pointsPerPeriod: 1000,
+        serviceDurationDays: 30,
+      }),
+    ])
+
+    const row = await openAdvancedPanel('price-edit-row-price_nr')
+
+    // non_renewing shares the subscription-only advanced field set with
+    expect(within(row).getByText(m['billing.field_grant_on_subscribe']())).toBeInTheDocument()
+    expect(within(row).getByTestId('quota-window-editor')).toBeInTheDocument()
+    // The period field renders for non-one_time rows (recurring + non_renewing).
+    expect(within(row).getByText(m['billing.field_period']())).toBeInTheDocument()
+
+    // validityDays (it shows serviceDurationDays instead, asserted above).
+    expect(within(row).queryByText(m['billing.field_validity_days']())).toBeNull()
+  })
+
+  it('saves non_renewing serviceDurationDays via single-row PUT on blur and keeps it out of the batch payload', async () => {
+    renderPage([
+      makeMapping({
+        id: 'm-1',
+        externalProductId: 'prod_pro',
+        externalPriceId: 'price_nr',
+        entitlementKey: 'pro-plan',
+        billingType: 'non_renewing',
+        serviceDurationDays: 30,
+      }),
+    ])
+
+    const input = (await screen.findByTestId(
+      'price-service-duration-days-price_nr'
+    )) as HTMLInputElement
+
+    // Edit the duration (30 → 60). clear + type updates the row state via the
+    // onChange handler; the onBlur is the single-row PUT trigger.
+    const user = userEvent.setup()
+    await user.clear(input)
+    await user.type(input, '60')
+    // Blur the input to fire the independent onBlur PUT (not the batch save).
+    await user.tab()
+
+    await waitFor(() => {
+      expect(mockUpdateMutate).toHaveBeenCalledTimes(1)
+    })
+    const updateBody = mockUpdateMutate.mock.calls[0]?.[0] as Record<string, unknown>
+    // The PUT body carries the new duration.
+    expect(updateBody.serviceDurationDays).toBe(60)
+    // And the PUT was wired to the correct row (mappingId captured from the
+    // hook signature; the body itself has no mappingId — it is the URL path).
+    expect(mockUpdateMutateCalls[0]?.mappingId).toBe('m-1')
+    // The two-path isolation contract: the single-row PUT only carries the
+    // dimension it edits. The batch fields are NOT on this body.
+    expect(updateBody.entitlementKey).toBeUndefined()
+    expect(updateBody.enabled).toBeUndefined()
+    expect(updateBody.pointsPerPeriod).toBeUndefined()
+    expect(updateBody.validityDays).toBeUndefined()
+    expect(updateBody.grantOnSubscribe).toBeUndefined()
+
+    // The batch save path is the OTHER axis: clicking save-mapping-button must
+    // NOT carry serviceDurationDays (the batch DTO has no such field).
+    await user.click(screen.getByTestId('save-mapping-button'))
+    await waitFor(() => {
+      expect(mockBatchMutate).toHaveBeenCalled()
+    })
+    const batchPayload = mockBatchMutate.mock.calls[0]?.[0] as {
+      updates: Array<Record<string, unknown>>
+    }
+    expect(batchPayload.updates[0]?.mappingId).toBe('m-1')
+    expect(batchPayload.updates[0]?.serviceDurationDays).toBeUndefined()
   })
 })

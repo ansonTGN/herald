@@ -82,7 +82,7 @@ IAP 渠道独有场景，来源 `docs/user-stories/billing/support-iap.md`：
 - **IAP 商品定价与商店管理 UI**：商品定价、订阅周期、退款规则、佣金档位由各 Realm 在 App Store Connect / Google Play Console 自行配置并维护，Herald 不维护本地商品目录、不提供商店管理界面
 - **Apple/Google 佣金（15–30%）核算**：佣金不纳入 Herald 代码范围；与现有促销 / 税务边界一致，Herald 不在本地实现佣金分摊或定价建议
 - **IAP 发票 / 税务**：Apple/Google 作为 merchant-of-record 对终端用户承担发票与税务义务，Herald 既不为 IAP 交易创建 manual 发票，也不同步外部发票（IAP 无发票 API）；与 `docs/prd/billing/invoice.md` 中 Creem MoR 约束同性质，IAP 交易不进入 Herald 发票体系
-- **非消耗型买断（buyout）与非续期订阅（non-renewing subscription）**：两种形态都需扩展 Herald 现有履约模型（当前只有 Recurring / OneTime），当前不纳入，将随履约模型扩展独立立项
+- **非消耗型买断（buyout）与非续期订阅（non-renewing subscription）**：本 PRD 不定义这两种形态；其产品规则见 [履约模型扩展](pay_model.md)
 - **跨平台订阅共享（universal entitlement）**：用户在 App Store 与 Google Play 各自独立订阅；同一用户跨平台共享订阅状态不在范围内
 - **家庭共享、优惠代码、引导价等商店侧能力**：由商店侧承载，Herald 只接收其通知并履约，不实现本地逻辑
 - **Google Play RTDN（实时开发者通知）**：RTDN 只能经 GCP Cloud Pub/Sub 投递，当前不接入以避免 GCP 运维负担；Google 生命周期由定时轮询驱动，事件延迟以对账间隔为界；后续可增量接入 RTDN 获得实时性，接入后业务语义不变
@@ -307,7 +307,7 @@ IAP 渠道独有场景，来源 `docs/user-stories/billing/support-iap.md`：
 
 - **两种商品类型纳入**：自动续期订阅（recurring）、消耗型积分包（one_time）
 - **复用现有履约**：recurring 复用订阅状态机与续费积分策略，one_time 复用 topup_credit 发放；不扩展 `BillingType`
-- **非消耗型买断与非续期订阅不纳入**：两种形态都需扩展 Herald 现有履约模型（当前只有 Recurring / OneTime），out of scope，将随履约模型扩展独立立项
+- **非消耗型买断与非续期订阅不在本 PRD 定义**：相关产品规则由 [履约模型扩展](pay_model.md) 维护
 - **跨平台订阅不共享**：App Store 与 Google Play 各自独立订阅，不合并、不共享状态
 
 ### 8.3 显式假设（列为约束）

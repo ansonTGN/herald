@@ -21,6 +21,7 @@ function makeValidForm(overrides: Record<string, unknown> = {}) {
     pointsPerPeriod: null,
     grantOnSubscribe: false,
     validityDays: null,
+    serviceDurationDays: null,
     grantedRoleIds: [],
     enabled: true,
     ...overrides,
@@ -74,6 +75,158 @@ describe('createEntitlementMappingSchema', () => {
     expect(result.success).toBe(true)
   })
 
+  describe('non_renewing (DEC-pay_model-005)', () => {
+    // §4.2.2): serviceDurationDays is required (>=1) and billingPeriod is
+    // mutually exclusive. These are schema-only checks the Demo cannot reach
+    // (the dialog hides submit / the conflicting field), so Vitest is the
+    // coverage.
+
+    it('accepts non_renewing with a valid serviceDurationDays (>= 1)', () => {
+      const result = createEntitlementMappingSchema.safeParse(
+        makeValidForm({
+          billingType: 'non_renewing',
+          billingPeriod: null,
+          serviceDurationDays: 90,
+        })
+      )
+
+      expect(result.success).toBe(true)
+    })
+
+    it('rejects non_renewing when serviceDurationDays is missing', () => {
+      const result = createEntitlementMappingSchema.safeParse(
+        makeValidForm({
+          billingType: 'non_renewing',
+          billingPeriod: null,
+          serviceDurationDays: null,
+        })
+      )
+
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        const paths = result.error.issues.map((issue) => String(issue.path[0]))
+        expect(paths).toContain('serviceDurationDays')
+      }
+    })
+
+    it('rejects non_renewing when serviceDurationDays is explicitly null', () => {
+      // The required-refinement (`!data.serviceDurationDays`) treats `null` the
+      // same as `undefined`: both are falsy, so the non-renewing branch is
+      // always flagged when no positive integer is supplied. Pinned separately
+      // from the "missing" case so a future refactor that special-cases
+      // null-vs-undefined surfaces here.
+      const result = createEntitlementMappingSchema.safeParse(
+        makeValidForm({
+          billingType: 'non_renewing',
+          billingPeriod: null,
+          serviceDurationDays: null,
+        })
+      )
+
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        const paths = result.error.issues.map((issue) => String(issue.path[0]))
+        expect(paths).toContain('serviceDurationDays')
+      }
+    })
+
+    it.each([0, -1, 0.5])(
+      'rejects non_renewing with an out-of-range serviceDurationDays (%s)',
+      (serviceDurationDays) => {
+        const result = createEntitlementMappingSchema.safeParse(
+          makeValidForm({
+            billingType: 'non_renewing',
+            billingPeriod: null,
+            serviceDurationDays,
+          })
+        )
+
+        expect(result.success).toBe(false)
+        if (!result.success) {
+          const paths = result.error.issues.map((issue) => String(issue.path[0]))
+          // 0/-1 are falsy so the required-refinement fires first at the
+          // serviceDurationDays path; 0.5 passes required but fails `.int()`.
+          expect(paths).toContain('serviceDurationDays')
+        }
+      }
+    )
+
+    it.each([0, -1, 1.5, '7'])(
+      'rejects non_renewing with non-positive or non-integer serviceDurationDays (%s)',
+      (serviceDurationDays) => {
+        // Type/precision boundary beyond the existing out-of-range row: covers
+        // a non-integer (1.5) and a string-coerced value ('7') that must fail
+        // the `.int()` / numeric checks, plus the non-positive cases for
+        // parity. `as unknown` bypasses the TS layer; the runtime schema is the
+        // authority (the form input always arrives as a number or null, but the
+        // schema must reject malformed shapes defensively).
+        const result = createEntitlementMappingSchema.safeParse(
+          makeValidForm({
+            billingType: 'non_renewing',
+            billingPeriod: null,
+            serviceDurationDays: serviceDurationDays as unknown,
+          })
+        )
+
+        expect(result.success).toBe(false)
+        if (!result.success) {
+          const paths = result.error.issues.map((issue) => String(issue.path[0]))
+          expect(paths).toContain('serviceDurationDays')
+        }
+      }
+    )
+
+    it('rejects non_renewing when billingPeriod is also set (mutually exclusive)', () => {
+      const result = createEntitlementMappingSchema.safeParse(
+        makeValidForm({
+          billingType: 'non_renewing',
+          billingPeriod: 'monthly',
+          serviceDurationDays: 90,
+        })
+      )
+
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        const paths = result.error.issues.map((issue) => String(issue.path[0]))
+        // The mutually-exclusive refinement flags billingPeriod (not the
+        // recurring-required wording, which is a different i18n key).
+        expect(paths).toContain('billingPeriod')
+      }
+    })
+  })
+
+  describe('non_renewing cross-type isolation (DEC-pay_model-005)', () => {
+    // serviceDurationDays's required constraint must ONLY act on non_renewing;
+    // it must not flag one_time or recurring rows that leave it null (those
+    // branches never set it). Pins the three-branch isolation so a regression
+    // that widens the refinement to "any row" surfaces here.
+
+    it('does NOT flag serviceDurationDays on one_time rows (cross-type isolation)', () => {
+      const result = createEntitlementMappingSchema.safeParse(
+        makeValidForm({
+          billingType: 'one_time',
+          billingPeriod: null,
+          validityDays: 30,
+          serviceDurationDays: null,
+        })
+      )
+
+      expect(result.success).toBe(true)
+    })
+
+    it('does NOT flag serviceDurationDays on recurring rows', () => {
+      const result = createEntitlementMappingSchema.safeParse(
+        makeValidForm({
+          billingType: 'recurring',
+          billingPeriod: 'monthly',
+          serviceDurationDays: null,
+        })
+      )
+
+      expect(result.success).toBe(true)
+    })
+  })
+
   it.each(['', null])('rejects an empty/missing billingType (%s)', (billingType) => {
     const result = createEntitlementMappingSchema.safeParse(makeValidForm({ billingType }))
 
@@ -122,6 +275,11 @@ describe('createEntitlementMappingSchema', () => {
     // (e.g. billingType defaulting to 'recurring' while billingPeriod is null).
     const defaults = getCreateEntitlementMappingDefaults()
 
+    // an independent column) so the create dialog renders the input empty until
+    // the admin fills it. Pinned so the default does not drift into an invalid
+    // shape (e.g. defaulting to 0, which the required-refinement would reject).
+    expect(defaults.serviceDurationDays).toBeNull()
+
     // Fill only the human-entered required strings; billingType stays '' so no
     // recurring refinement triggers.
     const result = createEntitlementMappingSchema.safeParse({
@@ -131,6 +289,23 @@ describe('createEntitlementMappingSchema', () => {
       entitlementKey: 'gold',
       bucketId: 'bucket-1',
       billingType: 'one_time',
+    })
+
+    expect(result.success).toBe(true)
+  })
+
+  it('getCreateEntitlementMappingDefaults yields a valid non_renewing form once serviceDurationDays is filled', () => {
+    // The defaults baseline must NOT drift into a shape that the non_renewing
+    // branch can never accept: starting from defaults + filling the
+    // human-entered required fields (and the non-renewing duration) must parse.
+    const result = createEntitlementMappingSchema.safeParse({
+      ...getCreateEntitlementMappingDefaults(),
+      paymentProvider: 'google',
+      externalProductId: 'com.example.app.gold',
+      entitlementKey: 'gold',
+      bucketId: 'bucket-1',
+      billingType: 'non_renewing',
+      serviceDurationDays: 30,
     })
 
     expect(result.success).toBe(true)

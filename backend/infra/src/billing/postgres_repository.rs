@@ -55,6 +55,7 @@ impl PostgresBillingRepository {
             payment_provider: model.payment_provider,
             status: model.status.parse()?,
             entitlement_key: model.entitlement_key,
+            billing_type: model.billing_type.parse()?,
             external_price_id: model.external_price_id,
             bucket_id: model.bucket_id,
             provider_metadata: model.provider_metadata,
@@ -90,7 +91,6 @@ impl PostgresBillingRepository {
         model: provider_entitlement_mapping::Model,
     ) -> EntitlementMapping {
         // Hydrate quota_windows via the shared infra serde boundary
-        // (BE-D09). DB NULL/empty ⟺ `None` (no window-model grant); non-empty
         // JSONB array ⟺ `Some(Vec<QuotaWindow>)`. A malformed JSONB value is
         // logged and treated as "no window grant" rather than poisoning the
         // whole read (the read path must not crash a list on one bad row).
@@ -111,6 +111,7 @@ impl PostgresBillingRepository {
             entitlement_key: model.entitlement_key,
             billing_type: model.billing_type.and_then(|s| s.parse().ok()),
             billing_period: model.billing_period,
+            service_duration_days: model.service_duration_days.map(|v| v as i64),
             points_per_period: model.points_per_period.map(|v| v as i64),
             grant_period_type: model.grant_period_type,
             validity_days: model.validity_days.map(|v| v as i64),
@@ -130,7 +131,6 @@ impl PostgresBillingRepository {
     fn entitlement_mapping_to_active_model(
         mapping: EntitlementMapping,
     ) -> provider_entitlement_mapping::ActiveModel {
-        // Serialize quota_windows via the shared infra serde boundary (BE-D09).
         // `None`/empty ⟺ SQL NULL (no window grant).
         let quota_windows = mapping
             .quota_windows
@@ -146,6 +146,7 @@ impl PostgresBillingRepository {
             entitlement_key: Set(mapping.entitlement_key),
             billing_type: Set(mapping.billing_type.map(|t| t.as_str().to_string())),
             billing_period: Set(mapping.billing_period),
+            service_duration_days: Set(mapping.service_duration_days.map(|v| v as i32)),
             points_per_period: Set(mapping.points_per_period.map(|v| v as i32)),
             grant_period_type: Set(mapping.grant_period_type),
             validity_days: Set(mapping.validity_days.map(|v| v as i32)),
@@ -226,6 +227,7 @@ impl PostgresBillingRepository {
             payment_provider: Set(sub.payment_provider.clone()),
             status: Set(sub.status.as_str().to_string()),
             entitlement_key: Set(sub.entitlement_key.clone()),
+            billing_type: Set(sub.billing_type.as_str().to_string()),
             external_price_id: Set(sub.external_price_id.clone()),
             bucket_id: Set(sub.bucket_id),
             provider_metadata: Set(sub.provider_metadata.clone()),
@@ -256,6 +258,7 @@ impl PostgresBillingRepository {
         active_model.payment_provider = Set(sub.payment_provider.clone());
         active_model.status = Set(sub.status.as_str().to_string());
         active_model.entitlement_key = Set(sub.entitlement_key.clone());
+        active_model.billing_type = Set(sub.billing_type.as_str().to_string());
         active_model.external_price_id = Set(sub.external_price_id.clone());
         active_model.bucket_id = Set(sub.bucket_id);
         active_model.provider_metadata = Set(sub.provider_metadata.clone());
@@ -1134,7 +1137,6 @@ impl BillingRepository for PostgresBillingRepository {
             processing_started_at: Set(event
                 .processing_started_at
                 .map(sea_orm::prelude::DateTimeWithTimeZone::from)),
-            // BE-D01 column: NULL = eligible for immediate retry by the sweep job.
             next_retry_at: Set(None),
             created_at: Set(sea_orm::prelude::DateTimeWithTimeZone::from(
                 event.created_at,
@@ -1784,7 +1786,7 @@ impl BillingRepository for PostgresBillingRepository {
         // Data query
         let data_sql = format!(
             "SELECT id, realm_id, user_id, external_subscription_id, external_product_id, \
-             payment_provider, status, entitlement_key, external_price_id, bucket_id, provider_metadata, \
+             payment_provider, status, entitlement_key, billing_type, external_price_id, bucket_id, provider_metadata, \
              synced_at, current_period_start, current_period_end, cancel_at_period_end, \
              client_app_id, cancel_at, created_at, updated_at \
              FROM subscription WHERE {} ORDER BY created_at DESC LIMIT ${} OFFSET ${}",
@@ -1822,6 +1824,10 @@ impl BillingRepository for PostgresBillingRepository {
                     payment_provider: row.get("payment_provider"),
                     status: status_str.parse()?,
                     entitlement_key: row.get("entitlement_key"),
+                    billing_type: {
+                        let bt: String = row.get("billing_type");
+                        bt.parse()?
+                    },
                     external_price_id: row.get("external_price_id"),
                     bucket_id: row.get("bucket_id"),
                     provider_metadata: row.get("provider_metadata"),

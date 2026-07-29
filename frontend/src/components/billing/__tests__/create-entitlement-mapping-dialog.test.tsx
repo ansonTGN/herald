@@ -9,8 +9,6 @@ import { toast } from 'sonner'
 //
 // Mirrors entitlement-mappings-page.test.tsx: the whole mutations module is
 // mocked so individual tests drive `mockCreateMutate` to decide
-// success/failure. The create-mapping dialog (FE-D03) is the unit under test;
-// 409 vs 23514/non-4xx branching (design §4.2.2) is its core contract, so the
 // mock's onError controller just delegates to the dialog's caller-supplied
 // onError — the dialog owns the duplicate vs config-error classification.
 
@@ -157,6 +155,34 @@ function renderDialog(open = true) {
     </Wrapper>
   )
   return { client, onOpenChange, ...view }
+}
+
+/**
+ * Fill the create-mapping form for a non-renewing mapping. Mirrors
+ * {@link fillCreateForm} but selects `non_renewing` as the billing type and
+ * fills the conditional `create-mapping-service-duration-days-input`. Billing
+ * period is intentionally left unset (non-renewing + billingPeriod are mutually
+ */
+async function fillCreateFormNonRenewing(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByTestId('create-mapping-provider-select'))
+  await user.click(await screen.findByRole('option', { name: 'App Store' }))
+
+  await user.type(
+    screen.getByTestId('create-mapping-external-product-id-input'),
+    'com.example.app.premium'
+  )
+
+  await user.type(screen.getByTestId('create-mapping-entitlement-key-input'), 'premium')
+
+  await user.click(screen.getByTestId('create-mapping-bucket-select'))
+  await user.click(await screen.findByRole('option', { name: 'Default Bucket' }))
+
+  // Billing Type = non_renewing (option label = billing.billing_type_non_renewing).
+  await user.click(screen.getByTestId('create-mapping-billing-type-select'))
+  await user.click(await screen.findByRole('option', { name: /non-renewing/i }))
+
+  // Conditional non-renewing duration field.
+  await user.type(screen.getByTestId('create-mapping-service-duration-days-input'), '30')
 }
 
 beforeEach(() => {
@@ -366,5 +392,73 @@ describe('CreateEntitlementMappingDialog — success side-effects', () => {
     // The success toast fired (re-asserted here to bind the success path to the
     // invalidation-capable callback in one place).
     expect(toast.success).toHaveBeenCalledWith(m['billing.create_mapping_success']())
+  })
+})
+
+//
+// The dialog renders the serviceDurationDays input only for non_renewing and
+// trims the submitted payload by billing type (non-renewing sends the integer,
+// other types send null). These branches are Demo-unreachable as isolated
+// payload assertions, so Vitest is the coverage.
+
+describe('CreateEntitlementMappingDialog — non-renewing interaction', () => {
+  it('renders the service-duration-days input only when billingType is non_renewing', async () => {
+    const user = userEvent.setup()
+    renderDialog()
+
+    // Initially (no billing type selected) the non-renewing duration input is
+    // absent.
+    expect(screen.queryByTestId('create-mapping-service-duration-days-input')).toBeNull()
+
+    // Selecting non_renewing reveals the conditional duration input.
+    await user.click(screen.getByTestId('create-mapping-billing-type-select'))
+    await user.click(await screen.findByRole('option', { name: /non-renewing/i }))
+
+    expect(screen.getByTestId('create-mapping-service-duration-days-input')).toBeInTheDocument()
+  })
+
+  it('submits a non_renewing mapping and trims serviceDurationDays into the payload', async () => {
+    mockCreateMutate.mockImplementation(
+      (_req: unknown, opts: { onSuccess?: () => void; onError?: (error: unknown) => void }) => {
+        opts.onSuccess?.()
+      }
+    )
+
+    const user = userEvent.setup()
+    renderDialog()
+
+    await fillCreateFormNonRenewing(user)
+    await user.click(screen.getByTestId('create-mapping-submit-button'))
+
+    await waitFor(() => {
+      expect(mockCreateMutate).toHaveBeenCalledTimes(1)
+    })
+    const body = mockCreateMutate.mock.calls[0]?.[0] as Record<string, unknown>
+    // The non-renewing branch keeps the duration and drops the billing period.
+    expect(body.billingType).toBe('non_renewing')
+    expect(body.serviceDurationDays).toBe(30)
+    expect(body.billingPeriod).toBeNull()
+  })
+
+  it('sends serviceDurationDays: null in the payload for non-non_renewing types', async () => {
+    // Verifies the per-type payload trim does NOT leak a serviceDurationDays
+    mockCreateMutate.mockImplementation(
+      (_req: unknown, opts: { onSuccess?: () => void; onError?: (error: unknown) => void }) => {
+        opts.onSuccess?.()
+      }
+    )
+
+    const user = userEvent.setup()
+    renderDialog()
+
+    await fillCreateForm(user)
+    await user.click(screen.getByTestId('create-mapping-submit-button'))
+
+    await waitFor(() => {
+      expect(mockCreateMutate).toHaveBeenCalledTimes(1)
+    })
+    const body = mockCreateMutate.mock.calls[0]?.[0] as Record<string, unknown>
+    expect(body.billingType).toBe('recurring')
+    expect(body.serviceDurationDays).toBeNull()
   })
 })

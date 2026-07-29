@@ -10,7 +10,6 @@
 // 5. One-time checkout without attemptId -> audit only, no fulfillment
 //
 // User Story: US-PA-003 (payment success fulfillment), US-PU-006 (one-time purchase)
-// Covers: Design section 5.1 "Creem webhook one-time dispatch"
 //
 // =============================================================================
 
@@ -381,7 +380,6 @@ mod tests {
     // =========================================================================
 
     /// User Story: US-PA-003, US-PU-006
-    /// Covers: Design section 5.1 "checkout.completed + one-time -> fulfill"
     ///
     /// Given a one-time entitlement mapping with 800 points and a pending payment attempt,
     /// when checkout.completed arrives with herald_billing_kind=one_time and the attempt's ID,
@@ -474,7 +472,6 @@ mod tests {
     // =========================================================================
 
     /// User Story: US-PA-003
-    /// Covers: Design section 5.1 "recurring -> wait for subscription.paid"
     ///
     /// Given a recurring entitlement mapping, when checkout.completed arrives with
     /// herald_billing_kind=subscription, no points are granted and no payment attempt
@@ -547,7 +544,6 @@ mod tests {
     // =========================================================================
 
     /// User Story: US-PA-003
-    /// Covers: Design section 5.1 "billing_type priority: metadata herald_billing_kind first"
     ///
     /// Given a mapping configured as billing_type=recurring in DB, when checkout.completed
     /// arrives with herald_billing_kind=one_time in metadata, the handler interprets the
@@ -616,7 +612,6 @@ mod tests {
     // =========================================================================
 
     /// User Story: US-PA-003
-    /// Covers: Design section 5.1 "billing_type priority: product field as fallback"
     ///
     /// Given no herald_billing_kind in metadata, when the Creem product has
     /// billing_type=onetime, the handler normalizes it to one_time and triggers
@@ -684,7 +679,6 @@ mod tests {
     // =========================================================================
 
     /// User Story: US-PA-003
-    /// Covers: Design section 5.1 "Creem onetime -> domain one_time normalization"
     ///
     /// Given Creem product sends billing_type=onetime, the handler correctly
     /// normalizes it to the domain BillingType::OneTime without parsing errors
@@ -759,7 +753,6 @@ mod tests {
     // =========================================================================
 
     /// User Story: US-PA-003
-    /// Covers: Design section 5.1 "billing_type priority: mapping lookup as third fallback"
     ///
     /// Given no herald_billing_kind in metadata AND no billing_type in product field,
     /// when the handler looks up the mapping by provider product ID and finds
@@ -826,7 +819,6 @@ mod tests {
     // =========================================================================
 
     /// User Story: US-PA-003
-    /// Covers: Design section 5.1 "one-time without attemptId -> log, skip fulfillment"
     ///
     /// Given checkout.completed with herald_billing_kind=one_time but no attemptId
     /// in metadata, the handler returns OK but does not grant points or complete
@@ -893,6 +885,241 @@ mod tests {
         assert_eq!(
             event_count, 1,
             "Payment event should be recorded as audit even without attemptId"
+        );
+    }
+
+    // =========================================================================
+    // =========================================================================
+
+    /// Create a Creem one-time entitlement mapping that grants `role_ids` on
+    /// payment (the buyout shape). Mirrors the file-local
+    /// `create_one_time_mapping` but also binds `granted_role_ids`, which the
+    /// role-revocation test requires.
+    async fn create_creem_one_time_mapping_with_role(
+        ctx: &CreemOneTimeTestContext,
+        realm_id: &str,
+        external_product_id: &str,
+        entitlement_key: &str,
+        points_per_period: i64,
+        role_ids: &[Uuid],
+    ) -> Uuid {
+        let mapping_id = Uuid::now_v7();
+        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+            &ctx.app_state.pool,
+            realm_id,
+        )
+        .await;
+        sqlx::query(
+            "INSERT INTO provider_entitlement_mappings
+                (id, realm_id, payment_provider, external_product_id, entitlement_key,
+                 billing_type, points_per_period, grant_on_subscribe, enabled, bucket_id,
+                 granted_role_ids, created_at, updated_at)
+             VALUES ($1, $2, 'creem', $3, $4, 'one_time', $5, true, true, $6, $7, NOW(), NOW())",
+        )
+        .bind(mapping_id)
+        .bind(realm_id)
+        .bind(external_product_id)
+        .bind(entitlement_key)
+        .bind(points_per_period)
+        .bind(bucket_id)
+        .bind(role_ids)
+        .execute(&ctx.app_state.pool)
+        .await
+        .expect("Failed to create Creem one-time mapping with granted_role_ids");
+        mapping_id
+    }
+
+    /// Create a Creem `payment_attempts` snapshot in the Succeeded state with
+    /// `provider_reference = payment_id` so the Creem refund handler can resolve
+    /// the attempt + routing bucket (mirrors the Stripe
+    /// `create_stripe_succeeded_attempt` but for `payment_provider='creem'`).
+    async fn create_creem_succeeded_attempt(
+        ctx: &CreemOneTimeTestContext,
+        realm_id: &str,
+        user_id: Uuid,
+        mapping_id: Uuid,
+        payment_id: &str,
+        amount: i64,
+    ) -> Uuid {
+        let attempt_id = Uuid::now_v7();
+        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+            &ctx.app_state.pool,
+            realm_id,
+        )
+        .await;
+        sqlx::query(
+            "INSERT INTO payment_attempts
+                (id, realm_id, user_id, payment_provider, target_type, target_id,
+                 bucket_id, amount, currency, status, provider_reference,
+                 provider_status, expires_at, created_at, updated_at)
+             VALUES ($1, $2, $3, 'creem', 'entitlement_mapping', $4,
+                     $5, $6, 'USD', 'Succeeded', $7,
+                     'succeeded', NOW() + INTERVAL '1 hour', NOW(), NOW())",
+        )
+        .bind(attempt_id)
+        .bind(realm_id)
+        .bind(user_id)
+        .bind(mapping_id)
+        .bind(bucket_id)
+        .bind(amount)
+        .bind(payment_id)
+        .execute(&ctx.app_state.pool)
+        .await
+        .expect("Failed to create Creem succeeded payment_attempt snapshot");
+        attempt_id
+    }
+
+    /// Count `user_roles` rows for a user with `source='payment'` and a given
+    /// `source_id`. Mirrors `paywall_m4_revoke_sweep_scenarios`.
+    async fn count_payment_roles_by_source_id(
+        ctx: &CreemOneTimeTestContext,
+        user_id: Uuid,
+        source_id: &str,
+    ) -> i64 {
+        sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM user_roles
+             WHERE user_id = $1 AND source = 'payment' AND source_id = $2",
+        )
+        .bind(user_id)
+        .bind(source_id)
+        .fetch_one(&ctx.app_state.pool)
+        .await
+        .unwrap()
+    }
+
+    /// User Story: US-PM-008 (Creem one_time refund → permanent role revoked;
+    ///             points revoked; manual grants untouched).
+    ///
+    /// A Succeeded Creem one_time (buyout) payment grants a permanent payment-
+    /// source role + topup points. A `refund.created` webhook (refundType=topup)
+    /// full-channel role clawback). This is the Creem counterpart to the
+    /// Stripe `test_pay_model_stripe_one_time_refund_revokes_role` test.
+    #[test_context(CreemOneTimeTestContext)]
+    #[tokio::test]
+    async fn test_pay_model_creem_one_time_refund_revokes_role(ctx: &mut CreemOneTimeTestContext) {
+        let app = ctx.create_unified_test_router();
+        let webhook_secret = "test_creem_wh_secret_pm_refund";
+        let realm_id = ctx._realm_id.clone();
+        set_webhook_secret(ctx, webhook_secret).await;
+
+        // Buyout role in this realm.
+        let token = crate::tests::helpers::billing_helpers::setup_billing_admin_session(
+            ctx,
+            "pm-creem-refund-role-admin@test.com",
+        )
+        .await;
+        let role_id = crate::tests::helpers::rbac_helpers::create_role(
+            ctx,
+            &realm_id,
+            &token,
+            "pm-creem-refund-role",
+            "pay_model creem one_time refund role",
+        )
+        .await;
+
+        // Creem one-time mapping: grants the role + 500 points.
+        let entitlement_key = "pm-creem-refund-role";
+        let external_product_id = format!("prod_creem_{entitlement_key}");
+        let mapping_id = create_creem_one_time_mapping_with_role(
+            ctx,
+            &realm_id,
+            &external_product_id,
+            entitlement_key,
+            500,
+            &[role_id],
+        )
+        .await;
+
+        let user_id = create_test_user(ctx, "pm-creem-refund-role@test.com").await;
+        create_points_wallet(ctx, user_id, &realm_id).await;
+
+        // Seed a Succeeded Creem attempt with provider_reference = payment_id.
+        let payment_id = format!("pay_creem_refund_{}", Uuid::now_v7());
+        let attempt_id =
+            create_creem_succeeded_attempt(ctx, &realm_id, user_id, mapping_id, &payment_id, 500)
+                .await;
+
+        // Seed the payment-source role grant (source_id = attempt.id) + a
+        // topup_credit ledger entry (500) the proportional revocation claws back.
+        sqlx::query(
+            "INSERT INTO user_roles
+                (id, user_id, role_id, realm_id, client_id, principal_type, principal_id,
+                 source, source_id, expires_at)
+             VALUES ($1, $2, $3, $4, $5, 'user', $2::text, 'payment', $6, NULL)",
+        )
+        .bind(Uuid::now_v7())
+        .bind(user_id)
+        .bind(role_id)
+        .bind(&realm_id)
+        .bind(&ctx._client_id)
+        .bind(attempt_id.to_string())
+        .execute(&ctx.app_state.pool)
+        .await
+        .expect("seed payment role grant");
+
+        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+            &ctx.app_state.pool,
+            &realm_id,
+        )
+        .await;
+        sqlx::query(
+            "INSERT INTO points_credit_ledger
+                (id, user_id, realm_id, bucket_id, credit_type, source_type, source_id,
+                 granted_amount, used_amount, revoked_amount, status, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, 'topup_credit', 'topup', $5,
+                     500, 0, 0, 'active', NOW(), NOW())",
+        )
+        .bind(Uuid::now_v7())
+        .bind(user_id)
+        .bind(&realm_id)
+        .bind(bucket_id)
+        .bind(attempt_id.to_string())
+        .execute(&ctx.app_state.pool)
+        .await
+        .expect("seed topup_credit ledger entry");
+
+        // Pre-condition: 1 payment role grant + 500 topup.
+        assert_eq!(
+            count_payment_roles_by_source_id(ctx, user_id, &attempt_id.to_string()).await,
+            1,
+            "pre-condition: payment role grant present"
+        );
+        let (topup_before, _) = get_wallet_balances(ctx, user_id, &realm_id).await;
+        assert_eq!(topup_before, 500, "pre-condition: 500 topup granted");
+
+        // Exercise: refund.created (topup). Uses the shared
+        // `build_refund_created_event_with_user_and_type` builder.
+        let refund_event_id = generate_test_event_id();
+        let refund_id = format!("re_pm_creem_{refund_event_id}");
+        let payload =
+            crate::tests::helpers::webhook_helpers::build_refund_created_event_with_user_and_type(
+                refund_event_id,
+                refund_id,
+                payment_id,
+                500, // refund amount
+                500, // original amount
+                &realm_id,
+                user_id,
+                "topup",
+            );
+        let response = send_webhook_with_signature(&app, &realm_id, payload, webhook_secret).await;
+        assert!(
+            response.status() == StatusCode::OK || response.status() == StatusCode::ACCEPTED,
+            "refund webhook must return success, got {}",
+            response.status()
+        );
+
+        assert_eq!(
+            count_payment_roles_by_source_id(ctx, user_id, &attempt_id.to_string()).await,
+            0,
+            "Creem one_time refund must revoke the permanent payment-source role (DEC-pay_model-004)"
+        );
+
+        // And: the topup points were also revoked (decoupled revocation).
+        let (topup_after, _) = get_wallet_balances(ctx, user_id, &realm_id).await;
+        assert_eq!(
+            topup_after, 0,
+            "Creem one_time refund must also revoke the topup points"
         );
     }
 }

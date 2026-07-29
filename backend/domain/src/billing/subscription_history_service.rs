@@ -240,6 +240,7 @@ mod tests {
             payment_provider: "creem".to_string(),
             status: SubscriptionStatus::Active,
             entitlement_key: "pro-plan".to_string(),
+            billing_type: crate::billing::entities::BillingType::Recurring,
             external_price_id: None,
             bucket_id: Uuid::now_v7(),
             provider_metadata: None,

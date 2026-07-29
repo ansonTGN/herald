@@ -4,6 +4,7 @@ import {
   mapBillingPeriodLabel,
   primaryProductLabel,
   isOneTimeMapping,
+  isNonRenewingMapping,
 } from '../provider-product-info'
 import { m } from '@/paraglide/messages'
 
@@ -114,7 +115,6 @@ describe('readProviderProductInfo — defensive JSON narrowing', () => {
   })
 
   it('treats a malformed metadata value defensively (returns it as-is, no throw)', () => {
-    // FE-D01 contract: the accessor shallow-reads known keys via `pick`, which
     // passes the value through unchanged (the `as T` cast is the ONLY
     // coercion). A non-object `product_metadata` is therefore returned
     // verbatim — the accessor does NOT validate/transform nested shapes, it
@@ -181,7 +181,6 @@ describe('primaryProductLabel', () => {
   )
 
   it('treats an empty-string name as present (no fallback); the page composes `|| placeholder`', () => {
-    // FE-D02 contract: `primaryProductLabel` uses nullish-coalescing
     // (`name ?? externalProductId ?? ''`), so an empty-string name is NOT
     // nullish and does not fall back here. The page renders the i18n placeholder
     // via `primaryProductLabel(...) || m['billing.product_name_empty']()`,
@@ -203,6 +202,22 @@ describe('isOneTimeMapping', () => {
     'returns false for recurring, null, undefined, and unknown values (%s)',
     (input) => {
       expect(isOneTimeMapping(input)).toBe(false)
+    }
+  )
+})
+
+describe('isNonRenewingMapping', () => {
+  // Symmetric to `isOneTimeMapping`: the two decision points are disjoint —
+  // one_time and non_renewing are each exclusive. non_renewing shares the
+  // but differs in showing serviceDurationDays instead of validityDays
+  it('returns true only for non_renewing', () => {
+    expect(isNonRenewingMapping('non_renewing')).toBe(true)
+  })
+
+  it.each(['recurring', 'one_time', null, undefined, '', 'subscription'])(
+    'returns false for recurring, one_time, null, undefined, and unknown values (%s)',
+    (input) => {
+      expect(isNonRenewingMapping(input)).toBe(false)
     }
   )
 })

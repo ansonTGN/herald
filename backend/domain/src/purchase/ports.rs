@@ -48,4 +48,12 @@ pub trait FulfillmentService: Send + Sync {
         attempt: &PaymentAttempt,
         provider_transaction_id: String,
     ) -> Result<FulfillmentResult, CoreError>;
+
+    /// (`current_period_end = now + mapping.service_duration_days`) that does
+    /// not auto-renew. Idempotent on `external_subscription_id`.
+    async fn fulfill_non_renewing_purchase(
+        &self,
+        attempt: &PaymentAttempt,
+        provider_transaction_id: String,
+    ) -> Result<FulfillmentResult, CoreError>;
 }

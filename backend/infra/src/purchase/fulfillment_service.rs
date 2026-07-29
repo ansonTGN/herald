@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use herald_domain::authorization::PermissionService;
-use herald_domain::billing::{BillingRepository, Subscription, SubscriptionStatus};
+use herald_domain::billing::{BillingRepository, BillingType, Subscription, SubscriptionStatus};
 use herald_domain::common::entities::app_errors::CoreError;
 use herald_domain::payment_attempt::PaymentAttempt;
 use herald_domain::points::{CreditSourceType, CreditType, PointsRepository};
@@ -29,7 +29,6 @@ fn billing_period_to_days(period: Option<&str>) -> i64 {
 /// - `P`: points repository (credits grant).
 /// - `B`: billing repository (entitlement mapping + subscription).
 /// - `U`: user-role repository — used by the payment-driven role grant loop
-///   (design §5.3). Bypasses `roles.manage` since payment success is a system
 ///   event, not an authenticated admin action (no `Identity::System` variant
 ///   exists — `backend/domain/src/authentication/identity.rs:27`).
 /// - `C`: permission service — invoked solely for `invalidate_user_role_cache`
@@ -71,8 +70,6 @@ where
     }
 
     /// Grant every role in `role_ids` to `user_id` as a payment-driven grant,
-    /// then invalidate the user's role cache. Per design §5.3 a grant failure
-    /// propagates as an error so the compensation framework / BE-D05 retry job
     /// can re-process the attempt (it is NOT silently swallowed).
     async fn grant_payment_roles(
         &self,
@@ -163,172 +160,8 @@ where
             target_id = %attempt.target_id,
             "Fulfilling subscription purchase"
         );
-
-        // Check for existing subscription by external subscription ID (idempotency check)
-        if let Some(existing_subscription) = self
-            .billing_repository
-            .find_by_external_subscription_id(&provider_transaction_id, &attempt.payment_provider)
-            .await?
-        {
-            tracing::info!(
-                payment_attempt_id = %attempt.id,
-                existing_subscription_id = %existing_subscription.id,
-                "Existing subscription found for payment attempt, returning existing fulfillment"
-            );
-
-            return Ok(FulfillmentResult {
-                fulfillment_type: FulfillmentType::SubscriptionCreated,
-                subscription_id: Some(existing_subscription.id),
-                points_granted: None,
-                granted_at: existing_subscription.created_at,
-            });
-        }
-
-        // Look up entitlement mapping by ID with realm isolation check
-        let mapping = self
-            .billing_repository
-            .find_entitlement_mapping_by_id(attempt.target_id)
-            .await?
-            .filter(|m| m.realm_id == attempt.realm_id)
-            .ok_or_else(|| {
-                CoreError::not_found(&format!(
-                    "Entitlement mapping {} for subscription fulfillment",
-                    attempt.target_id
-                ))
-            })?;
-
-        let entitlement_key = mapping.entitlement_key.clone();
-
-        // Fulfillment routes by the `payment_attempt.bucket_id` snapshot taken
-        // at purchase creation. Live `mapping.bucket_id` is intentionally
-        // NOT consulted here — mapping re-bucketing must not affect in-flight
-        // attempts.
-        let bucket_id = attempt.bucket_id;
-
-        let now = chrono::Utc::now();
-        let period_days = billing_period_to_days(mapping.billing_period.as_deref());
-        let period_end = now + chrono::Duration::days(period_days);
-
-        // Create new subscription
-        let subscription = Subscription {
-            id: uuid::Uuid::now_v7(),
-            realm_id: attempt.realm_id.clone(),
-            user_id: attempt.user_id,
-            external_subscription_id: provider_transaction_id.clone(),
-            external_product_id: attempt.target_id.to_string(),
-            payment_provider: attempt.payment_provider.clone(),
-            status: SubscriptionStatus::Active,
-            entitlement_key: entitlement_key.clone(),
-            external_price_id: mapping.external_price_id.clone(),
-            bucket_id,
-            provider_metadata: None,
-            synced_at: Some(now),
-            current_period_start: Some(now),
-            current_period_end: Some(period_end),
-            cancel_at_period_end: false,
-            client_app_id: None,
-            cancel_at: None,
-            created_at: now,
-            updated_at: now,
-        };
-
-        tracing::info!(
-            subscription_id = %subscription.id,
-            realm_id = %subscription.realm_id,
-            user_id = ?subscription.user_id,
-            entitlement_key = %entitlement_key,
-            period_days,
-            "Creating new subscription from payment attempt"
-        );
-
-        // Create subscription in database
-        let created_subscription = self
-            .billing_repository
-            .create_subscription(subscription)
-            .await?;
-
-        tracing::info!(
-            subscription_id = %created_subscription.id,
-            "Subscription created successfully"
-        );
-
-        // Grant subscription credits if mapping is configured for it
-        let points_granted = if mapping.grant_on_subscribe {
-            match mapping.points_per_period {
-                Some(points) if points > 0 => {
-                    // bucket_id snapshot already resolved above; pass through.
-                    let credit_ledger = self
-                        .points_repository
-                        .grant_points_atomic(
-                            &attempt.realm_id,
-                            attempt.user_id,
-                            bucket_id,
-                            CreditType::SubscriptionCredit,
-                            CreditSourceType::SubscriptionInitial,
-                            points,
-                            Some(period_end),
-                            // One-time grant on subscribe: immediately available.
-                            None,
-                            Some(entitlement_key.clone()),
-                            None,
-                            Some(format!("subscription_initial_grant:{}", attempt.id)),
-                        )
-                        .await?;
-
-                    tracing::info!(
-                        subscription_id = %created_subscription.id,
-                        user_id = %attempt.user_id,
-                        points,
-                        "Subscription credits granted on subscribe"
-                    );
-
-                    Some(PointsGrant {
-                        transaction_id: credit_ledger.id,
-                        points_type: "subscription_credit".to_string(),
-                        points,
-                        description: format!(
-                            "Subscription grant: {} points for {}",
-                            points, entitlement_key
-                        ),
-                    })
-                }
-                _ => {
-                    tracing::info!(
-                        subscription_id = %created_subscription.id,
-                        "No points_per_period configured, skipping credit grant"
-                    );
-                    None
-                }
-            }
-        } else {
-            tracing::info!(
-                subscription_id = %created_subscription.id,
-                "grant_on_subscribe is false, skipping credit grant"
-            );
-            None
-        };
-
-        // Payment-driven role grant (design §5.3). Runs after the points block
-        // regardless of whether points were granted, so a subscription mapping
-        // that grants only roles (no points) still grants them. Source id is
-        // the subscription id; expiry aligns to the billing period end.
-        if !mapping.granted_role_ids.is_empty() {
-            self.grant_payment_roles(
-                &attempt.realm_id,
-                attempt.user_id,
-                &mapping.granted_role_ids,
-                &created_subscription.id.to_string(),
-                created_subscription.current_period_end,
-            )
-            .await?;
-        }
-
-        Ok(FulfillmentResult {
-            fulfillment_type: FulfillmentType::SubscriptionCreated,
-            subscription_id: Some(created_subscription.id),
-            points_granted,
-            granted_at: created_subscription.created_at,
-        })
+        self.fulfill_subscription_shape(attempt, provider_transaction_id, BillingType::Recurring)
+            .await
     }
 
     async fn fulfill_one_time_purchase(
@@ -385,7 +218,6 @@ where
                 ))
             })?;
 
-        // W1 fix (design §5.1 BEFORE/AFTER): a one-time mapping with no
         // `points_per_period` (or a non-positive value) no longer 500s. Instead
         // of erroring, we skip the points grant but still fall through to the
         // role-grant step below — mirroring the subscription path's graceful
@@ -455,7 +287,6 @@ where
             None
         };
 
-        // Payment-driven role grant (design §5.3). One-time grants are
         // permanent: source_id = attempt.id, expires_at = None.
         if !mapping.granted_role_ids.is_empty() {
             self.grant_payment_roles(
@@ -473,6 +304,255 @@ where
             subscription_id: None,
             points_granted: points_grant,
             granted_at: chrono::Utc::now(),
+        })
+    }
+
+    /// not auto-renew. Delegates to [`fulfill_subscription_shape`] with
+    /// `BillingType::NonRenewing`, which derives the service period from
+    /// `mapping.service_duration_days` and stamps `cancel_at = period_end`.
+    async fn fulfill_non_renewing_purchase(
+        &self,
+        attempt: &PaymentAttempt,
+        provider_transaction_id: String,
+    ) -> Result<FulfillmentResult, CoreError> {
+        tracing::info!(
+            payment_attempt_id = %attempt.id,
+            realm_id = %attempt.realm_id,
+            user_id = %attempt.user_id,
+            target_id = %attempt.target_id,
+            "Fulfilling non-renewing subscription purchase"
+        );
+        self.fulfill_subscription_shape(attempt, provider_transaction_id, BillingType::NonRenewing)
+            .await
+    }
+}
+
+impl<P, B, U, C> PostgresFulfillmentService<P, B, U, C>
+where
+    P: PointsRepository + Send + Sync,
+    B: BillingRepository + Send + Sync,
+    U: UserRoleRepository + Send + Sync,
+    C: PermissionService + Send + Sync,
+{
+    /// Shared mechanics for both subscription-shape fulfillment paths:
+    /// [`fulfill_subscription_purchase`] (`Recurring`) and
+    /// [`fulfill_non_renewing_purchase`] (`NonRenewing`). Handles external-id
+    /// idempotency, the realm-isolated mapping lookup, subscription creation,
+    /// the subscribe-time credit grant, and the payment-driven role grant.
+    ///
+    /// The two paths differ only in how the service period is derived and how
+    /// the snapshot is stamped — both derived from `billing_type`:
+    /// - `Recurring`: `period_days = billing_period_to_days(mapping.billing_period)`,
+    ///   `cancel_at = None`;
+    /// - `NonRenewing`: `service_duration_days` must be `>= 1` (else 400,
+    ///   to 500), and `cancel_at = Some(period_end)` expresses "does not renew".
+    ///
+    /// Re-purchase after expiry is a new attempt with a new external id, so it
+    /// creates an independent Subscription row (unblocked, unmerged — PRD
+    /// US-PM-006 scenario 3); the M3 duplicate-purchase guard only applies to
+    /// one_time+role purchases, so it never wrongly blocks a re-purchase.
+    ///
+    /// `OneTime` is fulfilled via [`fulfill_one_time_purchase`] and never
+    /// reaches here; the `_` arm fails loud if misused.
+    async fn fulfill_subscription_shape(
+        &self,
+        attempt: &PaymentAttempt,
+        provider_transaction_id: String,
+        billing_type: BillingType,
+    ) -> Result<FulfillmentResult, CoreError> {
+        // Idempotency: same external subscription id check for both paths.
+        // A duplicate webhook / replay returns the existing subscription
+        // without re-granting.
+        if let Some(existing_subscription) = self
+            .billing_repository
+            .find_by_external_subscription_id(&provider_transaction_id, &attempt.payment_provider)
+            .await?
+        {
+            tracing::info!(
+                payment_attempt_id = %attempt.id,
+                existing_subscription_id = %existing_subscription.id,
+                "Existing subscription found for payment attempt, returning existing fulfillment"
+            );
+
+            return Ok(FulfillmentResult {
+                fulfillment_type: FulfillmentType::SubscriptionCreated,
+                subscription_id: Some(existing_subscription.id),
+                points_granted: None,
+                granted_at: existing_subscription.created_at,
+            });
+        }
+
+        // Look up entitlement mapping by ID with realm isolation check.
+        let mapping = self
+            .billing_repository
+            .find_entitlement_mapping_by_id(attempt.target_id)
+            .await?
+            .filter(|m| m.realm_id == attempt.realm_id)
+            .ok_or_else(|| {
+                CoreError::not_found(&format!(
+                    "Entitlement mapping {} for subscription fulfillment",
+                    attempt.target_id
+                ))
+            })?;
+
+        let entitlement_key = mapping.entitlement_key.clone();
+
+        // Fulfillment routes by the `payment_attempt.bucket_id` snapshot taken
+        // at purchase creation. Live `mapping.bucket_id` is intentionally
+        // NOT consulted here — mapping re-bucketing must not affect in-flight
+        // attempts.
+        let bucket_id = attempt.bucket_id;
+
+        let now = chrono::Utc::now();
+        // Derive the service-period length from the billing type. NonRenewing
+        // reads `service_duration_days` (failing loud with 400 if missing / < 1,
+        // since a malformed value would otherwise produce a degenerate
+        // `current_period_end = now`); Recurring reads `billing_period`.
+        let period_days = match billing_type {
+            BillingType::Recurring => billing_period_to_days(mapping.billing_period.as_deref()),
+            BillingType::NonRenewing => mapping
+                .service_duration_days
+                .filter(|d| *d >= 1)
+                .ok_or_else(|| {
+                    CoreError::BadRequest(format!(
+                        "Non-renewing mapping '{}' is missing a valid service_duration_days (>= 1)",
+                        attempt.target_id
+                    ))
+                })?,
+            // OneTime is fulfilled via fulfill_one_time_purchase.
+            _ => unreachable!(
+                "fulfill_subscription_shape is for subscription-shape billing types only"
+            ),
+        };
+        let period_end = now + chrono::Duration::days(period_days);
+        // NonRenewing stamps `cancel_at = period_end` to express "will not renew
+        // because there is no auto-renewal to flip off.
+        let cancel_at = matches!(billing_type, BillingType::NonRenewing).then_some(period_end);
+
+        // is stamped at fulfillment time so downstream reads (api-ext, recon)
+        // need not re-join the mapping.
+        let subscription = Subscription {
+            id: uuid::Uuid::now_v7(),
+            realm_id: attempt.realm_id.clone(),
+            user_id: attempt.user_id,
+            external_subscription_id: provider_transaction_id.clone(),
+            external_product_id: attempt.target_id.to_string(),
+            payment_provider: attempt.payment_provider.clone(),
+            status: SubscriptionStatus::Active,
+            entitlement_key: entitlement_key.clone(),
+            billing_type,
+            external_price_id: mapping.external_price_id.clone(),
+            bucket_id,
+            provider_metadata: None,
+            synced_at: Some(now),
+            current_period_start: Some(now),
+            current_period_end: Some(period_end),
+            cancel_at_period_end: false,
+            client_app_id: None,
+            cancel_at,
+            created_at: now,
+            updated_at: now,
+        };
+
+        tracing::info!(
+            subscription_id = %subscription.id,
+            realm_id = %subscription.realm_id,
+            user_id = ?subscription.user_id,
+            entitlement_key = %entitlement_key,
+            billing_type = %subscription.billing_type.as_str(),
+            period_days,
+            "Creating new subscription from payment attempt"
+        );
+
+        // Create subscription in database
+        let created_subscription = self
+            .billing_repository
+            .create_subscription(subscription)
+            .await?;
+
+        tracing::info!(
+            subscription_id = %created_subscription.id,
+            "Subscription created successfully"
+        );
+
+        // Grant subscription credits if mapping is configured for it (single
+        // up-front grant at subscribe time).
+        let points_granted = if mapping.grant_on_subscribe {
+            match mapping.points_per_period {
+                Some(points) if points > 0 => {
+                    // bucket_id snapshot already resolved above; pass through.
+                    let credit_ledger = self
+                        .points_repository
+                        .grant_points_atomic(
+                            &attempt.realm_id,
+                            attempt.user_id,
+                            bucket_id,
+                            CreditType::SubscriptionCredit,
+                            CreditSourceType::SubscriptionInitial,
+                            points,
+                            Some(period_end),
+                            // One-time grant on subscribe: immediately available.
+                            None,
+                            Some(entitlement_key.clone()),
+                            None,
+                            Some(format!("subscription_initial_grant:{}", attempt.id)),
+                        )
+                        .await?;
+
+                    tracing::info!(
+                        subscription_id = %created_subscription.id,
+                        user_id = %attempt.user_id,
+                        points,
+                        "Subscription credits granted on subscribe"
+                    );
+
+                    Some(PointsGrant {
+                        transaction_id: credit_ledger.id,
+                        points_type: "subscription_credit".to_string(),
+                        points,
+                        description: format!(
+                            "Subscription grant: {} points for {}",
+                            points, entitlement_key
+                        ),
+                    })
+                }
+                _ => {
+                    tracing::info!(
+                        subscription_id = %created_subscription.id,
+                        "No points_per_period configured, skipping credit grant"
+                    );
+                    None
+                }
+            }
+        } else {
+            tracing::info!(
+                subscription_id = %created_subscription.id,
+                "grant_on_subscribe is false, skipping credit grant"
+            );
+            None
+        };
+
+        // regardless of whether points were granted, so a subscription mapping
+        // that grants only roles (no points) still grants them. Source id is
+        // the subscription id; expiry aligns to the period end so roles
+        // naturally lapse at expiry for NonRenewing (and the M4 sweep /
+        // explicit revoke catch them).
+        if !mapping.granted_role_ids.is_empty() {
+            self.grant_payment_roles(
+                &attempt.realm_id,
+                attempt.user_id,
+                &mapping.granted_role_ids,
+                &created_subscription.id.to_string(),
+                created_subscription.current_period_end,
+            )
+            .await?;
+        }
+
+        Ok(FulfillmentResult {
+            fulfillment_type: FulfillmentType::SubscriptionCreated,
+            subscription_id: Some(created_subscription.id),
+            points_granted,
+            granted_at: created_subscription.created_at,
         })
     }
 }

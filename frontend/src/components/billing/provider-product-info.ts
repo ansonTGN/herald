@@ -24,7 +24,6 @@ import { m } from '@/paraglide/messages'
 
 /**
  * Structured view of the `provider_product_info` JSONB written by the
- * provider sync (design §5.7). Every field is optional/nullable because the
  * backend stores the union of what each provider exposes and any subset may
  * be absent for a given product/price.
  */
@@ -90,19 +89,36 @@ export function primaryProductLabel(
 /**
  * Authoritative rule for whether a mapping is a one-time (non-subscription)
  * purchase. Used by both the {@link PriceEditRow} form (to hide the four
- * subscription-only advanced fields per design §4.5.4) and the
  * {@link toPriceMappingUpdate} batch-payload mapper (to null those fields out
  * so no stale seeded value leaks onto the wire).
  *
  * `billingType === 'one_time'` → `true` (one-time → hide/null fields).
- * `'recurring'` / `null` / `undefined` / anything else → `false` (render the
- * full recurring field set; this is the recurring default per design §4.5.4).
+ * `'recurring'` / `'non_renewing'` / `null` / `undefined` / anything else →
+ * `false` (render the full recurring field set; this is the recurring default
+ * `grant_on_subscribe && points_per_period > 0` emits SubscriptionCredit +
+ * role grant), differing only in that it shows `serviceDurationDays` instead
  *
  * Pure + unit-testable. This is the single decision point; do not re-test
  * `billingType === 'one_time'` inline elsewhere in the mappings page.
  */
 export function isOneTimeMapping(billingType?: string | null): boolean {
   return billingType === 'one_time'
+}
+
+/**
+ * Authoritative rule for whether a mapping is a non-renewing (fixed-term)
+ * subscription. Non-renewing shares the subscription-only advanced field set
+ * with recurring (grantOnSubscribe / pointsPerPeriod / quotaWindows / period)
+ *
+ * `billingType === 'non_renewing'` → `true`.
+ * Anything else → `false`.
+ *
+ * Pure + unit-testable. This is the single decision point; do not re-test
+ * `billingType === 'non_renewing'` inline elsewhere in the mappings page —
+ * use this helper so a future billing-type string change surfaces in one place.
+ */
+export function isNonRenewingMapping(billingType?: string | null): boolean {
+  return billingType === 'non_renewing'
 }
 
 /**

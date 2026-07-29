@@ -247,8 +247,8 @@ pub async fn create_third_party_test_subscription(
         INSERT INTO subscription
             (id, realm_id, user_id, external_subscription_id, external_product_id, payment_provider,
              client_app_id, status, entitlement_key, current_period_start, current_period_end,
-             created_at, updated_at, bucket_id)
-        VALUES ($1, $2, $3, $4, $5, 'creem', $6, $7, $8, $9, $10, $11, $11, $12)
+             created_at, updated_at, bucket_id, billing_type)
+        VALUES ($1, $2, $3, $4, $5, 'creem', $6, $7, $8, $9, $10, $11, $11, $12, 'recurring')
         "#,
     )
     .bind(subscription_id)

@@ -45,6 +45,12 @@ pub struct SubscriptionResponse {
 
     /// Payment provider (stripe, creem, etc.)
     pub payment_provider: String,
+
+    /// Billing type snapshot (`"recurring"` / `"non_renewing"`) when a
+    /// subscription exists; empty string when `has_subscription == false`.
+    /// Lets third-party SDKs distinguish non-renewing subscriptions from
+    /// `billingType`.
+    pub billing_type: String,
 }
 
 /// Get subscription status for a client app
@@ -153,6 +159,7 @@ pub async fn get_subscription(
                 status: sub.status.as_str().to_string(),
                 entitlement_key: sub.entitlement_key.clone(),
                 payment_provider: sub.payment_provider.clone(),
+                billing_type: sub.billing_type.as_str().to_string(),
             }
         }
         None => {
@@ -167,6 +174,7 @@ pub async fn get_subscription(
                 status: "none".to_string(),
                 entitlement_key: String::new(),
                 payment_provider: String::new(),
+                billing_type: String::new(),
             }
         }
     };

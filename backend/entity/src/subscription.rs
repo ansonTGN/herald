@@ -15,6 +15,9 @@ pub struct Model {
     pub status: String,
     #[sea_orm(default_value = "")]
     pub entitlement_key: String,
+    /// Billing type snapshot from the mapping at fulfillment time
+    #[sea_orm(default_value = "recurring")]
+    pub billing_type: String,
     #[sea_orm(nullable)]
     pub external_price_id: Option<String>,
     pub bucket_id: Uuid,

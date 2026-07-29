@@ -44,9 +44,9 @@ async fn seed_test_subscription(
         "INSERT INTO subscription
             (id, realm_id, user_id, external_subscription_id, external_product_id,
              payment_provider, status, entitlement_key, current_period_start,
-             current_period_end, cancel_at_period_end, bucket_id, created_at, updated_at)
+             current_period_end, cancel_at_period_end, bucket_id, created_at, updated_at, billing_type)
          VALUES ($1, $2, $3, $4, 'prod_test_monthly', 'creem', 'active', $5, NOW(),
-                 NOW() + INTERVAL '30 days', false, $6, NOW(), NOW())",
+                 NOW() + INTERVAL '30 days', false, $6, NOW(), NOW(), 'recurring')",
     )
     .bind(subscription_id)
     .bind(realm_id)

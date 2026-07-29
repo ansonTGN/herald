@@ -3,7 +3,6 @@
 // =============================================================================
 //
 // Tests for Stripe `invoice.payment_succeeded` **subscription renewal** branch
-// (design §5.3): each paid renewal must record exactly one Succeeded
 // `payment_attempt` (idempotent by `provider_reference =
 // stripe_renewal:{stripe_subscription_id}:{stripe_invoice_id}`) and re-upsert
 // the invoice row so that BOTH `subscription_id` and `payment_attempt_id`
@@ -14,7 +13,6 @@
 //
 // User Story: US-PM-001 (every renewal records a payment_attempt),
 //             US-PM-003 (external invoice attribution to subscription + payment)
-// Covers: Design §5.3 (Stripe renewal attempt + re-upsert attribution),
 //                  §6.1 (`stripe_subscription_renewal_scenarios` cases),
 //                  §6.3 (regression: re-upsert must NOT regress
 //                         hosted_url / pdf_url written by an earlier invoice.*
@@ -147,11 +145,11 @@ mod tests {
                 (id, realm_id, user_id, client_app_id, status, entitlement_key,
                  external_price_id, external_subscription_id, external_product_id,
                  payment_provider, current_period_start, current_period_end,
-                 cancel_at_period_end, created_at, updated_at, bucket_id)
+                 cancel_at_period_end, created_at, updated_at, bucket_id, billing_type)
              VALUES ($1, $2, $3, $4, 'active', $5,
                      $6, $7, $8,
                      'stripe', NOW(), NOW() + INTERVAL '30 days',
-                     false, NOW(), NOW(), $9)",
+                     false, NOW(), NOW(), $9, 'recurring')",
         )
         .bind(subscription_id)
         .bind(realm_id)
@@ -306,7 +304,6 @@ mod tests {
     // =========================================================================
 
     /// User Story: US-PM-001, US-PM-003
-    /// Covers: Design §5.3 (Stripe renewal attempt + re-upsert attribution),
     ///         §6.1 case 1 (renewal -> attempt + attributed invoice)
     ///
     /// Given: A realm with a recurring Stripe entitlement mapping + a user
@@ -430,7 +427,6 @@ mod tests {
     // =========================================================================
 
     /// User Story: US-PM-001, US-PM-003
-    /// Covers: Design §4.1 "幂等三重保证", §6.1 case 2 (idempotency)
     ///
     /// Given: An `invoice.payment_succeeded` renewal for `in_R1` has fired
     /// When: The same `in_R1` renewal event is re-delivered (different event_id)
@@ -575,7 +571,6 @@ mod tests {
     // =========================================================================
 
     /// User Story: US-PM-003
-    /// Covers: Design §5.3 (re-upsert coexists with invoice.* sync),
     ///         §6.1 case 3 (coexistence -> one row + attribution filled),
     ///         §6.3 (REGRESSION: re-upsert must NOT regress hosted_url/pdf_url)
     ///
@@ -589,7 +584,6 @@ mod tests {
     ///       unchanged from the values written by `invoice.finalized`.
     /// Why: The renewal re-upsert reuses the full field construction so that
     ///      the ON CONFLICT branches do not regress fields written by the
-    ///      earlier sync event (design §6.3 P1 regression risk). If this
     ///      regressed, hosted/PDF links written by `invoice.finalized` would
     ///      silently disappear after the renewal event.
     #[test_context(RenewalTestContext)]
@@ -728,7 +722,6 @@ mod tests {
     // =========================================================================
 
     /// User Story: US-PM-001, US-PM-003
-    /// Covers: Design §5.3 (re-upsert INSERT path), §6.1 case 4,
     ///         §6.3 (re-upsert uses full field construction on INSERT too)
     ///
     /// Given: NO prior `invoice.*` sync event for `in_R1`
@@ -826,7 +819,6 @@ mod tests {
     // =========================================================================
 
     /// User Story: US-PM-001, US-PM-003
-    /// Covers: Design §5.3 "amount == 0 跳过", §6.1 case 5, §7 (zero-yuan)
     ///
     /// Given: An `invoice.payment_succeeded` renewal with `total=0`
     ///        (100%-off / free-tier cycle)

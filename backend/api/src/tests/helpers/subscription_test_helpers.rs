@@ -45,10 +45,10 @@ pub async fn create_test_subscription_for_user(
             (id, realm_id, user_id, client_app_id, status, entitlement_key, external_price_id,
              external_subscription_id, external_product_id, payment_provider,
              current_period_start, current_period_end,
-             cancel_at_period_end, created_at, updated_at, bucket_id)
+             cancel_at_period_end, created_at, updated_at, bucket_id, billing_type)
          VALUES ($1, $2, $3, $4, $5, $6, $7,
                  $8, $9, $10, NOW(), NOW() + INTERVAL '30 days',
-                 false, NOW(), NOW(), $11)",
+                 false, NOW(), NOW(), $11, 'recurring')",
     )
     .bind(subscription_id)
     .bind(realm_id)
@@ -105,10 +105,10 @@ pub async fn create_test_subscription_with_entitlement_key(
             (id, realm_id, user_id, client_app_id, status, entitlement_key, external_price_id,
              external_subscription_id, external_product_id, payment_provider,
              current_period_start, current_period_end,
-             cancel_at_period_end, created_at, updated_at, bucket_id)
+             cancel_at_period_end, created_at, updated_at, bucket_id, billing_type)
          VALUES ($1, $2, $3, $4, $5, $6, $7,
                  $8, $9, $10, NOW(), NOW() + INTERVAL '30 days',
-                 false, NOW(), NOW(), $11)",
+                 false, NOW(), NOW(), $11, 'recurring')",
     )
     .bind(subscription_id)
     .bind(realm_id)
@@ -167,11 +167,11 @@ pub async fn create_test_subscription_full(
              external_subscription_id, external_product_id, payment_provider,
              current_period_start, current_period_end,
              provider_metadata, synced_at,
-             cancel_at_period_end, created_at, updated_at, bucket_id)
+             cancel_at_period_end, created_at, updated_at, bucket_id, billing_type)
          VALUES ($1, $2, $3, $4, $5, $6, $7,
                  $8, $9, $10, NOW(), NOW() + INTERVAL '30 days',
                  $11, NOW(),
-                 false, NOW(), NOW(), $12)",
+                 false, NOW(), NOW(), $12, 'recurring')",
     )
     .bind(subscription_id)
     .bind(realm_id)

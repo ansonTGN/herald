@@ -224,10 +224,10 @@ pub async fn create_test_subscription_with_entitlement(
             (id, realm_id, user_id, client_app_id, status, entitlement_key, external_price_id,
              external_subscription_id, external_product_id, payment_provider,
              current_period_start, current_period_end,
-             cancel_at_period_end, created_at, updated_at, bucket_id)
+             cancel_at_period_end, created_at, updated_at, bucket_id, billing_type)
          VALUES ($1, $2, $3, $4, 'active', $5, $6,
                  $7, $8, 'creem', NOW(), NOW() + INTERVAL '30 days',
-                 false, NOW(), NOW(), $9)",
+                 false, NOW(), NOW(), $9, 'recurring')",
     )
     .bind(subscription_id)
     .bind(realm_id)
@@ -345,9 +345,9 @@ pub async fn create_active_subscription_for_price_mapping(
             (id, realm_id, user_id, client_app_id, status, entitlement_key, external_price_id, \
              external_subscription_id, external_product_id, payment_provider, \
              current_period_start, current_period_end, cancel_at_period_end, \
-             created_at, updated_at, bucket_id) \
+             created_at, updated_at, bucket_id, billing_type) \
          VALUES ($1, $2, $3, NULL, 'active', $4, $5, $6, $7, $8, \
-                 NOW(), NOW() + INTERVAL '30 days', false, NOW(), NOW(), $9)",
+                 NOW(), NOW() + INTERVAL '30 days', false, NOW(), NOW(), $9, 'recurring')",
     )
     .bind(subscription_id)
     .bind(realm_id)

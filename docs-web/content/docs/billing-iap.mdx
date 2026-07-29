@@ -1,9 +1,9 @@
 ---
 title: App Store / Google Play (IAP) Integration
-description: "A hands-on IAP integration guide for Realm Admins. Follow it end to end and your mobile app users will be able to buy subscriptions and credit packs through App Store and Google Play in-app purchases."
+description: "A hands-on IAP integration guide for Realm Admins. Configure subscriptions, credit packs, buyouts, and non-renewing subscriptions through App Store and Google Play."
 ---
 
-A hands-on IAP integration guide for Realm Admins. Follow it end to end and your mobile app users will be able to buy subscriptions and credit packs through App Store and Google Play in-app purchases.
+A hands-on IAP integration guide for Realm Admins. Configure subscriptions, credit packs, buyouts, and non-renewing subscriptions through App Store and Google Play.
 
 ## Who this is for
 
@@ -81,15 +81,19 @@ Create the products on the store side first. Pricing, subscription periods, refu
 
 - **Auto-renewable subscriptions**: your app → Subscriptions → create a subscription group, then a subscription (e.g. `pro_monthly`)
 - **Consumables** (credit packs): your app → In-App Purchases → Consumable (e.g. `points_pack_1000`)
+- **Non-consumables** (buyouts): your app → In-App Purchases → Non-Consumable (e.g. `lifetime_pro`)
+- **Non-renewing subscriptions**: create the corresponding fixed-duration product in App Store Connect and configure its service duration in Herald
 
 ### Play Console
 
 - **Subscriptions**: Monetize → Products → Subscriptions, with a base plan (e.g. `pro_monthly`)
 - **One-time products**: Monetize → Products → One-time products, marked as consumable for credit packs (e.g. `points_pack_1000`)
+- **Buyouts**: use a non-consumable one-time product (e.g. `lifetime_pro`)
+- **Non-renewing subscriptions**: use a one-time product with the fixed service period configured in Herald
 
 Note the exact product IDs — the mapping in the next step matches on them, and the same product ID can only be mapped once per provider per Realm.
 
-Non-consumables and non-renewing subscriptions are not supported by Herald's fulfillment model today.
+Buyouts and non-renewing subscriptions use different entitlement semantics from credit packs and auto-renewing subscriptions. Configure them deliberately in the next step.
 
 ## Step 5: Create the Entitlement Mapping
 
@@ -100,10 +104,11 @@ Non-consumables and non-renewing subscriptions are not supported by Herald's ful
    - **External Product ID**: the store product ID from Step 4, e.g. `pro_monthly`
    - **Entitlement Key**: something you recognize, e.g. `pro`. Used in SDK queries and points policy — try not to change it later
    - **Credit Account**: which pool the purchased credits land in
-   - **Billing Type**: `Recurring` for subscriptions, `OneTime` for consumable credit packs
+   - **Billing Type**: `Recurring` for auto-renewing subscriptions, `OneTime` for consumable credit packs or buyouts, and `Non-renewing` for fixed-duration subscriptions
    - **Billing Period** (recurring only): the subscription period
    - **Points Per Period** / **Grant On Subscribe**: the credit policy (requires `points.manage`)
-   - **Validity Days** (one_time only): credit validity; 0 or empty means never expires
+   - **Validity Days** (one_time credit packs only): credit validity; 0 or empty means never expires
+   - **Service Duration Days** (non-renewing only): required fixed duration for the subscription. The mapping cannot be saved without it
 4. Submit
 
 Creating a second mapping with the same provider + product ID is rejected with an inline duplicate error. Disabling a mapping later still lets notifications update the subscription projection, but stops credit grants.
@@ -133,7 +138,7 @@ For Google Play, send `"provider": "google"` and put the Play Billing `purchaseT
 What Herald does with it:
 
 - **Apple**: verifies the JWS locally (x5c certificate chain + ES256 + Apple Root CA). No callback to Apple is needed. User binding comes from the `appAccountToken` you set when starting the StoreKit purchase — set it to the Herald user ID.
-- **Google**: looks up the real state through the Developer API (`subscriptionsv2.get` / `products.get`). User binding comes from `obfuscatedExternalAccountId` — set it to the Herald user ID. On success Herald immediately acknowledges the subscription or consumes the consumable **inside the fulfillment transaction**. Miss the 3-day acknowledge window and Google silently refunds the purchase, so this is deliberately not deferred.
+- **Google**: looks up the real state through the Developer API (`subscriptionsv2.get` / `products.get`). User binding comes from `obfuscatedExternalAccountId` — set it to the Herald user ID. On success Herald acknowledges subscriptions and non-consumable buyouts, while it consumes credit packs **inside the fulfillment transaction**. Miss the 3-day acknowledgement window and Google silently refunds the purchase, so this is deliberately not deferred.
 
 The response carries the payment attempt:
 
@@ -142,7 +147,7 @@ The response carries the payment attempt:
 | `attemptId` | The payment attempt ID (new or the one already fulfilled) |
 | `status` | `succeeded` / `pending` / `failed` |
 | `entitlementKey` | The mapping's entitlement key, when fulfilled |
-| `billingType` | `recurring` / `one_time` |
+| `billingType` | `recurring` / `one_time` / `non_renewing` |
 | `failureReason` | On failure: `invalid_receipt` / `ownership_mismatch` / `already_consumed` / `no_mapping` / `verification_failed` |
 
 Your app can poll the attempt state through the existing attempt query API with the `PurchaseStatusRead` scope. If the same transaction was already fulfilled (client retried, or the Apple notification arrived first), the submission returns the current state without granting anything twice.
@@ -154,13 +159,21 @@ Your app can poll the attempt state through the existing attempt query API with 
 
 Both paths reuse the same idempotent fulfillment as the receipt endpoint, so overlaps never double-grant.
 
+### Buyouts and non-renewing subscriptions
+
+A buyout is a `OneTime` mapping with permanent role grants and no credit policy. It can be restored from the same store transaction after a reinstall or device change. A refund or revocation removes only the role granted by that payment; a role granted manually by an administrator stays in place.
+
+A non-renewing subscription has a fixed end date and never creates a renewal charge. It appears in **Subscriptions** with its billing type and end date. Google polling can mark it expired. Apple does not send a server-side expiry event for this product type, so Herald does not force expiry from local time alone; an Apple non-renewing entitlement can remain active until later store evidence arrives.
+
 ## Step 8: Verify the result
 
 1. On **Payment Providers**, confirm App Store / Google Play show as configured
 2. On **Entitlement Mappings**, confirm the mapping row exists, is enabled, and has the right billing type and points policy
 3. Make a sandbox purchase (sandbox Apple ID on iOS, license tester on Android), submit the receipt from your app, and confirm the response status is `succeeded` with the expected `entitlementKey`
 4. On **Subscriptions**, confirm the projection shows the right `entitlement_key`, `status`, and `payment_provider` (`apple` / `google`)
-5. For a subscription, wait for a renewal (sandbox renewals run on an accelerated clock) or trigger a refund, and confirm the state change lands in **Subscription History**
+5. For an auto-renewing subscription, wait for a renewal (sandbox renewals run on an accelerated clock) or trigger a refund, and confirm the state change lands in **Subscription History**
+6. For a buyout, test restore purchase and a refund or revocation; verify that only the payment-granted role is removed
+7. For a non-renewing subscription, verify the configured end date and its `non_renewing` billing type in **Subscriptions**
 
 ---
 

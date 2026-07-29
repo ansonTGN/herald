@@ -12,6 +12,7 @@ use uuid::Uuid;
 use crate::webhook_common::{
     create_placeholder_transaction, metadata_user_id, metadata_value, parse_attempt_id,
     parse_event_id, parse_optional_uuid_field, parse_uuid_field,
+    revoke_payment_roles_for_source as revoke_payment_roles_for_attempt,
 };
 use crate::webhook_subscription_helpers::{
     ResolvedEntitlement, SyncSubscriptionInput, resolve_bucket_id_for_entitlement,
@@ -1569,7 +1570,7 @@ async fn handle_checkout_session_async_failed(
         // (source_id = attempt_id), avoiding over-broad revocation of unrelated topup credits.
         // Bucket source: the originating payment_attempt snapshot.
         let bucket_id = attempt.bucket_id;
-        app_state
+        let one_time_result = app_state
             .points_service
             .revoke_points_by_source_id(
                 realm_id,
@@ -1579,7 +1580,22 @@ async fn handle_checkout_session_async_failed(
                 RevocationType::RefundRevoke,
                 format!("Async payment failed revocation for attempt {}", attempt_id),
             )
-            .await?
+            .await?;
+
+        // Revoke payment-granted permanent roles for this one-time attempt
+        // with `source_id = attempt.id`, so revoke with the same source id.
+        // Idempotent: NotFound (no payment role / already revoked) is a no-op,
+        // not an error. Only `source='payment'` rows are touched; manual grants
+        // are unaffected.
+        revoke_payment_roles_for_attempt(
+            &app_state,
+            realm_id,
+            attempt.user_id,
+            &attempt_id.to_string(),
+        )
+        .await;
+
+        one_time_result
     } else {
         // Resolve entitlement_key for targeted subscription credit revocation
         let entitlement_key = app_state
@@ -1598,7 +1614,6 @@ async fn handle_checkout_session_async_failed(
         // the most recent subscription for this entitlement.
         let stripe_subscription_id = object["subscription"].as_str();
 
-        // Resolve the originating subscription's internal id. BE-D06 revokes the
         // active quota entitlement by `source_id = subscription_id`, so the
         // cancel must pass the subscription that was eagerly granted.
         //
@@ -1822,8 +1837,6 @@ async fn handle_payment_failed(
     let Some(payload) = parse_payment_failed_payload(&event)? else {
         // No `attemptId` metadata ⟹ this is not a one-time purchase payment
         // attempt. For `invoice.payment_failed` on a subscription renewal,
-        // the pre-redesign chained pre-grant ledger-row reclaim is retired
-        // under the window quota model (BE-D06/D10): renewal grants are
         // idempotent and keyed to the subscription period, and the prior
         // period's entitlement expires naturally at its `effective_until`.
         // No reclaim is required on a failed renewal.
@@ -2481,8 +2494,6 @@ async fn handle_subscription_deleted(
     )
     .await?;
 
-    // Subscription deleted (BE-D06/D10): revoke the subscription's active quota
-    // entitlement by `source_id = subscription_id`. The pre-redesign chained
     // pre-grant ledger-row reclaim path is retired under the window quota
     // model. Idempotent: no active entitlement / already-revoked ⟹ no-op.
     // Route revocation to subscription.bucket_id. The synced
@@ -2603,6 +2614,17 @@ async fn handle_charge_refunded(
                 )
                 .await?;
 
+            // Revoke payment-granted permanent roles for this one-time attempt
+            // `source_id = attempt.id`, so revoke with the same source id.
+            // Idempotent (NotFound is a no-op); manual grants unaffected.
+            revoke_payment_roles_for_attempt(
+                &app_state,
+                realm_id,
+                payload.user_id,
+                &attempt.id.to_string(),
+            )
+            .await;
+
             info!(
                 realm_id = %realm_id,
                 user_id = %payload.user_id,
@@ -2612,9 +2634,7 @@ async fn handle_charge_refunded(
             );
         }
         _ => {
-            // Subscription refund (BE-D06/D10): revoke the originating
             // subscription's active quota entitlement by `source_id =
-            // subscription_id`. The pre-redesign broad
             // `revoke_subscription_unused` ledger-row reclaim is retired under
             // the window quota model. Route to subscription.bucket_id. Fail
             // loud when no subscription could be resolved for the refund.
@@ -3311,7 +3331,6 @@ async fn handle_charge_dispute_closed(
     if synced.is_some() && needs_cancel {
         // Route revocation to subscription.bucket_id; the
         // synced Subscription is the post-update snapshot carrying the
-        // persisted non-null bucket_id. BE-D06 revokes the subscription's
         // active quota entitlement by `source_id = subscription_id`.
         let (bucket_id, subscription_id) = synced
             .as_ref()

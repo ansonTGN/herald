@@ -19,16 +19,22 @@ export const priceMappingUpdateSchema = z.object({
 
   validityDays: z.number().int().min(1).nullable().optional(),
 
+  // LOCAL STATE ONLY — seeded from the GET response and carried in the edit row
+  // so the non_renewing input can read/write it. It is NOT part of the batch
+  // save payload: `toPriceMappingUpdate` deliberately omits it because the batch
+  // duration edits are persisted via a separate single-row PUT
+  // (`useUpdateEntitlementMapping`, `UpdateEntitlementMappingRequest` carries
+  // `serviceDurationDays` 3-state) triggered on the field's onBlur.
+  serviceDurationDays: z.number().int().min(1).nullable().optional(),
+
   grantOnSubscribe: z.boolean().nullable().optional(),
 
-  // Role-grant dimension (design §4.4 / §5.2). Mirrors the generated
   // `PriceMappingUpdate.grantedRoleIds` three-state contract: `null`/undefined
   // ⟺ leave unchanged, `[]` ⟺ clear (no role grant), non-empty ⟺ set. Orthogonal
   // to billing_type and points strategy (empty points + roles = pure entitlement;
   // empty roles + points = pure credit pack; both empty = payment record only).
   grantedRoleIds: z.array(z.string()).nullable().optional(),
 
-  // Per-price quota windows (design §3.2 / §4.3.2). Mirrors
   // `PriceMappingUpdate.quotaWindows`: `null`/undefined ⟺ leave unchanged,
   // `[]` ⟺ clear. Capped at 8 windows (PRD §4). Validation rules per window
   // are shared with the realm-default editor via `quotaWindowSchema`.
