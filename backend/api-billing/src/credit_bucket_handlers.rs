@@ -1,10 +1,10 @@
 //! Credit Bucket directory handlers (reads + writes/overview).
 //!
 //! Implements the directory endpoints over `PostgresBillingRepository`'s inherent
-//! bucket directory methods. Permission gate: Realm Admin `points.manage`
-//! (Realm Admin gate). HTTP contracts follow the crate's camelCase convention
-//! and match the response contracts (includes `receivesRegistrationCredits`, NO
-//! `isDefault`).
+//! bucket directory methods. Permission gate: Realm Admin `points.manage`.
+//! HTTP contracts follow the crate's camelCase convention. Each management
+//! response surfaces the distribution rules referencing the bucket
+//! (`ruleReferences`); registration routing is configured through those rules.
 
 use axum::{
     Json,
@@ -14,6 +14,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::types::DistributionRuleReferenceResponse;
 use herald_api_base::application::http::common::auth_utils::AdminIdentity;
 use herald_api_base::application::http::server::api_entities::ApiError;
 use herald_api_base::application::http::state::AppState;
@@ -28,18 +29,10 @@ use herald_core::domain::common::entities::app_errors::CoreError;
 /// (mirrors DB CHECK constraint `chk_credit_buckets_key`).
 const BUCKET_KEY_MAX_LEN: usize = 64;
 
-// ===== Named 409 error bodies =====
+// ===== Named error bodies =====
 //
 // Surfaced as typed OpenAPI schemas so `@hey-api/openapi-ts` can generate
-// strongly-typed clients. The serialized JSON is byte-for-byte equivalent to
-// the previous `serde_json::json!` bodies — only the OpenAPI contract changes.
-
-/// 409 `registration_pool_conflict` body.
-#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
-pub struct RegistrationPoolConflictErrorBody {
-    pub code: &'static str,
-    pub message: &'static str,
-}
+// strongly-typed clients.
 
 /// 400 `bucket_key_duplicate` body: the requested `bucketKey`
 /// already exists in this realm (`uq_credit_buckets_realm_key`).
@@ -56,18 +49,6 @@ pub struct BucketInUseErrorBody {
     pub code: &'static str,
     pub active_subscriptions: i64,
     pub holders_with_balance: i64,
-}
-
-/// 400 `bucket_orphan_mapping` body. `bucket_id` is NOT NULL (commit `aa6cc2da`)
-/// and there is no default bucket, so removing an attached mapping
-/// from a bucket would orphan it — rejected. Assign the mapping to another
-/// bucket first (via that bucket's PUT) to move it.
-#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct BucketOrphanMappingErrorBody {
-    pub code: &'static str,
-    pub message: &'static str,
-    pub orphan_mapping_ids: Vec<Uuid>,
 }
 
 fn validate_bucket_key(key: &str) -> Result<(), ApiError> {
@@ -89,22 +70,16 @@ fn validate_bucket_key(key: &str) -> Result<(), ApiError> {
 
 /// Translate a `CreditBucketError` into the error contract.
 ///
-/// Structured variants (`RegistrationPoolConflict`, `BucketInUse`) produce 409
-/// with the exact body shapes; passthrough `Other(CoreError)` keeps the wrapped
-/// error's status (404 for NotFound, 500 for DatabaseError, etc.). Must NOT
-/// flatten structured variants through `From<CreditBucketError> for CoreError`.
+/// Structured variants produce 400/409 with the exact body shapes; passthrough
+/// `Other(CoreError)` keeps the wrapped error's status (404 for NotFound, 500
+/// for DatabaseError, etc.). Must NOT flatten structured variants through
+/// `From<CreditBucketError> for CoreError`.
 fn map_bucket_error(err: CreditBucketError) -> ApiError {
     match err {
         CreditBucketError::BucketKeyDuplicate { realm_id: _ } => {
             ApiError::bad_request_json(BucketKeyDuplicateErrorBody {
                 code: "bucket_key_duplicate",
                 message: "bucketKey already exists in this realm",
-            })
-        }
-        CreditBucketError::RegistrationPoolConflict { realm_id: _ } => {
-            ApiError::conflict_json(RegistrationPoolConflictErrorBody {
-                code: "registration_pool_conflict",
-                message: "Another bucket in this realm already receives registration credits",
             })
         }
         CreditBucketError::BucketInUse {
@@ -115,14 +90,6 @@ fn map_bucket_error(err: CreditBucketError) -> ApiError {
             code: "bucket_in_use",
             active_subscriptions,
             holders_with_balance,
-        }),
-        CreditBucketError::BucketOrphanMapping {
-            bucket_id: _,
-            orphan_mapping_ids,
-        } => ApiError::bad_request_json(BucketOrphanMappingErrorBody {
-            code: "bucket_orphan_mapping",
-            message: "Removing these mappings would leave them unassigned (bucket_id is NOT NULL); assign them to another bucket first",
-            orphan_mapping_ids,
         }),
         CreditBucketError::Other(core) => ApiError::from(core),
     }
@@ -163,13 +130,6 @@ pub struct ClientAppRef {
     pub id: Uuid,
 }
 
-/// Reference to an Entitlement Mapping attached to a Credit Bucket (detail view).
-#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct EntitlementMappingRef {
-    pub id: Uuid,
-}
-
 /// List-item shape of a Credit Bucket (`Bucket[]`).
 #[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -179,9 +139,10 @@ pub struct BucketResponse {
     pub name: String,
     pub display_order: i32,
     pub enabled: bool,
-    pub receives_registration_credits: bool,
     pub covered_client_app_count: i64,
-    pub entitlement_mapping_count: i64,
+    /// Number of distribution rules currently targeting this bucket (across
+    /// both `entitlement_mapping` and `realm_registration` owners).
+    pub rule_reference_count: i64,
 }
 
 /// Detail shape of a Credit Bucket (`BucketDetail`).
@@ -196,9 +157,22 @@ pub struct BucketDetailResponse {
     pub description: Option<String>,
     pub display_order: i32,
     pub enabled: bool,
-    pub receives_registration_credits: bool,
     pub client_apps: Vec<ClientAppRef>,
-    pub entitlement_mappings: Vec<EntitlementMappingRef>,
+    /// Distribution rules referencing this bucket. Aggregates
+    /// both owners; empty when no rule targets this bucket.
+    pub rule_references: Vec<DistributionRuleReferenceResponse>,
+}
+
+fn rule_ref_to_response(
+    r: herald_core::domain::points::DistributionRuleReference,
+) -> DistributionRuleReferenceResponse {
+    DistributionRuleReferenceResponse {
+        rule_id: r.rule_id,
+        owner_type: r.owner_type,
+        entitlement_mapping_id: r.entitlement_mapping_id,
+        trigger_sources: r.trigger_sources,
+        enabled: r.enabled,
+    }
 }
 
 fn bucket_to_response(item: CreditBucketListItem) -> BucketResponse {
@@ -209,9 +183,8 @@ fn bucket_to_response(item: CreditBucketListItem) -> BucketResponse {
         name: b.name,
         display_order: b.display_order,
         enabled: b.enabled,
-        receives_registration_credits: b.receives_registration_credits,
         covered_client_app_count: item.covered_client_app_count,
-        entitlement_mapping_count: item.entitlement_mapping_count,
+        rule_reference_count: item.rule_reference_count,
     }
 }
 
@@ -223,7 +196,6 @@ fn bucket_detail_to_response(detail: CreditBucketDetail) -> BucketDetailResponse
         description,
         display_order,
         enabled,
-        receives_registration_credits,
         ..
     } = detail.bucket;
     BucketDetailResponse {
@@ -233,16 +205,15 @@ fn bucket_detail_to_response(detail: CreditBucketDetail) -> BucketDetailResponse
         description,
         display_order,
         enabled,
-        receives_registration_credits,
         client_apps: detail
             .client_app_ids
             .into_iter()
             .map(|id| ClientAppRef { id })
             .collect(),
-        entitlement_mappings: detail
-            .entitlement_mapping_ids
+        rule_references: detail
+            .rule_references
             .into_iter()
-            .map(|id| EntitlementMappingRef { id })
+            .map(rule_ref_to_response)
             .collect(),
     }
 }
@@ -345,7 +316,8 @@ pub async fn get_credit_bucket_handler(
 /// Request body for creating a Credit Bucket.
 ///
 /// `client_app_ids` (coverage set) MUST be non-empty — enforced fail-loud at the
-/// handler layer (400). NO `isDefault` field.
+/// handler layer (400). Registration routing is configured via distribution
+/// rules rather than a bucket-level switch.
 #[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateCreditBucketRequest {
@@ -356,20 +328,13 @@ pub struct CreateCreditBucketRequest {
     pub enabled: Option<bool>,
     /// Coverage set — at least one entry required.
     pub client_app_ids: Vec<Uuid>,
-    /// Optional mappings to attach (may be empty / omitted).
-    #[serde(default)]
-    pub entitlement_mapping_ids: Vec<Uuid>,
-    /// Mark this bucket as the Realm's registration-credits receiver (default
-    /// false; at most one per Realm — conflict 409 `registration_pool_conflict`).
-    #[serde(default)]
-    pub receives_registration_credits: bool,
 }
 
 /// Request body for updating a Credit Bucket (PUT).
 ///
-/// All provided fields fully replace the stored state (coverage set + attached
-/// mappings are replaced, not merged). Clearing the coverage set
-/// (`client_app_ids` empty) is rejected with 400. NO `isDefault` field.
+/// All provided fields fully replace the stored state (coverage set is
+/// replaced, not merged). Clearing the coverage set (`client_app_ids` empty) is
+/// rejected with 400. Registration routing remains rule-owned.
 #[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateCreditBucketRequest {
@@ -379,11 +344,6 @@ pub struct UpdateCreditBucketRequest {
     pub enabled: Option<bool>,
     /// Replacement coverage set — at least one entry required.
     pub client_app_ids: Vec<Uuid>,
-    /// Replacement attached-mapping set (may be empty).
-    #[serde(default)]
-    pub entitlement_mapping_ids: Vec<Uuid>,
-    #[serde(default)]
-    pub receives_registration_credits: bool,
 }
 
 // ===== Overview Response Types =====
@@ -457,7 +417,7 @@ fn overview_row_to_response(row: CreditBucketOverviewRow) -> OverviewRowResponse
         (status = 400, description = "Bad request - invalid bucketKey / empty coverage set", body = herald_api_base::application::http::server::api_entities::ErrorResponse),
         (status = 401, description = "Unauthorized", body = herald_api_base::application::http::server::api_entities::ErrorResponse),
         (status = 403, description = "Forbidden - points.manage required", body = herald_api_base::application::http::server::api_entities::ErrorResponse),
-        (status = 409, description = "registration_pool_conflict - receivesRegistrationCredits collision", body = RegistrationPoolConflictErrorBody),
+        (status = 409, description = "bucket_in_use - bucket still referenced by balances/subscriptions", body = BucketInUseErrorBody),
         (status = 500, description = "Internal server error", body = herald_api_base::application::http::server::api_entities::ErrorResponse)
     ),
     security(("bearer_auth" = []))
@@ -486,10 +446,8 @@ pub async fn create_credit_bucket_handler(
         name: request.name,
         description: request.description,
         display_order: request.display_order.unwrap_or(0),
-        receives_registration_credits: request.receives_registration_credits,
         enabled: request.enabled.unwrap_or(true),
         client_app_ids: request.client_app_ids,
-        entitlement_mapping_ids: request.entitlement_mapping_ids,
     };
 
     let detail = state
@@ -517,7 +475,7 @@ pub async fn create_credit_bucket_handler(
         (status = 401, description = "Unauthorized", body = herald_api_base::application::http::server::api_entities::ErrorResponse),
         (status = 403, description = "Forbidden - points.manage required", body = herald_api_base::application::http::server::api_entities::ErrorResponse),
         (status = 404, description = "Credit bucket not found", body = herald_api_base::application::http::server::api_entities::ErrorResponse),
-        (status = 409, description = "registration_pool_conflict - receivesRegistrationCredits collision", body = RegistrationPoolConflictErrorBody),
+        (status = 409, description = "bucket_in_use - bucket still referenced by balances/subscriptions", body = BucketInUseErrorBody),
         (status = 500, description = "Internal server error", body = herald_api_base::application::http::server::api_entities::ErrorResponse)
     ),
     security(("bearer_auth" = []))
@@ -549,10 +507,8 @@ pub async fn update_credit_bucket_handler(
         name: request.name,
         description: request.description,
         display_order: request.display_order.unwrap_or(0),
-        receives_registration_credits: request.receives_registration_credits,
         enabled: request.enabled.unwrap_or(true),
         client_app_ids: request.client_app_ids,
-        entitlement_mapping_ids: request.entitlement_mapping_ids,
     };
 
     let detail = state

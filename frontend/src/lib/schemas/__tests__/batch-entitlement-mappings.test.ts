@@ -53,17 +53,52 @@ describe('priceMappingUpdateSchema required fields', () => {
 
 describe('priceMappingUpdateSchema numeric / enum guards', () => {
   it.each([
-    ['negative pointsPerPeriod', { pointsPerPeriod: -1 }],
-    ['fractional pointsPerPeriod', { pointsPerPeriod: 1.5 }],
-    ['zero validityDays', { validityDays: 0 }],
+    [
+      'fixed rule with zero points',
+      {
+        pointRules: [
+          {
+            bucketId: 'bucket-1',
+            triggerSources: ['topup'],
+            grantMode: 'fixed',
+            pointsAmount: 0,
+          },
+        ],
+      },
+    ],
+    [
+      'quota rule without windows',
+      {
+        pointRules: [
+          {
+            bucketId: 'bucket-1',
+            triggerSources: ['subscription_initial'],
+            grantMode: 'quota',
+            quotaWindows: [],
+          },
+        ],
+      },
+    ],
   ])('rejects %s', (_label, overrides) => {
     const result = priceMappingUpdateSchema.safeParse(validUpdate(overrides))
     expect(result.success).toBe(false)
   })
 
   it.each([
-    ['zero pointsPerPeriod', { pointsPerPeriod: 0 }],
-    ['validityDays', { validityDays: 30 }],
+    ['empty rule set', { pointRules: [] }],
+    [
+      'valid fixed rule',
+      {
+        pointRules: [
+          {
+            bucketId: 'bucket-1',
+            triggerSources: ['topup'],
+            grantMode: 'fixed',
+            pointsAmount: 100,
+          },
+        ],
+      },
+    ],
   ])('accepts %s', (_label, overrides) => {
     const result = priceMappingUpdateSchema.safeParse(validUpdate(overrides))
     expect(result.success).toBe(true)

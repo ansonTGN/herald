@@ -138,25 +138,19 @@ mod tests {
         currency: &str,
         payment_provider: &str,
     ) -> Uuid {
-        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
-            &ctx.app_state.pool,
-            realm_id,
-        )
-        .await;
         let attempt_id = Uuid::now_v7();
         sqlx::query(
             "INSERT INTO payment_attempts
                 (id, realm_id, user_id, payment_provider, target_type, target_id,
-                 bucket_id, amount, currency, status, expires_at, created_at, updated_at)
+                 amount, currency, status, expires_at, created_at, updated_at)
              VALUES ($1, $2, $3, $4, 'entitlement_mapping', $5,
-                     $6, $7, $8, 'Succeeded', NOW() + INTERVAL '2 hours', NOW(), NOW())",
+                     $6, $7, 'Succeeded', NOW() + INTERVAL '2 hours', NOW(), NOW())",
         )
         .bind(attempt_id)
         .bind(realm_id)
         .bind(user_id)
         .bind(payment_provider)
         .bind(mapping_id)
-        .bind(bucket_id)
         .bind(amount)
         .bind(currency)
         .execute(&ctx.app_state.pool)
@@ -356,26 +350,19 @@ mod tests {
         let app = ctx.create_unified_test_router();
 
         // Given: An enabled one-time mapping with validity_days=30
-        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
-            &ctx.app_state.pool,
-            &realm_id,
-        )
-        .await;
         let mapping_id = Uuid::now_v7();
         sqlx::query(
             "INSERT INTO provider_entitlement_mappings
                 (id, realm_id, payment_provider, external_product_id, entitlement_key,
-                 billing_type, points_per_period, validity_days, grant_on_subscribe, enabled,
-                 provider_product_info, bucket_id, created_at, updated_at)
-             VALUES ($1, $2, 'stripe', $3, $4, 'one_time', 500, 30, true, true,
-                     $5, $6, NOW(), NOW())",
+                 billing_type, enabled, provider_product_info, created_at, updated_at)
+             VALUES ($1, $2, 'stripe', $3, $4, 'one_time', true,
+                     $5, NOW(), NOW())",
         )
         .bind(mapping_id)
         .bind(&realm_id)
         .bind(format!("prod_validity_{}", mapping_id))
         .bind("validity-test-pkg")
         .bind(json!({"name": "Validity Package", "price": 999, "currency": "usd"}))
-        .bind(bucket_id)
         .execute(&ctx.app_state.pool)
         .await
         .expect("Failed to create mapping with validity_days");
@@ -401,26 +388,19 @@ mod tests {
         let app = ctx.create_unified_test_router();
 
         // Given: An enabled one-time mapping with validity_days=NULL
-        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
-            &ctx.app_state.pool,
-            &realm_id,
-        )
-        .await;
         let mapping_id = Uuid::now_v7();
         sqlx::query(
             "INSERT INTO provider_entitlement_mappings
                 (id, realm_id, payment_provider, external_product_id, entitlement_key,
-                 billing_type, points_per_period, validity_days, grant_on_subscribe, enabled,
-                 provider_product_info, bucket_id, created_at, updated_at)
-             VALUES ($1, $2, 'stripe', $3, $4, 'one_time', 500, NULL, true, true,
-                     $5, $6, NOW(), NOW())",
+                 billing_type, enabled, provider_product_info, created_at, updated_at)
+             VALUES ($1, $2, 'stripe', $3, $4, 'one_time', true,
+                     $5, NOW(), NOW())",
         )
         .bind(mapping_id)
         .bind(&realm_id)
         .bind(format!("prod_null_validity_{}", mapping_id))
         .bind("null-validity-pkg")
         .bind(json!({"name": "Permanent Package", "price": 999, "currency": "usd"}))
-        .bind(bucket_id)
         .execute(&ctx.app_state.pool)
         .await
         .expect("Failed to create mapping with null validity_days");

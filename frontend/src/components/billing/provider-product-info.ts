@@ -107,8 +107,8 @@ export function isOneTimeMapping(billingType?: string | null): boolean {
 
 /**
  * Authoritative rule for whether a mapping is a non-renewing (fixed-term)
- * subscription. Non-renewing shares the subscription-only advanced field set
- * with recurring (grantOnSubscribe / pointsPerPeriod / quotaWindows / period)
+ * subscription. Non-renewing shares recurring distribution-rule triggers
+ * while also carrying a fixed service duration.
  *
  * `billingType === 'non_renewing'` → `true`.
  * Anything else → `false`.
@@ -119,6 +119,68 @@ export function isOneTimeMapping(billingType?: string | null): boolean {
  */
 export function isNonRenewingMapping(billingType?: string | null): boolean {
   return billingType === 'non_renewing'
+}
+
+/**
+ * A selectable point-rule trigger source (rendered as a checkbox label by
+ * {@link PointDistributionRuleEditor}). Defined here, next to the billing-type
+ * decision helpers below, so the trigger taxonomy has one home.
+ */
+export interface PointRuleTriggerOption {
+  value: string
+  label: string
+}
+
+/**
+ * Localized display label for a point-rule trigger source value. The single
+ * place trigger labels are translated; the option lists below reuse it. Must run
+ * at render time (not module scope) so it honors the active locale.
+ */
+export function pointRuleTriggerLabel(value: string): string {
+  switch (value) {
+    case 'topup':
+      return m['points.rule_editor_trigger_topup']()
+    case 'subscription_initial':
+      return m['points.rule_editor_trigger_subscription_initial']()
+    case 'subscription_renewal':
+      return m['points.rule_editor_trigger_subscription_renewal']()
+    case 'subscription_upgrade':
+      return m['points.rule_editor_trigger_subscription_upgrade']()
+    case 'registration':
+      return m['points.rule_editor_trigger_registration']()
+    case 'free_periodic_grant':
+      return m['points.rule_editor_trigger_free_periodic_grant']()
+    default:
+      return value
+  }
+}
+
+// Legal point-rule trigger sources per mapping billing type. One-time purchases
+// grant on `topup`; non-renewing subscriptions grant only on `subscription_initial`;
+// recurring subscriptions grant on initial, renewal, and upgrade.
+const TOPUP_POINT_RULE_TRIGGERS = ['topup']
+const NON_RENEWING_POINT_RULE_TRIGGERS = ['subscription_initial']
+const SUBSCRIPTION_POINT_RULE_TRIGGERS = [
+  'subscription_initial',
+  'subscription_renewal',
+  'subscription_upgrade',
+]
+
+/**
+ * Resolve the legal point-rule trigger options for a mapping's billing type.
+ * The single decision point — callers pass the result straight to
+ * {@link PointDistributionRuleEditor}'s `triggers` prop instead of re-deriving
+ * the list inline. Labels are localized at call time (this runs during render).
+ */
+export function pointRuleTriggersForBillingType(
+  billingType?: string | null
+): PointRuleTriggerOption[] {
+  const values = isOneTimeMapping(billingType)
+    ? TOPUP_POINT_RULE_TRIGGERS
+    : isNonRenewingMapping(billingType)
+      ? NON_RENEWING_POINT_RULE_TRIGGERS
+      : SUBSCRIPTION_POINT_RULE_TRIGGERS
+  return values.map((value) => ({ value, label: pointRuleTriggerLabel(value) }))
 }
 
 /**

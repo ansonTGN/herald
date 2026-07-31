@@ -12,9 +12,8 @@ interface CreditBucketListItemProps {
 /**
  * Left-column list row of the Bucket directory Master-Detail.
  *
- * Surfaces: name, disabled badge (when `enabled=false`), registration-pool
- * badge (`receivesRegistrationCredits`), displayOrder, coveredClientAppCount,
- * entitlementMappingCount. NO isDefault badge/control anywhere.
+ * Surfaces name, disabled state, display order, coverage counts, and the
+ * number of distribution rules that reference the bucket.
  */
 export function CreditBucketListItem({ bucket, selected, onSelect }: CreditBucketListItemProps) {
   return (
@@ -33,14 +32,6 @@ export function CreditBucketListItem({ bucket, selected, onSelect }: CreditBucke
       <div className="flex items-center justify-between gap-2">
         <span className="truncate font-medium">{bucket.name}</span>
         <div className="flex shrink-0 items-center gap-1">
-          {bucket.receivesRegistrationCredits && (
-            <Badge
-              variant="default"
-              data-testid={`credit-bucket-list-item-${bucket.id}-registration-badge`}
-            >
-              {m['credit_buckets.registration_pool_badge']()}
-            </Badge>
-          )}
           {!bucket.enabled && (
             <Badge
               variant="secondary"
@@ -57,7 +48,7 @@ export function CreditBucketListItem({ bucket, selected, onSelect }: CreditBucke
         <span>
           {m['credit_buckets.covered_apps_count']({ count: bucket.coveredClientAppCount })}
         </span>
-        <span>{m['credit_buckets.mappings_count']({ count: bucket.entitlementMappingCount })}</span>
+        <span>{bucket.ruleReferenceCount} rule references</span>
       </div>
     </button>
   )

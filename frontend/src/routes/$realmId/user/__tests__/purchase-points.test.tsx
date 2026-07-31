@@ -66,7 +66,18 @@ function makeOption(overrides: Partial<PurchaseOptionView>): PurchaseOptionView 
     displayName: overrides.displayName ?? 'Pro',
     amount: overrides.amount ?? 1000,
     currency: overrides.currency ?? 'usd',
-    pointsPerPeriod: overrides.pointsPerPeriod ?? 1000,
+    pointRules: overrides.pointRules ?? [
+      {
+        id: 'rule-1',
+        bucketId: 'bucket-a',
+        triggerSources: ['subscription_initial'],
+        grantMode: 'fixed',
+        pointsAmount: 1000,
+        validityDays: 30,
+        enabled: true,
+        displayOrder: 0,
+      },
+    ],
     enabled: overrides.enabled ?? true,
     ...overrides,
   } as PurchaseOptionView
@@ -169,6 +180,42 @@ describe('disabledReason', () => {
 // --- Component tests -------------------------------------------------------
 
 describe('PurchasePointsPage', () => {
+  it('shows fixed and quota grants per bucket without combining their values', () => {
+    renderPage([
+      makeOption({
+        externalPriceId: 'price_multi_wallet',
+        pointRules: [
+          {
+            id: 'rule-fixed',
+            bucketId: 'wallet-fixed',
+            triggerSources: ['subscription_initial'],
+            grantMode: 'fixed',
+            pointsAmount: 1000,
+            validityDays: 30,
+            enabled: true,
+            displayOrder: 0,
+          },
+          {
+            id: 'rule-quota',
+            bucketId: 'wallet-quota',
+            triggerSources: ['subscription_initial'],
+            grantMode: 'quota',
+            quotaWindows: [{ key: 'hour', windowSeconds: 3600, limit: 25 }],
+            enabled: true,
+            displayOrder: 1,
+          },
+        ],
+      }),
+    ])
+
+    expect(screen.getByTestId('purchase-point-rule-rule-fixed')).toHaveTextContent(
+      'wallet-fixed · 1,000 points'
+    )
+    expect(screen.getByTestId('purchase-point-rule-rule-quota')).toHaveTextContent(
+      'wallet-quota · 25 / 3600s'
+    )
+  })
+
   it('renders all recurring cards together with no period toggle', async () => {
     renderPage([
       makeOption({

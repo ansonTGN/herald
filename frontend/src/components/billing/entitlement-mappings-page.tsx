@@ -10,7 +10,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { PageHeader } from '@/components/shared'
 import { ProviderSyncButton } from '@/components/billing/provider-sync-button'
 import { CreateEntitlementMappingDialog } from '@/components/billing/create-entitlement-mapping-dialog'
@@ -21,11 +20,12 @@ import {
   mapBillingPeriodLabel,
   isOneTimeMapping,
   isNonRenewingMapping,
+  pointRuleTriggersForBillingType,
 } from '@/components/billing/provider-product-info'
 import { formatInvoiceAmount } from '@/lib/invoice-utils'
 import { ProtectedPriceConfirmDialog } from '@/components/billing/entitlement-mapping-detail-dialog'
 import { SyncNextStepDialog } from '@/components/billing/sync-next-step-dialog'
-import { MultiWindowQuotaEditor } from '@/components/billing/MultiWindowQuotaEditor'
+import { PointDistributionRuleEditor } from '@/components/billing/point-distribution-rule-editor'
 import { RoleSelector } from '@/components/shared/role-selector'
 import {
   groupByProduct,
@@ -37,6 +37,7 @@ import {
 import { deriveSharedKeyColor } from '@/components/billing/shared-key-color'
 import {
   adminRolesQueryOptions,
+  creditBucketsListQueryOptions,
   entitlementMappingsQueryOptions,
   queryKeys,
 } from '@/data/query-options'
@@ -46,6 +47,7 @@ import {
 } from '@/data/entitlement-mapping-mutations'
 import {
   batchEntitlementMappingsSchema,
+  toPointDistributionRuleFormData,
   type PriceMappingUpdateFormData,
 } from '@/lib/schemas/billing-forms'
 import {
@@ -58,6 +60,7 @@ import type {
   EntitlementMappingResponse,
   EntitlementMappingListResponse,
   BatchUpdateEntitlementMappingsRequest,
+  BucketResponse,
   PriceMappingUpdate,
 } from '@/lib/api-generated'
 
@@ -291,6 +294,10 @@ function DetailPanel({
 }: DetailPanelProps) {
   const batchMutation = useBatchUpdateEntitlementMappings(realmId)
 
+  // Realm-scoped and cached (staleTime 2min). Hoisted out of PriceEditRow so the
+  // detail panel mounts a single observer instead of one per price row.
+  const { data: buckets = [] } = useQuery(creditBucketsListQueryOptions(realmId))
+
   // Controlled field-array state: one entry per price row, seeded from the
   // loaded group. The parent remounts this panel via `key` when the selected
   // product changes, so the lazy initializer re-runs fresh (no sync effect).
@@ -387,6 +394,7 @@ function DetailPanel({
                       realmId={realmId}
                       price={price}
                       row={row}
+                      buckets={buckets}
                       canManage={canManage}
                       canManagePoints={canManagePoints}
                       isUnresolved={isWebhookUnresolvedPrice(price)}
@@ -419,6 +427,7 @@ interface PriceEditRowProps {
   realmId: string
   price: EntitlementMappingResponse
   row: PriceMappingUpdateFormData
+  buckets: BucketResponse[]
   canManage: boolean
   canManagePoints: boolean
   isUnresolved: boolean
@@ -429,21 +438,16 @@ function PriceEditRow({
   realmId,
   price,
   row,
+  buckets,
   canManage,
   canManagePoints,
   isUnresolved,
   onChange,
 }: PriceEditRowProps) {
-  const [advancedOpen, setAdvancedOpen] = useState(false)
   const editDisabled = !canManage
   const pointsDisabled = !canManage || !canManagePoints
-  // One-time mappings keep validityDays because one-time fulfillment uses it
-  // for topup_credit expiration. Recurring mappings rely on provider period
-  // boundaries for validity and only expose the active subscription controls.
-  // render the subscription-only advanced fields (grantOnSubscribe /
-  // quotaWindows / period) for both recurring and non_renewing. Non-renewing's
-  // ONLY difference from recurring is that it shows serviceDurationDays instead
-  // of nothing in the advanced section (recurring has no validity field there).
+  // Billing type controls which trigger sources are legal for point rules.
+  // Non-renewing mappings additionally expose their service duration.
   const isOneTime = isOneTimeMapping(row.billingType)
   const isNonRenewing = isNonRenewingMapping(row.billingType)
 
@@ -462,6 +466,7 @@ function PriceEditRow({
   // dialog usage. The query is realm-scoped and cached (staleTime 5min).
   const { data: rolesData } = useQuery(adminRolesQueryOptions(realmId))
   const assignableRoles = (rolesData ?? []).filter((r) => !r.isBuiltin)
+  const triggers = pointRuleTriggersForBillingType(row.billingType)
 
   return (
     <div
@@ -565,28 +570,6 @@ function PriceEditRow({
           </Field>
         )}
 
-        <Field
-          label={
-            isOneTime
-              ? m['billing.field_one_time_points']()
-              : m['billing.field_points_per_period']()
-          }
-          required={isUnresolved && row.pointsPerPeriod == null}
-        >
-          <Input
-            type="number"
-            min={0}
-            value={row.pointsPerPeriod ?? ''}
-            onChange={(e) =>
-              onChange({
-                pointsPerPeriod: e.target.value === '' ? null : Number(e.target.value),
-              })
-            }
-            disabled={pointsDisabled}
-            className={isUnresolved && row.pointsPerPeriod == null ? 'border-destructive' : ''}
-          />
-        </Field>
-
         {/* Role-grant dimension (design §4.4 / §5.2). Orthogonal to billing_type
             and points: empty = no role grant (pure credit / payment record);
             selected = roles auto-granted on successful payment. A realm-scoped
@@ -630,6 +613,18 @@ function PriceEditRow({
         </Field>
       </div>
 
+      <div className="mt-4 space-y-2">
+        <Label>Points distribution rules</Label>
+        <PointDistributionRuleEditor
+          value={row.pointRules ?? []}
+          onChange={(pointRules) => onChange({ pointRules })}
+          buckets={buckets}
+          triggers={triggers}
+          allowQuota={!isOneTime}
+          disabled={pointsDisabled}
+        />
+      </div>
+
       {/* Provider metadata block (read-only). Rendered per price row: the
           backend attaches productMetadata to every price row of a product
           (there is no product-level UI node separate from the price rows) and
@@ -660,64 +655,6 @@ function PriceEditRow({
           </dl>
         </div>
       )}
-
-      <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
-        <CollapsibleTrigger asChild>
-          <Button variant="ghost" size="sm" disabled={editDisabled} className="mt-2">
-            {advancedOpen ? 'Hide advanced' : 'Advanced'}
-          </Button>
-        </CollapsibleTrigger>
-        <CollapsibleContent>
-          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {isOneTime && (
-              <Field label={m['billing.field_validity_days']()}>
-                <Input
-                  type="number"
-                  min={1}
-                  value={row.validityDays ?? ''}
-                  onChange={(e) =>
-                    onChange({
-                      validityDays: e.target.value === '' ? null : Number(e.target.value),
-                    })
-                  }
-                  disabled={pointsDisabled}
-                  placeholder="—"
-                />
-              </Field>
-            )}
-
-            {!isOneTime && (
-              <Field
-                label={m['billing.field_grant_on_subscribe']()}
-                hint={m['billing.help_grant_on_subscribe']()}
-              >
-                <div className="flex items-center gap-2">
-                  <Switch
-                    checked={row.grantOnSubscribe ?? false}
-                    onCheckedChange={(checked: boolean) => onChange({ grantOnSubscribe: checked })}
-                    disabled={pointsDisabled}
-                  />
-                </div>
-              </Field>
-            )}
-
-            {!isOneTime && (
-              <div className="sm:col-span-2">
-                <Label className="mb-2 block text-xs font-medium text-muted-foreground">
-                  {m['points.quota_editor_title']()}
-                </Label>
-                <MultiWindowQuotaEditor
-                  value={row.quotaWindows ?? []}
-                  onChange={(v) => onChange({ quotaWindows: v })}
-                  disabled={pointsDisabled}
-                  context="entitlement-mapping"
-                  testIdPrefix="quota-window"
-                />
-              </div>
-            )}
-          </div>
-        </CollapsibleContent>
-      </Collapsible>
     </div>
   )
 }
@@ -827,13 +764,10 @@ function seedRows(prices: EntitlementMappingResponse[]): PriceMappingUpdateFormD
     billingType: p.billingType ?? null,
     billingPeriod: p.billingPeriod ?? null,
     enabled: p.enabled,
-    pointsPerPeriod: p.pointsPerPeriod ?? null,
-    validityDays: p.validityDays ?? null,
     // state only; persisted via a separate single-row PUT onBlur, never enters
     // batch DTO `PriceMappingUpdate` has no such field).
     serviceDurationDays: p.serviceDurationDays ?? null,
-    grantOnSubscribe: p.grantOnSubscribe,
-    quotaWindows: p.quotaWindows ?? null,
+    pointRules: p.pointRules.map(toPointDistributionRuleFormData),
     // GET response carries the granted role list as a required array (empty when
     // none configured). Seed as an editable array so the multi-select can mutate
     // it directly; the save path forwards the array verbatim ([] ⟺ clear).
@@ -842,28 +776,13 @@ function seedRows(prices: EntitlementMappingResponse[]): PriceMappingUpdateFormD
 }
 
 function toPriceMappingUpdate(row: PriceMappingUpdateFormData): PriceMappingUpdate {
-  const isOneTime = isOneTimeMapping(row.billingType)
-  const update = {
+  return {
     mappingId: row.mappingId,
     billingType: row.billingType ?? undefined,
     enabled: row.enabled ?? undefined,
-    pointsPerPeriod: row.pointsPerPeriod ?? undefined,
-    validityDays: isOneTime ? (row.validityDays ?? undefined) : undefined,
-    grantOnSubscribe: isOneTime ? undefined : (row.grantOnSubscribe ?? undefined),
-    // Strip the read-side `key` (EntitlementQuotaWindowDto) before sending: the
-    // save payload's element shape is `QuotaWindowInput` ({windowSeconds,
-    // limit}). The seeded rows carry `key` straight from the GET response; if
-    // forwarded verbatim it would leak an excess property onto the wire.
-    quotaWindows: isOneTime
-      ? undefined
-      : (row.quotaWindows?.map((w) => ({ windowSeconds: w.windowSeconds, limit: w.limit })) ??
-        undefined),
-    // both one_time and recurring forward the array. Forwarded verbatim from
-    // the edit state: [] ⟺ clear, non-empty ⟺ set. Matches the generated
-    // `PriceMappingUpdate.grantedRoleIds` (Array<string> | null | undefined).
+    pointRules: row.pointRules ?? undefined,
     grantedRoleIds: row.grantedRoleIds ?? undefined,
   }
-  return update as PriceMappingUpdate
 }
 
 function latestSyncedAt(prices: EntitlementMappingResponse[]): string | null {

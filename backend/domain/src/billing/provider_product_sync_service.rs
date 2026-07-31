@@ -1,15 +1,12 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use uuid::Uuid;
-
 use crate::authentication::Identity;
 use crate::billing::entities::EntitlementMapping;
 use crate::billing::policies::BillingPolicy;
 use crate::billing::ports::BillingRepository;
 use crate::common::entities::app_errors::CoreError;
 use crate::common::policies::ensure_policy;
-use crate::points::services::registration_pool_resolver::RegistrationPoolResolver;
 
 /// A single price variant of a provider product.
 ///
@@ -98,45 +95,36 @@ pub trait ProviderApiPort: Send + Sync {
 /// - `R`: the billing repository (mapping upserts + lookups)
 /// - `P`: the billing policy (permission gate)
 /// - `A`: the external provider API (Stripe / Creem product fetch)
-/// - `B`: the registration-pool bucket resolver used to bind newly-created
-///   draft mappings to a valid per-realm credit bucket. `bucket_id` is NOT NULL
-///   on `provider_entitlement_mappings` (commits aa6cc2da / f134dcf8 /
-///   57c313ba), so a freshly-synced product with no pre-existing mapping must
-///   still land in a real bucket. We reuse the existing
-///   `RegistrationPoolResolver` pattern (the same port
-///   `webhook_subscription_helpers::resolve_bucket_id_for_entitlement` and the
-///   registration grant path rely on) to pick the realm's single registration
-pub struct ProviderProductSyncService<R, P, A, B>
+///
+/// A freshly-synced product with no pre-existing mapping is inserted as an
+/// unconfigured draft (`enabled = false`, no entitlement key configured by the
+/// operator, no distribution rules). Points distribution rules are configured
+/// separately by the operator via the Mapping management endpoints; a draft
+/// carries no bucket binding (the old `bucket_id` column and the
+/// registration-pool resolver have been removed with the multi-wallet rule
+/// model).
+pub struct ProviderProductSyncService<R, P, A>
 where
     R: BillingRepository,
     P: BillingPolicy,
     A: ProviderApiPort,
-    B: RegistrationPoolResolver,
 {
     repository: Arc<R>,
     policy: Arc<P>,
     provider_api: Arc<A>,
-    bucket_resolver: Arc<B>,
 }
 
-impl<R, P, A, B> ProviderProductSyncService<R, P, A, B>
+impl<R, P, A> ProviderProductSyncService<R, P, A>
 where
     R: BillingRepository + Send + Sync,
     P: BillingPolicy,
     A: ProviderApiPort,
-    B: RegistrationPoolResolver,
 {
-    pub fn new(
-        repository: Arc<R>,
-        policy: Arc<P>,
-        provider_api: Arc<A>,
-        bucket_resolver: Arc<B>,
-    ) -> Self {
+    pub fn new(repository: Arc<R>, policy: Arc<P>, provider_api: Arc<A>) -> Self {
         Self {
             repository,
             policy,
             provider_api,
-            bucket_resolver,
         }
     }
 
@@ -194,55 +182,18 @@ where
                     )
                     .await?;
 
-                let (mapping_id, bucket_id, entitlement_key, draft_defaults) = match existing
-                    .as_ref()
-                {
+                let (mapping_id, entitlement_key, is_new_draft) = match existing.as_ref() {
                     Some(existing_mapping) => (
                         existing_mapping.id,
-                        existing_mapping.bucket_id,
                         existing_mapping.entitlement_key.clone(),
-                        None,
+                        false,
                     ),
-                    None => {
-                        // `bucket_id` is NOT NULL (commits aa6cc2da /
-                        // f134dcf8 / 57c313ba), so bind it to the realm's
-                        // registration-pool bucket — the same bucket the
-                        // registration/free-periodic grant path and the
-                        // webhook entitlement resolver use. No
-                        let bucket_id = self
-                                .bucket_resolver
-                                .resolve_registration_pool_bucket(realm_id)
-                                .await
-                                .map_err(|e| {
-                                    tracing::error!(
-                                        realm_id = %realm_id,
-                                        external_product_id = %product.external_product_id,
-                                        external_price_id = ?external_price_id,
-                                        error = %e,
-                                        "Failed to resolve registration-pool bucket during provider product sync"
-                                    );
-                                    e
-                                })?
-                                .ok_or_else(|| {
-                                    // Fail loud: a realm with no registration-pool
-                                    // bucket cannot accept newly-synced products.
-                                    // The operator must configure a registration
-                                    // pool first.
-                                    CoreError::BadRequest(format!(
-                                        "Cannot sync new provider product {}: realm '{}' has no registration-pool credit bucket; create one before syncing",
-                                        product.external_product_id, realm_id
-                                    ))
-                                })?;
-                        (
-                            Uuid::now_v7(),
-                            bucket_id,
-                            draft_entitlement_key(&product.external_product_id),
-                            Some(DraftDefaults::default()),
-                        )
-                    }
+                    None => (
+                        uuid::Uuid::now_v7(),
+                        draft_entitlement_key(&product.external_product_id),
+                        true,
+                    ),
                 };
-
-                let draft = draft_defaults.unwrap_or_default();
 
                 let mapping = EntitlementMapping {
                     id: mapping_id,
@@ -250,7 +201,6 @@ where
                     payment_provider: payment_provider.to_string(),
                     external_product_id: product.external_product_id.clone(),
                     external_price_id: price.external_price_id.clone(),
-                    bucket_id,
                     entitlement_key,
                     billing_type: price
                         .billing_type
@@ -262,18 +212,16 @@ where
                     // concept, not a provider-observed field). Preserve an
                     // existing mapping's value when re-syncing, else None.
                     service_duration_days: existing.as_ref().and_then(|m| m.service_duration_days),
-                    points_per_period: draft.points_per_period,
-                    validity_days: draft.validity_days,
-                    grant_on_subscribe: draft.grant_on_subscribe,
-                    grant_period_type: existing.as_ref().and_then(|m| m.grant_period_type.clone()),
-                    max_periods: existing.as_ref().and_then(|m| m.max_periods),
-                    enabled: draft.enabled,
+                    // A freshly-synced draft starts disabled with no points
+                    // grant; the operator configures rules via the Mapping
+                    // management endpoints. An existing mapping keeps its
+                    // configured `enabled` state on re-sync.
+                    enabled: if is_new_draft {
+                        false
+                    } else {
+                        existing.as_ref().map(|m| m.enabled).unwrap_or(false)
+                    },
                     provider_product_info: Some(build_provider_product_info(&product, price)),
-                    // Provider sync never carries quota config; preserve an
-                    // existing mapping's windows when re-syncing, else None
-                    // (new mapping). The upsert update-branch also preserves
-                    // the DB value, so this is belt-and-suspenders.
-                    quota_windows: existing.as_ref().and_then(|m| m.quota_windows.clone()),
                     // Same preserve-on-resync policy for `granted_role_ids`
                     // (no role grant); the DB column default already enforces
                     // `'{}'`, but the domain struct requires a concrete value.
@@ -336,21 +284,6 @@ where
             partial_errors,
         })
     }
-}
-
-/// Default field values for a newly-created (draft) entitlement mapping.
-///
-/// Drafts are unconfigured: disabled, no entitlement key, no grant policy.
-/// The admin configures them via PATCH `/entitlement-mappings/{id}` (the
-/// `UpdateEntitlementMappingRequest` overrides every field here). Matches the
-/// "unconfigured mapping" shape the create/update handlers use as their
-/// baseline.
-#[derive(Debug, Clone, Default)]
-struct DraftDefaults {
-    points_per_period: Option<i64>,
-    validity_days: Option<i64>,
-    grant_on_subscribe: bool,
-    enabled: bool,
 }
 
 /// Assemble the `provider_product_info` JSONB value written to

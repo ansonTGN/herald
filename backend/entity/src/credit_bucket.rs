@@ -14,7 +14,6 @@ pub struct Model {
     #[sea_orm(nullable)]
     pub description: Option<String>,
     pub display_order: i32,
-    pub receives_registration_credits: bool,
     pub enabled: bool,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,

@@ -6,9 +6,19 @@ use uuid::Uuid;
 
 use super::entities::PurchaseHistoryRow;
 use super::entities::{PaymentAttempt, PaymentAttemptStatus};
+use crate::billing::BillingType;
 use crate::common::entities::app_errors::CoreError;
+use crate::points::CapturedRuleRef;
 
-/// Input for creating a payment attempt
+/// Input for creating a payment attempt.
+///
+/// The single-target `bucket_id` has been removed with the multi-wallet rule
+/// model: at creation time the repository resolves the distribution rules that
+/// match the attempt's billing type (`topup` for `OneTime`,
+/// `subscription_initial` for `Recurring` / `NonRenewing`) and atomically
+/// writes both the attempt row and its rule/bucket snapshot
+/// (`payment_attempt_point_rules`) in one transaction. First fulfillment then
+/// replays that snapshot via the `CapturedPaymentRules` executor selection.
 #[derive(Debug, Clone)]
 pub struct CreatePaymentAttemptInput {
     pub realm_id: String,
@@ -16,7 +26,9 @@ pub struct CreatePaymentAttemptInput {
     pub payment_provider: String,
     pub target_type: String, // "entitlement_mapping" (legacy values "subscription_entitlement" and "points_package" are accepted)
     pub target_id: Uuid,
-    pub bucket_id: Uuid,
+    /// Drives rule snapshot resolution: `OneTime` -> `topup`,
+    /// `Recurring`/`NonRenewing` -> `subscription_initial`.
+    pub billing_type: BillingType,
     pub amount: i64,
     pub currency: String,
     pub provider_reference: Option<String>,
@@ -40,8 +52,7 @@ pub struct RecordRenewalAttemptInput {
     pub user_id: Uuid,
     pub payment_provider: String, // "stripe" | "creem"
     pub target_id: Uuid,          // entitlement mapping id
-    pub bucket_id: Uuid,
-    pub amount: i64, // smallest currency unit; caller guarantees > 0
+    pub amount: i64,              // smallest currency unit; caller guarantees > 0
     pub currency: String,
     pub provider_reference: String, // idempotency key
     pub completed_at: DateTime<Utc>,
@@ -144,4 +155,17 @@ pub trait PaymentAttemptRepository: Send + Sync {
         user_id: Uuid,
         target_id: Uuid,
     ) -> Result<bool, CoreError>;
+
+    /// Load the rule/bucket references captured for an attempt at purchase
+    /// creation (`payment_attempt_point_rules`). Frozen at creation time: a rule
+    /// disabled after capture is still returned here. First fulfillment feeds
+    /// this into the `CapturedPaymentRules` executor selection so an already-paid
+    /// attempt completes its captured grant set regardless of later rule
+    /// enable/disable. Returns an empty vec for an
+    /// attempt that matched no rules at creation (a valid zero-result event).
+    async fn find_captured_rule_refs(
+        &self,
+        realm_id: &str,
+        attempt_id: Uuid,
+    ) -> Result<Vec<CapturedRuleRef>, CoreError>;
 }

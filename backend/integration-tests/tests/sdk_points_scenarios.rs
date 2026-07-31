@@ -28,8 +28,8 @@ async fn ensure_legacy_bucket_for_realm(pool: &sqlx::PgPool, realm_id: &str) -> 
     query(
         r#"INSERT INTO credit_buckets
              (id, realm_id, bucket_key, name, display_order, enabled,
-              receives_registration_credits, created_at, updated_at)
-           VALUES ($1, $2, $3, 'Legacy Test Bucket', 0, true, true, NOW(), NOW())
+              created_at, updated_at)
+           VALUES ($1, $2, $3, 'Legacy Test Bucket', 0, true, NOW(), NOW())
            ON CONFLICT (realm_id, bucket_key) DO NOTHING"#,
     )
     .bind(Uuid::now_v7())

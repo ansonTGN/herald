@@ -34,11 +34,9 @@ export const createCreditBucketSchema = z.object({
   description: z.string().nullable().optional(),
   displayOrder: z.number().int().nullable().optional(),
   enabled: z.boolean(),
-  receivesRegistrationCredits: z.boolean(),
   clientAppIds: z
     .array(idField)
     .min(1, { error: () => m['credit_buckets.validation_coverage_required']() }),
-  entitlementMappingIds: z.array(idField).optional(),
 })
 
 export type CreateCreditBucketFormData = z.infer<typeof createCreditBucketSchema>
@@ -54,11 +52,9 @@ export const updateCreditBucketSchema = z.object({
   description: z.string().nullable().optional(),
   displayOrder: z.number().int().nullable().optional(),
   enabled: z.boolean(),
-  receivesRegistrationCredits: z.boolean(),
   clientAppIds: z
     .array(idField)
     .min(1, { error: () => m['credit_buckets.validation_coverage_required']() }),
-  entitlementMappingIds: z.array(idField).optional(),
 })
 
 export type UpdateCreditBucketFormData = z.infer<typeof updateCreditBucketSchema>

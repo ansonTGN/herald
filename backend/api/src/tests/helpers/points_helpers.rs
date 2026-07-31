@@ -30,13 +30,13 @@ async fn ensure_test_user_exists(ctx: &SchemaTestContext, user_id: Uuid, realm_i
 /// predate the Bucket model and never create a
 /// bucket; without one every legacy INSERT into these tables violates the NOT
 /// NULL constraint. This helper materializes a deterministic, realm-scoped
-/// legacy bucket (`bucket_key = "legacy-<hash>"`, `enabled = true`,
-/// `receives_registration_credits = true`) once per realm and reuses it on
-/// subsequent calls. The bucket is shared by all legacy wallets / ledgers /
-/// transactions in that realm, mirroring the pre-bucket single-pool semantics
-/// these tests were written against. Marking it as the realm's registration
-/// pool means registration-bonus grants (which require a registration-pool
-/// bucket) land in the same legacy pool the tests assert on.
+/// legacy bucket (`bucket_key = "legacy-<hash>"`, `enabled = true`) once per
+/// realm and reuses it on subsequent calls. The bucket is shared by all legacy
+/// wallets / ledgers / transactions in that realm, mirroring the pre-bucket
+/// single-pool semantics these tests were written against. Registration-bonus
+/// grants are routed via `RealmRegistration` distribution rules (configured
+/// separately, e.g. via `realm_default_configs` + the register endpoint); this
+/// helper only ensures a bucket row exists to satisfy NOT NULL constraints.
 pub async fn ensure_test_bucket_for_realm(pool: &sqlx::PgPool, realm_id: &str) -> Uuid {
     use sqlx::Row;
 
@@ -51,8 +51,8 @@ pub async fn ensure_test_bucket_for_realm(pool: &sqlx::PgPool, realm_id: &str) -
     sqlx::query(
         r#"INSERT INTO credit_buckets
              (id, realm_id, bucket_key, name, display_order, enabled,
-              receives_registration_credits, created_at, updated_at)
-           VALUES ($1, $2, $3, 'Legacy Test Bucket', 0, true, true, NOW(), NOW())
+              created_at, updated_at)
+           VALUES ($1, $2, $3, 'Legacy Test Bucket', 0, true, NOW(), NOW())
            ON CONFLICT (realm_id, bucket_key) DO NOTHING"#,
     )
     .bind(Uuid::now_v7())
@@ -764,16 +764,73 @@ pub async fn get_wallet_bucket_id(ctx: &SchemaTestContext, realm_id: &str, user_
     bucket_id
 }
 
-/// Create a `payment_attempts` snapshot row so the Creem refund webhook can
-/// resolve the routing `bucket_id` for `provider_reference` (the original
-/// payment id). The refund handler (`webhook_handlers.rs` refund path)
-/// requires a payment_attempt with a non-null `bucket_id` to scope revocation
-/// to the same pool the original grant targeted (fail-loud) — tests
-/// that grant a ledger directly via `create_credit_ledger_entry_v2` must also
-/// seed this snapshot before sending a refund webhook, otherwise the handler
-/// rejects with "no payment_attempt for payment_id".
-/// `provider_reference` is the value the webhook will look up (the test's
-/// `payment_id`); `bucket_id` should match the wallet the credits live in.
+/// Replicate production's rule snapshot (`snapshot_matched_rules_in_tx` in
+/// `backend/infra/src/payment_attempt/postgres_repository.rs`): capture the
+/// mapping's enabled rules whose `trigger_sources` contain `trigger` into
+/// `payment_attempt_point_rules`, keyed `(payment_attempt_id, rule_id)` with
+/// the rule's `bucket_id`. Production `create_payment_attempt` writes this
+/// snapshot atomically at purchase creation; first fulfillment
+/// (`PostgresFulfillmentService::execute_captured_payment_rules`) and the
+/// async-revocation/refund bucket resolution (`captured_bucket_ids`) read it
+/// back. Test setup that creates `payment_attempts` via raw SQL must call this
+/// to materialize the snapshot, otherwise production fulfillment grants 0
+/// points and refund/revocation handlers resolve no bucket. Zero matched
+/// rules (e.g. a pure-entitlement mapping with no points rule) is valid: the
+/// SELECT inserts nothing and the attempt completes a zero-result event,
+/// matching production.
+pub async fn snapshot_attempt_rules_for_mapping(
+    pool: &sqlx::PgPool,
+    payment_attempt_id: Uuid,
+    realm_id: &str,
+    mapping_id: Uuid,
+    trigger: &str,
+) {
+    sqlx::query(
+        "INSERT INTO payment_attempt_point_rules \
+            (payment_attempt_id, rule_id, bucket_id, created_at) \
+         SELECT $1, r.id, r.bucket_id, NOW() \
+         FROM points_distribution_rules r \
+         WHERE r.realm_id = $2 \
+           AND r.entitlement_mapping_id = $3 \
+           AND r.enabled = TRUE \
+           AND $4 = ANY(r.trigger_sources) \
+         ORDER BY r.display_order, r.id",
+    )
+    .bind(payment_attempt_id)
+    .bind(realm_id)
+    .bind(mapping_id)
+    .bind(trigger)
+    .execute(pool)
+    .await
+    .expect("Failed to snapshot payment_attempt_point_rules");
+}
+
+/// Create a `payment_attempts` snapshot row so a refund/revocation webhook can
+/// resolve the originating attempt by `provider_reference` (the original
+/// payment id), and resolve the routing `bucket_id` from the captured rule
+/// snapshot (`captured_bucket_ids` → `payment_attempt_point_rules`).
+///
+/// `payment_attempts` no longer carries a `bucket_id` column (removed by the
+/// distribution-rules refactor); the routing bucket now lives in the
+/// `payment_attempt_point_rules` snapshot that production
+/// `create_payment_attempt` writes at purchase creation. Tests that bypass
+/// fulfillment (e.g. grant a ledger directly via `create_credit_ledger_entry_v2`)
+/// must still materialize that snapshot here so `captured_bucket_ids` returns
+/// the pool the original grant targeted. Because such tests do not own a real
+/// mapping/rule, this helper seeds a minimal disabled one-time mapping + an
+/// enabled `topup` rule pointing at `bucket_id` and captures it — the faithful
+/// equivalent of "a one-time grant targeted this bucket".
+///
+/// Note: revocation that keys on `distribution_event.source_id = attempt.id`
+/// (the Creem `handle_refund_created` topup branch and the Stripe
+/// `revoke_topup_source_proportional` path) additionally requires the granted
+/// ledger to be attributed to THIS attempt's id; a directly-seeded ledger with
+/// a different `source_id` will not be revoked. Pair this with
+/// [`seed_attributed_topup_ledger`] using the returned `(attempt_id,
+/// mapping_id, rule_id)` to mirror production fulfillment output.
+///
+/// Returns `(attempt_id, mapping_id, rule_id)` so the caller can build the
+/// rule-attributed grant on top of the same snapshot.
 pub async fn create_payment_attempt_snapshot(
     ctx: &SchemaTestContext,
     realm_id: &str,
@@ -781,27 +838,356 @@ pub async fn create_payment_attempt_snapshot(
     provider_reference: &str,
     bucket_id: Uuid,
     original_amount: i64,
-) {
+) -> (Uuid, Uuid, Uuid) {
+    let attempt_id = Uuid::now_v7();
+    let mapping_id = Uuid::now_v7();
+    let rule_id = Uuid::now_v7();
+
+    // Minimal disabled one-time mapping owning the snapshot anchor rule.
+    sqlx::query(
+        "INSERT INTO provider_entitlement_mappings
+            (id, realm_id, payment_provider, external_product_id, entitlement_key,
+             billing_type, enabled, created_at, updated_at)
+         VALUES ($1, $2, 'creem', $3, $4, 'one_time', false, NOW(), NOW())",
+    )
+    .bind(mapping_id)
+    .bind(realm_id)
+    .bind(format!("prod_snapshot_{mapping_id}"))
+    .bind(format!("snapshot-{mapping_id}"))
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("Failed to create snapshot anchor mapping");
+
+    // Enabled fixed topup rule targeting the pool the original grant landed in.
+    sqlx::query(
+        "INSERT INTO points_distribution_rules
+            (id, realm_id, owner_type, entitlement_mapping_id, bucket_id,
+             trigger_sources, grant_mode, points_amount, validity_days,
+             enabled, display_order)
+         VALUES ($1, $2, 'entitlement_mapping', $3, $4, $5, 'fixed', $6, 0, true, 0)",
+    )
+    .bind(rule_id)
+    .bind(realm_id)
+    .bind(mapping_id)
+    .bind(bucket_id)
+    .bind(&["topup"][..])
+    .bind(original_amount)
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("Failed to create snapshot anchor rule");
+
     sqlx::query(
         "INSERT INTO payment_attempts
             (id, realm_id, user_id, payment_provider, target_type, target_id,
-             bucket_id, amount, currency, status, provider_reference,
+             amount, currency, status, provider_reference,
              provider_status, expires_at, created_at, updated_at)
          VALUES ($1, $2, $3, 'creem', 'entitlement_mapping', $4,
-                 $5, $6, 'usd', 'Succeeded', $7,
+                 $5, 'usd', 'Succeeded', $6,
                  'succeeded', NOW() + INTERVAL '1 hour', NOW(), NOW())
          ON CONFLICT DO NOTHING",
     )
-    .bind(Uuid::now_v7())
+    .bind(attempt_id)
     .bind(realm_id)
     .bind(user_id)
-    .bind(Uuid::now_v7())
-    .bind(bucket_id)
+    .bind(mapping_id)
     .bind(original_amount)
     .bind(provider_reference)
     .execute(&ctx.app_state.pool)
     .await
     .expect("Failed to create payment_attempt snapshot");
+
+    sqlx::query(
+        "INSERT INTO payment_attempt_point_rules
+            (payment_attempt_id, rule_id, bucket_id, created_at)
+         VALUES ($1, $2, $3, NOW())",
+    )
+    .bind(attempt_id)
+    .bind(rule_id)
+    .bind(bucket_id)
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("Failed to snapshot payment_attempt_point_rules");
+
+    (attempt_id, mapping_id, rule_id)
+}
+
+/// Seed the rule-attributed `topup_credit` ledger + completed
+/// `points_distribution_events` row that production
+/// `PostgresFulfillmentService::fulfill_one_time_purchase` writes, keyed to
+/// `attempt_id` (`source_id = attempt_id`, `event_key = "payment:{attempt_id}"`,
+/// `trigger = 'topup'`).
+///
+/// A subsequent refund webhook resolves the originating attempt by
+/// `provider_reference` and calls
+/// `revoke_topup_source_proportional(source_id = attempt.id)`, whose query
+/// JOINs `points_distribution_events e ON e.id = l.distribution_event_id`
+/// `WHERE e.source_id = $3 AND l.credit_type = 'topup_credit' AND
+/// l.distribution_rule_id IS NOT NULL`. A raw/unattributed ledger is silently
+/// skipped; this helper mirrors the attributed grant so the revoke actually
+/// finds and revokes the credits. Reuses the snapshot's `mapping_id`/`rule_id`
+/// (see `create_payment_attempt_snapshot`).
+pub async fn seed_attributed_topup_ledger(
+    ctx: &SchemaTestContext,
+    realm_id: &str,
+    user_id: Uuid,
+    attempt_id: Uuid,
+    mapping_id: Uuid,
+    rule_id: Uuid,
+    bucket_id: Uuid,
+    amount: i64,
+    expires_at: Option<chrono::DateTime<chrono::Utc>>,
+) -> Uuid {
+    let event_id = Uuid::now_v7();
+    let event_key = format!("payment:{attempt_id}");
+    sqlx::query(
+        "INSERT INTO points_distribution_events
+            (id, realm_id, user_id, trigger, event_key, source_id,
+             owner_type, entitlement_mapping_id, status, result_count,
+             completed_at, created_at)
+         VALUES ($1, $2, $3, 'topup', $4, $5,
+                 'entitlement_mapping', $6, 'completed', 1, NOW(), NOW())",
+    )
+    .bind(event_id)
+    .bind(realm_id)
+    .bind(user_id)
+    .bind(&event_key)
+    .bind(attempt_id.to_string())
+    .bind(mapping_id)
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("seed attributed topup distribution_event");
+
+    let ledger_id = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO points_credit_ledger
+            (id, user_id, realm_id, bucket_id, credit_type, source_type, source_id,
+             granted_amount, used_amount, revoked_amount, expires_at, status,
+             distribution_event_id, distribution_rule_id, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, 'topup_credit', 'topup', $5,
+                 $6, 0, 0, $7, 'active', $8, $9, NOW(), NOW())",
+    )
+    .bind(ledger_id)
+    .bind(user_id)
+    .bind(realm_id)
+    .bind(bucket_id)
+    .bind(attempt_id.to_string())
+    .bind(amount)
+    .bind(expires_at)
+    .bind(event_id)
+    .bind(rule_id)
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("seed attributed topup_credit ledger");
+
+    // Match `create_credit_ledger_entry_v2`: bump the wallet's retained
+    // lifetime-analytics columns so analytics-style assertions still hold.
+    sqlx::query(
+        "UPDATE points_wallets
+         SET total_topup_granted = total_topup_granted + $1,
+             total_recharged = total_recharged + $1,
+             updated_at = NOW()
+         WHERE user_id = $2 AND realm_id = $3",
+    )
+    .bind(amount)
+    .bind(user_id)
+    .bind(realm_id)
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("update account analytics after seeding attributed topup ledger");
+
+    ledger_id
+}
+
+/// Seed a rule-attributed `topup_credit` ledger for an already-existing
+/// payment attempt (created by the caller), mirroring production one-time
+/// fulfillment output. Creates a minimal disabled one-time mapping + an enabled
+/// `topup` fixed rule (the attribution FKs the revoke requires), then the
+/// completed distribution_event keyed `payment:{attempt_id}` and the attributed
+/// ledger. Use when the test already owns the `attempt_id` (e.g. a Stripe
+/// succeeded attempt seeded for a role-revoke assertion); for the common
+/// "grant a refundable topup" setup prefer composing
+/// `create_payment_attempt_snapshot` + `seed_attributed_topup_ledger`.
+pub async fn seed_fulfilled_topup_ledger_for_attempt(
+    ctx: &SchemaTestContext,
+    realm_id: &str,
+    user_id: Uuid,
+    attempt_id: Uuid,
+    amount: i64,
+    expires_at: Option<chrono::DateTime<chrono::Utc>>,
+) -> Uuid {
+    let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, realm_id).await;
+    let mapping_id = Uuid::now_v7();
+    let rule_id = Uuid::now_v7();
+
+    sqlx::query(
+        "INSERT INTO provider_entitlement_mappings
+            (id, realm_id, payment_provider, external_product_id, entitlement_key,
+             billing_type, enabled, created_at, updated_at)
+         VALUES ($1, $2, 'creem', $3, $4, 'one_time', false, NOW(), NOW())",
+    )
+    .bind(mapping_id)
+    .bind(realm_id)
+    .bind(format!("prod_attributed_{mapping_id}"))
+    .bind(format!("attributed-{mapping_id}"))
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("seed attribution anchor mapping");
+
+    sqlx::query(
+        "INSERT INTO points_distribution_rules
+            (id, realm_id, owner_type, entitlement_mapping_id, bucket_id,
+             trigger_sources, grant_mode, points_amount, validity_days,
+             enabled, display_order)
+         VALUES ($1, $2, 'entitlement_mapping', $3, $4, $5, 'fixed', $6, 0, true, 0)",
+    )
+    .bind(rule_id)
+    .bind(realm_id)
+    .bind(mapping_id)
+    .bind(bucket_id)
+    .bind(&["topup"][..])
+    .bind(amount)
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("seed attribution anchor rule");
+
+    seed_attributed_topup_ledger(
+        ctx, realm_id, user_id, attempt_id, mapping_id, rule_id, bucket_id, amount, expires_at,
+    )
+    .await
+}
+
+/// Seed the rule-attributed `points_quota_entitlements` row plus the completed
+/// `points_distribution_events` row that production
+/// `handle_subscription_paid` / `execute_distribution_event_atomic` write for a
+/// subscription-period grant, keyed to `subscription_id`
+/// (`source_id = subscription_id`, `event_key = "subscription:{subscription_id}:period:{period_start}"`,
+/// `trigger = subscription_initial`/`subscription_renewal`).
+///
+/// A subsequent cancel/refund/expiry/dispute webhook calls
+/// `revoke_distribution_source_in_tx(source_id = subscription_id)`, whose query
+/// JOINs `points_distribution_events e ON e.id = q.distribution_event_id` and
+/// matches `WHERE (e.source_id = $3 OR e.event_key LIKE 'subscription:{source_id}:%')`
+/// `AND q.distribution_rule_id IS NOT NULL AND q.status = 'active'`. An
+/// unattributed quota row (both columns NULL, no event) is invisible to that
+/// UPDATE, so the revoke silently no-ops; this helper mirrors the attributed
+/// grant (disabled anchor mapping + enabled quota rule + completed event +
+/// attributed entitlement) so the revoke actually finds and flips the seeded
+/// entitlement to `revoked`. Mirrors `seed_attributed_topup_ledger`
+/// (subscription-quota path instead of topup-credit ledger).
+///
+/// `period_start` is anchored to `effective_from` via
+/// `event_key_for_subscription_period(subscription_id, &effective_from.to_rfc3339())`;
+/// the revoke matches the `subscription:{subscription_id}:%` prefix, so any
+/// consistent token lands.
+pub async fn seed_attributed_subscription_quota(
+    ctx: &SchemaTestContext,
+    realm_id: &str,
+    user_id: Uuid,
+    subscription_id: Uuid,
+    bucket_id: Uuid,
+    credit_type: herald_core::domain::points::entities::CreditType,
+    source_type: herald_core::domain::points::entities::QuotaSourceType,
+    quota_windows: &[(i64, i64, &str)],
+    effective_from: chrono::DateTime<chrono::Utc>,
+    effective_until: Option<chrono::DateTime<chrono::Utc>>,
+) -> Uuid {
+    let mapping_id = Uuid::now_v7();
+    let rule_id = Uuid::now_v7();
+    let trigger = source_type.as_str();
+
+    // Attribution anchor: a disabled mapping plus an enabled quota rule matching
+    // the entitlement's grant window. Production revoke requires a non-null
+    // `distribution_rule_id` on the entitlement; this rule is its FK target.
+    sqlx::query(
+        "INSERT INTO provider_entitlement_mappings
+            (id, realm_id, payment_provider, external_product_id, entitlement_key,
+             billing_type, enabled, created_at, updated_at)
+         VALUES ($1, $2, 'creem', $3, $4, 'recurring', false, NOW(), NOW())",
+    )
+    .bind(mapping_id)
+    .bind(realm_id)
+    .bind(format!("prod_attributed_{mapping_id}"))
+    .bind(format!("attributed-{mapping_id}"))
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("seed subscription attribution anchor mapping");
+
+    let windows_json = quota_windows_jsonb(quota_windows);
+    sqlx::query(
+        "INSERT INTO points_distribution_rules
+            (id, realm_id, owner_type, entitlement_mapping_id, bucket_id,
+             trigger_sources, grant_mode, points_amount, validity_days,
+             quota_windows, enabled, display_order)
+         VALUES ($1, $2, 'entitlement_mapping', $3, $4,
+                 $5, 'quota', NULL, 0, $6, true, 0)",
+    )
+    .bind(rule_id)
+    .bind(realm_id)
+    .bind(mapping_id)
+    .bind(bucket_id)
+    .bind(&[trigger][..])
+    .bind(&windows_json)
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("seed subscription attribution anchor quota rule");
+
+    // Completed distribution event keyed exactly as production's
+    // `event_key_for_subscription_period` builds it; the revoke's
+    // `LIKE 'subscription:{subscription_id}:%'` must match it.
+    let event_id = Uuid::now_v7();
+    let event_key = format!(
+        "subscription:{subscription_id}:period:{}",
+        effective_from.to_rfc3339()
+    );
+    sqlx::query(
+        "INSERT INTO points_distribution_events
+            (id, realm_id, user_id, trigger, event_key, source_id,
+             owner_type, entitlement_mapping_id, status, result_count,
+             completed_at, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6,
+                 'entitlement_mapping', $7, 'completed', 1, NOW(), NOW())",
+    )
+    .bind(event_id)
+    .bind(realm_id)
+    .bind(user_id)
+    .bind(trigger)
+    .bind(&event_key)
+    .bind(subscription_id.to_string())
+    .bind(mapping_id)
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("seed attributed subscription distribution_event");
+
+    // Attributed quota entitlement — both attribution columns non-null so the
+    // revoke UPDATE reaches this row through the event join.
+    let entitlement_id = Uuid::now_v7();
+    sqlx::query(
+        r#"INSERT INTO points_quota_entitlements
+             (id, user_id, realm_id, bucket_id, credit_type, source_type, source_id,
+              quota_windows, effective_from, effective_until, status, idempotency_key,
+              distribution_event_id, distribution_rule_id, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7,
+                   $8, $9, $10, 'active', $11,
+                   $12, $13, NOW(), NOW())"#,
+    )
+    .bind(entitlement_id)
+    .bind(user_id)
+    .bind(realm_id)
+    .bind(bucket_id)
+    .bind(credit_type.to_string())
+    .bind(trigger)
+    .bind(subscription_id.to_string())
+    .bind(&windows_json)
+    .bind(effective_from)
+    .bind(effective_until)
+    .bind(format!("test:{subscription_id}:{entitlement_id}"))
+    .bind(event_id)
+    .bind(rule_id)
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("seed attributed subscription quota entitlement");
+
+    entitlement_id
 }
 
 /// Helper function to convert a database row to PointsCreditLedger
@@ -823,6 +1209,8 @@ fn row_to_credit_ledger(
         expires_at: row.get("expires_at"),
         effective_at: row.get("effective_at"),
         status: row.get::<String, _>("status").parse().unwrap(),
+        distribution_event_id: row.get("distribution_event_id"),
+        distribution_rule_id: row.get("distribution_rule_id"),
         created_at: row.get("created_at"),
         updated_at: row.get("updated_at"),
     }
@@ -1549,12 +1937,65 @@ pub async fn create_free_grant_schedule(
     let schedule_id = Uuid::now_v7();
     let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, realm_id).await;
 
+    // `distribution_event_id` and `distribution_rule_id` are NOT NULL FK columns
+    // on points_grant_schedules (0002_billing.sql:482-483), added by the
+    // distribution-rules refactor. Seed a minimal realm_registration rule +
+    // completion event so the schedule row satisfies the NOT NULL + FK
+    // constraints (mirrors `create_subscription_grant_schedule` above). Free
+    // schedules are the production shape (subscription_id IS NULL); callers
+    // assert schedule/ledger state, never these attribution rows. A fresh
+    // rule_id per call also satisfies the UNIQUE(realm_id, user_id,
+    // distribution_rule_id) constraint when multiple schedules are seeded for
+    // the same user.
+    let rule_id = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO points_distribution_rules
+            (id, realm_id, owner_type, bucket_id, trigger_sources,
+             grant_mode, points_amount, validity_days, grant_period_type,
+             enabled, display_order)
+         VALUES ($1, $2, 'realm_registration', $3, $4, 'fixed', $5, $6, $7, true, 0)",
+    )
+    .bind(rule_id)
+    .bind(realm_id)
+    .bind(bucket_id)
+    .bind(&["free_periodic_grant"][..])
+    // The rule's points_amount must satisfy chk_pdr_fixed_policy (> 0). It is
+    // never read for scheduled grants — `execute_scheduled_fixed_in_tx` takes
+    // the grant amount from the schedule row's points_per_period. Some callers
+    // seed points_per_period = 0 to exercise the fail-loud realization path
+    // (ledger granted_amount > 0 CHECK); the schedule keeps that real value,
+    // while the scaffolding rule gets max(points_per_period, 1).
+    .bind(points_per_period.max(1))
+    .bind(validity_days)
+    .bind(grant_period_type)
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("Failed to seed distribution rule for free grant schedule");
+
+    let event_id = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO points_distribution_events
+            (id, realm_id, user_id, trigger, event_key, source_id,
+             owner_type, status, result_count, completed_at)
+         VALUES ($1, $2, $3, 'free_periodic_grant', $4, $5,
+                 'realm_registration', 'completed', 0, NOW())",
+    )
+    .bind(event_id)
+    .bind(realm_id)
+    .bind(user_id)
+    .bind(format!("sched:{}", schedule_id))
+    .bind(schedule_id.to_string())
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("Failed to seed distribution event for free grant schedule");
+
     sqlx::query(
         "INSERT INTO points_grant_schedules
             (id, user_id, realm_id, bucket_id, subscription_id, entitlement_key,
              grant_period_type, base_time, next_grant_time, points_per_period,
-             validity_days, granted_periods, max_periods, active, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, NULL, $5, $6, $7, $8, $9, $10, $11, NULL, TRUE, NOW(), NOW())",
+             validity_days, granted_periods, max_periods, active,
+             distribution_event_id, distribution_rule_id, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, NULL, $5, $6, $7, $8, $9, $10, $11, NULL, TRUE, $12, $13, NOW(), NOW())",
     )
     .bind(schedule_id)
     .bind(user_id)
@@ -1567,6 +2008,8 @@ pub async fn create_free_grant_schedule(
     .bind(points_per_period)
     .bind(validity_days)
     .bind(granted_periods)
+    .bind(event_id)
+    .bind(rule_id)
     .execute(&ctx.app_state.pool)
     .await
     .expect("Failed to create free grant schedule");
@@ -1592,12 +2035,53 @@ pub async fn create_subscription_grant_schedule(
     let schedule_id = Uuid::now_v7();
     let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, realm_id).await;
 
+    // `distribution_event_id` and `distribution_rule_id` are NOT NULL FK columns
+    // on points_grant_schedules (0002_billing.sql:482-483), added by the
+    // distribution-rules refactor. Seed a minimal rule + completion event so
+    // the schedule row satisfies the NOT NULL + FK constraints. This helper
+    // builds a test-only subscription-bound schedule construct (production
+    // creates schedules only for free-periodic rules with subscription_id IS
+    // NULL); callers assert schedule/ledger state, never these attribution rows.
+    let rule_id = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO points_distribution_rules
+            (id, realm_id, owner_type, bucket_id, trigger_sources,
+             grant_mode, points_amount, validity_days, enabled, display_order)
+         VALUES ($1, $2, 'realm_registration', $3, $4, 'fixed', $5, 0, true, 0)",
+    )
+    .bind(rule_id)
+    .bind(realm_id)
+    .bind(bucket_id)
+    .bind(&["subscription_renewal"][..])
+    .bind(points_per_period)
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("Failed to seed distribution rule for subscription grant schedule");
+
+    let event_id = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO points_distribution_events
+            (id, realm_id, user_id, trigger, event_key, source_id,
+             owner_type, status, result_count, completed_at)
+         VALUES ($1, $2, $3, 'subscription_renewal', $4, $5,
+                 'realm_registration', 'completed', 0, NOW())",
+    )
+    .bind(event_id)
+    .bind(realm_id)
+    .bind(user_id)
+    .bind(format!("sched:{}", schedule_id))
+    .bind(subscription_id.to_string())
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("Failed to seed distribution event for subscription grant schedule");
+
     sqlx::query(
         "INSERT INTO points_grant_schedules
             (id, user_id, realm_id, bucket_id, subscription_id, entitlement_key,
              grant_period_type, base_time, next_grant_time, points_per_period,
-             validity_days, granted_periods, max_periods, active, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, 'monthly', $7, $8, $9, 0, $10, NULL, TRUE, NOW(), NOW())",
+             validity_days, granted_periods, max_periods, active,
+             distribution_event_id, distribution_rule_id, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, 'monthly', $7, $8, $9, 0, $10, NULL, TRUE, $11, $12, NOW(), NOW())",
     )
     .bind(schedule_id)
     .bind(user_id)
@@ -1609,6 +2093,8 @@ pub async fn create_subscription_grant_schedule(
     .bind(next_grant_time)
     .bind(points_per_period)
     .bind(granted_periods)
+    .bind(event_id)
+    .bind(rule_id)
     .execute(&ctx.app_state.pool)
     .await
     .expect("Failed to create subscription grant schedule");
@@ -1976,6 +2462,7 @@ pub async fn get_user_quota_entitlements(
     let rows = sqlx::query(
         r#"SELECT id, user_id, realm_id, bucket_id, credit_type, source_type, source_id,
                   quota_windows, effective_from, effective_until, status, idempotency_key,
+                  distribution_event_id, distribution_rule_id,
                   created_at, updated_at
            FROM points_quota_entitlements
            WHERE realm_id = $1 AND user_id = $2 AND bucket_id = $3 AND credit_type = $4
@@ -2024,6 +2511,8 @@ pub async fn get_user_quota_entitlements(
                 effective_until: row.get("effective_until"),
                 status: row.get::<String, _>("status").parse().unwrap(),
                 idempotency_key: row.get("idempotency_key"),
+                distribution_event_id: row.get("distribution_event_id"),
+                distribution_rule_id: row.get("distribution_rule_id"),
                 created_at: row.get("created_at"),
                 updated_at: row.get("updated_at"),
             }
@@ -2069,10 +2558,12 @@ pub async fn get_total_quota_limit_by_type(
         .sum()
 }
 
-/// Seed a `provider_entitlement_mappings` row WITH `quota_windows` attached,
-/// routed to the realm's legacy test bucket. Non-empty `quota_windows`
-/// switches the grant to the window-quota model. Returns the
-/// mapping id.
+/// Seed a `provider_entitlement_mappings` row whose quota-window grant surfaces
+/// via a `quota` distribution rule owned by that mapping (mirroring
+/// `multi_wallet_grant_rule_scenarios::seed_rule`). When `grant_on_subscribe` is
+/// true the rule fires on `subscription_initial`; otherwise no rule is seeded
+/// (no grant configured). Routed to the realm's legacy test bucket.
+/// Returns the mapping id.
 pub async fn create_entitlement_mapping_with_quota_windows(
     ctx: &SchemaTestContext,
     realm_id: &str,
@@ -2083,28 +2574,43 @@ pub async fn create_entitlement_mapping_with_quota_windows(
     grant_on_subscribe: bool,
 ) -> Uuid {
     let mapping_id = Uuid::now_v7();
-    let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, realm_id).await;
-    let windows_json = quota_windows_jsonb(quota_windows);
-    let points_per_period = quota_windows.first().map(|(_, limit, _)| *limit);
 
     sqlx::query(
         r#"INSERT INTO provider_entitlement_mappings
-             (id, realm_id, payment_provider, external_product_id, entitlement_key,
-              points_per_period, grant_on_subscribe, enabled, bucket_id, quota_windows, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, true, $8, $9, NOW(), NOW())"#,
+             (id, realm_id, payment_provider, external_product_id, entitlement_key, enabled)
+           VALUES ($1, $2, $3, $4, $5, true)"#,
     )
     .bind(mapping_id)
     .bind(realm_id)
     .bind(provider)
     .bind(external_product_id)
     .bind(entitlement_key)
-    .bind(points_per_period)
-    .bind(grant_on_subscribe)
-    .bind(bucket_id)
-    .bind(&windows_json)
     .execute(&ctx.app_state.pool)
     .await
     .expect("Failed to create entitlement mapping with quota_windows");
+
+    if grant_on_subscribe {
+        let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, realm_id).await;
+        let windows_json = quota_windows_jsonb(quota_windows);
+        let rule_id = Uuid::now_v7();
+        sqlx::query(
+            r#"INSERT INTO points_distribution_rules
+                 (id, realm_id, owner_type, entitlement_mapping_id, bucket_id,
+                  trigger_sources, grant_mode, points_amount, validity_days,
+                  quota_windows, enabled, display_order)
+               VALUES ($1, $2, 'entitlement_mapping', $3, $4,
+                       $5, 'quota', NULL, 0, $6, true, 0)"#,
+        )
+        .bind(rule_id)
+        .bind(realm_id)
+        .bind(mapping_id)
+        .bind(bucket_id)
+        .bind(["subscription_initial"])
+        .bind(&windows_json)
+        .execute(&ctx.app_state.pool)
+        .await
+        .expect("Failed to seed mapping-owned quota distribution rule");
+    }
 
     mapping_id
 }

@@ -19,7 +19,6 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm;
     use crate::tests::schema_test_context::SchemaTestContext;
     use sqlx::PgPool;
     use test_context::test_context;
@@ -30,25 +29,19 @@ mod tests {
     /// Insert a `payment_attempts` row with the given provider and return its
     /// id. Panics (via `expect`) if the insert fails — the CHECK constraint
     /// violation surfaces here.
-    async fn insert_payment_attempt(
-        pool: &PgPool,
-        realm_id: &str,
-        provider: &str,
-        bucket_id: Uuid,
-    ) -> Uuid {
+    async fn insert_payment_attempt(pool: &PgPool, realm_id: &str, provider: &str) -> Uuid {
         let id = Uuid::now_v7();
         sqlx::query(
             "INSERT INTO payment_attempts
                 (id, realm_id, user_id, payment_provider, target_type, target_id,
-                 bucket_id, amount, currency, status, expires_at)
-             VALUES ($1, $2, $3, $4, 'entitlement_mapping', $5, $6, 100, 'usd', 'Pending', NOW())",
+                 amount, currency, status, expires_at)
+             VALUES ($1, $2, $3, $4, 'entitlement_mapping', $5, 100, 'usd', 'Pending', NOW())",
         )
         .bind(id)
         .bind(realm_id)
         .bind(Uuid::now_v7())
         .bind(provider)
         .bind(Uuid::now_v7())
-        .bind(bucket_id)
         .execute(pool)
         .await
         .expect("payment_attempts insert should succeed under extended CHECK");
@@ -62,20 +55,18 @@ mod tests {
         realm_id: &str,
         provider: &str,
         external_product_id: &str,
-        bucket_id: Uuid,
     ) -> Uuid {
         let id = Uuid::now_v7();
         sqlx::query(
             "INSERT INTO provider_entitlement_mappings
                 (id, realm_id, payment_provider, external_product_id, entitlement_key,
-                 billing_type, enabled, bucket_id, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, 'pro', 'recurring', true, $5, NOW(), NOW())",
+                 billing_type, enabled, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, 'pro', 'recurring', true, NOW(), NOW())",
         )
         .bind(id)
         .bind(realm_id)
         .bind(provider)
         .bind(external_product_id)
-        .bind(bucket_id)
         .execute(pool)
         .await
         .expect("provider_entitlement_mappings insert should succeed under extended CHECK");
@@ -107,10 +98,9 @@ mod tests {
     async fn test_iap_migration_post_apple_google_writes_succeed(ctx: &mut MigrationContext) {
         let realm_id = ctx._realm_id.clone();
         let pool = &ctx.app_state.pool;
-        let bucket_id = ensure_test_bucket_for_realm(pool, &realm_id).await;
 
         for provider in ["stripe", "creem", "apple", "google"] {
-            insert_payment_attempt(pool, &realm_id, provider, bucket_id).await;
+            insert_payment_attempt(pool, &realm_id, provider).await;
         }
         for provider in ["stripe", "creem", "apple", "google"] {
             assert_eq!(
@@ -126,7 +116,6 @@ mod tests {
                 &realm_id,
                 provider,
                 &format!("prod_{provider}_migration"),
-                bucket_id,
             )
             .await;
         }
@@ -146,14 +135,13 @@ mod tests {
         let invalid = sqlx::query(
             "INSERT INTO payment_attempts
                 (id, realm_id, user_id, payment_provider, target_type, target_id,
-                 bucket_id, amount, currency, status, expires_at)
-             VALUES ($1, $2, $3, 'paypal', 'entitlement_mapping', $4, $5, 100, 'usd', 'Pending', NOW())",
+                 amount, currency, status, expires_at)
+             VALUES ($1, $2, $3, 'paypal', 'entitlement_mapping', $4, 100, 'usd', 'Pending', NOW())",
         )
         .bind(Uuid::now_v7())
         .bind(&realm_id)
         .bind(Uuid::now_v7())
         .bind(Uuid::now_v7())
-        .bind(bucket_id)
         .execute(pool)
         .await;
         assert!(

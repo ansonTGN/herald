@@ -46,8 +46,8 @@ mod tests {
             "currency": "usd"
         });
 
-        // Credit Buckets model: bucket_id is NOT NULL — bind the realm's legacy
-        // test bucket (matches the bucket-bound mappings created elsewhere).
+        // Distribution-rules model: the mapping row carries no grant columns;
+        // the points grant is a fixed `topup` rule owned by this mapping.
         let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
             &ctx.app_state.pool,
             realm_id,
@@ -57,22 +57,38 @@ mod tests {
         sqlx::query(
             "INSERT INTO provider_entitlement_mappings
                 (id, realm_id, payment_provider, external_product_id, entitlement_key,
-                 billing_type, points_per_period, validity_days, grant_on_subscribe, enabled,
-                 provider_product_info, bucket_id, created_at, updated_at)
-             VALUES ($1, $2, 'stripe', $3, $4, 'one_time', $5, $6, true, $7, $8, $9, NOW(), NOW())",
+                 billing_type, enabled, provider_product_info, created_at, updated_at)
+             VALUES ($1, $2, 'stripe', $3, $4, 'one_time', $5, $6, NOW(), NOW())",
         )
         .bind(mapping_id)
         .bind(realm_id)
         .bind(format!("prod_{}", mapping_id))
         .bind(format!("one-time-test-{}", mapping_id))
-        .bind(points)
-        .bind(validity_days)
         .bind(enabled)
         .bind(provider_product_info)
-        .bind(bucket_id)
         .execute(&ctx.app_state.pool)
         .await
         .expect("Failed to create one-time mapping");
+
+        let rule_id = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO points_distribution_rules
+                (id, realm_id, owner_type, entitlement_mapping_id, bucket_id,
+                 trigger_sources, grant_mode, points_amount, validity_days,
+                 enabled, display_order)
+             VALUES ($1, $2, 'entitlement_mapping', $3, $4, $5, 'fixed', $6, $7, $8, 0)",
+        )
+        .bind(rule_id)
+        .bind(realm_id)
+        .bind(mapping_id)
+        .bind(bucket_id)
+        .bind(&["topup"][..])
+        .bind(points)
+        .bind(validity_days.unwrap_or(0))
+        .bind(enabled)
+        .execute(&ctx.app_state.pool)
+        .await
+        .expect("Failed to seed mapping-owned topup distribution rule");
         mapping_id
     }
 
@@ -87,30 +103,32 @@ mod tests {
         currency: &str,
     ) -> Uuid {
         let attempt_id = Uuid::now_v7();
-        // Credit Buckets model: bucket_id is NOT NULL — scope the attempt to the
-        // realm's legacy test bucket so the fulfillment handler routes to it.
-        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
-            &ctx.app_state.pool,
-            realm_id,
-        )
-        .await;
         sqlx::query(
             "INSERT INTO payment_attempts
                 (id, realm_id, user_id, payment_provider, target_type, target_id,
-                 bucket_id, amount, currency, status, expires_at, created_at, updated_at)
+                 amount, currency, status, expires_at, created_at, updated_at)
              VALUES ($1, $2, $3, 'stripe', 'entitlement_mapping', $4,
-                     $5, $6, $7, 'Pending', NOW() + INTERVAL '2 hours', NOW(), NOW())",
+                     $5, $6, 'Pending', NOW() + INTERVAL '2 hours', NOW(), NOW())",
         )
         .bind(attempt_id)
         .bind(realm_id)
         .bind(user_id)
         .bind(mapping_id)
-        .bind(bucket_id)
         .bind(amount)
         .bind(currency)
         .execute(&ctx.app_state.pool)
         .await
         .expect("Failed to create pending payment attempt");
+        // Mirror production `create_payment_attempt`: snapshot the mapping's
+        // enabled `topup` rules so fulfillment replays them.
+        crate::tests::helpers::points_helpers::snapshot_attempt_rules_for_mapping(
+            &ctx.app_state.pool,
+            attempt_id,
+            realm_id,
+            mapping_id,
+            "topup",
+        )
+        .await;
         attempt_id
     }
 
@@ -715,4 +733,29 @@ mod tests {
         assert_eq!(topup_balance, 600, "User should have 600 topup_credit");
         assert_eq!(subscription_balance, 0, "subscription_balance should be 0");
     }
+}
+
+/// A top-up is one business event, so both target wallets must commit together.
+#[test_context::test_context(crate::tests::schema_test_context::SchemaTestContext)]
+#[tokio::test]
+async fn test_multi_wallet_grant_rule_topup_two_accounts_atomically(
+    ctx: &mut crate::tests::schema_test_context::SchemaTestContext,
+) {
+    crate::tests::scenarios::points::multi_wallet_grant_rule_scenarios::
+        assert_two_account_fixed_event(
+            ctx,
+            herald_core::domain::points::DistributionTrigger::Topup,
+        )
+        .await;
+}
+
+/// Purchase-time rule capture prevents configuration races from rerouting paid attempts.
+#[test_context::test_context(crate::tests::schema_test_context::SchemaTestContext)]
+#[tokio::test]
+async fn test_multi_wallet_grant_rule_payment_snapshot_survives_rule_disable(
+    ctx: &mut crate::tests::schema_test_context::SchemaTestContext,
+) {
+    crate::tests::scenarios::points::multi_wallet_grant_rule_scenarios::
+        assert_snapshot_survives_disable(ctx)
+        .await;
 }

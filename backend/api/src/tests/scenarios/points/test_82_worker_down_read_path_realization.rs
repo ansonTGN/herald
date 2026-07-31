@@ -347,12 +347,15 @@ async fn test_realization_concurrent_no_duplicate_grant(ctx: &mut TestContext) {
     );
 
     // (b) Exactly ONE free_periodic ledger row from this schedule — no
-    // duplicate grants leaked into the ledger.
+    // duplicate grants leaked into the ledger. The read-path realization
+    // grants through `execute_scheduled_fixed_in_tx` → `write_rule_ledger_in_tx`,
+    // which writes `source_id = 'distribution:{event_id}'` (not the legacy
+    // `schedule:{id}:period:{n}` shape), so scope by the distribution prefix.
     let ledger_count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*)::BIGINT FROM points_credit_ledger
          WHERE user_id = $1 AND realm_id = $2
            AND credit_type = 'free_periodic_credit'
-           AND source_id LIKE 'schedule:%:period:1'",
+           AND source_id LIKE 'distribution:%'",
     )
     .bind(user_id)
     .bind(&realm_id)

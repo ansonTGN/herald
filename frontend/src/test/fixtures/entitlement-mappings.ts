@@ -44,10 +44,8 @@ export function makeMapping(
     billingType: 'recurring',
     billingPeriod: 'month',
     enabled: true,
-    bucketId: 'bucket-default',
-    grantOnSubscribe: true,
-    pointsPerPeriod: null,
-    validityDays: null,
+    grantedRoleIds: [],
+    pointRules: [],
     providerProductInfo: null,
     syncedAt: '2026-01-01T00:00:00Z',
     createdAt: '2026-01-01T00:00:00Z',
@@ -99,52 +97,11 @@ export function multiPriceMappingList(): EntitlementMappingResponse[] {
 }
 
 /**
- * A multi-price product where the monthly price carries pre-existing quota
- * windows and the annual price has none (`null`). Used by the quota-editor
- * integration tests: the editor must seed the monthly row's windows and leave
- * the annual row empty.
- *
- * `quotaWindows` on the response is `EntitlementQuotaWindowDto[]` (carries a
- * display `key`); the editor only consumes `windowSeconds`/`limit` from it.
- */
-export function multiPriceWithQuotaWindowsList(): EntitlementMappingResponse[] {
-  return [
-    makeMapping({
-      id: 'map_pro_monthly',
-      entitlementKey: 'pro-plan',
-      externalProductId: 'prod_pro',
-      externalPriceId: 'price_pro_monthly',
-      paymentProvider: 'stripe',
-      billingType: 'recurring',
-      billingPeriod: 'month',
-      enabled: true,
-      quotaWindows: [
-        { key: '1h', windowSeconds: 3600, limit: 100 },
-        { key: '1d', windowSeconds: 86_400, limit: 1000 },
-      ],
-    }),
-    makeMapping({
-      id: 'map_pro_annual',
-      entitlementKey: 'pro-plan',
-      externalProductId: 'prod_pro',
-      externalPriceId: 'price_pro_annual',
-      paymentProvider: 'stripe',
-      billingType: 'recurring',
-      billingPeriod: 'year',
-      enabled: true,
-      quotaWindows: null,
-    }),
-  ]
-}
-
-/**
  * At least one row matches the DERIVED webhook-unresolved rule
  * `externalProductId` set AND `enabled === true` AND
- * (`!billingType` OR `pointsPerPeriod == null`).
+ * `!billingType`.
  *
  * - `map_unresolved_no_billing_type`: enabled, has product, no billingType.
- * - `map_unresolved_no_points`: enabled, has product, billingType set but
- *   `pointsPerPeriod == null` (credit-strategy row not yet configured).
  *
  * A fully-resolved row is included as a negative control.
  */
@@ -159,18 +116,6 @@ export function unresolvedMappingList(): EntitlementMappingResponse[] {
       billingType: null,
       billingPeriod: null,
       enabled: true,
-      pointsPerPeriod: null,
-    }),
-    makeMapping({
-      id: 'map_unresolved_no_points',
-      entitlementKey: 'unresolved-b',
-      externalProductId: 'prod_unresolved',
-      externalPriceId: 'price_unresolved_b',
-      paymentProvider: 'stripe',
-      billingType: 'recurring',
-      billingPeriod: 'month',
-      enabled: true,
-      pointsPerPeriod: null,
     }),
     // Negative control: fully resolved — must NOT be flagged unresolved.
     makeMapping({
@@ -182,7 +127,6 @@ export function unresolvedMappingList(): EntitlementMappingResponse[] {
       billingType: 'recurring',
       billingPeriod: 'month',
       enabled: true,
-      pointsPerPeriod: 1000,
     }),
   ]
 }
@@ -273,7 +217,9 @@ export function purchaseOptionsList(): PurchaseOptionView[] {
       currency: 'usd',
       displayName: 'Pro Monthly',
       enabled: true,
-      pointsPerPeriod: null,
+      grantsRole: false,
+      alreadyOwned: false,
+      pointRules: [],
     },
     {
       mappingId: 'map_pro_annual',
@@ -287,7 +233,9 @@ export function purchaseOptionsList(): PurchaseOptionView[] {
       currency: 'usd',
       displayName: 'Pro Annual',
       enabled: true,
-      pointsPerPeriod: null,
+      grantsRole: false,
+      alreadyOwned: false,
+      pointRules: [],
     },
     {
       mappingId: 'map_starter',
@@ -302,7 +250,9 @@ export function purchaseOptionsList(): PurchaseOptionView[] {
       currency: 'usd',
       displayName: 'Starter One-Time',
       enabled: true,
-      pointsPerPeriod: null,
+      grantsRole: false,
+      alreadyOwned: false,
+      pointRules: [],
     },
     {
       mappingId: 'map_disabled',
@@ -316,7 +266,9 @@ export function purchaseOptionsList(): PurchaseOptionView[] {
       currency: 'usd',
       displayName: 'Legacy (disabled)',
       enabled: false,
-      pointsPerPeriod: null,
+      grantsRole: false,
+      alreadyOwned: false,
+      pointRules: [],
     },
   ]
 }

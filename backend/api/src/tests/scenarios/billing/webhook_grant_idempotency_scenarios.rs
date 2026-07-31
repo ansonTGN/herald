@@ -48,7 +48,7 @@ async fn test_subscription_paid_duplicate_event_no_double_grant(ctx: &mut Schema
     setup_stripe_config(ctx, &realm_id, "sk_test_key", webhook_secret).await;
 
     // Create entitlement mapping so the handler knows how many points to grant
-    setup_test_entitlement_mapping_for_webhook(
+    let mapping_id = setup_test_entitlement_mapping_for_webhook(
         ctx,
         &realm_id,
         "stripe",
@@ -59,6 +59,31 @@ async fn test_subscription_paid_duplicate_event_no_double_grant(ctx: &mut Schema
         true,
     )
     .await;
+
+    // Distribution-rules model: the bare mapping above carries no grant config
+    // (its role-grant callers don't need one). This test asserts a 1000
+    // subscription_credit grant on subscription.paid, so seed the equivalent
+    // quota rule owned by the mapping. Production `handle_subscription_paid`
+    // fires the `subscription_renewal` trigger (reading CURRENT rules at grant
+    // time — see `test_40_webhook_subscription_paid::seed_subscription_renewal_rule`),
+    // so the rule uses that trigger.
+    let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, &realm_id).await;
+    sqlx::query(
+        "INSERT INTO points_distribution_rules
+            (id, realm_id, owner_type, entitlement_mapping_id, bucket_id,
+             trigger_sources, grant_mode, validity_days, quota_windows,
+             enabled, display_order)
+         VALUES ($1, $2, 'entitlement_mapping', $3, $4, $5, 'quota', 0, $6, true, 0)",
+    )
+    .bind(Uuid::now_v7())
+    .bind(&realm_id)
+    .bind(mapping_id)
+    .bind(bucket_id)
+    .bind(&["subscription_renewal"][..])
+    .bind(quota_windows_jsonb(&[(2_592_000, 1000, "period")]))
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("seed subscription_renewal quota rule for idempotency test");
 
     // Create points wallet
     create_points_wallet(ctx, user_id, &realm_id).await;
@@ -175,30 +200,57 @@ async fn test_creem_checkout_completed_duplicate_event_no_double_grant(
         .await
         .expect("Failed to set billing_type=one_time");
 
-    // Create a pending payment attempt so the one-time fulfillment can complete it.
-    // payment_attempts.bucket_id is NOT NULL — bind the realm's legacy test bucket.
-    let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
-        &ctx.app_state.pool,
-        &realm_id,
+    // Distribution-rules model: the bare mapping above carries no grant config.
+    // Seed the equivalent `topup` fixed rule (2000) so one-time fulfillment
+    // grants the points; the snapshot is captured onto the raw payment attempt
+    // below (this INSERT bypasses production `create_payment_attempt`).
+    let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, &realm_id).await;
+    sqlx::query(
+        "INSERT INTO points_distribution_rules
+            (id, realm_id, owner_type, entitlement_mapping_id, bucket_id,
+             trigger_sources, grant_mode, points_amount, validity_days,
+             enabled, display_order)
+         VALUES ($1, $2, 'entitlement_mapping', $3, $4, $5, 'fixed', $6, 0, true, 0)",
     )
-    .await;
+    .bind(Uuid::now_v7())
+    .bind(&realm_id)
+    .bind(mapping_id)
+    .bind(bucket_id)
+    .bind(&["topup"][..])
+    .bind(2000i64)
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("seed topup fixed rule for idempotency test");
+
+    // Create a pending payment attempt so the one-time fulfillment can complete it.
     let attempt_id = Uuid::now_v7();
     sqlx::query(
         "INSERT INTO payment_attempts
             (id, realm_id, user_id, payment_provider, target_type, target_id,
-             bucket_id, amount, currency, status, expires_at, created_at, updated_at)
+             amount, currency, status, expires_at, created_at, updated_at)
          VALUES ($1, $2, $3, 'creem', 'entitlement_mapping', $4,
-                 $5, $6, 'USD', 'Pending', NOW() + INTERVAL '2 hours', NOW(), NOW())",
+                 $5, 'USD', 'Pending', NOW() + INTERVAL '2 hours', NOW(), NOW())",
     )
     .bind(attempt_id)
     .bind(&realm_id)
     .bind(user_id)
     .bind(mapping_id)
-    .bind(bucket_id)
     .bind(2000i64)
     .execute(&ctx.app_state.pool)
     .await
     .expect("Failed to create pending payment attempt");
+
+    // This INSERT bypasses production `create_payment_attempt`, which writes
+    // the `payment_attempt_point_rules` snapshot one-time fulfillment reads to
+    // route the grant. Capture the `topup` rule seeded above onto this attempt.
+    snapshot_attempt_rules_for_mapping(
+        &ctx.app_state.pool,
+        attempt_id,
+        &realm_id,
+        mapping_id,
+        "topup",
+    )
+    .await;
 
     // Create points wallet
     create_points_wallet(ctx, user_id, &realm_id).await;

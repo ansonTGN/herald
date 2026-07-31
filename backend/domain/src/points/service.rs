@@ -5,6 +5,7 @@ use crate::authentication::Identity;
 use crate::common::entities::app_errors::CoreError;
 use crate::common::policies::ensure_policy;
 use crate::points::{
+    DistributionEvent, DistributionRuleOwner, DistributionRuleSelection, DistributionTrigger,
     dtos::{ConsumePointsInput, GrantPointsInput, GrantPointsOutput, RevokePointsOutput},
     entities::{
         ConsumptionAllocationView, CreditSourceType, CreditType, Paginated, PointsBalance,
@@ -12,6 +13,7 @@ use crate::points::{
         RevocationType, WalletStatus,
     },
     errors::PointsErrorExt,
+    event_key_for_free_periodic,
     policies::PointsPolicy,
     ports::{PointsRepository, TransactionFilters, WalletFilters},
 };
@@ -301,18 +303,24 @@ where
                     schedule.granted_periods + 1
                 ))
             })?;
-            let effective_at = Some(schedule.next_grant_time);
-            let expires_at = schedule
-                .grant_period_type
-                .calculate_expiration(schedule.next_grant_time, schedule.validity_days);
-
+            let event_key = event_key_for_free_periodic(
+                schedule.user_id,
+                schedule.distribution_rule_id,
+                period_number,
+            );
             self.repository
-                .pregrant_next_period_atomic(
-                    realm_id,
-                    &schedule,
-                    period_number,
-                    effective_at,
-                    expires_at,
+                .execute_distribution_event_atomic(
+                    DistributionEvent {
+                        realm_id: realm_id.to_string(),
+                        user_id,
+                        owner: DistributionRuleOwner::RealmRegistration,
+                        trigger: DistributionTrigger::FreePeriodicGrant,
+                        event_key: event_key.clone(),
+                        source_id: event_key,
+                        effective_from: schedule.next_grant_time,
+                        effective_until: None,
+                    },
+                    DistributionRuleSelection::ScheduledRule(schedule.distribution_rule_id),
                 )
                 .await?;
         }
@@ -807,95 +815,11 @@ where
         Ok(result)
     }
 
-    /// Revoke active subscription credits for a specific entitlement key.
-    pub async fn revoke_subscription_credits_by_entitlement(
+    pub async fn revoke_topup_source_proportional(
         &self,
         realm_id: &str,
         user_id: Uuid,
-        bucket_id: Uuid,
-        entitlement_key: &str,
-        revocation_type: RevocationType,
-        reason: String,
-        reference_id: Option<String>,
-        idempotency_key: Option<String>,
-    ) -> Result<RevokePointsOutput, CoreError> {
-        let result = self
-            .repository
-            .revoke_subscription_credits_by_entitlement_atomic(
-                realm_id,
-                user_id,
-                bucket_id,
-                entitlement_key,
-                revocation_type,
-                reason,
-                reference_id,
-                idempotency_key,
-            )
-            .await?;
-
-        tracing::info!(
-            realm_id = %realm_id,
-            user_id = %user_id,
-            entitlement_key = %entitlement_key,
-            total_revoked = result.total_revoked,
-            ledger_count = result.ledger_ids.len(),
-            revocation_type = %revocation_type.as_str(),
-            "Subscription credits revoked by entitlement successfully"
-        );
-
-        Ok(result)
-    }
-
-    /// Revoke all daily free credits for a user (used when free user upgrades to paid)
-    /// **Idempotency Guarantee**:
-    /// - If idempotency_key is provided, checks if already processed
-    /// - If no active daily credits exist, returns empty result (success)
-    /// - Creates idempotency record even when no credits are revoked
-    /// # Arguments
-    /// * `realm_id` - The realm ID
-    /// * `user_id` - The user ID
-    /// * `reason` - Reason for revocation
-    /// * `idempotency_key` - Optional idempotency key for deduplication
-    /// # Returns
-    /// Revocation output with details of revoked credits
-    pub async fn revoke_all_daily_credits(
-        &self,
-        realm_id: &str,
-        user_id: Uuid,
-        bucket_id: Uuid,
-        reason: String,
-        idempotency_key: Option<String>,
-    ) -> Result<RevokePointsOutput, CoreError> {
-        self.repository
-            .revoke_points_by_credit_type_atomic(
-                realm_id,
-                user_id,
-                bucket_id,
-                CreditType::FreePeriodicCredit,
-                RevocationType::UpgradeRevoke,
-                reason,
-                None,
-                idempotency_key,
-            )
-            .await
-    }
-
-    /// Proportionally revoke topup points based on refund ratio
-    /// When a topup payment is refunded, we need to revoke the proportionate amount
-    /// of points based on the refund ratio. This ensures users don't keep points they didn't pay for.
-    /// # Arguments
-    /// * `realm_id` - The realm ID
-    /// * `user_id` - The user ID
-    /// * `refund_amount` - The amount being refunded (in cents)
-    /// * `original_payment_amount` - The original payment amount (in cents)
-    /// * `refund_id` - The refund ID for reference
-    /// # Returns
-    /// Revocation output with details of revoked points
-    pub async fn revoke_topup_proportional(
-        &self,
-        realm_id: &str,
-        user_id: Uuid,
-        bucket_id: Uuid,
+        source_id: &str,
         refund_amount: i64,
         original_payment_amount: i64,
         refund_id: &str,
@@ -920,10 +844,10 @@ where
 
         let result = self
             .repository
-            .revoke_topup_proportional_atomic(
+            .revoke_topup_source_proportional_atomic(
                 realm_id,
                 user_id,
-                bucket_id,
+                source_id,
                 refund_amount,
                 original_payment_amount,
                 refund_id,
@@ -951,91 +875,6 @@ where
         }
 
         Ok(result)
-    }
-
-    /// Revoke all unused subscription points
-    /// This is a convenience method for refund scenarios where all subscription
-    /// points need to be revoked. It simply calls revoke_points_by_credit_type
-    /// with SubscriptionCredit and RefundRevoke type.
-    /// # Arguments
-    /// * `realm_id` - The realm ID
-    /// * `user_id` - The user ID
-    /// * `refund_id` - The refund ID for reference
-    /// # Returns
-    /// Revocation output with details of revoked points
-    pub async fn revoke_subscription_unused(
-        &self,
-        realm_id: &str,
-        user_id: Uuid,
-        bucket_id: Uuid,
-        refund_id: &str,
-    ) -> Result<RevokePointsOutput, CoreError> {
-        self.repository
-            .revoke_points_by_credit_type_atomic(
-                realm_id,
-                user_id,
-                bucket_id,
-                CreditType::SubscriptionCredit,
-                crate::points::entities::RevocationType::RefundRevoke,
-                format!("Refund {}", refund_id),
-                Some(refund_id.to_string()),
-                Some(format!("refund:subscription:{}", refund_id)),
-            )
-            .await
-    }
-
-    /// Refund points from a user's account
-    /// Creates a refund transaction to deduct points when a subscription is refunded.
-    /// This is typically called when a payment refund is processed.
-    /// # Arguments
-    /// * `realm_id` - The realm ID
-    /// * `user_id` - The user ID
-    /// * `subscription_id` - The subscription ID being refunded
-    /// * `refund_amount` - The amount of points to refund (deduct)
-    /// * `reason` - The reason for the refund
-    /// # Returns
-    /// The created refund transaction
-    /// # Errors
-    /// - Account not found
-    /// - Invalid amount (must be positive)
-    /// - Database errors
-    pub async fn refund_points(
-        &self,
-        realm_id: &str,
-        user_id: Uuid,
-        bucket_id: Uuid,
-        subscription_id: String,
-        refund_amount: i64,
-        reason: String,
-    ) -> Result<PointsTransaction, CoreError> {
-        if refund_amount <= 0 {
-            return Err(CoreError::BadRequest(
-                "Refund amount must be positive".to_string(),
-            ));
-        }
-
-        let created_transaction = self
-            .repository
-            .refund_points_atomic(
-                realm_id,
-                user_id,
-                bucket_id,
-                subscription_id.clone(),
-                refund_amount,
-                reason,
-            )
-            .await?;
-
-        tracing::info!(
-            realm_id = %realm_id,
-            user_id = %user_id,
-            subscription_id = %subscription_id,
-            refund_amount,
-            new_balance = created_transaction.balance_after,
-            "Points refunded successfully"
-        );
-
-        Ok(created_transaction)
     }
 
     /// Internal method to grant points directly to ledger
@@ -1587,6 +1426,8 @@ mod window_tests {
             effective_until: None,
             status: QuotaEntitlementStatus::Active,
             idempotency_key: "idem".to_string(),
+            distribution_event_id: None,
+            distribution_rule_id: None,
             created_at: now(),
             updated_at: now(),
         }
@@ -1950,6 +1791,8 @@ mod reconcile_evolution_tests {
             granted_periods: 0,
             max_periods: None,
             active: true,
+            distribution_event_id: Uuid::nil(),
+            distribution_rule_id: Uuid::nil(),
             created_at: now(),
             updated_at: now(),
         }
@@ -1971,6 +1814,8 @@ mod reconcile_evolution_tests {
             expires_at: Some(now() + chrono::Duration::days(schedule.validity_days)),
             effective_at: Some(schedule.next_grant_time),
             status: CreditLedgerStatus::Active,
+            distribution_event_id: None,
+            distribution_rule_id: None,
             created_at: now(),
             updated_at: now(),
         }

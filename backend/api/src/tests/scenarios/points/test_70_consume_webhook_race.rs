@@ -435,13 +435,29 @@ async fn test_scenario_multi_consume_refund_race_no_overspending(ctx: &mut Schem
 
     create_points_wallet(ctx, user_id, &realm_id).await;
 
-    let ledger_id = create_credit_ledger_entry_v2(
+    // Seed the payment_attempt snapshot (the refund webhook resolves the
+    // originating attempt by provider_reference) AND a rule-attributed topup
+    // ledger mirroring `fulfill_one_time_purchase`, so the refund's
+    // `revoke_topup_source_proportional(source_id = attempt.id)` finds and
+    // revokes the grant. A raw unattributed ledger is silently skipped.
+    let refund_bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, &realm_id).await;
+    let (attempt_id, mapping_id, rule_id) = create_payment_attempt_snapshot(
         ctx,
-        user_id,
         &realm_id,
-        CreditType::TopupCredit,
-        CreditSourceType::Topup,
-        payment_id.clone(),
+        user_id,
+        &payment_id,
+        refund_bucket_id,
+        10000,
+    )
+    .await;
+    let ledger_id = seed_attributed_topup_ledger(
+        ctx,
+        &realm_id,
+        user_id,
+        attempt_id,
+        mapping_id,
+        rule_id,
+        refund_bucket_id,
         10000,
         None,
     )
@@ -470,19 +486,6 @@ async fn test_scenario_multi_consume_refund_race_no_overspending(ctx: &mut Schem
             .body(Body::from(payload.to_string()))
             .unwrap()
     };
-
-    // Credit Buckets model: seed the payment_attempt bucket
-    // snapshot the refund webhook resolves its revocation target from.
-    let refund_bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, &realm_id).await;
-    create_payment_attempt_snapshot(
-        ctx,
-        &realm_id,
-        user_id,
-        &payment_id,
-        refund_bucket_id,
-        10000,
-    )
-    .await;
 
     // Refund 5000 (50% of original 10000)
     let refund_event = build_refund_created_event_with_user(

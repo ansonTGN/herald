@@ -28,6 +28,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use uuid::Uuid;
 
+use crate::webhook_subscription_helpers::mapping_rule_value;
 use herald_api_base::application::http::common::auth_utils::{
     require_authenticated_user_in_realm_with_token, require_token_scope,
 };
@@ -533,13 +534,17 @@ pub async fn submit_iap_receipt(
     // Succeeded and fulfils (one_time → TopupCredit, recurring → Subscription).
     // §6.3); a failure here rolls the attempt back to non-succeeded.
     if let Some((creds, developer, auth)) = google_ready.as_ref() {
+        let is_consumable_points_pack = mapping_rule_value(&state, &realm_id, resolved.mapping.id)
+            .await
+            .map_err(|e| core_error_to_api_error(e, "iap mapping rules"))?
+            > 0;
         google_ack_or_consume_in_tx(
             developer,
             auth,
             &creds.package_name,
             &input,
             &billing_type,
-            resolved.mapping.points_per_period,
+            is_consumable_points_pack,
         )
         .await
         .map_err(iap_error_to_api_error)?;
@@ -608,7 +613,7 @@ pub async fn submit_iap_receipt(
 /// `GoogleServiceAccountAuth` access-token cache is reused rather than
 /// re-granted.
 ///
-/// points (`points_per_period > 0`) is a consumable points pack → `consume`;
+/// an enabled fixed grant rule makes the purchase a consumable points pack;
 /// a one-time mapping with no points (buyout / non-consumable) →
 /// `acknowledge_product` so a later "restore purchases" can still see the
 /// owned entitlement.
@@ -618,7 +623,7 @@ async fn google_ack_or_consume_in_tx(
     package_name: &str,
     input: &IapReceiptRequest,
     billing_type: &BillingType,
-    points_per_period: Option<i64>,
+    is_consumable_points_pack: bool,
 ) -> Result<(), IapError> {
     match billing_type {
         // Recurring and NonRenewing both use the subscriptionsv2 acknowledge
@@ -629,7 +634,7 @@ async fn google_ack_or_consume_in_tx(
                 .await
         }
         BillingType::OneTime => {
-            match google_one_time_ack_action(points_per_period) {
+            match google_one_time_ack_action(is_consumable_points_pack) {
                 GoogleOneTimeAckAction::Consume => {
                     // Consumable points pack: consume so it can be re-purchased.
                     developer
@@ -969,24 +974,27 @@ async fn process_apple_refund_or_revoke(
             // Revoke topup credits granted from this attempt (source_id =
             // attempt.id, same as the grant). Best-effort: a missing ledger
             // (buyout mapping with no points) is a no-op.
-            if let Err(e) = state
-                .points_service
-                .revoke_points_by_source_id(
-                    realm_id,
-                    attempt.user_id,
-                    attempt.bucket_id,
-                    &attempt.id.to_string(),
-                    herald_core::domain::points::entities::RevocationType::RefundRevoke,
-                    format!("Apple {notification_type_str} for attempt {}", attempt.id),
-                )
-                .await
-            {
-                tracing::warn!(
-                    realm_id = %realm_id,
-                    attempt_id = %attempt.id,
-                    error = %e,
-                    "apple REFUND/REVOKE: topup points revoke failed (best-effort)"
-                );
+            for bucket_id in crate::webhook_common::captured_bucket_ids(state, &attempt).await? {
+                if let Err(e) = state
+                    .points_service
+                    .revoke_points_by_source_id(
+                        realm_id,
+                        attempt.user_id,
+                        bucket_id,
+                        &attempt.id.to_string(),
+                        herald_core::domain::points::entities::RevocationType::RefundRevoke,
+                        format!("Apple {notification_type_str} for attempt {}", attempt.id),
+                    )
+                    .await
+                {
+                    tracing::warn!(
+                        realm_id = %realm_id,
+                        attempt_id = %attempt.id,
+                        bucket_id = %bucket_id,
+                        error = %e,
+                        "apple REFUND/REVOKE: topup points revoke failed (best-effort)"
+                    );
+                }
             }
 
             crate::webhook_common::revoke_payment_roles_for_source(
@@ -1052,7 +1060,7 @@ async fn process_apple_refund_or_revoke(
                 realm_id = %realm_id,
                 original_transaction_id = %original_transaction_id,
                 notification_type = %notification_type_str,
-                "apple REFUND/REVOKE for recurring billing_type — no BE-D02 action (recurring flows through existing sync path)"
+                "apple REFUND/REVOKE for recurring billing_type — recurring flows through existing sync path"
             );
         }
     }
@@ -1272,7 +1280,6 @@ pub async fn reprocess_google_event(
                 purchase_token,
                 product_id,
                 &resolved.entitlement_key,
-                resolved.mapping.bucket_id,
                 new_status,
                 expiry_time,
                 payload.clone(),
@@ -1333,27 +1340,30 @@ async fn reprocess_google_one_time_revoke(
     };
 
     // Revoke topup credits (source_id = attempt.id). Best-effort.
-    if let Err(e) = state
-        .points_service
-        .revoke_points_by_source_id(
-            realm_id,
-            attempt.user_id,
-            attempt.bucket_id,
-            &attempt.id.to_string(),
-            herald_core::domain::points::entities::RevocationType::RefundRevoke,
-            format!(
-                "Google {event_type} voided/refund for attempt {}",
-                attempt.id
-            ),
-        )
-        .await
-    {
-        tracing::warn!(
-            realm_id = %realm_id,
-            attempt_id = %attempt.id,
-            error = %e,
-            "google one-time revoke: points revoke failed (best-effort)"
-        );
+    for bucket_id in crate::webhook_common::captured_bucket_ids(state, &attempt).await? {
+        if let Err(e) = state
+            .points_service
+            .revoke_points_by_source_id(
+                realm_id,
+                attempt.user_id,
+                bucket_id,
+                &attempt.id.to_string(),
+                herald_core::domain::points::entities::RevocationType::RefundRevoke,
+                format!(
+                    "Google {event_type} voided/refund for attempt {}",
+                    attempt.id
+                ),
+            )
+            .await
+        {
+            tracing::warn!(
+                realm_id = %realm_id,
+                attempt_id = %attempt.id,
+                bucket_id = %bucket_id,
+                error = %e,
+                "google one-time revoke: points revoke failed (best-effort)"
+            );
+        }
     }
 
     crate::webhook_common::revoke_payment_roles_for_source(
@@ -1441,7 +1451,6 @@ async fn reprocess_google_recurring_sync(
     purchase_token: &str,
     product_id: &str,
     entitlement_key: &str,
-    bucket_id: uuid::Uuid,
     new_status: SubscriptionStatus,
     expiry_time: Option<DateTime<Utc>>,
     payload: Value,
@@ -1464,7 +1473,6 @@ async fn reprocess_google_recurring_sync(
             external_product_id: product_id.to_string(),
             client_app_id: None,
             entitlement_key: entitlement_key.to_string(),
-            bucket_id,
             external_price_id: None,
             provider_metadata: Some(payload),
             status: new_status,
@@ -1519,7 +1527,7 @@ fn iap_error_to_core_error(e: IapError) -> CoreError {
 
 /// pure function so the routing rule is unit-testable without standing up the
 /// async `GoogleDeveloperClient` mock fixture. A one-time mapping that
-/// configures points (`points_per_period > 0`) is a consumable points pack and
+/// configures an enabled fixed grant rule is a consumable points pack and
 /// must be consumed so it can be re-purchased; a points-less one-time mapping
 /// (buyout / non-consumable) must be acknowledged only so "restore purchases"
 /// still sees the entitlement and Google does not auto-refund after 3 days.
@@ -1531,8 +1539,8 @@ enum GoogleOneTimeAckAction {
     Acknowledge,
 }
 
-fn google_one_time_ack_action(points_per_period: Option<i64>) -> GoogleOneTimeAckAction {
-    if points_per_period.unwrap_or(0) > 0 {
+fn google_one_time_ack_action(is_consumable_points_pack: bool) -> GoogleOneTimeAckAction {
+    if is_consumable_points_pack {
         GoogleOneTimeAckAction::Consume
     } else {
         GoogleOneTimeAckAction::Acknowledge
@@ -1554,11 +1562,11 @@ mod tests {
     fn google_one_time_ack_action_consumes_when_points_configured() {
         // Points pack (consumable): must consume so it can be re-purchased.
         assert_eq!(
-            google_one_time_ack_action(Some(100)),
+            google_one_time_ack_action(true),
             GoogleOneTimeAckAction::Consume
         );
         assert_eq!(
-            google_one_time_ack_action(Some(1)),
+            google_one_time_ack_action(true),
             GoogleOneTimeAckAction::Consume
         );
     }
@@ -1567,11 +1575,11 @@ mod tests {
     fn google_one_time_ack_action_acknowledges_when_no_points() {
         // Buyout / non-consumable: acknowledge only.
         assert_eq!(
-            google_one_time_ack_action(Some(0)),
+            google_one_time_ack_action(false),
             GoogleOneTimeAckAction::Acknowledge
         );
         assert_eq!(
-            google_one_time_ack_action(None),
+            google_one_time_ack_action(false),
             GoogleOneTimeAckAction::Acknowledge
         );
     }

@@ -13,7 +13,6 @@ pub struct Model {
     pub external_product_id: String,
     #[sea_orm(nullable)]
     pub external_price_id: Option<String>,
-    pub bucket_id: Uuid,
     pub entitlement_key: String,
     #[sea_orm(nullable)]
     pub billing_type: Option<String>,
@@ -23,23 +22,10 @@ pub struct Model {
     /// must be `>= 1` (enforced by `chk_pem_service_duration_days`).
     #[sea_orm(nullable)]
     pub service_duration_days: Option<i32>,
-    #[sea_orm(nullable)]
-    pub points_per_period: Option<i32>,
-    #[sea_orm(nullable)]
-    pub grant_period_type: Option<String>,
-    #[sea_orm(nullable)]
-    pub validity_days: Option<i32>,
-    #[sea_orm(default_value = false)]
-    pub grant_on_subscribe: bool,
-    #[sea_orm(nullable)]
-    pub max_periods: Option<i32>,
     #[sea_orm(default_value = false)]
     pub enabled: bool,
     #[sea_orm(nullable)]
     pub provider_product_info: Option<Json>,
-    /// Subscription quota window definition `[{windowSeconds, limit, key}]`
-    #[sea_orm(nullable)]
-    pub quota_windows: Option<Json>,
     /// Empty array = no role grant. Follows the `account.provider_ids` UUID[]
     /// precedent (account.rs:13-14).
     #[sea_orm(default_value = "ARRAY[]::UUID[]")]

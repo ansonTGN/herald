@@ -6,12 +6,13 @@
 -- unified purchase / payment attempts, provider entitlement mappings,
 -- idempotency, and invoice/credit-note schema into one baseline.
 -- Pre-launch squash: all ALTER/DROP folded into final-state CREATE TABLE.
---   - subscription.bucket_id is inline (no later ALTER)
 --   - points_credit_ledger.effective_at + its CHECK + bucket-avail partial
 --     index are inline
 --   - points_grant_records.ledger_id FK is inline
---   - realm_default_configs.free_periodic_quota_windows is inline
---   - provider_entitlement_mappings.quota_windows is inline
+--   - points_distribution_rules / points_distribution_events /
+--     payment_attempt_point_rules and the rule/event attribution columns on
+--     points_credit_ledger / points_transactions / points_quota_entitlements /
+--     points_grant_schedules are inline (multi-wallet grant rules model)
 --   - payment_attempts.target_type CHECK is the FINAL 'entitlement_mapping'
 --     form (the obsolete 'subscription_entitlement' / 'points_package'
 --     values and the dropped points_packages family never existed)
@@ -33,7 +34,6 @@ CREATE TABLE credit_buckets (
     name TEXT NOT NULL,
     description TEXT,
     display_order INTEGER NOT NULL DEFAULT 0,
-    receives_registration_credits BOOLEAN NOT NULL DEFAULT false,
     enabled BOOLEAN NOT NULL DEFAULT true,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -41,9 +41,6 @@ CREATE TABLE credit_buckets (
     CONSTRAINT chk_credit_buckets_key CHECK (bucket_key ~ '^[a-z0-9-]{1,64}$')
 );
 
-CREATE UNIQUE INDEX uq_credit_buckets_registration_pool
-    ON credit_buckets(realm_id)
-    WHERE receives_registration_credits = true;
 CREATE INDEX idx_credit_buckets_realm_id ON credit_buckets(realm_id);
 CREATE INDEX idx_credit_buckets_enabled ON credit_buckets(realm_id, enabled);
 
@@ -83,8 +80,6 @@ CREATE TABLE subscription (
     cancel_at_period_end BOOLEAN DEFAULT false,
     client_app_id UUID UNIQUE,
     cancel_at TIMESTAMPTZ,
-    -- Credit bucket bound to this subscription for points fulfillment and revocation
-    bucket_id UUID NOT NULL REFERENCES credit_buckets(id) ON DELETE RESTRICT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_subscription_client_app UNIQUE (client_app_id)
@@ -98,9 +93,7 @@ CREATE INDEX idx_subscription_entitlement_key ON subscription(entitlement_key);
 CREATE INDEX idx_subscription_client_app_id ON subscription(client_app_id);
 CREATE INDEX idx_subscription_user_id ON subscription(user_id);
 CREATE INDEX idx_subscription_realm_user_id ON subscription(realm_id, user_id);
-CREATE INDEX idx_subscription_bucket_id ON subscription(bucket_id);
 COMMENT ON TABLE subscription IS 'Client app subscriptions mapped to entitlement keys';
-COMMENT ON COLUMN subscription.bucket_id IS 'Credit bucket bound to this subscription for points fulfillment and revocation';
 
 -- ====================================
 -- Subscription History
@@ -246,10 +239,18 @@ CREATE TABLE points_credit_ledger (
     expires_at TIMESTAMPTZ,
     effective_at TIMESTAMPTZ,
     status text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'revoked', 'expired', 'fully_used')),
+    -- Distribution attribution (multi-wallet grant rules). Both NULL = direct
+    -- write (admin/sdk grant, demo/test-only internal quota); both NOT NULL =
+    -- rule-executed grant. FK constraints are added after the referenced
+    -- tables are created (see "Distribution attribution constraints").
+    distribution_event_id UUID,
+    distribution_rule_id UUID,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT points_credit_ledger_effective_before_expires
-        CHECK (effective_at IS NULL OR expires_at IS NULL OR effective_at <= expires_at)
+        CHECK (effective_at IS NULL OR expires_at IS NULL OR effective_at <= expires_at),
+    CONSTRAINT points_credit_ledger_attribution_pair
+        CHECK ((distribution_event_id IS NULL) = (distribution_rule_id IS NULL))
 );
 
 CREATE INDEX idx_points_credit_ledger_user_id ON points_credit_ledger(user_id);
@@ -278,6 +279,12 @@ COMMENT ON COLUMN points_credit_ledger.credit_type IS 'Type of credit: topup_cre
 COMMENT ON COLUMN points_credit_ledger.source_type IS 'Source of credit: subscription_initial/renewal/upgrade, topup, system_grant, registration, or free_periodic_grant';
 COMMENT ON COLUMN points_credit_ledger.remaining_amount IS 'Computed field: granted_amount - used_amount - revoked_amount';
 COMMENT ON COLUMN points_credit_ledger.effective_at IS 'Expected effective time; NULL = immediately available, non-null = enters available set only at/after this time (consumption selection + derived balance predicate gating)';
+COMMENT ON COLUMN points_credit_ledger.distribution_event_id IS 'Distribution event that produced this credit row; NULL for direct admin/sdk/internal writes (paired with distribution_rule_id)';
+COMMENT ON COLUMN points_credit_ledger.distribution_rule_id IS 'Distribution rule that produced this credit row; NULL for direct admin/sdk/internal writes (paired with distribution_event_id)';
+-- At most one attribution-bearing ledger row per (event, rule).
+CREATE UNIQUE INDEX idx_points_credit_ledger_event_rule
+    ON points_credit_ledger (distribution_event_id, distribution_rule_id)
+    WHERE distribution_rule_id IS NOT NULL;
 
 -- ====================================
 -- Points Transactions
@@ -322,8 +329,13 @@ CREATE TABLE points_transactions (
     external_ref_id TEXT,
     correlation_id TEXT,
     expires_at TIMESTAMPTZ,
+    -- Distribution attribution (see points_credit_ledger pair rule).
+    distribution_event_id UUID,
+    distribution_rule_id UUID,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT points_transactions_attribution_pair
+        CHECK ((distribution_event_id IS NULL) = (distribution_rule_id IS NULL))
 );
 
 CREATE INDEX idx_points_transactions_wallet_id ON points_transactions(wallet_id);
@@ -450,54 +462,6 @@ CREATE INDEX idx_idempotency_transaction ON idempotency_keys(transaction_id);
 
 COMMENT ON TABLE idempotency_keys IS 'Idempotency keys for points consumption to prevent duplicate charges';
 
--- ====================================
--- Free User Points Config
--- ====================================
-CREATE TABLE realm_default_configs (
-    realm_id TEXT PRIMARY KEY,
-    registration_bonus_points BIGINT NOT NULL DEFAULT 0 CHECK (registration_bonus_points >= 0),
-    free_periodic_grant_period_type text NOT NULL DEFAULT 'daily' CHECK (free_periodic_grant_period_type IN ('once', 'daily', 'weekly', 'monthly')),
-    free_periodic_points_amount BIGINT NOT NULL DEFAULT 0 CHECK (free_periodic_points_amount >= 0),
-    free_periodic_validity_days BIGINT NOT NULL DEFAULT 0 CHECK (free_periodic_validity_days >= 0),
-    -- Non-NULL => free periodic grant uses window entitlement (replaces per-period issuance)
-    free_periodic_quota_windows JSONB,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-INSERT INTO realm_default_configs (realm_id)
-VALUES ('default')
-ON CONFLICT (realm_id) DO NOTHING;
-
-COMMENT ON TABLE realm_default_configs IS 'Default configuration for free user points strategy at realm level';
-COMMENT ON COLUMN realm_default_configs.free_periodic_grant_period_type IS 'Grant period type: once (one-time), daily, weekly, or monthly';
-COMMENT ON COLUMN realm_default_configs.free_periodic_points_amount IS 'Amount of free points granted per period (0 = disabled)';
-COMMENT ON COLUMN realm_default_configs.free_periodic_validity_days IS 'Validity period in days (0 = permanent, must be >= 1 for non-once periods)';
-COMMENT ON COLUMN realm_default_configs.free_periodic_quota_windows IS 'Free periodic quota window definition [{windowSeconds, limit, key}]; non-NULL = window-model grant';
-
-CREATE TABLE user_points_configs (
-    user_id UUID PRIMARY KEY,
-    realm_id TEXT NOT NULL,
-    registration_bonus_points BIGINT NOT NULL CHECK (registration_bonus_points >= 0),
-    free_periodic_grant_period_type text CHECK (free_periodic_grant_period_type IN ('once', 'daily', 'weekly', 'monthly')),
-    free_periodic_points_amount BIGINT CHECK (free_periodic_points_amount >= 0),
-    free_periodic_validity_days BIGINT CHECK (free_periodic_validity_days >= 0),
-    next_grant_time TIMESTAMPTZ,
-    granted_periods BIGINT NOT NULL DEFAULT 0 CHECK (granted_periods >= 0),
-    grant_schedule_id UUID UNIQUE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX idx_user_points_configs_realm_id ON user_points_configs(realm_id);
-CREATE INDEX idx_user_points_configs_next_grant_time
-    ON user_points_configs(next_grant_time);
-
-COMMENT ON TABLE user_points_configs IS 'Individual user configuration for free user points strategy';
-COMMENT ON COLUMN user_points_configs.free_periodic_grant_period_type IS 'Grant period type for this user (NULL = not configured)';
-COMMENT ON COLUMN user_points_configs.free_periodic_points_amount IS 'Amount of free points granted per period for this user';
-COMMENT ON COLUMN user_points_configs.free_periodic_validity_days IS 'Validity period in days (0 = permanent, must be >= 1 for non-once periods)';
-
 CREATE TABLE points_grant_schedules (
     id UUID PRIMARY KEY,
     user_id UUID NOT NULL,
@@ -513,9 +477,19 @@ CREATE TABLE points_grant_schedules (
     granted_periods BIGINT NOT NULL DEFAULT 0 CHECK (granted_periods >= 0),
     max_periods BIGINT CHECK (max_periods > 0),
     active BOOLEAN NOT NULL DEFAULT TRUE,
+    -- A schedule is always created by a free-periodic fixed distribution rule;
+    -- both references are NOT NULL. FK constraints added after referenced tables.
+    distribution_event_id UUID NOT NULL,
+    distribution_rule_id UUID NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_points_grant_schedules_user_rule
+        UNIQUE (realm_id, user_id, distribution_rule_id)
 );
+
+COMMENT ON TABLE points_grant_schedules IS 'Automatic points granting schedules for free users and subscriptions';
+COMMENT ON COLUMN points_grant_schedules.distribution_event_id IS 'Distribution event that created this schedule (free-periodic fixed rule first execution)';
+COMMENT ON COLUMN points_grant_schedules.distribution_rule_id IS 'Distribution rule this schedule fulfils; one schedule per user per free-periodic fixed rule';
 
 CREATE INDEX idx_points_grant_schedules_next_grant_time
     ON points_grant_schedules(next_grant_time)
@@ -577,11 +551,25 @@ CREATE TABLE points_quota_entitlements (
     effective_until TIMESTAMPTZ,
     status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'revoked', 'expired')),
     idempotency_key TEXT NOT NULL,
+    -- Distribution attribution (see points_credit_ledger pair rule).
+    distribution_event_id UUID,
+    distribution_rule_id UUID,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_points_quota_entitlements_idem
-        UNIQUE (realm_id, user_id, bucket_id, credit_type, idempotency_key)
+    CONSTRAINT points_quota_entitlements_attribution_pair
+        CHECK ((distribution_event_id IS NULL) = (distribution_rule_id IS NULL))
 );
+
+-- Direct-write rows (demo/test-only internal quota, DEC-013) keep the legacy
+-- (realm, user, bucket, credit_type, idempotency_key) idempotency uniqueness;
+-- rule-attributed rows are deduplicated by (event, rule) instead.
+CREATE UNIQUE INDEX uq_points_quota_entitlements_idem
+    ON points_quota_entitlements (realm_id, user_id, bucket_id, credit_type, idempotency_key)
+    WHERE distribution_rule_id IS NULL;
+-- At most one rule-attributed entitlement per (event, rule).
+CREATE UNIQUE INDEX idx_points_quota_entitlements_event_rule
+    ON points_quota_entitlements (distribution_event_id, distribution_rule_id)
+    WHERE distribution_rule_id IS NOT NULL;
 
 -- Consumption / balance read path: locate active entitlements for (user, bucket, credit_type).
 CREATE INDEX idx_points_quota_entitlements_user_bucket_type_status
@@ -596,6 +584,8 @@ COMMENT ON TABLE points_quota_entitlements IS 'Window-based quota entitlements f
 COMMENT ON COLUMN points_quota_entitlements.quota_windows IS 'Snapshot of [{windowSeconds, limit, key}] captured at grant time (A2)';
 COMMENT ON COLUMN points_quota_entitlements.source_id IS 'subscription_id or registration/free source identifier';
 COMMENT ON COLUMN points_quota_entitlements.idempotency_key IS 'Business idempotency key (subscription period / webhook event)';
+COMMENT ON COLUMN points_quota_entitlements.distribution_event_id IS 'Distribution event that produced this entitlement; NULL for direct internal quota writes (paired with distribution_rule_id)';
+COMMENT ON COLUMN points_quota_entitlements.distribution_rule_id IS 'Distribution rule that produced this entitlement; NULL for direct internal quota writes (paired with distribution_event_id)';
 
 -- ====================================
 -- Provider Entitlement Mappings
@@ -608,17 +598,9 @@ CREATE TABLE provider_entitlement_mappings (
     payment_provider TEXT NOT NULL,
     external_product_id TEXT NOT NULL,
     external_price_id TEXT,
-    bucket_id UUID NOT NULL REFERENCES credit_buckets(id) ON DELETE RESTRICT,
     entitlement_key TEXT NOT NULL,
     billing_type TEXT,
     billing_period TEXT,
-    points_per_period INTEGER,
-    grant_period_type TEXT,
-    validity_days INTEGER,
-    grant_on_subscribe BOOLEAN NOT NULL DEFAULT false,
-    max_periods INTEGER,
-    -- Non-NULL => this mapping grants a window entitlement.
-    quota_windows JSONB,
     enabled BOOLEAN NOT NULL DEFAULT false,
     provider_product_info JSONB,
     synced_at TIMESTAMPTZ,
@@ -632,16 +614,13 @@ CREATE TABLE provider_entitlement_mappings (
 
 CREATE INDEX idx_pem_realm_id ON provider_entitlement_mappings(realm_id);
 CREATE INDEX idx_pem_realm_provider ON provider_entitlement_mappings(realm_id, payment_provider);
-CREATE INDEX idx_pem_bucket_id ON provider_entitlement_mappings(bucket_id);
 CREATE INDEX idx_pem_entitlement_key ON provider_entitlement_mappings(entitlement_key);
 
-COMMENT ON TABLE provider_entitlement_mappings IS 'Maps payment provider products to Herald entitlement keys with points strategy config';
+COMMENT ON TABLE provider_entitlement_mappings IS 'Maps payment provider products to Herald entitlement keys; points distribution is configured via points_distribution_rules';
 COMMENT ON COLUMN provider_entitlement_mappings.entitlement_key IS 'Herald entitlement identifier, matching [a-z0-9-]{1,64}';
-COMMENT ON COLUMN provider_entitlement_mappings.bucket_id IS 'Credit bucket where purchases of this mapping are fulfilled';
-COMMENT ON COLUMN provider_entitlement_mappings.billing_type IS 'recurring or one_time';
+COMMENT ON COLUMN provider_entitlement_mappings.billing_type IS 'recurring, one_time or non_renewing (non_renewing added by 0011)';
 COMMENT ON COLUMN provider_entitlement_mappings.payment_provider IS 'Payment provider: stripe, creem';
 COMMENT ON COLUMN provider_entitlement_mappings.provider_product_info IS 'Cached provider product info (name, price, currency, etc.)';
-COMMENT ON COLUMN provider_entitlement_mappings.quota_windows IS 'Subscription quota window definition [{windowSeconds, limit, key}]; non-NULL = window-model grant';
 
 -- ====================================
 -- Payment Attempts
@@ -656,7 +635,6 @@ CREATE TABLE payment_attempts (
     payment_provider text NOT NULL,
     target_type text NOT NULL,
     target_id uuid NOT NULL,
-    bucket_id uuid NOT NULL REFERENCES credit_buckets(id) ON DELETE RESTRICT,
     amount bigint NOT NULL CHECK(amount > 0),
     currency text NOT NULL,
     status text NOT NULL,
@@ -680,12 +658,10 @@ CREATE INDEX idx_payment_attempts_status_expires ON payment_attempts(status, exp
 
 -- Index for looking up attempts by provider reference (for webhooks)
 CREATE INDEX idx_payment_attempts_provider_reference ON payment_attempts(payment_provider, provider_reference);
-CREATE INDEX idx_payment_attempts_bucket_id ON payment_attempts(bucket_id);
 
 COMMENT ON TABLE payment_attempts IS 'Unified payment attempt tracking for initiator-based payment platforms';
 COMMENT ON COLUMN payment_attempts.target_type IS 'Type of purchasable target: entitlement_mapping';
 COMMENT ON COLUMN payment_attempts.target_id IS 'ID of the provider entitlement mapping being purchased';
-COMMENT ON COLUMN payment_attempts.bucket_id IS 'Credit bucket snapshot for purchase fulfillment routing';
 COMMENT ON COLUMN payment_attempts.provider_reference IS 'Platform-specific order reference (session ID for Stripe)';
 COMMENT ON COLUMN payment_attempts.provider_status IS 'Raw status from payment platform';
 COMMENT ON COLUMN payment_attempts.expires_at IS 'Payment attempt expiration time (2 hours after creation)';
@@ -905,3 +881,167 @@ CREATE TABLE invoice_number_counter (
 
 COMMENT ON TABLE invoice_number_counter IS 'Counter for sequential invoice numbering within a realm+year scope';
 COMMENT ON COLUMN invoice_number_counter.next_seq IS 'Next available sequence number (first invoice uses seq=1 via INSERT)';
+
+-- ====================================
+-- Points Distribution Rules (multi-wallet grant rules model)
+-- ====================================
+-- Unified rule table: one row = one target account + one policy + a non-empty
+-- trigger set, owned by an entitlement mapping or a realm registration config.
+-- Replaces the single-target points-strategy columns removed from
+-- provider_entitlement_mappings and the realm/user config tables above.
+CREATE TABLE points_distribution_rules (
+    id UUID PRIMARY KEY DEFAULT uuidv7(),
+    realm_id TEXT NOT NULL,
+    owner_type TEXT NOT NULL CHECK (owner_type IN ('entitlement_mapping', 'realm_registration')),
+    entitlement_mapping_id UUID REFERENCES provider_entitlement_mappings(id) ON DELETE RESTRICT,
+    bucket_id UUID NOT NULL REFERENCES credit_buckets(id) ON DELETE RESTRICT,
+    trigger_sources TEXT[] NOT NULL,
+    grant_mode TEXT NOT NULL CHECK (grant_mode IN ('fixed', 'quota')),
+    points_amount BIGINT,
+    validity_days BIGINT,
+    grant_period_type TEXT CHECK (grant_period_type IS NULL OR grant_period_type IN ('once', 'daily', 'weekly', 'monthly')),
+    quota_windows JSONB,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    display_order INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT chk_pdr_owner_mapping
+        CHECK ((owner_type = 'entitlement_mapping') = (entitlement_mapping_id IS NOT NULL)),
+    CONSTRAINT chk_pdr_trigger_sources
+        CHECK (
+            cardinality(trigger_sources) > 0
+            AND array_position(trigger_sources, NULL) IS NULL
+            AND trigger_sources <@ ARRAY['topup','subscription_initial','subscription_renewal','subscription_upgrade','registration','free_periodic_grant']::TEXT[]
+        ),
+    -- fixed: needs points amount, no quota windows; quota: no points amount, needs windows.
+    CONSTRAINT chk_pdr_fixed_policy
+        CHECK (
+            (grant_mode <> 'fixed')
+            OR (points_amount IS NOT NULL AND points_amount > 0 AND quota_windows IS NULL)
+        ),
+    CONSTRAINT chk_pdr_quota_policy
+        CHECK (
+            (grant_mode <> 'quota')
+            OR (points_amount IS NULL AND quota_windows IS NOT NULL)
+        ),
+    CONSTRAINT chk_pdr_validity_days
+        CHECK (validity_days IS NULL OR validity_days >= 0)
+);
+
+CREATE INDEX idx_points_distribution_rules_realm_owner_mapping_enabled_order
+    ON points_distribution_rules (realm_id, owner_type, entitlement_mapping_id, enabled, display_order);
+CREATE INDEX idx_points_distribution_rules_bucket_id
+    ON points_distribution_rules (bucket_id);
+
+COMMENT ON TABLE points_distribution_rules IS 'Unified points distribution rules: one rule per target account + policy + trigger set, owned by a mapping or realm registration';
+COMMENT ON COLUMN points_distribution_rules.owner_type IS 'entitlement_mapping (rule belongs to a provider entitlement mapping) or realm_registration (rule belongs to realm registration config)';
+COMMENT ON COLUMN points_distribution_rules.entitlement_mapping_id IS 'Required when owner_type = entitlement_mapping, NULL when owner_type = realm_registration';
+COMMENT ON COLUMN points_distribution_rules.bucket_id IS 'Target credit account for this rule';
+COMMENT ON COLUMN points_distribution_rules.trigger_sources IS 'Non-empty subset of the six automatic triggers; domain layer further constrains the subset by owner and billing type';
+COMMENT ON COLUMN points_distribution_rules.grant_mode IS 'fixed = fixed points grant, quota = rolling-window quota entitlement';
+COMMENT ON COLUMN points_distribution_rules.points_amount IS 'Fixed points amount; required and > 0 when grant_mode = fixed, NULL for quota';
+COMMENT ON COLUMN points_distribution_rules.validity_days IS 'Validity in days for fixed grants (0 = permanent)';
+COMMENT ON COLUMN points_distribution_rules.grant_period_type IS 'Period type for free-periodic fixed rules (once/daily/weekly/monthly); NULL otherwise';
+COMMENT ON COLUMN points_distribution_rules.quota_windows IS 'Snapshot of [{windowSeconds, limit, key}]; required when grant_mode = quota, NULL for fixed';
+COMMENT ON COLUMN points_distribution_rules.enabled IS 'Soft-disable: a disabled rule does not participate in new events, but its row and FK are retained';
+
+-- ====================================
+-- Points Distribution Events (execution idempotency log)
+-- ====================================
+-- Lightweight completion record for the six automatic triggers. Serializes
+-- concurrent execution via (realm, user, trigger, event_key); a completed row
+-- captures the fixed first-execution result set so replay returns the original
+-- result regardless of later rule config changes. Not a general event bus.
+CREATE TABLE points_distribution_events (
+    id UUID PRIMARY KEY DEFAULT uuidv7(),
+    realm_id TEXT NOT NULL,
+    user_id UUID NOT NULL REFERENCES account(id) ON DELETE RESTRICT,
+    trigger TEXT NOT NULL CHECK (trigger IN (
+        'topup',
+        'subscription_initial',
+        'subscription_renewal',
+        'subscription_upgrade',
+        'registration',
+        'free_periodic_grant'
+    )),
+    event_key TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    owner_type TEXT NOT NULL CHECK (owner_type IN ('entitlement_mapping', 'realm_registration')),
+    entitlement_mapping_id UUID REFERENCES provider_entitlement_mappings(id) ON DELETE RESTRICT,
+    status TEXT NOT NULL CHECK (status IN ('processing', 'completed')),
+    result_count INTEGER CHECK (result_count IS NULL OR result_count >= 0),
+    completed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_points_distribution_events_key
+        UNIQUE (realm_id, user_id, trigger, event_key),
+    CONSTRAINT chk_points_distribution_events_owner_mapping
+        CHECK ((owner_type = 'entitlement_mapping') = (entitlement_mapping_id IS NOT NULL)),
+    CONSTRAINT chk_points_distribution_events_completed
+        CHECK (
+            (status <> 'completed')
+            OR (completed_at IS NOT NULL AND result_count IS NOT NULL)
+        )
+);
+
+COMMENT ON TABLE points_distribution_events IS 'Idempotent execution log for the six automatic points distribution triggers';
+COMMENT ON COLUMN points_distribution_events.trigger IS 'One of the six automatic distribution triggers (admin/sdk/system grant are excluded)';
+COMMENT ON COLUMN points_distribution_events.event_key IS 'Stable business event key; unique per (realm, user, trigger)';
+COMMENT ON COLUMN points_distribution_events.source_id IS 'Payment/subscription/registration source locator';
+COMMENT ON COLUMN points_distribution_events.owner_type IS 'Owner that the executed rules belonged to at first execution';
+COMMENT ON COLUMN points_distribution_events.status IS 'processing = in-flight inside the executing transaction (never committed), completed = result set finalized';
+COMMENT ON COLUMN points_distribution_events.result_count IS 'Logical result count at completion; 0 for zero-rule events';
+COMMENT ON COLUMN points_distribution_events.completed_at IS 'Completion timestamp; required when status = completed';
+
+-- ====================================
+-- Payment Attempt Point Rules (purchase-time rule snapshot)
+-- ====================================
+-- Captures the rule + target bucket snapshot at payment attempt creation for
+-- the topup / subscription_initial triggers, preserving the
+-- "purchase fixes its target accounts" semantics so a later rule disable does
+-- not affect an already-paid attempt.
+CREATE TABLE payment_attempt_point_rules (
+    payment_attempt_id UUID NOT NULL REFERENCES payment_attempts(id) ON DELETE CASCADE,
+    rule_id UUID NOT NULL REFERENCES points_distribution_rules(id) ON DELETE RESTRICT,
+    bucket_id UUID NOT NULL REFERENCES credit_buckets(id) ON DELETE RESTRICT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (payment_attempt_id, rule_id)
+);
+
+CREATE INDEX idx_payment_attempt_point_rules_rule_id
+    ON payment_attempt_point_rules (rule_id);
+
+COMMENT ON TABLE payment_attempt_point_rules IS 'Snapshot of distribution rules captured at payment attempt creation (topup / subscription_initial)';
+COMMENT ON COLUMN payment_attempt_point_rules.rule_id IS 'Distribution rule matched at purchase creation; later disabling does not affect this snapshot';
+COMMENT ON COLUMN payment_attempt_point_rules.bucket_id IS 'Target account snapshot at purchase creation';
+
+-- ====================================
+-- Distribution attribution FK constraints (cross-table, post-declaration)
+-- ====================================
+-- points_credit_ledger / points_transactions / points_grant_schedules /
+-- points_quota_entitlements reference points_distribution_events and
+-- points_distribution_rules, which are declared above; the FKs are added here
+-- so referenced tables always exist regardless of declaration order.
+
+ALTER TABLE points_credit_ledger
+    ADD CONSTRAINT fk_points_credit_ledger_distribution_event
+        FOREIGN KEY (distribution_event_id) REFERENCES points_distribution_events(id) ON DELETE RESTRICT,
+    ADD CONSTRAINT fk_points_credit_ledger_distribution_rule
+        FOREIGN KEY (distribution_rule_id) REFERENCES points_distribution_rules(id) ON DELETE RESTRICT;
+
+ALTER TABLE points_transactions
+    ADD CONSTRAINT fk_points_transactions_distribution_event
+        FOREIGN KEY (distribution_event_id) REFERENCES points_distribution_events(id) ON DELETE RESTRICT,
+    ADD CONSTRAINT fk_points_transactions_distribution_rule
+        FOREIGN KEY (distribution_rule_id) REFERENCES points_distribution_rules(id) ON DELETE RESTRICT;
+
+ALTER TABLE points_grant_schedules
+    ADD CONSTRAINT fk_points_grant_schedules_distribution_event
+        FOREIGN KEY (distribution_event_id) REFERENCES points_distribution_events(id) ON DELETE RESTRICT,
+    ADD CONSTRAINT fk_points_grant_schedules_distribution_rule
+        FOREIGN KEY (distribution_rule_id) REFERENCES points_distribution_rules(id) ON DELETE RESTRICT;
+
+ALTER TABLE points_quota_entitlements
+    ADD CONSTRAINT fk_points_quota_entitlements_distribution_event
+        FOREIGN KEY (distribution_event_id) REFERENCES points_distribution_events(id) ON DELETE RESTRICT,
+    ADD CONSTRAINT fk_points_quota_entitlements_distribution_rule
+        FOREIGN KEY (distribution_rule_id) REFERENCES points_distribution_rules(id) ON DELETE RESTRICT;

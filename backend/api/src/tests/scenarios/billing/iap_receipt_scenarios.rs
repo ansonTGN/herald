@@ -40,7 +40,6 @@ mod tests {
         GooglePlayMockServer, build_service_account_json, fresh_rsa_pem, insert_apple_realm_config,
         insert_google_realm_config,
     };
-    use crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm;
     use crate::tests::schema_test_context::SchemaTestContext;
     use axum::{
         body::{Body, to_bytes},
@@ -85,12 +84,11 @@ mod tests {
         entitlement_key: &str,
     ) -> Uuid {
         let mapping_id = Uuid::now_v7();
-        let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, realm_id).await;
         sqlx::query(
             "INSERT INTO provider_entitlement_mappings
                 (id, realm_id, payment_provider, external_product_id, entitlement_key,
-                 billing_type, enabled, bucket_id, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, true, $7, NOW(), NOW())",
+                 billing_type, enabled, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, true, NOW(), NOW())",
         )
         .bind(mapping_id)
         .bind(realm_id)
@@ -98,7 +96,6 @@ mod tests {
         .bind(external_product_id)
         .bind(entitlement_key)
         .bind(billing_type)
-        .bind(bucket_id)
         .execute(&ctx.app_state.pool)
         .await
         .expect("insert mapping");

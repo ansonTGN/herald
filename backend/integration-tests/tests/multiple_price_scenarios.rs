@@ -28,8 +28,7 @@
 // To assert real per-price row outcomes we construct a LOCAL
 // `ProviderProductSyncService` per test, swapping in an in-memory
 // `MockProviderApi` while reusing the REAL `PostgresBillingRepository`
-// (`app_state.billing_repository`, which also implements
-// `RegistrationPoolResolver` for draft `bucket_id` binding) and
+// (`app_state.billing_repository`; draft mappings' `bucket_id` is nullable) and
 // `AllowAllBillingPolicy` (bypasses the Redis permission gate). This mirrors
 // exactly how `schema_test_context.rs` builds the production service — only
 // the provider API is a test double.
@@ -90,10 +89,8 @@ impl ProviderApiPort for MockProviderApi {
 // =============================================================================
 
 /// Build a `ProviderProductSyncService` wired against the context's REAL
-/// `PostgresBillingRepository` (used for both mapping upsert/lookup AND as the
-/// `RegistrationPoolResolver` for draft `bucket_id` binding) plus a test-only
-/// `MockProviderApi`, bypassing the Redis-backed policy gate with
-/// `AllowAllBillingPolicy`.
+/// `PostgresBillingRepository` plus a test-only `MockProviderApi`, bypassing
+/// the Redis-backed policy gate with `AllowAllBillingPolicy`.
 ///
 /// Mirrors the wiring in `schema_test_context.rs` step 12 — only the provider
 /// API differs. Returned by value because the service is generic over `Arc<...>`
@@ -101,21 +98,11 @@ impl ProviderApiPort for MockProviderApi {
 fn build_sync_service(
     ctx: &SchemaTestContext,
     provider_api: MockProviderApi,
-) -> ProviderProductSyncService<
-    PostgresBillingRepository,
-    AllowAllBillingPolicy,
-    MockProviderApi,
-    PostgresBillingRepository,
-> {
-    let billing_repository = ctx.app_state.billing_repository.clone();
+) -> ProviderProductSyncService<PostgresBillingRepository, AllowAllBillingPolicy, MockProviderApi> {
     ProviderProductSyncService::new(
-        billing_repository.clone(),
+        ctx.app_state.billing_repository.clone(),
         Arc::new(AllowAllBillingPolicy),
         Arc::new(provider_api),
-        // `PostgresBillingRepository` implements `RegistrationPoolResolver`;
-        // newly-synced draft mappings bind `bucket_id` to the realm's
-        // registration-pool bucket (NOT NULL constraint).
-        billing_repository,
     )
 }
 
@@ -613,14 +600,8 @@ async fn webhook_resolves_by_entitlement_key_then_price_strategy(ctx: &mut Schem
         .as_ref()
         .expect("step-2 must return the annual row under the shared key");
 
-    // The WHY: strategy mapping is the ANNUAL row (12000), NOT monthly (1000).
-    assert_eq!(
-        strategy_mapping.points_per_period,
-        Some(12000),
-        "shared-key webhook MUST resolve to the webhook-price (annual) strategy \
-         (12000 pts), not the monthly sibling (1000); a product-level collapse \
-         would grant 1000 and silently under-credit the annual subscriber"
-    );
+    // The WHY: the resolved owner is the ANNUAL price row, not its monthly
+    // sibling. Distribution policy now lives in rules owned by this row.
     assert_eq!(
         strategy_mapping.external_price_id.as_deref(),
         Some("price_year"),
@@ -650,10 +631,9 @@ async fn webhook_resolves_by_entitlement_key_then_price_strategy(ctx: &mut Schem
         .await
         .expect("monthly lookup must not error")
         .expect("monthly row must exist");
-    assert_eq!(
-        monthly.points_per_period,
-        Some(1000),
-        "monthly sibling must exist with 1000 pts (sanity: 12000-vs-1000 is real)"
+    assert_ne!(
+        monthly.id, strategy_mapping.id,
+        "monthly and annual prices must remain distinct rule owners"
     );
 }
 
@@ -726,11 +706,6 @@ async fn webhook_falls_back_to_product_price_mapping(ctx: &mut SchemaTestContext
         resolved.external_price_id.as_deref(),
         Some("price_x"),
         "resolved mapping must be the price_x row"
-    );
-    assert_eq!(
-        resolved.points_per_period,
-        Some(500),
-        "strategy mapping carries the row's points policy"
     );
 }
 
@@ -1118,25 +1093,11 @@ async fn points_strategy_is_price_specific_under_shared_key(ctx: &mut SchemaTest
         .expect("annual lookup must not error")
         .expect("annual price mapping must resolve");
 
-    // The WHY: the two strategies DIFFER (1000 vs 12000) despite sharing one
-    // entitlement_key. A regression that resolves strategy by entitlement_key
-    // (or ignores the webhook price) would make both equal and silently
-    // under-credit the annual subscriber (or over-credit the monthly one).
-    assert_eq!(
-        monthly_strategy.points_per_period,
-        Some(1000),
-        "monthly price MUST resolve to its own 1000-pts strategy under the shared key"
-    );
-    assert_eq!(
-        annual_strategy.points_per_period,
-        Some(12000),
-        "annual price MUST resolve to its own 12000-pts strategy under the shared key"
-    );
+    // The WHY: the two prices remain distinct rule owners despite sharing one
+    // entitlement_key. Distribution amounts now live on their owned rules.
     assert_ne!(
-        monthly_strategy.points_per_period, annual_strategy.points_per_period,
-        "shared entitlement_key MUST NOT collapse the price-level strategy: the two \
-         prices must grant DIFFERENT amounts (1000 vs 12000). Equal values mean the \
-         resolver ignored the webhook price and the price-granularity shift regressed."
+        monthly_strategy.id, annual_strategy.id,
+        "shared entitlement_key MUST NOT collapse the price-level rule owner"
     );
     // Both share the key (the regression target is strategy selection, not the
     // key itself): asserting this makes the non-ambiguity explicit.
@@ -1152,7 +1113,7 @@ async fn points_strategy_is_price_specific_under_shared_key(ctx: &mut SchemaTest
 ///
 /// Covers:
 /// - Single-transaction atomicity: the whole batch commits together, so both
-///   rows' (still-editable) `points_per_period` values are written.
+///   rows' (enabled) values are written.
 /// - `entitlementKey` is read-only: a client-supplied `entitlementKey` in the
 ///   update rows is silently ignored (the request DTO has no such field and no
 ///   `deny_unknown_fields`), and the DB rows KEEP their provider-synced key.
@@ -1211,16 +1172,18 @@ async fn batch_save_keeps_entitlement_key_readonly(ctx: &mut SchemaTestContext) 
     .await;
 
     // PUT batch: each row carries a client-supplied `entitlementKey` (which the
-    // read-only contract must ignore) PLUS a real editable field
-    // (`pointsPerPeriod`) so the rows are actually written and `saved` is
+    // read-only contract must ignore) PLUS a real editable field (`enabled`)
+    // flipped to false so the rows are actually written and `saved` is
     // meaningful — otherwise the read-only assertion below could pass trivially
-    // on a no-op batch.
+    // on a no-op batch. (`pointsPerPeriod` was removed when grant config moved
+    // to distribution rules; `enabled` is the current scalar editable field on
+    // `PriceMappingUpdate`.)
     let body = serde_json::json!({
         "paymentProvider": "stripe",
         "externalProductId": "prod_batch_rename",
         "updates": [
-            { "mappingId": mapping_a, "entitlementKey": "new-shared-key", "pointsPerPeriod": 1100 },
-            { "mappingId": mapping_b, "entitlementKey": "new-shared-key", "pointsPerPeriod": 2200 },
+            { "mappingId": mapping_a, "entitlementKey": "new-shared-key", "enabled": false },
+            { "mappingId": mapping_b, "entitlementKey": "new-shared-key", "enabled": false },
         ]
     });
     let app = ctx.create_unified_test_router();
@@ -1280,10 +1243,10 @@ async fn batch_save_keeps_entitlement_key_readonly(ctx: &mut SchemaTestContext) 
     );
 
     // Sanity: the editable field WAS written, so the read-only assertion above
-    // is not passing on an empty write. If `pointsPerPeriod` did not persist,
-    // the key assertion would be meaningless.
-    let post_points: Vec<Option<i32>> = sqlx::query_scalar(
-        "SELECT points_per_period FROM provider_entitlement_mappings \
+    // is not passing on an empty write. If `enabled` did not persist, the key
+    // assertion would be meaningless.
+    let post_enabled: Vec<bool> = sqlx::query_scalar(
+        "SELECT enabled FROM provider_entitlement_mappings \
          WHERE realm_id = $1 AND payment_provider = 'stripe' \
            AND external_product_id = 'prod_batch_rename' \
          ORDER BY external_price_id",
@@ -1293,8 +1256,8 @@ async fn batch_save_keeps_entitlement_key_readonly(ctx: &mut SchemaTestContext) 
     .await
     .unwrap();
     assert_eq!(
-        post_points,
-        vec![Some(1100), Some(2200)],
+        post_enabled,
+        vec![false, false],
         "editable fields must still persist (proves the batch wrote the rows; \
          the read-only entitlement_key assertion above is therefore meaningful)"
     );

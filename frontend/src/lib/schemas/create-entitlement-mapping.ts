@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { BILLING_PERIODS } from '@/lib/billing-constants'
 import { m } from '@/paraglide/messages'
+import { pointDistributionRulesSchema } from '@/lib/schemas/billing-forms'
 
 /**
  *
@@ -40,15 +41,11 @@ export const createEntitlementMappingSchema = z
     entitlementKey: z
       .string()
       .min(1, { error: () => m['billing.create_mapping_entitlement_key_required']() }),
-    bucketId: z.string().min(1, { error: () => m['billing.create_mapping_bucket_required']() }),
     billingType: z
       .string()
       .min(1, { error: () => m['billing.create_mapping_billing_type_required']() }),
     billingPeriod: z.enum(billingPeriodValues).nullable().optional(),
-    // Credit-strategy fields (require points.manage; gated by the dialog).
-    pointsPerPeriod: z.number().int().min(0).nullable().optional(),
-    grantOnSubscribe: z.boolean().nullable().optional(),
-    validityDays: z.number().int().min(1).nullable().optional(),
+    pointRules: pointDistributionRulesSchema,
     // column, semantically isolated from `validityDays`). Same shape as
     // validityDays so the form-level value is always a number | null.
     serviceDurationDays: z.number().int().min(1).nullable().optional(),
@@ -95,12 +92,9 @@ export function getCreateEntitlementMappingDefaults(): CreateEntitlementMappingF
     externalProductId: '',
     externalPriceId: null,
     entitlementKey: '',
-    bucketId: '',
     billingType: '',
     billingPeriod: null,
-    pointsPerPeriod: null,
-    grantOnSubscribe: false,
-    validityDays: null,
+    pointRules: [],
     serviceDurationDays: null,
     grantedRoleIds: [],
     enabled: true,

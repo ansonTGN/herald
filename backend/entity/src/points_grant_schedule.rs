@@ -22,6 +22,10 @@ pub struct Model {
     pub granted_periods: i64,
     pub max_periods: Option<i64>,
     pub active: bool,
+    /// Distribution attribution. A schedule is always created by a free-periodic
+    /// fixed distribution rule; both references are NOT NULL.
+    pub distribution_event_id: Uuid,
+    pub distribution_rule_id: Uuid,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
 }

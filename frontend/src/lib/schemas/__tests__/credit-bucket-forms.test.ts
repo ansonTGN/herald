@@ -3,15 +3,13 @@ import { createCreditBucketSchema, updateCreditBucketSchema } from '../credit-bu
 
 /**
  * Factory for valid Create Credit Bucket input.
- * `enabled` / `receivesRegistrationCredits` are required booleans in the schema
- * (no `.default()`), so the factory must supply them explicitly.
+ * Required fields are supplied explicitly so each test only changes its target.
  */
 function validCreateBucketInput(overrides: Record<string, unknown> = {}) {
   return {
     bucketKey: 'main-bucket',
     name: 'Main Bucket',
     enabled: true,
-    receivesRegistrationCredits: false,
     clientAppIds: ['app-1'],
     ...overrides,
   }
@@ -22,7 +20,6 @@ function validUpdateBucketInput(overrides: Record<string, unknown> = {}) {
   return {
     name: 'Main Bucket',
     enabled: true,
-    receivesRegistrationCredits: false,
     clientAppIds: ['app-1'],
     ...overrides,
   }
@@ -93,15 +90,8 @@ describe('createCreditBucketSchema', () => {
   })
 
   describe('optional fields can be omitted without error', () => {
-    it('passes with only required fields (no description/displayOrder/entitlementMappingIds)', () => {
+    it('passes with only required fields', () => {
       const result = createCreditBucketSchema.safeParse(validCreateBucketInput())
-      expect(result.success).toBe(true)
-    })
-
-    it('passes with entitlementMappingIds provided', () => {
-      const result = createCreditBucketSchema.safeParse(
-        validCreateBucketInput({ entitlementMappingIds: ['em-1', 'em-2'] })
-      )
       expect(result.success).toBe(true)
     })
   })
@@ -112,7 +102,6 @@ describe('createCreditBucketSchema', () => {
         validCreateBucketInput({
           description: 'A bucket',
           displayOrder: 3,
-          entitlementMappingIds: ['em-1'],
         })
       )
       expect(result.success).toBe(true)
@@ -120,11 +109,9 @@ describe('createCreditBucketSchema', () => {
         expect(result.data.bucketKey).toBe('main-bucket')
         expect(result.data.name).toBe('Main Bucket')
         expect(result.data.enabled).toBe(true)
-        expect(result.data.receivesRegistrationCredits).toBe(false)
         expect(result.data.clientAppIds).toEqual(['app-1'])
         expect(result.data.description).toBe('A bucket')
         expect(result.data.displayOrder).toBe(3)
-        expect(result.data.entitlementMappingIds).toEqual(['em-1'])
       }
     })
   })

@@ -44,17 +44,3 @@ export const creditBucketsHandlers = [
 export function deleteBucketInUseHandler(body: BucketInUseErrorBody) {
   return http.delete(`${BASE}/:bucketId`, () => HttpResponse.json(body, { status: 409 }))
 }
-
-/** 409 `registration_pool_conflict` on PUT. */
-export function updateBucketRegistrationConflictHandler() {
-  return http.put(`${BASE}/:bucketId`, () =>
-    HttpResponse.json({ code: 'registration_pool_conflict' }, { status: 409 })
-  )
-}
-
-/** 409 `registration_pool_conflict` on POST (create flow). */
-export function createBucketRegistrationConflictHandler() {
-  return http.post(`${BASE}`, () =>
-    HttpResponse.json({ code: 'registration_pool_conflict' }, { status: 409 })
-  )
-}

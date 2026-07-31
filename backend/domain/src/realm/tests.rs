@@ -22,8 +22,8 @@ mod realm_admin_tests {
     use crate::common::policies::{AllowAllRealmPolicy, RealmPolicy};
     use crate::rbac_init::MockRealmInitializationService;
     use crate::realm::{
-        CreateRealmRequest, InitialAdminUser, MockRealmPointsConfigInitializer,
-        MockRealmRepository, Realm, RealmService, services::RealmServiceImpl,
+        CreateRealmRequest, InitialAdminUser, MockRealmRepository, Realm, RealmService,
+        services::RealmServiceImpl,
     };
     use crate::realm_config::ports::MockRealmConfigRepository;
     use crate::user::entities::{User, UserStatus};
@@ -97,13 +97,6 @@ mod realm_admin_tests {
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
-    }
-
-    fn mock_points_config_initializer() -> MockRealmPointsConfigInitializer {
-        let mut mock = MockRealmPointsConfigInitializer::new();
-        mock.expect_create_default_realm_points_config()
-            .returning(|_| Box::pin(async { Ok(()) }));
-        mock
     }
 
     fn identity_fixture() -> Identity {
@@ -310,7 +303,6 @@ mod realm_admin_tests {
             Arc::new(mock_user_repo),
             Arc::new(mock_user_service),
             Arc::new(mock_realm_config_repo),
-            Arc::new(mock_points_config_initializer()),
             Arc::new(mock_audit_repo()),
         ));
 
@@ -427,7 +419,6 @@ mod realm_admin_tests {
             Arc::new(MockUserRepository::new()),
             Arc::new(mock_user_service),
             Arc::new(mock_realm_config_repo),
-            Arc::new(mock_points_config_initializer()),
             Arc::new(mock_audit_repo()),
         ));
 
@@ -547,7 +538,6 @@ mod realm_admin_tests {
             Arc::new(mock_user_repo),
             Arc::new(mock_user_service),
             Arc::new(mock_realm_config_repo),
-            Arc::new(mock_points_config_initializer()),
             Arc::new(mock_audit_repo()),
         ));
 
@@ -600,7 +590,6 @@ mod realm_admin_tests {
             Arc::new(MockUserRepository::new()),
             Arc::new(MockUserService::new()),
             Arc::new(MockRealmConfigRepository::new()),
-            Arc::new(mock_points_config_initializer()),
             Arc::new(mock_audit_repo()),
         ));
 
@@ -623,7 +612,6 @@ mod realm_admin_tests {
             Arc::new(MockUserRepository::new()),
             Arc::new(MockUserService::new()),
             Arc::new(MockRealmConfigRepository::new()),
-            Arc::new(mock_points_config_initializer()),
             Arc::new(mock_audit_repo()),
         ));
 
@@ -668,7 +656,6 @@ mod realm_admin_tests {
             Arc::new(MockUserRepository::new()),
             Arc::new(MockUserService::new()),
             Arc::new(MockRealmConfigRepository::new()),
-            Arc::new(mock_points_config_initializer()),
             Arc::new(mock_audit_repo()),
         ));
 
@@ -700,7 +687,6 @@ mod realm_admin_tests {
             Arc::new(MockUserRepository::new()),
             Arc::new(MockUserService::new()),
             Arc::new(MockRealmConfigRepository::new()),
-            Arc::new(mock_points_config_initializer()),
             Arc::new(mock_audit_repo()),
         ));
 
@@ -735,7 +721,6 @@ mod realm_admin_tests {
             Arc::new(MockUserRepository::new()),
             Arc::new(MockUserService::new()),
             Arc::new(MockRealmConfigRepository::new()),
-            Arc::new(mock_points_config_initializer()),
             Arc::new(mock_audit_repo()),
         ));
 

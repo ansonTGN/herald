@@ -135,21 +135,16 @@ mod tests {
         // `subscription.client_app_id` is UNIQUE; use a fresh id per seed so
         // multiple renewal scenarios in the same realm do not collide.
         let client_app_id = Uuid::now_v7();
-        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
-            &ctx.app_state.pool,
-            realm_id,
-        )
-        .await;
         sqlx::query(
             "INSERT INTO subscription
                 (id, realm_id, user_id, client_app_id, status, entitlement_key,
                  external_price_id, external_subscription_id, external_product_id,
                  payment_provider, current_period_start, current_period_end,
-                 cancel_at_period_end, created_at, updated_at, bucket_id, billing_type)
+                 cancel_at_period_end, created_at, updated_at, billing_type)
              VALUES ($1, $2, $3, $4, 'active', $5,
                      $6, $7, $8,
                      'stripe', NOW(), NOW() + INTERVAL '30 days',
-                     false, NOW(), NOW(), $9, 'recurring')",
+                     false, NOW(), NOW(), 'recurring')",
         )
         .bind(subscription_id)
         .bind(realm_id)
@@ -159,7 +154,6 @@ mod tests {
         .bind(external_price_id)
         .bind(stripe_subscription_id)
         .bind(external_product_id)
-        .bind(bucket_id)
         .execute(&ctx.app_state.pool)
         .await
         .expect("Failed to seed Stripe subscription row for renewal scenario");

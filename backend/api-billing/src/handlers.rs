@@ -362,7 +362,10 @@ pub async fn cancel_subscription_for_client_app(
 /// `display_name` / `amount` / `currency` are read from the
 /// `provider_product_info` JSONB cache populated by sync (same source the
 /// one-time-mappings read model and checkout price_amount use).
-fn mapping_to_purchase_option(m: EntitlementMapping) -> PurchaseOptionView {
+fn mapping_to_purchase_option(
+    m: EntitlementMapping,
+    point_rules: Vec<crate::types::PointDistributionRuleResponse>,
+) -> PurchaseOptionView {
     let info = m.provider_product_info.as_ref();
     // Only the one_time+role combo is the gated one-per-user entitlement
     // gated, so `grants_role` is `false` for them even if they carry role
@@ -387,7 +390,7 @@ fn mapping_to_purchase_option(m: EntitlementMapping) -> PurchaseOptionView {
             .and_then(|i| i.get("currency"))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string()),
-        points_per_period: m.points_per_period,
+        point_rules,
         enabled: m.enabled,
         grants_role,
         already_owned: false,
@@ -467,7 +470,16 @@ pub async fn list_purchase_options(
             Vec::new()
         };
         let mapping_id = m.id;
-        let mut view = mapping_to_purchase_option(m);
+        let rules = state
+            .billing_repository
+            .find_mapping_rules(&realm_id, m.id)
+            .await
+            .map_err(|e| core_error_to_api_error(e, "Purchase options rule load"))?;
+        let point_rules: Vec<crate::types::PointDistributionRuleResponse> = rules
+            .into_iter()
+            .map(crate::entitlement_mapping_handlers::rule_to_response)
+            .collect();
+        let mut view = mapping_to_purchase_option(m, point_rules);
         if grants_role {
             let has_role = state
                 .user_role_repository
@@ -518,7 +530,6 @@ mod browser_scope_tests {
             entitlement_key: "plan".to_string(),
             billing_type: BillingType::Recurring,
             external_price_id: None,
-            bucket_id: Uuid::now_v7(),
             provider_metadata: None,
             synced_at: None,
             current_period_start: None,

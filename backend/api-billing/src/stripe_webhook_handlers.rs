@@ -15,8 +15,8 @@ use crate::webhook_common::{
     revoke_payment_roles_for_source as revoke_payment_roles_for_attempt,
 };
 use crate::webhook_subscription_helpers::{
-    ResolvedEntitlement, SyncSubscriptionInput, resolve_bucket_id_for_entitlement,
-    resolve_entitlement_mapping, save_subscription_history_in_txn, sync_subscription_in_txn,
+    ResolvedEntitlement, SyncSubscriptionInput, mapping_rule_value, resolve_entitlement_mapping,
+    save_subscription_history_in_txn, sync_subscription_in_txn,
 };
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::billing::credit_note::{
@@ -844,7 +844,6 @@ async fn sync_stripe_subscription_with_history_in_txn(
     current_period_end: Option<DateTime<Utc>>,
     cancel_at_period_end: bool,
     cancel_at: Option<DateTime<Utc>>,
-    bucket_id: Uuid,
     existing_subscription: Option<Subscription>,
     history_event_type: HistoryEventType,
 ) -> Result<(Subscription, Option<Subscription>), CoreError> {
@@ -860,7 +859,6 @@ async fn sync_stripe_subscription_with_history_in_txn(
             external_product_id,
             client_app_id,
             entitlement_key,
-            bucket_id,
             external_price_id,
             provider_metadata: None,
             status: status.clone(),
@@ -909,7 +907,6 @@ async fn sync_stripe_subscription_with_detected_history_in_txn(
     current_period_end: Option<DateTime<Utc>>,
     cancel_at_period_end: bool,
     cancel_at: Option<DateTime<Utc>>,
-    bucket_id: Uuid,
     existing_subscription: Option<Subscription>,
 ) -> Result<(Subscription, Option<Subscription>), CoreError> {
     let txn = app_state.billing_repository.begin_transaction().await?;
@@ -924,7 +921,6 @@ async fn sync_stripe_subscription_with_detected_history_in_txn(
             external_product_id,
             client_app_id,
             entitlement_key,
-            bucket_id,
             external_price_id,
             provider_metadata: None,
             status,
@@ -1292,15 +1288,6 @@ async fn handle_checkout_session_completed(
         .find_by_external_subscription_id(stripe_subscription_id, "stripe")
         .await?;
 
-    // Resolve the routing bucket: on the update path reuse the existing
-    // subscription's non-null bucket_id; on the create path resolve it eagerly
-    // from the entitlement mapping so the new row is created non-null.
-    let bucket_id = if let Some(existing) = existing_subscription.as_ref() {
-        existing.bucket_id
-    } else {
-        resolve_bucket_id_for_entitlement(&app_state, realm_id, &entitlement_key).await?
-    };
-
     let now = chrono::Utc::now();
     let (_created_subscription, _) = if let Some(existing) = existing_subscription {
         info!(
@@ -1325,7 +1312,6 @@ async fn handle_checkout_session_completed(
             existing.current_period_end,
             existing.cancel_at_period_end,
             existing.cancel_at,
-            bucket_id,
             Some(existing),
             HistoryEventType::Created,
         )
@@ -1345,7 +1331,6 @@ async fn handle_checkout_session_completed(
             None,
             false,
             None,
-            bucket_id,
             None,
             HistoryEventType::Created,
         )
@@ -1568,19 +1553,23 @@ async fn handle_checkout_session_async_failed(
     let revocation_result = if billing_type_override == Some(BillingType::OneTime) {
         // One-time purchase: revoke only the TopupCredit ledger from this specific attempt
         // (source_id = attempt_id), avoiding over-broad revocation of unrelated topup credits.
-        // Bucket source: the originating payment_attempt snapshot.
-        let bucket_id = attempt.bucket_id;
-        let one_time_result = app_state
-            .points_service
-            .revoke_points_by_source_id(
-                realm_id,
-                attempt.user_id,
-                bucket_id,
-                &attempt_id.to_string(),
-                RevocationType::RefundRevoke,
-                format!("Async payment failed revocation for attempt {}", attempt_id),
-            )
-            .await?;
+        let mut one_time_result = herald_core::domain::points::dtos::RevokePointsOutput::empty();
+        for bucket_id in crate::webhook_common::captured_bucket_ids(&app_state, &attempt).await? {
+            let revoked = app_state
+                .points_service
+                .revoke_points_by_source_id(
+                    realm_id,
+                    attempt.user_id,
+                    bucket_id,
+                    &attempt_id.to_string(),
+                    RevocationType::RefundRevoke,
+                    format!("Async payment failed revocation for attempt {}", attempt_id),
+                )
+                .await?;
+            one_time_result.ledger_ids.extend(revoked.ledger_ids);
+            one_time_result.total_revoked += revoked.total_revoked;
+            one_time_result.revoked_at = revoked.revoked_at;
+        }
 
         // Revoke payment-granted permanent roles for this one-time attempt
         // with `source_id = attempt.id`, so revoke with the same source id.
@@ -1603,10 +1592,6 @@ async fn handle_checkout_session_async_failed(
             .find_entitlement_mapping_by_id(attempt.target_id)
             .await?
             .map(|m| m.entitlement_key);
-
-        // The originating payment_attempt snapshot carries the target bucket for
-        // the subscription created via this checkout.
-        let bucket_id = attempt.bucket_id;
 
         // Update subscription record status to "canceled" — scope to the specific subscription
         // to avoid canceling unrelated subscriptions for the same user.
@@ -1642,6 +1627,16 @@ async fn handle_checkout_session_async_failed(
         };
 
         let result = if let Some(sub_id) = subscription_id {
+            let _subscription = app_state
+                .billing_repository
+                .find_subscription_by_id(sub_id)
+                .await?
+                .ok_or_else(|| {
+                    CoreError::not_found(&format!(
+                        "Subscription {} for async payment revocation",
+                        sub_id
+                    ))
+                })?;
             // Subscription: cancel subscription + revoke the subscription's active
             // quota entitlement (done internally by handle_subscription_cancel via
             // source_id = subscription_id). Idempotent on no-match.
@@ -1649,7 +1644,6 @@ async fn handle_checkout_session_async_failed(
                 .subscription_service
                 .handle_subscription_cancel(
                     attempt.user_id,
-                    bucket_id,
                     realm_id,
                     sub_id,
                     CancelMode::ImmediateCancel,
@@ -1905,11 +1899,6 @@ async fn handle_subscription_created(
     };
     let strategy_mapping = resolved.mapping;
 
-    // Resolve the routing bucket eagerly from the entitlement mapping before
-    // sync, so the new subscription is created with a non-null bucket_id.
-    let bucket_id =
-        resolve_bucket_id_for_entitlement(&app_state, realm_id, &entitlement_key).await?;
-
     let (subscription, _previous_subscription) = sync_stripe_subscription_with_history_in_txn(
         &app_state,
         realm_id,
@@ -1924,7 +1913,6 @@ async fn handle_subscription_created(
         payload.current_period_end,
         payload.cancel_at_period_end,
         None,
-        bucket_id,
         None,
         HistoryEventType::Created,
     )
@@ -1941,7 +1929,7 @@ async fn handle_subscription_created(
     // webhook / API compensation.
     let normalized_period = normalize_stripe_period(&event["data"]["object"]);
     if let Some((period_start, period_end)) = normalized_period {
-        // Route grant to subscription.bucket_id. The synced
+        // Route grants through the subscription source. The synced
         // subscription is created non-null, so the persisted bucket_id is the
         // authoritative routing target.
         app_state
@@ -1949,7 +1937,6 @@ async fn handle_subscription_created(
             .handle_subscription_paid(
                 payload.user_id,
                 subscription.id,
-                subscription.bucket_id,
                 realm_id,
                 &strategy_mapping,
                 false,
@@ -2061,17 +2048,6 @@ async fn handle_subscription_updated(
         payload.previous_entitlement_key.clone()
     };
 
-    // Resolve the routing bucket once for every sync path below: prefer the
-    // existing subscription's non-null bucket_id; otherwise resolve eagerly
-    // from the current entitlement mapping. Subscription update paths always
-    // carry an existing row, but resolve eagerly as a fallback for the rare
-    // case where the lookup above was skipped.
-    let bucket_id = if let Some(existing) = existing_subscription_for_update.as_ref() {
-        existing.bucket_id
-    } else {
-        resolve_bucket_id_for_entitlement(&app_state, realm_id, &current_entitlement_key).await?
-    };
-
     if previous_entitlement_key == current_entitlement_key {
         let external_price_id = event["data"]["object"]["items"]["data"][0]["price"]["id"]
             .as_str()
@@ -2095,7 +2071,6 @@ async fn handle_subscription_updated(
                 } else {
                     None
                 },
-                bucket_id,
                 existing_subscription_for_update.clone(),
             )
             .await?;
@@ -2135,48 +2110,8 @@ async fn handle_subscription_updated(
             ))
         })?;
 
-    let is_upgrade = {
-        let old_points = old_mapping.points_per_period.unwrap_or(0);
-        let new_points = new_mapping.points_per_period.unwrap_or(0);
-        if old_points == 0 && new_points == 0 {
-            let external_price_id = event["data"]["object"]["items"]["data"][0]["price"]["id"]
-                .as_str()
-                .map(str::to_string);
-            let (_subscription, _previous_subscription) =
-                sync_stripe_subscription_with_detected_history_in_txn(
-                    &app_state,
-                    realm_id,
-                    payload.user_id,
-                    &payload.stripe_subscription_id,
-                    None,
-                    current_entitlement_key.clone(),
-                    payload.external_product_id.clone(),
-                    external_price_id,
-                    payload.status.clone(),
-                    payload.current_period_start,
-                    payload.current_period_end,
-                    payload.cancel_at_period_end,
-                    if payload.cancel_at_period_end {
-                        payload.current_period_end
-                    } else {
-                        None
-                    },
-                    bucket_id,
-                    existing_subscription_for_update.clone(),
-                )
-                .await?;
-            tracing::info!(
-                realm_id = %realm_id,
-                "Both mappings have no points configured; skipping upgrade/downgrade classification"
-            );
-            return Ok(create_placeholder_transaction(
-                payload.user_id,
-                realm_id,
-                TransactionType::SubscriptionUpgrade,
-            ));
-        }
-        new_points > old_points
-    };
+    let is_upgrade = mapping_rule_value(&app_state, realm_id, new_mapping.id).await?
+        > mapping_rule_value(&app_state, realm_id, old_mapping.id).await?;
 
     if is_upgrade {
         let external_price_id = event["data"]["object"]["items"]["data"][0]["price"]["id"]
@@ -2200,7 +2135,6 @@ async fn handle_subscription_updated(
             } else {
                 None
             },
-            bucket_id,
             existing_subscription_for_update.clone(),
             HistoryEventType::Upgraded,
         )
@@ -2212,18 +2146,15 @@ async fn handle_subscription_updated(
             .current_period_end
             .unwrap_or_else(|| Utc::now() + ChronoDuration::days(30));
 
-        // Route to subscription.bucket_id. The synced
-        // subscription carries a non-null bucket_id.
         app_state
             .subscription_service
             .handle_subscription_upgrade(
                 payload.user_id,
-                subscription.bucket_id,
                 realm_id,
                 subscription.id,
-                &old_mapping,
                 &new_mapping,
                 period_end,
+                &payload.event_id,
             )
             .await?;
 
@@ -2264,20 +2195,16 @@ async fn handle_subscription_updated(
             } else {
                 None
             },
-            bucket_id,
             existing_subscription_for_update.clone(),
             HistoryEventType::Downgraded,
         )
         .await?;
 
-        // Downgrade takes the resolved bucket_id; the synced
-        // subscription is non-null.
         app_state
             .subscription_service
             .handle_subscription_downgrade(
                 payload.user_id,
                 subscription.id,
-                subscription.bucket_id,
                 realm_id,
                 &old_mapping,
                 &new_mapping,
@@ -2371,14 +2298,6 @@ async fn handle_subscription_status_change(
         .find_by_external_subscription_id(&stripe_subscription_id, "stripe")
         .await?;
 
-    // Resolve the routing bucket: prefer the existing subscription's non-null
-    // bucket_id; otherwise resolve eagerly from the entitlement mapping.
-    let bucket_id = if let Some(existing) = existing_sub.as_ref() {
-        existing.bucket_id
-    } else {
-        resolve_bucket_id_for_entitlement(&app_state, realm_id, &entitlement_key).await?
-    };
-
     let _synced = sync_stripe_subscription_with_detected_history_in_txn(
         &app_state,
         realm_id,
@@ -2397,7 +2316,6 @@ async fn handle_subscription_status_change(
         } else {
             None
         },
-        bucket_id,
         existing_sub,
     )
     .await?;
@@ -2457,15 +2375,6 @@ async fn handle_subscription_deleted(
 
     let cancel_entitlement_key = entitlement_key.clone();
 
-    // Resolve the routing bucket before sync: prefer the existing
-    // subscription's non-null bucket_id; otherwise resolve eagerly from the
-    // entitlement mapping so the synced row is created non-null.
-    let bucket_id = if let Some(existing) = existing_subscription.as_ref() {
-        existing.bucket_id
-    } else {
-        resolve_bucket_id_for_entitlement(&app_state, realm_id, &entitlement_key).await?
-    };
-
     let (subscription, _previous_subscription) = sync_stripe_subscription_with_history_in_txn(
         &app_state,
         realm_id,
@@ -2488,7 +2397,6 @@ async fn handle_subscription_deleted(
         } else {
             Utc::now()
         }),
-        bucket_id,
         existing_subscription.clone(),
         HistoryEventType::Canceled,
     )
@@ -2496,13 +2404,12 @@ async fn handle_subscription_deleted(
 
     // pre-grant ledger-row reclaim path is retired under the window quota
     // model. Idempotent: no active entitlement / already-revoked ⟹ no-op.
-    // Route revocation to subscription.bucket_id. The synced
+    // Route revocation through the subscription source. The synced
     // subscription is non-null.
     app_state
         .subscription_service
         .handle_subscription_cancel(
             payload.user_id,
-            subscription.bucket_id,
             realm_id,
             subscription.id,
             cancel_mode,
@@ -2562,8 +2469,8 @@ async fn handle_charge_refunded(
     // Resolve the subscription record up-front for both routing and the
     // history event below. The bucket source-of-truth for a refund revocation
     // is the bucket the original grant targeted:
-    //   - topup (one-time): payment_attempt.bucket_id snapshot
-    //   - subscription: subscription.bucket_id
+    //   - topup (one-time): captured payment rule snapshots
+    //   - subscription: source-derived distribution results
     let subscription = if let Some(subscription_id) = payload.subscription_id {
         app_state
             .billing_repository
@@ -2600,17 +2507,15 @@ async fn handle_charge_refunded(
                         payload.charge_id
                     ))
                 })?;
-            let bucket_id = attempt.bucket_id;
-
             let _output = app_state
                 .points_service
-                .revoke_topup_proportional(
+                .revoke_topup_source_proportional(
                     realm_id,
                     payload.user_id,
-                    bucket_id,
+                    &attempt.id.to_string(),
                     payload.amount_refunded,
                     payload.amount,
-                    &payload.charge_id,
+                    event_id,
                 )
                 .await?;
 
@@ -2636,7 +2541,7 @@ async fn handle_charge_refunded(
         _ => {
             // subscription's active quota entitlement by `source_id =
             // `revoke_subscription_unused` ledger-row reclaim is retired under
-            // the window quota model. Route to subscription.bucket_id. Fail
+            // the window quota model. Route through the subscription source. Fail
             // loud when no subscription could be resolved for the refund.
             let subscription = subscription.as_ref().ok_or_else(|| {
                 CoreError::BadRequest(format!(
@@ -2644,13 +2549,10 @@ async fn handle_charge_refunded(
                     payload.charge_id
                 ))
             })?;
-            let bucket_id = subscription.bucket_id;
-
             let _output = app_state
                 .subscription_service
                 .handle_subscription_cancel(
                     payload.user_id,
-                    bucket_id,
                     realm_id,
                     subscription.id,
                     CancelMode::ImmediateCancel,
@@ -2760,15 +2662,6 @@ async fn handle_invoice_payment_succeeded(
     };
     let strategy_mapping = resolved.mapping;
 
-    // Resolve the routing bucket before sync: prefer the existing
-    // subscription's non-null bucket_id; otherwise resolve eagerly from the
-    // entitlement mapping so the synced row is created non-null.
-    let bucket_id = if let Some(existing) = existing_subscription.as_ref() {
-        existing.bucket_id
-    } else {
-        resolve_bucket_id_for_entitlement(&app_state, realm_id, &entitlement_key).await?
-    };
-
     let (subscription, _previous_subscription) = sync_stripe_subscription_with_history_in_txn(
         &app_state,
         realm_id,
@@ -2785,7 +2678,6 @@ async fn handle_invoice_payment_succeeded(
         payload.current_period_end,
         false,
         None,
-        bucket_id,
         existing_subscription.clone(),
         HistoryEventType::Renewed,
     )
@@ -2802,14 +2694,13 @@ async fn handle_invoice_payment_succeeded(
     // an invented period (P0).
     let normalized_period = normalize_stripe_invoice_period(&event["data"]["object"]);
     if let Some((period_start, period_end)) = normalized_period {
-        // Route grant to subscription.bucket_id. The synced
+        // Route grants through the subscription source. The synced
         // subscription is non-null.
         app_state
             .subscription_service
             .handle_subscription_paid(
                 payload.user_id,
                 subscription.id,
-                subscription.bucket_id,
                 realm_id,
                 &strategy_mapping,
                 true,
@@ -2871,7 +2762,6 @@ async fn handle_invoice_payment_succeeded(
                     user_id: payload.user_id,
                     payment_provider: "stripe".to_string(),
                     target_id: strategy_mapping.id,
-                    bucket_id: subscription.bucket_id,
                     amount: renewal_amount,
                     currency: renewal_currency.clone(),
                     provider_reference: provider_reference.clone(),
@@ -3235,7 +3125,6 @@ async fn handle_charge_dispute_created(
             external_product_id: existing.external_product_id.clone(),
             client_app_id: existing.client_app_id,
             entitlement_key: existing.entitlement_key.clone(),
-            bucket_id: existing.bucket_id,
             external_price_id: existing.external_price_id.clone(),
             provider_metadata: Some(provider_metadata),
             status: SubscriptionStatus::Dispute,
@@ -3297,10 +3186,6 @@ async fn handle_charge_dispute_closed(
     };
 
     let dispute_entitlement_key = existing.entitlement_key.clone();
-    // Dispute path always carries an existing subscription; reuse its non-null
-    // bucket_id for sync (update branch).
-    let bucket_id = existing.bucket_id;
-
     let synced = sync_subscription_input_with_detected_history_in_txn(
         &app_state,
         SyncSubscriptionInput {
@@ -3311,7 +3196,6 @@ async fn handle_charge_dispute_closed(
             external_product_id: existing.external_product_id.clone(),
             client_app_id: existing.client_app_id,
             entitlement_key: existing.entitlement_key.clone(),
-            bucket_id,
             external_price_id: existing.external_price_id.clone(),
             provider_metadata: existing.provider_metadata.clone(),
             status: target_status.clone(),
@@ -3329,12 +3213,9 @@ async fn handle_charge_dispute_closed(
     .await?;
 
     if synced.is_some() && needs_cancel {
-        // Route revocation to subscription.bucket_id; the
-        // synced Subscription is the post-update snapshot carrying the
-        // active quota entitlement by `source_id = subscription_id`.
-        let (bucket_id, subscription_id) = synced
+        let subscription_id = synced
             .as_ref()
-            .map(|(subscription, _)| (subscription.bucket_id, subscription.id))
+            .map(|(subscription, _)| subscription.id)
             .ok_or_else(|| {
                 CoreError::InternalServerError(
                     "dispute close sync returned no subscription for cancel".to_string(),
@@ -3345,7 +3226,6 @@ async fn handle_charge_dispute_closed(
             .subscription_service
             .handle_subscription_cancel(
                 user_id,
-                bucket_id,
                 realm_id,
                 subscription_id,
                 CancelMode::ImmediateCancel,

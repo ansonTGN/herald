@@ -41,26 +41,21 @@ async fn test_refund_non_round_ratio(ctx: &mut SchemaTestContext) {
 
     ctx.with_creem_config(&realm_id, None, None, None).await;
 
-    // Grant 10000 topup credits
-    let ledger_id = create_credit_ledger_entry_v2(
-        ctx,
-        user_id,
-        &realm_id,
-        CreditType::TopupCredit,
-        CreditSourceType::Topup,
-        payment_id.clone(),
-        10000,
-        None,
+    // Seed the payment_attempt snapshot (Creem refund resolves the originating
+    // attempt by provider_reference) AND a rule-attributed topup ledger
+    // mirroring `fulfill_one_time_purchase`, so the refund's
+    // `revoke_topup_source_proportional` finds the grant.
+    let bucket_id = get_wallet_bucket_id(ctx, &realm_id, user_id).await;
+    let (attempt_id, mapping_id, rule_id) =
+        create_payment_attempt_snapshot(ctx, &realm_id, user_id, &payment_id, bucket_id, 10000)
+            .await;
+    let ledger_id = seed_attributed_topup_ledger(
+        ctx, &realm_id, user_id, attempt_id, mapping_id, rule_id, bucket_id, 10000, None,
     )
     .await;
 
     // Consume 3000, remaining 7000
     consume_points_from_ledger(ctx, ledger_id, 3000).await;
-
-    // Seed the payment_attempts snapshot the Creem refund webhook resolves the
-    // routing bucket from.
-    let bucket_id = get_wallet_bucket_id(ctx, &realm_id, user_id).await;
-    create_payment_attempt_snapshot(ctx, &realm_id, user_id, &payment_id, bucket_id, 10000).await;
 
     // When: Refund 3333 of original 10000
     // Integer formula: (7000 * 3333 + 10000/2) / 10000 = (23331000 + 5000) / 10000 = 2333
@@ -191,26 +186,22 @@ async fn test_refund_full_amount_revokes_all_remaining(ctx: &mut SchemaTestConte
 
     ctx.with_creem_config(&realm_id, None, None, None).await;
 
-    // Grant 10000 topup credits
-    let ledger_id = create_credit_ledger_entry_v2(
-        ctx,
-        user_id,
-        &realm_id,
-        CreditType::TopupCredit,
-        CreditSourceType::Topup,
-        payment_id.clone(),
-        10000,
-        None,
+    // Seed the payment_attempt snapshot (the Creem refund webhook resolves the
+    // originating attempt by provider_reference) AND a rule-attributed topup
+    // ledger mirroring `fulfill_one_time_purchase` output, so the refund's
+    // `revoke_topup_source_proportional(source_id = attempt.id)` finds and
+    // revokes the grant. A raw unattributed ledger would be silently skipped.
+    let bucket_id = get_wallet_bucket_id(ctx, &realm_id, user_id).await;
+    let (attempt_id, mapping_id, rule_id) =
+        create_payment_attempt_snapshot(ctx, &realm_id, user_id, &payment_id, bucket_id, 10000)
+            .await;
+    let ledger_id = seed_attributed_topup_ledger(
+        ctx, &realm_id, user_id, attempt_id, mapping_id, rule_id, bucket_id, 10000, None,
     )
     .await;
 
     // Consume 3000, remaining 7000
     consume_points_from_ledger(ctx, ledger_id, 3000).await;
-
-    // Seed the payment_attempts snapshot the Creem refund webhook resolves the
-    // routing bucket from.
-    let bucket_id = get_wallet_bucket_id(ctx, &realm_id, user_id).await;
-    create_payment_attempt_snapshot(ctx, &realm_id, user_id, &payment_id, bucket_id, 10000).await;
 
     // When: Full refund (refund_amount = original_amount = 10000)
     // Integer formula: (7000 * 10000 + 10000/2) / 10000 = (70000000 + 5000) / 10000 = 7000

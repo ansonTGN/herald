@@ -6,12 +6,19 @@ use uuid::Uuid;
 use crate::common::entities::app_errors::CoreError;
 use crate::payment_attempt::PaymentAttempt;
 
-/// Result of a fulfillment operation
+/// Result of a fulfillment operation.
+///
+/// `point_grants` is the multi-wallet grant set produced by the distribution
+/// rule executor: zero to many grants, one per matched rule. Each entry carries
+/// the rule id, the target bucket, the concrete result id (ledger / quota
+/// entitlement / schedule), and the credit type. Quota grants report `points =
+/// None` (their value is a rolling window, surfaced separately); an attempt
+/// that matched no rules reports an empty array.
 #[derive(Clone, Debug, PartialEq)]
 pub struct FulfillmentResult {
     pub fulfillment_type: FulfillmentType,
     pub subscription_id: Option<Uuid>,
-    pub points_granted: Option<PointsGrant>,
+    pub point_grants: Vec<PointsGrant>,
     pub granted_at: DateTime<Utc>,
 }
 
@@ -23,12 +30,17 @@ pub enum FulfillmentType {
     PointsGranted,
 }
 
-/// Points grant information
+/// One grant within a fulfillment's `point_grants` set. The `result_id` is the
+/// concrete persisted artifact of the rule (a credit ledger id for fixed, a
+/// quota entitlement id for quota, or a grant schedule id for free-periodic
+/// fixed). `points` is `None` for quota grants and `Some(amount)` for fixed.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PointsGrant {
-    pub transaction_id: Uuid,
-    pub points_type: String, // "subscription_credit" or "topup_credit"
-    pub points: i64,
+    pub rule_id: Uuid,
+    pub bucket_id: Uuid,
+    pub result_id: Uuid,
+    pub points_type: String, // "subscription_credit" / "topup_credit" / ...
+    pub points: Option<i64>,
     pub description: String,
 }
 

@@ -228,7 +228,7 @@ pub fn detect_change_type(
         // Determine direction based on entitlement_key comparison.
         // Since entitlement keys are opaque strings, we default to EntitlementChanged.
         // Specific upgrade/downgrade detection should be done at the application layer
-        // by comparing points_per_period values from the mapping table.
+        // by comparing the Mapping rule sets.
         // For backward compatibility with existing upgrade/downgrade detection,
         // we use a simple heuristic: compare the keys lexicographically.
         // The caller should override with specific tier knowledge when available.
@@ -304,7 +304,6 @@ mod tests {
             entitlement_key: entitlement_key.to_string(),
             billing_type: crate::billing::entities::BillingType::Recurring,
             external_price_id: None,
-            bucket_id: Uuid::now_v7(),
             provider_metadata: None,
             synced_at: None,
             current_period_start: None,

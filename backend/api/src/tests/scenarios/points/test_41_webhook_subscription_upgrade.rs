@@ -15,10 +15,101 @@ use crate::tests::helpers::subscription_test_helpers::*;
 use crate::tests::helpers::webhook_helpers::*;
 use crate::tests::scenarios::points::fixtures::*;
 use crate::tests::schema_test_context::SchemaTestContext;
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
 use herald_core::domain::points::entities::{CreditType, QuotaEntitlementStatus, QuotaSourceType};
 use test_context::test_context;
 use uuid::Uuid;
+
+/// Seed a rule-attributed `subscription_initial` quota entitlement standing in
+/// for the user's current basic-plan grant.
+///
+/// The upgrade revoke half (`revoke_distribution_source_in_tx`) only matches
+/// entitlements whose `distribution_rule_id IS NOT NULL` (it joins
+/// `points_distribution_events` on `distribution_event_id`). A raw
+/// `grant_quota_entitlement_for_test` row has NULL attribution and is silently
+/// skipped, so the test would see basic NOT revoked. This helper mirrors what a
+/// production initial fulfillment would write — a `subscription_initial` rule
+/// owned by the basic mapping, a completed distribution event keyed
+/// `subscription:<sub_id>:period:<...>` (the revoke's `event_key LIKE` target),
+/// and the entitlement row carrying both attribution columns — so the upgrade
+/// revoke correctly revokes the basic entitlement.
+#[allow(clippy::too_many_arguments)]
+async fn seed_rule_attributed_initial_entitlement(
+    ctx: &SchemaTestContext,
+    realm_id: &str,
+    user_id: Uuid,
+    subscription_id: Uuid,
+    mapping_id: Uuid,
+    bucket_id: Uuid,
+    limit: i64,
+    period_start: DateTime<Utc>,
+    period_end: DateTime<Utc>,
+) {
+    let rule_id = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO points_distribution_rules
+            (id, realm_id, owner_type, entitlement_mapping_id, bucket_id,
+             trigger_sources, grant_mode, validity_days, quota_windows,
+             enabled, display_order)
+         VALUES ($1, $2, 'entitlement_mapping', $3, $4, $5, 'quota', 0, $6, true, 0)",
+    )
+    .bind(rule_id)
+    .bind(realm_id)
+    .bind(mapping_id)
+    .bind(bucket_id)
+    .bind(&["subscription_initial"][..])
+    .bind(serde_json::json!([{"windowSeconds": 2_592_000, "limit": limit, "key": "period"}]))
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("seed basic subscription_initial rule");
+
+    let event_id = Uuid::now_v7();
+    let event_key = format!(
+        "subscription:{subscription_id}:period:{}",
+        period_start.to_rfc3339()
+    );
+    sqlx::query(
+        "INSERT INTO points_distribution_events
+            (id, realm_id, user_id, trigger, event_key, source_id,
+             owner_type, entitlement_mapping_id, status, result_count,
+             completed_at, created_at)
+         VALUES ($1, $2, $3, 'subscription_initial', $4, $5,
+                 'entitlement_mapping', $6, 'completed', 1, NOW(), NOW())",
+    )
+    .bind(event_id)
+    .bind(realm_id)
+    .bind(user_id)
+    .bind(&event_key)
+    .bind(subscription_id.to_string())
+    .bind(mapping_id)
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("seed basic subscription_initial distribution event");
+
+    let entitlement_id = Uuid::now_v7();
+    sqlx::query(
+        r#"INSERT INTO points_quota_entitlements
+             (id, user_id, realm_id, bucket_id, credit_type, source_type, source_id,
+              quota_windows, effective_from, effective_until, status, idempotency_key,
+              distribution_event_id, distribution_rule_id, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, 'subscription_credit', 'subscription_initial', $5,
+                   $6, $7, $8, 'active', $9, $10, $11, NOW(), NOW())"#,
+    )
+    .bind(entitlement_id)
+    .bind(user_id)
+    .bind(realm_id)
+    .bind(bucket_id)
+    .bind(subscription_id.to_string())
+    .bind(serde_json::json!([{"windowSeconds": 2_592_000, "limit": limit, "key": "period"}]))
+    .bind(period_start)
+    .bind(period_end)
+    .bind(format!("subscription:{subscription_id}:initial"))
+    .bind(event_id)
+    .bind(rule_id)
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("seed rule-attributed basic subscription_initial entitlement");
+}
 
 // ============================================================================
 // Test 1: Upgrade Grants Difference Points
@@ -58,22 +149,38 @@ async fn test_subscription_upgrade_grants_difference(ctx: &mut SchemaTestContext
     )
     .await;
     let event_id = format!("test_{}", subscription_id);
-    let subscription_source_id = subscription_id.to_string();
 
     let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, &realm_id).await;
+    let premium_rule_id = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO points_distribution_rules
+            (id, realm_id, owner_type, entitlement_mapping_id, bucket_id,
+             trigger_sources, grant_mode, validity_days, quota_windows,
+             enabled, display_order)
+         VALUES ($1, $2, 'entitlement_mapping', $3, $4, $5, 'quota', 0, $6, true, 0)",
+    )
+    .bind(premium_rule_id)
+    .bind(&realm_id)
+    .bind(premium_plan_id)
+    .bind(bucket_id)
+    .bind(&["subscription_upgrade"][..])
+    .bind(serde_json::json!([{"windowSeconds": 2_592_000, "limit": 10000, "key": "period"}]))
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("Failed to seed premium mapping subscription_upgrade quota rule");
 
     // User currently has Basic Plan (5000 points) as an active quota entitlement
-    grant_quota_entitlement_for_test(
+    // (rule-attributed so the upgrade revoke half can match + revoke it).
+    seed_rule_attributed_initial_entitlement(
         ctx,
         &realm_id,
         user_id,
+        subscription_id,
+        basic_plan_id,
         bucket_id,
-        CreditType::SubscriptionCredit,
-        QuotaSourceType::SubscriptionInitial,
-        &subscription_source_id,
-        &[(2_592_000, 5000, "period")],
+        5000,
         Utc::now() - Duration::days(1),
-        Some(period_end),
+        period_end,
     )
     .await;
 
@@ -162,6 +269,19 @@ async fn test_subscription_upgrade_grants_difference(ctx: &mut SchemaTestContext
     .await;
 }
 
+/// Upgrade results are attributed per rule so old source results can be revoked across wallets.
+#[test_context(SchemaTestContext)]
+#[tokio::test]
+async fn test_multi_wallet_grant_rule_upgrade_revokes_old_and_grants_new_accounts(
+    ctx: &mut SchemaTestContext,
+) {
+    super::multi_wallet_grant_rule_scenarios::assert_two_account_fixed_event(
+        ctx,
+        herald_core::domain::points::DistributionTrigger::SubscriptionUpgrade,
+    )
+    .await;
+}
+
 // ============================================================================
 // Test 2: Subscription Upgrade Event Idempotency
 // ============================================================================
@@ -199,22 +319,42 @@ async fn test_subscription_upgrade_idempotency(ctx: &mut SchemaTestContext) {
     )
     .await;
     let event_id = format!("test_{}", subscription_id);
-    let subscription_source_id = subscription_id.to_string();
 
     let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, &realm_id).await;
 
+    // Distribution-rules model: seed the premium mapping's upgrade rule so the
+    // upgrade grants the 10000-limit quota entitlement (mirrors test 1; see
+    // test 1 for the rationale).
+    let premium_rule_id = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO points_distribution_rules
+            (id, realm_id, owner_type, entitlement_mapping_id, bucket_id,
+             trigger_sources, grant_mode, validity_days, quota_windows,
+             enabled, display_order)
+         VALUES ($1, $2, 'entitlement_mapping', $3, $4, $5, 'quota', 0, $6, true, 0)",
+    )
+    .bind(premium_rule_id)
+    .bind(&realm_id)
+    .bind(premium_plan_id)
+    .bind(bucket_id)
+    .bind(&["subscription_upgrade"][..])
+    .bind(serde_json::json!([{"windowSeconds": 2_592_000, "limit": 10000, "key": "period"}]))
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("Failed to seed premium mapping subscription_upgrade quota rule");
+
     // User currently has Basic Plan (5000 points) as an active quota entitlement
-    grant_quota_entitlement_for_test(
+    // (rule-attributed so the upgrade revoke half can match + revoke it).
+    seed_rule_attributed_initial_entitlement(
         ctx,
         &realm_id,
         user_id,
+        subscription_id,
+        basic_plan_id,
         bucket_id,
-        CreditType::SubscriptionCredit,
-        QuotaSourceType::SubscriptionInitial,
-        &subscription_source_id,
-        &[(2_592_000, 5000, "period")],
+        5000,
         Utc::now() - Duration::days(1),
-        Some(period_end),
+        period_end,
     )
     .await;
 

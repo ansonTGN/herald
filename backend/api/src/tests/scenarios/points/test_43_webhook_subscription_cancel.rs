@@ -12,6 +12,7 @@
 use crate::tests::helpers::points_helpers::{
     assert_derived_balance, create_points_wallet, ensure_test_bucket_for_realm,
     get_user_quota_entitlements, grant_quota_entitlement_for_test,
+    seed_attributed_subscription_quota,
 };
 use crate::tests::helpers::webhook_helpers::{
     assert_webhook_success, build_subscription_canceled_event, generate_test_event_id,
@@ -38,25 +39,35 @@ async fn seed_test_subscription(
     external_subscription_id: &str,
     entitlement_key: &str,
 ) {
-    let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, realm_id).await;
-
     sqlx::query(
         "INSERT INTO subscription
             (id, realm_id, user_id, external_subscription_id, external_product_id,
              payment_provider, status, entitlement_key, current_period_start,
-             current_period_end, cancel_at_period_end, bucket_id, created_at, updated_at, billing_type)
+             current_period_end, cancel_at_period_end, created_at, updated_at, billing_type)
          VALUES ($1, $2, $3, $4, 'prod_test_monthly', 'creem', 'active', $5, NOW(),
-                 NOW() + INTERVAL '30 days', false, $6, NOW(), NOW(), 'recurring')",
+                 NOW() + INTERVAL '30 days', false, NOW(), NOW(), 'recurring')",
     )
     .bind(subscription_id)
     .bind(realm_id)
     .bind(user_id)
     .bind(external_subscription_id)
     .bind(entitlement_key)
-    .bind(bucket_id)
     .execute(&ctx.app_state.pool)
     .await
     .expect("seed_test_subscription: subscription insert");
+}
+
+/// Cancellation locates all original rule results rather than one current configured wallet.
+#[test_context(SchemaTestContext)]
+#[tokio::test]
+async fn test_multi_wallet_grant_rule_cancel_revokes_all_source_accounts_idempotently(
+    ctx: &mut SchemaTestContext,
+) {
+    super::multi_wallet_grant_rule_scenarios::assert_two_account_fixed_event(
+        ctx,
+        herald_core::domain::points::DistributionTrigger::SubscriptionInitial,
+    )
+    .await;
 }
 
 /// Build a cancel event and point its `subscriptionId` at the seeded subscription.
@@ -198,14 +209,14 @@ async fn test_subscription_cancel_immediate_revokes_unused(ctx: &mut SchemaTestC
     )
     .await;
 
-    grant_quota_entitlement_for_test(
+    seed_attributed_subscription_quota(
         ctx,
         &realm_id,
         user_id,
+        subscription_id,
         bucket_id,
         CreditType::SubscriptionCredit,
         QuotaSourceType::SubscriptionInitial,
-        &subscription_id.to_string(),
         &[(2_592_000, 10_000, "period")],
         now - Duration::hours(1),
         Some(now + Duration::days(30)),
@@ -278,14 +289,14 @@ async fn test_subscription_cancel_idempotency(ctx: &mut SchemaTestContext) {
     )
     .await;
 
-    grant_quota_entitlement_for_test(
+    seed_attributed_subscription_quota(
         ctx,
         &realm_id,
         user_id,
+        subscription_id,
         bucket_id,
         CreditType::SubscriptionCredit,
         QuotaSourceType::SubscriptionInitial,
-        &subscription_id.to_string(),
         &[(2_592_000, 10_000, "period")],
         now - Duration::hours(1),
         Some(now + Duration::days(30)),

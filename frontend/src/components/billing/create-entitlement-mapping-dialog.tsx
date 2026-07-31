@@ -12,7 +12,6 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Switch } from '@/components/ui/switch'
 import {
   Select,
   SelectContent,
@@ -21,7 +20,9 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { RoleSelector } from '@/components/shared/role-selector'
+import { PointDistributionRuleEditor } from '@/components/billing/point-distribution-rule-editor'
 import { formatProviderName } from '@/components/billing/format-provider-name'
+import { pointRuleTriggersForBillingType } from '@/components/billing/provider-product-info'
 import { creditBucketsListQueryOptions, adminRolesQueryOptions } from '@/data/query-options'
 import {
   useCreateEntitlementMapping,
@@ -150,34 +151,16 @@ export function CreateEntitlementMappingDialog({
     }
 
     const v = parsed.data
-    // Assemble the request body, dropping billing-type-irrelevant fields so we
-    // don't leak a billingPeriod on a one_time/non_renewing row (and vice-versa
-    // for validityDays / serviceDurationDays) — the backend is the authority,
-    // but keeping the payload clean avoids surprising CHECK interactions.
-    //
-    // pay_model §5.2: grant_on_subscribe && points_per_period > 0 →
-    // SubscriptionCredit + role), so it gets pointsPerPeriod/grantOnSubscribe
-    // like recurring. It differs only in: no billingPeriod (mutually exclusive),
-    const subscriptionCreditPath = isRecurring || isNonRenewing
     const body: CreateEntitlementMappingRequest = {
       paymentProvider: v.paymentProvider,
       externalProductId: v.externalProductId,
       entitlementKey: v.entitlementKey,
-      bucketId: v.bucketId,
       billingType: v.billingType,
       // externalPriceId: optional; IAP/Creem leave it empty.
       externalPriceId: v.externalPriceId ? v.externalPriceId : null,
       billingPeriod: isRecurring ? (v.billingPeriod ?? null) : null,
-      // Credit-strategy fields are only sent when the caller may manage points;
-      // otherwise omitted entirely so the backend doesn't demand points.manage.
-      ...(canManagePoints
-        ? {
-            pointsPerPeriod: subscriptionCreditPath ? (v.pointsPerPeriod ?? null) : null,
-            grantOnSubscribe: subscriptionCreditPath ? (v.grantOnSubscribe ?? null) : null,
-            validityDays: isOneTime ? (v.validityDays ?? null) : null,
-            serviceDurationDays: isNonRenewing ? (v.serviceDurationDays ?? null) : null,
-          }
-        : {}),
+      serviceDurationDays: isNonRenewing ? (v.serviceDurationDays ?? null) : null,
+      ...(canManagePoints ? { pointRules: v.pointRules } : {}),
       grantedRoleIds: v.grantedRoleIds,
       enabled: v.enabled,
     }
@@ -289,26 +272,6 @@ export function CreateEntitlementMappingDialog({
           </Field>
 
           <Field
-            label={m['billing.create_mapping_bucket']()}
-            htmlFor="create-mapping-bucket"
-            required
-            error={fieldErrors.bucketId}
-          >
-            <Select value={values.bucketId} onValueChange={(v) => update('bucketId', v)}>
-              <SelectTrigger id="create-mapping-bucket" data-testid="create-mapping-bucket-select">
-                <SelectValue placeholder={m['billing.create_mapping_bucket_placeholder']()} />
-              </SelectTrigger>
-              <SelectContent>
-                {(buckets ?? []).map((b) => (
-                  <SelectItem key={b.id} value={b.id}>
-                    {b.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-
-          <Field
             label={m['billing.create_mapping_billing_type']()}
             htmlFor="create-mapping-billing-type"
             required
@@ -368,24 +331,6 @@ export function CreateEntitlementMappingDialog({
             </Field>
           )}
 
-          {isOneTime && canManagePoints && (
-            <Field
-              label={m['billing.create_mapping_validity_days']()}
-              htmlFor="create-mapping-validity-days"
-            >
-              <Input
-                id="create-mapping-validity-days"
-                type="number"
-                min={1}
-                value={values.validityDays ?? ''}
-                onChange={(e) =>
-                  update('validityDays', e.target.value === '' ? null : Number(e.target.value))
-                }
-                data-testid="create-mapping-validity-days-input"
-              />
-            </Field>
-          )}
-
           {isNonRenewing && (
             <Field
               label={m['billing.create_mapping_service_duration_days']()}
@@ -409,38 +354,6 @@ export function CreateEntitlementMappingDialog({
             </Field>
           )}
 
-          {(isRecurring || isNonRenewing) && canManagePoints && (
-            <Field
-              label={m['billing.create_mapping_points_per_period']()}
-              htmlFor="create-mapping-points-per-period"
-            >
-              <Input
-                id="create-mapping-points-per-period"
-                type="number"
-                min={0}
-                value={values.pointsPerPeriod ?? ''}
-                onChange={(e) =>
-                  update('pointsPerPeriod', e.target.value === '' ? null : Number(e.target.value))
-                }
-                data-testid="create-mapping-points-per-period-input"
-              />
-            </Field>
-          )}
-
-          {(isRecurring || isNonRenewing) && canManagePoints && (
-            <div className="flex items-center gap-2">
-              <Switch
-                id="create-mapping-grant-on-subscribe"
-                checked={values.grantOnSubscribe ?? false}
-                onCheckedChange={(checked) => update('grantOnSubscribe', checked)}
-                data-testid="create-mapping-grant-on-subscribe-toggle"
-              />
-              <Label htmlFor="create-mapping-grant-on-subscribe">
-                {m['billing.create_mapping_grant_on_subscribe']()}
-              </Label>
-            </div>
-          )}
-
           <div className="space-y-1.5 sm:col-span-2" data-testid="create-mapping-granted-roles">
             <Label>{m['billing.create_mapping_granted_roles']()}</Label>
             <RoleSelector
@@ -450,6 +363,19 @@ export function CreateEntitlementMappingDialog({
               placeholder={m['billing.help_granted_roles']()}
             />
           </div>
+
+          {canManagePoints && values.billingType && (
+            <div className="space-y-2 sm:col-span-2">
+              <Label>Points distribution rules</Label>
+              <PointDistributionRuleEditor
+                value={values.pointRules}
+                onChange={(pointRules) => update('pointRules', pointRules)}
+                buckets={buckets ?? []}
+                triggers={pointRuleTriggersForBillingType(values.billingType)}
+                allowQuota={!isOneTime}
+              />
+            </div>
+          )}
         </div>
 
         {submitError && (

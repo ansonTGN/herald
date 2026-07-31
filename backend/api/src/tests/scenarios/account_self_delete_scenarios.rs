@@ -1,5 +1,4 @@
 use crate::tests::helpers::auth_helpers::{attempt_reauth_verify, obtain_reauth_token};
-use crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm;
 use crate::tests::schema_test_context::SchemaTestContext as TestContext;
 use axum::{
     body::Body,
@@ -126,7 +125,6 @@ async fn seed_active_subscription(
     status: &str,
 ) -> Uuid {
     let sub_id = Uuid::now_v7();
-    let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, realm_id).await;
     // Each subscription needs a distinct client_app_id because the column is UNIQUE.
     let client_app_id = Uuid::now_v7();
 
@@ -134,9 +132,9 @@ async fn seed_active_subscription(
         "INSERT INTO subscription
             (id, realm_id, user_id, client_app_id, external_subscription_id, external_product_id,
              payment_provider, status, entitlement_key, external_price_id,
-             current_period_start, current_period_end, cancel_at_period_end, created_at, updated_at, bucket_id, billing_type)
+             current_period_start, current_period_end, cancel_at_period_end, created_at, updated_at, billing_type)
          VALUES ($1, $2, $3, $4, $5, $6, 'creem', $7, $8, $9,
-                 NOW(), NOW() + INTERVAL '30 days', false, NOW(), NOW(), $10, 'recurring')",
+                 NOW(), NOW() + INTERVAL '30 days', false, NOW(), NOW(), 'recurring')",
     )
     .bind(sub_id)
     .bind(realm_id)
@@ -147,7 +145,6 @@ async fn seed_active_subscription(
     .bind(status)
     .bind(format!("plan_{}", sub_id.simple()))
     .bind(format!("price_{}", sub_id.simple()))
-    .bind(bucket_id)
     .execute(&ctx.app_state.pool)
     .await
     .expect("Failed to seed active subscription");
@@ -158,20 +155,18 @@ async fn seed_active_subscription(
 /// Insert a succeeded one-time points-package purchase row.
 async fn seed_one_time_purchase(ctx: &TestContext, realm_id: &str, user_id: Uuid) -> Uuid {
     let attempt_id = Uuid::now_v7();
-    let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, realm_id).await;
 
     sqlx::query(
         "INSERT INTO payment_attempts
-            (id, realm_id, user_id, payment_provider, target_type, target_id, bucket_id,
+            (id, realm_id, user_id, payment_provider, target_type, target_id,
              amount, currency, status, expires_at, created_at, updated_at)
-         VALUES ($1, $2, $3, 'stripe', 'entitlement_mapping', $4, $5,
+         VALUES ($1, $2, $3, 'stripe', 'entitlement_mapping', $4,
                  999, 'USD', 'Succeeded', NOW() + INTERVAL '2 hours', NOW(), NOW())",
     )
     .bind(attempt_id)
     .bind(realm_id)
     .bind(user_id)
     .bind(Uuid::now_v7())
-    .bind(bucket_id)
     .execute(&ctx.app_state.pool)
     .await
     .expect("Failed to seed one-time purchase");

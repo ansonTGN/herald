@@ -43,26 +43,106 @@ async fn mapping_for_key(
         .unwrap_or_else(|| panic!("mapping for key '{key}' should be Some"))
 }
 
-/// Seed a `subscription` row bound to the realm's legacy test bucket and
-/// return its id. Used by subscription tests so the `subscription_id` and
-/// the grant target `bucket_id` are known ahead of the service call.
+/// Seed a `subscription_renewal` quota rule on `mapping_id` so a renewal grant
+/// (`handle_subscription_paid(is_renewal=true)` → `CurrentOwnerRules`) fires.
+/// The bare mapping seeders (`setup_test_plan_config_with_points`,
+/// `setup_test_entitlement_mapping_for_webhook`) create no distribution rule;
+/// the renewal trigger reads CURRENT rules at grant time, so this rule must
+/// exist first. This is the renewal analog of production's recurring mapping
+/// config — faithful input, real production grant code.
+async fn seed_subscription_renewal_rule(
+    ctx: &SchemaTestContext,
+    realm_id: &str,
+    mapping_id: Uuid,
+    limit: i64,
+) {
+    let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, realm_id).await;
+    let rule_id = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO points_distribution_rules
+            (id, realm_id, owner_type, entitlement_mapping_id, bucket_id,
+             trigger_sources, grant_mode, validity_days, quota_windows,
+             enabled, display_order)
+         VALUES ($1, $2, 'entitlement_mapping', $3, $4, $5, 'quota', 0, $6, true, 0)",
+    )
+    .bind(rule_id)
+    .bind(realm_id)
+    .bind(mapping_id)
+    .bind(bucket_id)
+    .bind(&["subscription_renewal"][..])
+    .bind(serde_json::json!([{"windowSeconds": 2_592_000, "limit": limit, "key": "period"}]))
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("Failed to seed subscription_renewal quota rule");
+}
+
+/// Seed a `subscription_renewal` quota rule on the strategy mapping a
+/// `subscription.paid` webhook resolves for `plan_id`. The webhook event built
+/// by `build_subscription_paid_event` carries `productId=prod_test_monthly`, so
+/// the price-aware resolver lands on the generic `prod_test_monthly` mapping
+/// (entitlement_key = plan_id) created by `setup_test_plan_config_with_points`.
+async fn seed_renewal_rule_for_plan_webhook(
+    ctx: &SchemaTestContext,
+    realm_id: &str,
+    plan_id: Uuid,
+    limit: i64,
+) {
+    let mapping_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM provider_entitlement_mappings
+         WHERE realm_id = $1 AND external_product_id = 'prod_test_monthly'
+           AND entitlement_key = $2",
+    )
+    .bind(realm_id)
+    .bind(plan_id.to_string())
+    .fetch_one(&ctx.app_state.pool)
+    .await
+    .expect("generic prod_test_monthly mapping must exist for the plan");
+    seed_subscription_renewal_rule(ctx, realm_id, mapping_id, limit).await;
+}
+
+/// Subscription activation may mix fixed credit and rolling quota without partial fulfillment.
+#[test_context(SchemaTestContext)]
+#[tokio::test]
+async fn test_multi_wallet_grant_rule_subscription_initial_fixed_and_quota(
+    ctx: &mut SchemaTestContext,
+) {
+    super::multi_wallet_grant_rule_scenarios::assert_fixed_and_quota_event(ctx).await;
+}
+
+/// Renewal must select only rules that explicitly declare the renewal trigger.
+#[test_context(SchemaTestContext)]
+#[tokio::test]
+async fn test_multi_wallet_grant_rule_renewal_selects_declared_trigger_only(
+    ctx: &mut SchemaTestContext,
+) {
+    super::multi_wallet_grant_rule_scenarios::assert_two_account_fixed_event(
+        ctx,
+        herald_core::domain::points::DistributionTrigger::SubscriptionRenewal,
+    )
+    .await;
+    super::multi_wallet_grant_rule_scenarios::assert_replay_is_stable(ctx).await;
+}
+
+/// Seed a `subscription` row and return its id. Used by subscription tests so
+/// the `subscription_id` is known ahead of the service call.
 async fn seed_subscription_row(
     ctx: &mut SchemaTestContext,
     user_id: Uuid,
     realm_id: &str,
     entitlement_key: &str,
 ) -> Uuid {
-    use crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm;
-    let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, realm_id).await;
+    // `subscription.bucket_id` was removed by the distribution-rules refactor
+    // (grant routing is configured via distribution rules). `billing_type` is
+    // NOT NULL (0011_pay_model).
     let subscription_id = Uuid::now_v7();
     sqlx::query(
         "INSERT INTO subscription
             (id, realm_id, user_id, status, entitlement_key,
              external_subscription_id, external_product_id, payment_provider,
              current_period_start, current_period_end, cancel_at_period_end,
-             bucket_id, created_at, updated_at, billing_type)
+             created_at, updated_at, billing_type)
          VALUES ($1, $2, $3, 'active', $4, $5, $6, 'creem',
-                 NOW(), NOW() + INTERVAL '30 days', false, $7, NOW(), NOW(), 'recurring')",
+                 NOW(), NOW() + INTERVAL '30 days', false, NOW(), NOW(), 'recurring')",
     )
     .bind(subscription_id)
     .bind(realm_id)
@@ -70,7 +150,6 @@ async fn seed_subscription_row(
     .bind(entitlement_key)
     .bind(format!("sub_be_t04_{}", subscription_id))
     .bind(format!("prod_be_t04_{}", entitlement_key))
-    .bind(bucket_id)
     .execute(&ctx.app_state.pool)
     .await
     .expect("Failed to seed subscription row");
@@ -166,6 +245,7 @@ async fn test_subscription_paid_renewal_grant(ctx: &mut SchemaTestContext) {
 
     // Setup plan config for the test
     setup_test_plan_config(ctx, &realm_id, plan_id).await;
+    seed_renewal_rule_for_plan_webhook(ctx, &realm_id, plan_id, 1000).await;
 
     create_points_wallet(ctx, user_id, &realm_id).await;
 
@@ -299,8 +379,6 @@ async fn test_subscription_activation_grants_current_period_only(ctx: &mut Schem
     .await;
 
     let subscription_id = seed_subscription_row(ctx, user_id, &realm_id, &entitlement_key).await;
-    let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, &realm_id).await;
-
     let now = chrono::Utc::now();
     let current_period_start = now - chrono::Duration::seconds(10);
     let current_period_end = now + chrono::Duration::days(30);
@@ -313,7 +391,6 @@ async fn test_subscription_activation_grants_current_period_only(ctx: &mut Schem
         .handle_subscription_paid(
             user_id,
             subscription_id,
-            bucket_id,
             &realm_id,
             &mapping,
             false, // initial activation
@@ -397,13 +474,12 @@ async fn test_subscription_renewal_period_idempotency(ctx: &mut SchemaTestContex
     .await;
 
     let subscription_id = seed_subscription_row(ctx, user_id, &realm_id, &entitlement_key).await;
-    let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, &realm_id).await;
-
     let now = chrono::Utc::now();
     let period_start = now - chrono::Duration::seconds(10);
     let period_end = now + chrono::Duration::days(30);
 
     let mapping = mapping_for_key(ctx, &realm_id, &entitlement_key).await;
+    seed_subscription_renewal_rule(ctx, &realm_id, mapping.id, points_per_period).await;
     let event_id = format!("evt_be_t04_pi_{}", Uuid::now_v7());
 
     // --- When: first renewal for this period --------------------------------
@@ -413,7 +489,6 @@ async fn test_subscription_renewal_period_idempotency(ctx: &mut SchemaTestContex
         .handle_subscription_paid(
             user_id,
             subscription_id,
-            bucket_id,
             &realm_id,
             &mapping,
             true, // renewal
@@ -442,7 +517,6 @@ async fn test_subscription_renewal_period_idempotency(ctx: &mut SchemaTestContex
         .handle_subscription_paid(
             user_id,
             subscription_id,
-            bucket_id,
             &realm_id,
             &mapping,
             true,
@@ -495,6 +569,7 @@ async fn test_subscription_renewal_event_idempotency(ctx: &mut SchemaTestContext
     ctx.with_creem_config(&realm_id, None, None, None).await;
     setup_test_plan_config(ctx, &realm_id, plan_id).await;
     create_points_wallet(ctx, user_id, &realm_id).await;
+    seed_renewal_rule_for_plan_webhook(ctx, &realm_id, plan_id, 1000).await;
 
     // Build a subscription.paid renewal webhook with explicit period bounds.
     let now = chrono::Utc::now();
@@ -576,21 +651,19 @@ async fn test_subscription_renewal_does_not_pregrant_next_period(ctx: &mut Schem
     .await;
 
     let subscription_id = seed_subscription_row(ctx, user_id, &realm_id, &entitlement_key).await;
-    let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, &realm_id).await;
-
     let now = chrono::Utc::now();
     let current_period_start = now - chrono::Duration::seconds(10);
     let current_period_end = now + chrono::Duration::days(30);
 
     // --- When: renewal webhook fires ----------------------------------------
     let mapping = mapping_for_key(ctx, &realm_id, &entitlement_key).await;
+    seed_subscription_renewal_rule(ctx, &realm_id, mapping.id, points_per_period).await;
     let result = ctx
         .app_state
         .subscription_service
         .handle_subscription_paid(
             user_id,
             subscription_id,
-            bucket_id,
             &realm_id,
             &mapping,
             true, // renewal

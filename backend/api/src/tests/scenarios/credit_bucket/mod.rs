@@ -17,9 +17,6 @@
 
 pub mod consume_multi_pool_scenarios;
 pub mod fulfillment_subscription_lifecycle_scenarios;
-// explicit bucketId grant + registration pool resolution
-// (design `.ai/design/credit-bucket.md`)
-pub mod grant_bucket_id_registration_pool_scenarios;
 // Bucket directory CRUD + overview + delete intercept
 pub mod bucket_directory_crud_scenarios;
 // per-bucket query surface — wallets grouped by bucket + crossBucketTotal,

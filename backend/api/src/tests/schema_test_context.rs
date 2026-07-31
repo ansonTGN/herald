@@ -202,10 +202,6 @@ impl AsyncTestContext for SchemaTestContext {
                         pool_with_schema.clone(),
                     ),
                 ),
-                // PostgresBillingRepository implements RegistrationPoolResolver;
-                // newly-synced draft mappings bind to the realm's
-                // registration-pool bucket (bucket_id is NOT NULL).
-                billing_repository.clone(),
             ),
         );
 
@@ -267,6 +263,12 @@ impl AsyncTestContext for SchemaTestContext {
             audit_event_repository.clone(),
         ));
 
+        let payment_attempt_repository = Arc::new(
+            herald_core::infrastructure::payment_attempt::PostgresPaymentAttemptRepository::new(
+                Arc::new(sea_conn.clone()),
+                pool_with_schema.clone(),
+            ),
+        );
         let fulfillment_service = Arc::new(
             herald_core::infrastructure::purchase::PostgresFulfillmentService::new(
                 Arc::new(
@@ -276,14 +278,9 @@ impl AsyncTestContext for SchemaTestContext {
                     ),
                 ),
                 billing_repository.clone(),
+                payment_attempt_repository.clone(),
                 user_role_repository.clone(),
                 permission_checker.clone(),
-            ),
-        );
-        let payment_attempt_repository = Arc::new(
-            herald_core::infrastructure::payment_attempt::PostgresPaymentAttemptRepository::new(
-                Arc::new(sea_conn.clone()),
-                pool_with_schema.clone(),
             ),
         );
         let payment_attempt_service = Arc::new(
@@ -387,21 +384,6 @@ impl AsyncTestContext for SchemaTestContext {
             webhook_service: Arc::new(WebhookService::new(Arc::new(WebhookEventRepository::new(
                 pool_with_schema.clone(),
             )))),
-            realm_config_service: Arc::new(
-                herald_core::domain::points::services::RealmConfigService::new(
-                    Arc::new(
-                        herald_core::infrastructure::points::PostgresPointsRepository::new(
-                            Arc::new(sea_conn.clone()),
-                            pool_with_schema.clone(),
-                        ),
-                    ),
-                    Arc::new(
-                        herald_core::infrastructure::authorization::policies::PermissionBasedPointsPolicy::new(
-                            permission_checker.clone(),
-                        ),
-                    ),
-                ),
-            ),
             registration_service: Arc::new(
                 herald_core::domain::points::services::RegistrationService::new(
                     Arc::new(
@@ -410,25 +392,6 @@ impl AsyncTestContext for SchemaTestContext {
                             pool_with_schema.clone(),
                         ),
                     ),
-                    Arc::new(herald_core::domain::points::service::PointsService::new(
-                        Arc::new(
-                            herald_core::infrastructure::points::PostgresPointsRepository::new(
-                                Arc::new(sea_conn.clone()),
-                                pool_with_schema.clone(),
-                            ),
-                        ),
-                        Arc::new(
-                            herald_core::infrastructure::authorization::policies::PermissionBasedPointsPolicy::new(
-                                permission_checker.clone(),
-                            ),
-                        ),
-                    )),
-                    Arc::new(
-                        herald_core::infrastructure::authorization::policies::PermissionBasedPointsPolicy::new(
-                            permission_checker.clone(),
-                        ),
-                    ),
-                    billing_repository.clone(),
                 ),
             ),
             admin_user_service,

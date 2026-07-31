@@ -13,8 +13,8 @@ use crate::webhook_common::{
     parse_optional_uuid_field, parse_uuid_field, revoke_payment_roles_for_source,
 };
 use crate::webhook_subscription_helpers::{
-    ResolvedEntitlement, SyncSubscriptionInput, resolve_bucket_id_for_entitlement,
-    resolve_entitlement_mapping, save_subscription_history, sync_subscription,
+    ResolvedEntitlement, SyncSubscriptionInput, mapping_rule_value, resolve_entitlement_mapping,
+    save_subscription_history, sync_subscription,
 };
 use crate::webhooks::verify_webhook_signature;
 use herald_api_base::application::http::state::AppState;
@@ -721,7 +721,6 @@ async fn sync_creem_subscription(
     current_period_end: Option<DateTime<Utc>>,
     cancel_at_period_end: bool,
     cancel_at: Option<DateTime<Utc>>,
-    bucket_id: Uuid,
     existing_subscription: Option<Subscription>,
 ) -> Result<Option<(Subscription, Option<Subscription>)>, CoreError> {
     sync_subscription(
@@ -734,7 +733,6 @@ async fn sync_creem_subscription(
             external_product_id: creem_product_id,
             client_app_id,
             entitlement_key,
-            bucket_id,
             external_price_id: None,
             provider_metadata: None,
             status,
@@ -1104,13 +1102,6 @@ async fn handle_subscription_paid(
     };
     let strategy_mapping = resolved.mapping;
 
-    // Resolve the routing bucket eagerly from the entitlement mapping before
-    // sync, so the subscription is created with a non-null bucket_id.
-    let bucket_id =
-        resolve_bucket_id_for_entitlement(&app_state, realm_id, &entitlement_key).await?;
-
-    // Resolve the synced subscription up-front so we can route the grant to
-    // subscription.bucket_id and reuse it for history.
     let synced = sync_creem_subscription(
         &app_state,
         realm_id,
@@ -1124,7 +1115,6 @@ async fn handle_subscription_paid(
         payload.current_period_end,
         payload.cancel_at_period_end,
         None,
-        bucket_id,
         None,
     )
     .await?;
@@ -1166,7 +1156,6 @@ async fn handle_subscription_paid(
                 .handle_subscription_paid(
                     user_id,
                     subscription_id,
-                    bucket_id,
                     realm_id,
                     &strategy_mapping,
                     payload.is_renewal,
@@ -1246,7 +1235,6 @@ async fn handle_subscription_paid(
                                 user_id,
                                 payment_provider: "creem".to_string(),
                                 target_id: strategy_mapping.id,
-                                bucket_id,
                                 amount,
                                 currency: currency.clone(),
                                 provider_reference: reference.clone(),
@@ -1424,12 +1412,6 @@ async fn handle_subscription_updated(
     };
     let new_mapping = current_resolved.mapping;
 
-    // Resolve the routing bucket eagerly from the current entitlement mapping
-    // (the new plan), so the subscription is created/updated with a non-null
-    // bucket_id.
-    let bucket_id =
-        resolve_bucket_id_for_entitlement(&app_state, realm_id, &current_entitlement_key).await?;
-
     // Fetch existing subscription once — reuse for both entitlement resolution and sync
     let existing_subscription_for_update = if payload.previous_entitlement_key.is_empty() {
         app_state
@@ -1472,45 +1454,8 @@ async fn handle_subscription_updated(
             ))
         })?;
 
-    let old_points = old_mapping.points_per_period.unwrap_or(0);
-    let new_points = new_mapping.points_per_period.unwrap_or(0);
-    if old_points == 0 && new_points == 0 {
-        tracing::info!(
-            realm_id = %realm_id,
-            "Both mappings have no points configured; skipping upgrade/downgrade classification"
-        );
-        if let Some((subscription, previous)) = sync_creem_subscription(
-            &app_state,
-            realm_id,
-            user_id,
-            payload.external_subscription_id.as_str(),
-            payload.client_app_id,
-            current_entitlement_key,
-            payload.external_product_id,
-            payload.status,
-            payload.current_period_start,
-            payload.current_period_end,
-            payload.cancel_at_period_end,
-            None,
-            bucket_id,
-            existing_subscription_for_update.clone(),
-        )
-        .await?
-        {
-            save_subscription_history(
-                &app_state,
-                previous.as_ref(),
-                &subscription,
-                HistoryEventType::EntitlementChanged,
-            )
-            .await?;
-        }
-        return Ok(create_placeholder_transaction(
-            user_id,
-            realm_id,
-            TransactionType::SubscriptionUpgrade,
-        ));
-    }
+    let old_points = mapping_rule_value(&app_state, realm_id, old_mapping.id).await?;
+    let new_points = mapping_rule_value(&app_state, realm_id, new_mapping.id).await?;
     let is_upgrade = new_points > old_points;
 
     let period_end_fallback = payload
@@ -1530,19 +1475,15 @@ async fn handle_subscription_updated(
         payload.current_period_end,
         payload.cancel_at_period_end,
         None,
-        bucket_id,
         existing_subscription_for_update.clone(),
     )
     .await?;
 
-    // bucket_id was resolved eagerly above; synced carries the persisted
-    // subscription (create binds the resolved bucket, update keeps the existing).
-    //
     // If sync returned None we must NOT pass a nil subscription_id into the
     // upgrade/downgrade handlers — they revoke the old entitlement by
     // source_id and a nil would silently match zero rows. Fail loud instead.
-    let (subscription_id, subscription_bucket_id) = match synced.as_ref() {
-        Some((subscription, _)) => (subscription.id, subscription.bucket_id),
+    let subscription_id = match synced.as_ref() {
+        Some((subscription, _)) => subscription.id,
         None => {
             tracing::warn!(
                 realm_id = %realm_id,
@@ -1563,12 +1504,11 @@ async fn handle_subscription_updated(
             .subscription_service
             .handle_subscription_upgrade(
                 user_id,
-                subscription_bucket_id,
                 realm_id,
                 subscription_id,
-                &old_mapping,
                 &new_mapping,
                 period_end_fallback,
+                &payload.event_id,
             )
             .await?;
         HistoryEventType::Upgraded
@@ -1578,7 +1518,6 @@ async fn handle_subscription_updated(
             .handle_subscription_downgrade(
                 user_id,
                 subscription_id,
-                subscription_bucket_id,
                 realm_id,
                 &old_mapping,
                 &new_mapping,
@@ -1689,13 +1628,6 @@ async fn handle_subscription_canceled(
             .await?
     };
 
-    // Resolve the routing bucket eagerly: reuse the existing subscription's
-    // bound bucket when present, otherwise resolve from the entitlement mapping.
-    let bucket_id = match &existing_subscription {
-        Some(existing) => existing.bucket_id,
-        None => resolve_bucket_id_for_entitlement(&app_state, realm_id, &entitlement_key).await?,
-    };
-
     let synced = sync_creem_subscription(
         &app_state,
         realm_id,
@@ -1709,7 +1641,6 @@ async fn handle_subscription_canceled(
         payload.current_period_end,
         payload.cancel_at_period_end,
         cancel_at,
-        bucket_id,
         existing_subscription,
     )
     .await?;
@@ -1729,7 +1660,6 @@ async fn handle_subscription_canceled(
             .subscription_service
             .handle_subscription_cancel(
                 user_id,
-                bucket_id,
                 realm_id,
                 subscription_id,
                 cancel_mode,
@@ -1796,11 +1726,12 @@ async fn handle_refund_created(
         "Processing refund - revoking points"
     );
 
-    // Resolve the routing Bucket from the originating payment_attempt snapshot
-    // (revocation targets the same Bucket the original grant
-    // targeted). Look up by provider reference (Creem payment_id). When no
-    // attempt snapshot exists, fail loud rather than revoke from an arbitrary
-    // implicit pool — over-revoking unrelated credits would be a silent bug.
+    // Resolve the originating payment_attempt so its id can anchor the
+    // rule-attributed revoke (revocation targets the same source the original
+    // grant was attributed to). Look up by provider reference (Creem
+    // payment_id). When no attempt snapshot exists, fail loud rather than
+    // revoke from an arbitrary implicit pool — over-revoking unrelated credits
+    // would be a silent bug.
     let attempt = app_state
         .payment_attempt_service
         .get_payment_attempt_by_provider_reference("creem", &payload.payment_id)
@@ -1823,16 +1754,14 @@ async fn handle_refund_created(
                 payload.refund_id, payload.payment_id
             ))
         })?;
-    let bucket_id = attempt.bucket_id;
-
     match payload.refund_type.as_str() {
         "topup" => {
             let _output = app_state
                 .points_service
-                .revoke_topup_proportional(
+                .revoke_topup_source_proportional(
                     realm_id,
                     payload.user_id,
-                    bucket_id,
+                    &attempt.id.to_string(),
                     payload.amount,
                     payload.original_amount,
                     &payload.refund_id,
@@ -1883,18 +1812,10 @@ async fn handle_refund_created(
                         ))
                     })?;
 
-            if subscription.bucket_id != bucket_id {
-                return Err(CoreError::BadRequest(format!(
-                    "Refund bucket {} does not match subscription bucket {} for refund {}",
-                    bucket_id, subscription.bucket_id, payload.refund_id
-                )));
-            }
-
             let _output = app_state
                 .subscription_service
                 .handle_subscription_cancel(
                     payload.user_id,
-                    bucket_id,
                     realm_id,
                     subscription.id,
                     CancelMode::ImmediateCancel,
@@ -1999,13 +1920,6 @@ async fn handle_subscription_lifecycle_status(
         "Processing Creem subscription lifecycle event"
     );
 
-    // Resolve the routing bucket eagerly: reuse the existing subscription's
-    // bound bucket when present, otherwise resolve from the entitlement mapping.
-    let bucket_id = match &existing {
-        Some(existing) => existing.bucket_id,
-        None => resolve_bucket_id_for_entitlement(&app_state, realm_id, &entitlement_key).await?,
-    };
-
     let synced = sync_creem_subscription(
         &app_state,
         realm_id,
@@ -2019,7 +1933,6 @@ async fn handle_subscription_lifecycle_status(
         payload.current_period_end,
         cancel_at_period_end,
         cancel_at,
-        bucket_id,
         existing,
     )
     .await?;
@@ -2050,7 +1963,6 @@ async fn handle_subscription_lifecycle_status(
                     .subscription_service
                     .handle_subscription_cancel(
                         user_id,
-                        subscription.bucket_id,
                         realm_id,
                         subscription.id,
                         CancelMode::ImmediateCancel,
@@ -2131,7 +2043,6 @@ async fn handle_dispute_created(
             },
             client_app_id: existing.client_app_id,
             entitlement_key: existing.entitlement_key.clone(),
-            bucket_id: existing.bucket_id,
             external_price_id: existing.external_price_id.clone(),
             provider_metadata: Some(provider_metadata),
             status: SubscriptionStatus::Dispute,

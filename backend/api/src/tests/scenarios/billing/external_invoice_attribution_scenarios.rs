@@ -222,24 +222,22 @@ mod tests {
         provider: &str,
     ) -> Uuid {
         let attempt_id = Uuid::now_v7();
-        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
-            &ctx.app_state.pool,
-            realm_id,
-        )
-        .await;
+        // `payment_attempts.bucket_id` was removed by the distribution-rules
+        // refactor (grant routing lives on distribution rules / attempt rule
+        // snapshots). These tests assert invoice attribution, not points
+        // balances, so no rule snapshot is seeded here.
         sqlx::query(
             "INSERT INTO payment_attempts
                 (id, realm_id, user_id, payment_provider, target_type, target_id,
-                 bucket_id, amount, currency, status, expires_at, created_at, updated_at)
+                 amount, currency, status, expires_at, created_at, updated_at)
              VALUES ($1, $2, $3, $4, 'entitlement_mapping', $5,
-                 $6, 1000, 'usd', 'Pending', NOW() + INTERVAL '1 hour', NOW(), NOW())",
+                 1000, 'usd', 'Pending', NOW() + INTERVAL '1 hour', NOW(), NOW())",
         )
         .bind(attempt_id)
         .bind(realm_id)
         .bind(user_id)
         .bind(provider)
         .bind(mapping_id)
-        .bind(bucket_id)
         .execute(&ctx.app_state.pool)
         .await
         .expect("Failed to create pending payment attempt");

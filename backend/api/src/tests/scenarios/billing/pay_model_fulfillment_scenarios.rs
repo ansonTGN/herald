@@ -100,12 +100,11 @@ mod tests {
         external_product_id: &str,
         billing_type: &str,
         entitlement_key: &str,
-        points_per_period: Option<i64>,
+        _points_per_period: Option<i64>,
         granted_role_ids: Option<&[Uuid]>,
         service_duration_days: Option<i64>,
     ) -> Uuid {
         let mapping_id = Uuid::now_v7();
-        let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, realm_id).await;
         // `granted_role_ids` is UUID[] NOT NULL DEFAULT '{}' (migration 0006);
         // an explicit NULL bind violates NOT NULL, so map `None` to an empty
         // array to let the column default semantics apply.
@@ -114,9 +113,9 @@ mod tests {
         sqlx::query(
             "INSERT INTO provider_entitlement_mappings
                 (id, realm_id, payment_provider, external_product_id, entitlement_key,
-                 billing_type, points_per_period, grant_on_subscribe, enabled, bucket_id,
-                 granted_role_ids, service_duration_days, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, true, true, $8, $9, $10, NOW(), NOW())",
+                 billing_type, enabled, granted_role_ids, service_duration_days,
+                 created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, true, $7, $8, NOW(), NOW())",
         )
         .bind(mapping_id)
         .bind(realm_id)
@@ -124,8 +123,6 @@ mod tests {
         .bind(external_product_id)
         .bind(entitlement_key)
         .bind(billing_type)
-        .bind(points_per_period)
-        .bind(bucket_id)
         .bind(roles)
         .bind(service_duration_days)
         .execute(&ctx.app_state.pool)
@@ -960,19 +957,17 @@ mod tests {
     ) {
         let realm_id = ctx._realm_id.clone();
         let pool = &ctx.app_state.pool;
-        let bucket_id = ensure_test_bucket_for_realm(pool, &realm_id).await;
 
         // (a) provider_entitlement_mappings: non_renewing + duration writes.
         sqlx::query(
             "INSERT INTO provider_entitlement_mappings
                 (id, realm_id, payment_provider, external_product_id, entitlement_key,
-                 billing_type, service_duration_days, enabled, bucket_id, created_at, updated_at)
+                 billing_type, service_duration_days, enabled, created_at, updated_at)
              VALUES ($1, $2, 'google', 'mig_nr_pass', 'mig-nr',
-                     'non_renewing', 14, true, $3, NOW(), NOW())",
+                     'non_renewing', 14, true, NOW(), NOW())",
         )
         .bind(Uuid::now_v7())
         .bind(&realm_id)
-        .bind(bucket_id)
         .execute(pool)
         .await
         .expect("non_renewing mapping with service_duration_days must insert after 0011");
@@ -982,15 +977,14 @@ mod tests {
             sqlx::query(
                 "INSERT INTO provider_entitlement_mappings
                     (id, realm_id, payment_provider, external_product_id, entitlement_key,
-                     billing_type, enabled, bucket_id, created_at, updated_at)
-                 VALUES ($1, $2, 'google', $3, $4, $5, true, $6, NOW(), NOW())",
+                     billing_type, enabled, created_at, updated_at)
+                 VALUES ($1, $2, 'google', $3, $4, $5, true, NOW(), NOW())",
             )
             .bind(Uuid::now_v7())
             .bind(&realm_id)
             .bind(format!("mig_{bt}"))
             .bind(key)
             .bind(bt)
-            .bind(bucket_id)
             .execute(pool)
             .await
             .expect("legacy billing_type must remain compatible after 0011");
@@ -1000,13 +994,12 @@ mod tests {
         let bad = sqlx::query(
             "INSERT INTO provider_entitlement_mappings
                 (id, realm_id, payment_provider, external_product_id, entitlement_key,
-                 billing_type, enabled, bucket_id, created_at, updated_at)
+                 billing_type, enabled, created_at, updated_at)
              VALUES ($1, $2, 'google', 'mig_nr_bad', 'mig-nr-bad',
-                     'non_renewing', true, $3, NOW(), NOW())",
+                     'non_renewing', true, NOW(), NOW())",
         )
         .bind(Uuid::now_v7())
         .bind(&realm_id)
-        .bind(bucket_id)
         .execute(pool)
         .await;
         assert!(
@@ -1037,11 +1030,11 @@ mod tests {
                      payment_provider, status, entitlement_key, external_price_id,
                      provider_metadata, synced_at, current_period_start, current_period_end,
                      cancel_at_period_end, client_app_id, cancel_at, created_at, updated_at,
-                     bucket_id, billing_type)
+                     billing_type)
                  VALUES ($1, $2, $3, $4, $5,
                          'google', 'active', $6, NULL,
                          NULL, NOW(), NOW(), NOW() + INTERVAL '30 days',
-                         false, $7, NULL, NOW(), NOW(), $8, $9)",
+                         false, $7, NULL, NOW(), NOW(), $8)",
             )
             .bind(Uuid::now_v7())
             .bind(&realm_id)
@@ -1050,7 +1043,6 @@ mod tests {
             .bind(format!("mig_prod_{bt}"))
             .bind(format!("mig-{bt}"))
             .bind(app_id)
-            .bind(bucket_id)
             .bind(bt)
             .execute(pool)
             .await
@@ -1066,11 +1058,11 @@ mod tests {
                  payment_provider, status, entitlement_key, external_price_id,
                  provider_metadata, synced_at, current_period_start, current_period_end,
                  cancel_at_period_end, client_app_id, cancel_at, created_at, updated_at,
-                 bucket_id, billing_type)
+                 billing_type)
              VALUES ($1, $2, $3, $4, $5,
                      'google', 'active', 'mig-bad', NULL,
                      NULL, NOW(), NOW(), NOW() + INTERVAL '30 days',
-                     false, $6, NULL, NOW(), NOW(), $7, 'one_time')",
+                     false, $6, NULL, NOW(), NOW(), 'one_time')",
         )
         .bind(Uuid::now_v7())
         .bind(&realm_id)
@@ -1078,7 +1070,6 @@ mod tests {
         .bind("mig_sub_bad")
         .bind("mig_prod_bad")
         .bind(Uuid::now_v7())
-        .bind(bucket_id)
         .execute(pool)
         .await;
         assert!(
@@ -1114,7 +1105,6 @@ mod tests {
     async fn test_pay_model_apple_non_renewing_no_local_expiry_fallback(ctx: &mut PayModelContext) {
         let realm_id = ctx._realm_id.clone();
         let pool = &ctx.app_state.pool;
-        let bucket_id = ensure_test_bucket_for_realm(pool, &realm_id).await;
         let client_app_id = Uuid::parse_str(&ctx._client_app_id).unwrap();
 
         // Seed an Apple non-renewing subscription whose current_period_end is
@@ -1129,11 +1119,11 @@ mod tests {
                  payment_provider, status, entitlement_key, external_price_id,
                  provider_metadata, synced_at, current_period_start, current_period_end,
                  cancel_at_period_end, client_app_id, cancel_at, created_at, updated_at,
-                 bucket_id, billing_type)
+                 billing_type)
              VALUES ($1, $2, $3, $4, $5,
                      'apple', 'active', 'apple-nr', NULL,
                      NULL, NOW(), NOW() - INTERVAL '8 days', $6,
-                     false, $7, $6, NOW(), NOW(), $8, 'non_renewing')",
+                     false, $7, $6, NOW(), NOW(), 'non_renewing')",
         )
         .bind(sub_id)
         .bind(&realm_id)
@@ -1142,7 +1132,6 @@ mod tests {
         .bind("apple_nr_pass")
         .bind(past_end)
         .bind(client_app_id)
-        .bind(bucket_id)
         .execute(pool)
         .await
         .expect("seed apple non-renewing subscription with past period_end");

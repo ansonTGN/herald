@@ -7,42 +7,26 @@
 use uuid::Uuid;
 
 use crate::billing::entities::EntitlementMapping;
-
-/// Billing-side input for one quota window in a mapping batch update.
-///
-/// Carries only the editable fields (`window_seconds`, `limit`); the stable
-/// display `key` is derived by the API layer (via `derive_window_key`) before
-/// persistence, so callers cannot drift window identity. Mirrors the
-/// points-domain request shape (`api-points::types::QuotaWindowInput`) — kept
-/// local to billing so api-billing does not depend on api-points.
-#[derive(Debug, Clone)]
-pub struct QuotaWindowInput {
-    /// Sliding window length in seconds. Must be > 0.
-    pub window_seconds: i64,
-    /// Quota limit. Must be >= 0 (0 = window grants nothing but is a valid
-    /// config edge case).
-    pub limit: i64,
-}
+use crate::points::RuleUpsert;
 
 /// One price-mapping row within a batch save (domain input mirror of the API
-/// `PriceMappingUpdate` DTO). Credit-strategy fields are `Option<Option<T>>` so
-/// the caller can distinguish "leave unchanged" (`None`) from "clear" (outer
-/// `Some`, inner `None`) where that matters; for simple optional fields the
-/// outer `Option` carries the new value or "leave unchanged".
+/// `PriceMappingUpdate` DTO). Fields are `Option<T>` so the caller can
+/// distinguish "leave unchanged" (`None`) from "set" (`Some`).
 #[derive(Debug, Clone)]
 pub struct PriceMappingUpdateInput {
     pub mapping_id: Uuid,
     pub billing_type: Option<String>,
-    pub points_per_period: Option<i64>,
-    pub validity_days: Option<i64>,
-    pub grant_on_subscribe: Option<bool>,
     pub enabled: Option<bool>,
-    /// Quota window config (design §4.3.2). `None` ⟺ leave unchanged;
-    /// `Some(vec![])` ⟺ clear (no window grant); `Some(non-empty)` ⟺ set.
-    /// Non-empty triggers the `points.manage` credit-field permission gate.
-    pub quota_windows: Option<Vec<QuotaWindowInput>>,
-    /// Role-grant config dimension (design §5.2). Same 3-state semantics as
-    /// `quota_windows`: `None` ⟺ leave unchanged; `Some(vec![])` ⟺ clear (no
+    /// Points distribution rules owned by this mapping (upsert set, design
+    /// §4.2.2). `None` ⟺ leave the existing rule set untouched;
+    /// `Some(rules)` ⟺ upsert the given rules under this mapping (rules in the
+    /// set with `id = None` are created, `id = Some(existing)` are updated,
+    /// rules absent from the set are left untouched — disabling requires
+    /// explicit `enabled = false`). Non-empty / present triggers the
+    /// `points.manage` credit-field permission gate.
+    pub point_rules: Option<Vec<RuleUpsert>>,
+    /// Role-grant config dimension. Same 3-state semantics as
+    /// `point_rules`: `None` ⟺ leave unchanged; `Some(vec![])` ⟺ clear (no
     /// role grant — pure points / payment record); `Some(non-empty)` ⟺ set.
     /// Non-empty triggers realm-membership validation (all role IDs must belong
     /// to the mapping's realm); does NOT require `roles.manage` (configuring a

@@ -226,21 +226,25 @@ export function PaymentAttemptStatus({
                 </p>
               </div>
             </div>
-            {status.fulfillment && (
-              <div className="rounded-md bg-green-50 p-4">
-                <div className="text-sm">
-                  <div className="font-medium text-green-900">
-                    {m['points.payment_points_granted']()}
-                  </div>
-                  <div className="text-2xl font-bold text-green-700">
-                    +{status.fulfillment.points?.toLocaleString() || '0'}
-                  </div>
-                  {status.fulfillment.transactionId && (
-                    <div className="mt-2 text-xs text-green-600">
-                      {m['points.payment_transaction_id']({ id: status.fulfillment.transactionId })}
-                    </div>
-                  )}
+            {status.fulfillment && status.fulfillment.pointGrants.length > 0 && (
+              <div className="space-y-2 rounded-md bg-green-50 p-4">
+                <div className="font-medium text-green-900">
+                  {m['points.payment_points_granted']()}
                 </div>
+                {status.fulfillment.pointGrants.map((grant) => (
+                  <div
+                    key={grant.resultId}
+                    className="text-sm text-green-700"
+                    data-testid={`payment-point-grant-${grant.resultId}`}
+                  >
+                    <span className="font-mono text-xs">{grant.bucketId}</span>
+                    <span className="ml-2">
+                      {grant.points == null
+                        ? grant.description
+                        : `+${grant.points.toLocaleString()} ${grant.pointsType}`}
+                    </span>
+                  </div>
+                ))}
               </div>
             )}
           </div>

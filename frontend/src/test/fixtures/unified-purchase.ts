@@ -47,8 +47,18 @@ export const mockPaymentAttempts: Record<string, PaymentAttemptStatusResponse> =
     expiresAt: '2025-01-01T02:00:00Z',
     completedAt: '2025-01-01T00:05:00Z',
     fulfillment: {
-      transactionId: 'txn-123',
-      pointsGranted: 1000,
+      type: 'entitlement_mapping',
+      grantedAt: '2025-01-01T00:05:00Z',
+      pointGrants: [
+        {
+          resultId: 'grant-123',
+          ruleId: 'rule-123',
+          bucketId: 'default',
+          pointsType: 'fixed',
+          points: 1000,
+          description: 'Fixed grant',
+        },
+      ],
     },
     providerStatus: 'succeeded',
   },

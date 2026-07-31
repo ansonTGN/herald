@@ -188,22 +188,43 @@ async fn test_scenario_free_user_upgrade_preserves_registration_credits(ctx: &mu
     // create_test_entitlement_mapping above registers the mapping under
     // "prod_test_pro-monthly". Add a generic "prod_test_monthly" mapping pointing
     // at the same entitlement_key so the webhook resolves.
+    //
+    // Distribution-rules model: the grant config (1000 subscription quota over a
+    // 30-day window, granted on subscribe) is a quota distribution rule owned by
+    // this mapping with the `subscription_initial` trigger, seeded to preserve
+    // the test's "paid upgrade grants 1000 subscription_credit" intent.
     let generic_mapping_id = uuid::Uuid::now_v7();
     sqlx::query(
         "INSERT INTO provider_entitlement_mappings
             (id, realm_id, payment_provider, external_product_id, entitlement_key,
-             points_per_period, grant_on_subscribe, validity_days, enabled, bucket_id, quota_windows, created_at, updated_at)
-         VALUES ($1, $2, 'creem', 'prod_test_monthly', $3, 1000, true, 30, true, $4, $5, NOW(), NOW())
+             billing_type, enabled, created_at, updated_at)
+         VALUES ($1, $2, 'creem', 'prod_test_monthly', $3, 'recurring', true, NOW(), NOW())
          ON CONFLICT DO NOTHING",
     )
     .bind(generic_mapping_id)
     .bind(&ctx._realm_id)
     .bind(mapping_id.to_string())
-    .bind(bucket_id)
-    .bind(json!([{"windowSeconds": 2_592_000, "limit": 1000, "key": "period"}]))
     .execute(&ctx._app_state.pool)
     .await
     .expect("Failed to create generic entitlement mapping for paid webhook");
+
+    let generic_rule_id = uuid::Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO points_distribution_rules
+            (id, realm_id, owner_type, entitlement_mapping_id, bucket_id,
+             trigger_sources, grant_mode, validity_days, quota_windows,
+             enabled, display_order)
+         VALUES ($1, $2, 'entitlement_mapping', $3, $4, $5, 'quota', 0, $6, true, 0)",
+    )
+    .bind(generic_rule_id)
+    .bind(&ctx._realm_id)
+    .bind(generic_mapping_id)
+    .bind(bucket_id)
+    .bind(&["subscription_initial"][..])
+    .bind(json!([{"windowSeconds": 2_592_000, "limit": 1000, "key": "period"}]))
+    .execute(&ctx._app_state.pool)
+    .await
+    .expect("Failed to seed generic mapping subscription_initial quota rule");
 
     // Configure Creem webhook for this realm
     ctx.with_creem_config(
@@ -317,6 +338,19 @@ async fn test_scenario_free_user_upgrade_preserves_registration_credits(ctx: &mu
     );
 }
 
+/// Paid upgrade disables every free-periodic result but preserves registration credit.
+#[test_context(TestContext)]
+#[tokio::test]
+async fn test_multi_wallet_grant_rule_paid_upgrade_stops_all_free_periodic_results(
+    ctx: &mut TestContext,
+) {
+    super::multi_wallet_grant_rule_scenarios::assert_two_account_fixed_event(
+        ctx,
+        herald_core::domain::points::DistributionTrigger::SubscriptionUpgrade,
+    )
+    .await;
+}
+
 /// ============================================================================
 /// Scenario 4: Downgrade back to free user
 /// ============================================================================
@@ -419,22 +453,42 @@ async fn test_scenario_free_user_downgrade_from_paid(ctx: &mut TestContext) {
     .await;
 
     // Create additional mapping for "prod_test_monthly" so cancel webhook can resolve entitlement_key.
+    //
+    // Distribution-rules model: grant config (1000 subscription quota over a
+    // 30-day window) is a quota rule owned by this mapping with the
+    // `subscription_initial` trigger, mirroring the upgrade-scenario seeding.
     let generic_mapping_id = uuid::Uuid::now_v7();
     sqlx::query(
         "INSERT INTO provider_entitlement_mappings
             (id, realm_id, payment_provider, external_product_id, entitlement_key,
-             points_per_period, grant_on_subscribe, validity_days, enabled, bucket_id, quota_windows, created_at, updated_at)
-         VALUES ($1, $2, 'creem', 'prod_test_monthly', $3, 1000, true, 30, true, $4, $5, NOW(), NOW())
+             billing_type, enabled, created_at, updated_at)
+         VALUES ($1, $2, 'creem', 'prod_test_monthly', $3, 'recurring', true, NOW(), NOW())
          ON CONFLICT DO NOTHING",
     )
     .bind(generic_mapping_id)
     .bind(&ctx._realm_id)
     .bind(mapping_id.to_string())
-    .bind(bucket_id)
-    .bind(json!([{"windowSeconds": 2_592_000, "limit": 1000, "key": "period"}]))
     .execute(&ctx._app_state.pool)
     .await
     .expect("Failed to create generic entitlement mapping for cancel webhook");
+
+    let generic_rule_id = uuid::Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO points_distribution_rules
+            (id, realm_id, owner_type, entitlement_mapping_id, bucket_id,
+             trigger_sources, grant_mode, validity_days, quota_windows,
+             enabled, display_order)
+         VALUES ($1, $2, 'entitlement_mapping', $3, $4, $5, 'quota', 0, $6, true, 0)",
+    )
+    .bind(generic_rule_id)
+    .bind(&ctx._realm_id)
+    .bind(generic_mapping_id)
+    .bind(bucket_id)
+    .bind(&["subscription_initial"][..])
+    .bind(json!([{"windowSeconds": 2_592_000, "limit": 1000, "key": "period"}]))
+    .execute(&ctx._app_state.pool)
+    .await
+    .expect("Failed to seed generic mapping subscription_initial quota rule");
 
     // Configure Creem webhook for this realm
     ctx.with_creem_config(

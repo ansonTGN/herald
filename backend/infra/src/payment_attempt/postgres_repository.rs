@@ -7,6 +7,7 @@ use sea_orm::{
 use sqlx::{PgPool, Row};
 use std::sync::Arc;
 
+use herald_domain::billing::BillingType;
 use herald_domain::common::entities::app_errors::CoreError;
 use herald_domain::payment_attempt::{
     CreatePaymentAttemptInput, PaymentAttempt, PaymentAttemptErrorExt, PaymentAttemptRepository,
@@ -35,7 +36,6 @@ impl PostgresPaymentAttemptRepository {
             payment_provider: model.payment_provider,
             target_type: model.target_type.parse()?,
             target_id: model.target_id,
-            bucket_id: model.bucket_id,
             amount: model.amount,
             currency: model.currency,
             status: model.status.parse()?,
@@ -49,6 +49,127 @@ impl PostgresPaymentAttemptRepository {
             updated_at: chrono::DateTime::from(model.updated_at),
         })
     }
+
+    /// The distribution trigger a purchase billing type resolves to at attempt
+    /// creation: `OneTime` -> `topup`, `Recurring`/`NonRenewing` ->
+    /// `subscription_initial`. This trigger selects which of the mapping's
+    /// rules are snapshotted onto the attempt.
+    fn trigger_for_billing_type(billing_type: BillingType) -> &'static str {
+        match billing_type {
+            BillingType::OneTime => "topup",
+            BillingType::Recurring | BillingType::NonRenewing => "subscription_initial",
+        }
+    }
+
+    /// Within an open transaction, insert the attempt row and return its
+    /// domain representation. Mirrors the columns the legacy SeaORM ActiveModel
+    /// wrote, minus the removed `bucket_id`.
+    async fn insert_attempt_in_tx(
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        input: &CreatePaymentAttemptInput,
+        status: &str,
+        expires_at: chrono::DateTime<chrono::Utc>,
+        completed_at: Option<chrono::DateTime<chrono::Utc>>,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<PaymentAttempt, CoreError> {
+        let id = uuid::Uuid::now_v7();
+        let row = sqlx::query(
+            "INSERT INTO payment_attempts \
+                (id, realm_id, user_id, payment_provider, target_type, target_id, amount, \
+                 currency, status, is_one_time_role, provider_reference, provider_status, \
+                 metadata, expires_at, completed_at, created_at, updated_at) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) \
+             RETURNING id, realm_id, user_id, payment_provider, target_type, target_id, amount, \
+                       currency, status, is_one_time_role, provider_reference, provider_status, \
+                       metadata, expires_at, completed_at, created_at, updated_at",
+        )
+        .bind(id)
+        .bind(&input.realm_id)
+        .bind(input.user_id)
+        .bind(&input.payment_provider)
+        .bind(&input.target_type)
+        .bind(input.target_id)
+        .bind(input.amount)
+        .bind(&input.currency)
+        .bind(status)
+        .bind(input.is_one_time_role)
+        .bind(input.provider_reference.as_deref())
+        .bind(Option::<String>::None)
+        .bind(input.metadata.as_ref())
+        .bind(expires_at)
+        .bind(completed_at)
+        .bind(now)
+        .bind(now)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(format!("Failed to create payment attempt: {e}")))?;
+
+        Self::row_to_payment_attempt(&row)
+    }
+
+    /// Build a `PaymentAttempt` from a raw sqlx row carrying all
+    /// `payment_attempts` columns.
+    fn row_to_payment_attempt(row: &sqlx::postgres::PgRow) -> Result<PaymentAttempt, CoreError> {
+        use sqlx::Row;
+        let target_type: String = row.get("target_type");
+        let status: String = row.get("status");
+        Ok(PaymentAttempt {
+            id: row.get("id"),
+            realm_id: row.get("realm_id"),
+            user_id: row.get("user_id"),
+            payment_provider: row.get("payment_provider"),
+            target_type: target_type.parse()?,
+            target_id: row.get("target_id"),
+            amount: row.get("amount"),
+            currency: row.get("currency"),
+            status: status.parse()?,
+            is_one_time_role: row.get("is_one_time_role"),
+            provider_reference: row.get("provider_reference"),
+            provider_status: row.get("provider_status"),
+            metadata: row.get("metadata"),
+            expires_at: row.get("expires_at"),
+            completed_at: row.get("completed_at"),
+            created_at: row.get("created_at"),
+            updated_at: row.get("updated_at"),
+        })
+    }
+
+    /// Within an open transaction, snapshot the distribution rules matched at
+    /// purchase creation onto `payment_attempt_point_rules`. Selects the
+    /// target mapping's enabled rules whose `trigger_sources` contain the
+    /// billing-type trigger, in stable `(display_order, rule_id)` order, and
+    /// captures each rule's `bucket_id`. Zero matched rules is valid (an empty
+    /// snapshot; first fulfillment then completes a zero-result event).
+    async fn snapshot_matched_rules_in_tx(
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        payment_attempt_id: uuid::Uuid,
+        realm_id: &str,
+        mapping_id: uuid::Uuid,
+        trigger: &str,
+    ) -> Result<(), CoreError> {
+        sqlx::query(
+            "INSERT INTO payment_attempt_point_rules \
+                (payment_attempt_id, \
+                 rule_id, bucket_id, created_at) \
+             SELECT $1, r.id, r.bucket_id, NOW() \
+             FROM points_distribution_rules r \
+             WHERE r.realm_id = $2 \
+               AND r.entitlement_mapping_id = $3 \
+               AND r.enabled = TRUE \
+               AND $4 = ANY(r.trigger_sources) \
+             ORDER BY r.display_order, r.id",
+        )
+        .bind(payment_attempt_id)
+        .bind(realm_id)
+        .bind(mapping_id)
+        .bind(trigger)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| {
+            CoreError::DatabaseError(format!("Failed to snapshot payment attempt rules: {e}"))
+        })?;
+        Ok(())
+    }
 }
 
 impl PaymentAttemptRepository for PostgresPaymentAttemptRepository {
@@ -58,33 +179,35 @@ impl PaymentAttemptRepository for PostgresPaymentAttemptRepository {
     ) -> Result<PaymentAttempt, CoreError> {
         let now = chrono::Utc::now();
         let expires_at = now + chrono::Duration::hours(2);
+        let trigger = Self::trigger_for_billing_type(input.billing_type.clone());
 
-        let attempt_model = payment_attempt_entity::ActiveModel {
-            id: Set(uuid::Uuid::now_v7()),
-            realm_id: Set(input.realm_id),
-            user_id: Set(input.user_id),
-            payment_provider: Set(input.payment_provider),
-            target_type: Set(input.target_type),
-            target_id: Set(input.target_id),
-            bucket_id: Set(input.bucket_id),
-            amount: Set(input.amount),
-            currency: Set(input.currency),
-            status: Set("Pending".to_string()),
-            is_one_time_role: Set(input.is_one_time_role),
-            provider_reference: Set(input.provider_reference),
-            provider_status: Set(None),
-            metadata: Set(input.metadata),
-            expires_at: Set(expires_at.into()),
-            completed_at: Set(None),
-            created_at: Set(now.into()),
-            updated_at: Set(now.into()),
-        };
+        // Atomically write the attempt row AND its rule/bucket snapshot in one
+        // transaction. The snapshot is the contract for first fulfillment: a
+        // rule disabled after this point still fires for this already-initiated
+        // purchase.
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| CoreError::DatabaseError(format!("Failed to begin tx: {e}")))?;
 
-        let result = attempt_model.insert(self.db.as_ref()).await.map_err(|e| {
-            CoreError::DatabaseError(format!("Failed to create payment attempt: {e}"))
+        let attempt =
+            Self::insert_attempt_in_tx(&mut tx, &input, "Pending", expires_at, None, now).await?;
+
+        Self::snapshot_matched_rules_in_tx(
+            &mut tx,
+            attempt.id,
+            &input.realm_id,
+            input.target_id,
+            trigger,
+        )
+        .await?;
+
+        tx.commit().await.map_err(|e| {
+            CoreError::DatabaseError(format!("Failed to commit payment attempt: {e}"))
         })?;
 
-        Self::model_to_payment_attempt(result)
+        Ok(attempt)
     }
 
     async fn insert_succeeded_renewal_attempt(
@@ -93,34 +216,47 @@ impl PaymentAttemptRepository for PostgresPaymentAttemptRepository {
     ) -> Result<PaymentAttempt, CoreError> {
         // Renewal attempt: already-Succeeded charge, no expiry semantics.
         // expires_at = completed_at (NOT NULL column; already-succeeded has no real expiry).
+        // Renewals do NOT snapshot rules: a renewal is a subscription lifecycle
+        // event whose fulfillment resolves the mapping's CURRENT enabled rules
+        // via the `CurrentOwnerRules` executor selection at renewal time
+        // when the renewal event is fulfilled.
         let now = chrono::Utc::now();
 
-        let attempt_model = payment_attempt_entity::ActiveModel {
-            id: Set(uuid::Uuid::now_v7()),
-            realm_id: Set(input.realm_id),
-            user_id: Set(input.user_id),
-            payment_provider: Set(input.payment_provider),
-            target_type: Set("entitlement_mapping".to_string()),
-            target_id: Set(input.target_id),
-            bucket_id: Set(input.bucket_id),
-            amount: Set(input.amount),
-            currency: Set(input.currency),
-            status: Set("Succeeded".to_string()),
-            is_one_time_role: Set(false),
-            provider_reference: Set(Some(input.provider_reference)),
-            provider_status: Set(Some("succeeded".to_string())),
-            metadata: Set(None),
-            expires_at: Set(input.completed_at.into()),
-            completed_at: Set(Some(input.completed_at.into())),
-            created_at: Set(now.into()),
-            updated_at: Set(now.into()),
-        };
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| CoreError::DatabaseError(format!("Failed to begin tx: {e}")))?;
 
-        let result = attempt_model.insert(self.db.as_ref()).await.map_err(|e| {
-            CoreError::DatabaseError(format!("Failed to insert renewal attempt: {e}"))
+        let attempt = Self::insert_attempt_in_tx(
+            &mut tx,
+            &CreatePaymentAttemptInput {
+                realm_id: input.realm_id,
+                user_id: input.user_id,
+                payment_provider: input.payment_provider,
+                target_type: "entitlement_mapping".to_string(),
+                target_id: input.target_id,
+                // Unused for renewal (no snapshot written); Recurring is the
+                // only subscription shape that renews.
+                billing_type: BillingType::Recurring,
+                amount: input.amount,
+                currency: input.currency,
+                provider_reference: Some(input.provider_reference),
+                metadata: None,
+                is_one_time_role: false,
+            },
+            "Succeeded",
+            input.completed_at,
+            Some(input.completed_at),
+            now,
+        )
+        .await?;
+
+        tx.commit().await.map_err(|e| {
+            CoreError::DatabaseError(format!("Failed to commit renewal attempt: {e}"))
         })?;
 
-        Self::model_to_payment_attempt(result)
+        Ok(attempt)
     }
 
     async fn find_payment_attempt_by_id(
@@ -216,7 +352,6 @@ impl PaymentAttemptRepository for PostgresPaymentAttemptRepository {
             payment_provider: Set(attempt.payment_provider),
             target_type: Set(attempt.target_type.to_string()),
             target_id: Set(attempt.target_id),
-            bucket_id: Set(attempt.bucket_id),
             amount: Set(attempt.amount),
             currency: Set(attempt.currency),
             status: Set(attempt.status.to_string()),
@@ -344,7 +479,11 @@ impl PaymentAttemptRepository for PostgresPaymentAttemptRepository {
         // Data query
         let rows = sqlx::query(
             "SELECT pa.id AS attempt_id, pa.target_id AS target_mapping_id, \
-             pem.provider_product_info, pem.points_per_period, \
+             pem.provider_product_info, \
+             (SELECT SUM(l.granted_amount)::bigint \
+                FROM points_distribution_events e \
+                JOIN points_credit_ledger l ON l.distribution_event_id = e.id \
+               WHERE e.source_id = pa.id::text) AS granted_points, \
              pa.amount, pa.currency, pa.payment_provider, pa.status, \
              pa.completed_at, pa.created_at \
              FROM payment_attempts pa \
@@ -377,13 +516,13 @@ impl PaymentAttemptRepository for PostgresPaymentAttemptRepository {
                     .and_then(|v| v.get("name"))
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
-                let points_per_period: Option<i32> = row.get("points_per_period");
+                let granted_points: Option<i64> = row.get("granted_points");
 
                 PurchaseHistoryRow {
                     attempt_id: row.get("attempt_id"),
                     target_mapping_id: row.get("target_mapping_id"),
                     product_name,
-                    points: points_per_period.map(|p| p as i64),
+                    points: granted_points,
                     amount: row.get("amount"),
                     currency: row.get("currency"),
                     payment_provider: row.get("payment_provider"),
@@ -417,5 +556,37 @@ impl PaymentAttemptRepository for PostgresPaymentAttemptRepository {
         .map_err(|e| CoreError::DatabaseError(format!("Failed to check succeeded attempt: {e}")))?;
 
         Ok(row.is_some())
+    }
+
+    async fn find_captured_rule_refs(
+        &self,
+        realm_id: &str,
+        attempt_id: uuid::Uuid,
+    ) -> Result<Vec<herald_domain::points::CapturedRuleRef>, CoreError> {
+        // Frozen at capture: read the snapshot rows directly, ignoring the
+        // rule's current `enabled` state (a disabled-after-capture rule still
+        // fires for this attempt). The bucket is the captured snapshot bucket.
+        let rows: Vec<(uuid::Uuid, uuid::Uuid)> = sqlx::query_as(
+            "SELECT s.rule_id, s.bucket_id \
+             FROM payment_attempt_point_rules s \
+             JOIN points_distribution_rules r ON r.id = s.rule_id \
+             WHERE s.payment_attempt_id = $1 AND r.realm_id = $2 \
+             ORDER BY r.display_order, r.id",
+        )
+        .bind(attempt_id)
+        .bind(realm_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| CoreError::DatabaseError(format!("Failed to load captured rule refs: {e}")))?;
+
+        Ok(rows
+            .into_iter()
+            .map(
+                |(rule_id, bucket_id)| herald_domain::points::CapturedRuleRef {
+                    rule_id,
+                    bucket_id,
+                },
+            )
+            .collect())
     }
 }

@@ -159,7 +159,8 @@ describe('entitlement mapping detail query option - uses generated SDK', () => {
     entitlementKey: 'pro-plan',
     enabled: true,
     externalProductId: 'prod-123',
-    grantOnSubscribe: false,
+    grantedRoleIds: [],
+    pointRules: [],
     createdAt: '2024-01-01T00:00:00Z',
   }
 

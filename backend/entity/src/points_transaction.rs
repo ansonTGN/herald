@@ -26,6 +26,12 @@ pub struct Model {
     pub external_ref_id: Option<String>,
     #[sea_orm(nullable)]
     pub correlation_id: Option<String>,
+    /// Distribution attribution; both NULL or both set (paired invariant
+    /// `points_transactions_attribution_pair`).
+    #[sea_orm(nullable)]
+    pub distribution_event_id: Option<Uuid>,
+    #[sea_orm(nullable)]
+    pub distribution_rule_id: Option<Uuid>,
     pub created_at: DateTimeWithTimeZone,
 }
 

@@ -242,7 +242,6 @@ mod tests {
             entitlement_key: "pro-plan".to_string(),
             billing_type: crate::billing::entities::BillingType::Recurring,
             external_price_id: None,
-            bucket_id: Uuid::now_v7(),
             provider_metadata: None,
             synced_at: None,
             current_period_start: Some(Utc::now()),

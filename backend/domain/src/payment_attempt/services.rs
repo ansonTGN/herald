@@ -35,7 +35,7 @@ impl<R: PaymentAttemptRepository> PaymentAttemptService<R> {
             payment_provider: input.payment_provider.clone(),
             target_type: input.target_type.clone(),
             target_id: input.target_id,
-            bucket_id: input.bucket_id,
+            billing_type: input.billing_type,
             amount: input.amount,
             currency: input.currency.clone(),
             provider_reference: input.provider_reference,
@@ -396,7 +396,6 @@ mod tests {
                 id: Uuid::now_v7(),
                 realm_id: input.realm_id,
                 user_id: input.user_id,
-                bucket_id: input.bucket_id,
                 payment_provider: input.payment_provider,
                 target_type: input.target_type.parse()?, // Parse String to PurchasableTarget
                 target_id: input.target_id,
@@ -527,7 +526,6 @@ mod tests {
                 id: Uuid::now_v7(),
                 realm_id: input.realm_id,
                 user_id: input.user_id,
-                bucket_id: input.bucket_id,
                 payment_provider: input.payment_provider,
                 target_type: PurchasableTarget::EntitlementMapping,
                 target_id: input.target_id,
@@ -570,6 +568,14 @@ mod tests {
         ) -> PaymentAttemptResult<bool> {
             Ok(false)
         }
+
+        async fn find_captured_rule_refs(
+            &self,
+            _realm_id: &str,
+            _attempt_id: Uuid,
+        ) -> PaymentAttemptResult<Vec<crate::points::CapturedRuleRef>> {
+            Ok(Vec::new())
+        }
     }
 
     fn create_test_attempt(status: PaymentAttemptStatus) -> PaymentAttempt {
@@ -578,7 +584,6 @@ mod tests {
             id: Uuid::now_v7(),
             realm_id: "test-realm".to_string(),
             user_id: Uuid::now_v7(),
-            bucket_id: Uuid::now_v7(),
             payment_provider: "stripe".to_string(),
             target_type: PurchasableTarget::EntitlementMapping,
             target_id: Uuid::now_v7(),
@@ -835,7 +840,6 @@ mod tests {
             user_id: Uuid::now_v7(),
             payment_provider: "stripe".to_string(),
             target_id: Uuid::now_v7(),
-            bucket_id: Uuid::now_v7(),
             amount: 1500,
             currency: "USD".to_string(),
             provider_reference: provider_reference.clone(),

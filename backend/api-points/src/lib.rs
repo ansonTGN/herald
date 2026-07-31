@@ -1,14 +1,13 @@
 // Herald API Points Module
-// Points, wallets, transactions, realm configs
+// Points, wallets, transactions, registration rules
 
 pub mod auth_middleware;
 pub mod grant;
 pub mod internal_quota;
-pub mod realm_configs;
+pub mod registration_rules;
 pub mod routes;
 pub mod transactions;
 pub mod types;
-pub mod user_configs;
 pub mod wallets;
 
 /// OpenAPI specification for points module
@@ -20,10 +19,8 @@ pub mod wallets;
         crate::wallets::get_wallet,
         crate::transactions::list_transactions,
         crate::transactions::list_user_transactions,
-        crate::realm_configs::get_realm_default_config,
-        crate::realm_configs::create_realm_default_config,
-        crate::realm_configs::update_realm_default_config,
-        crate::user_configs::get_user_points_config,
+        crate::registration_rules::get_registration_rules,
+        crate::registration_rules::upsert_registration_rules,
         crate::grant::grant_points,
         crate::internal_quota::grant_quota_entitlement,
         crate::internal_quota::revoke_quota_entitlement,
@@ -39,10 +36,11 @@ pub mod wallets;
         crate::types::BalancesByType,
         crate::types::WalletByBucketResponse,
         crate::types::ListWalletsByBucketResponse,
-        crate::types::RealmDefaultConfigResponse,
-        crate::types::CreateRealmConfigRequest,
-        crate::types::UpdateRealmConfigRequest,
-        crate::types::UserPointsConfigResponse,
+        crate::types::RegistrationRuleResponse,
+        crate::types::RegistrationRuleWrite,
+        crate::types::RegistrationRulesResponse,
+        crate::types::UpsertRegistrationRulesRequest,
+        herald_api_base::application::http::server::api_entities::DistributionRuleErrorResponse,
         crate::types::GrantPointsRequest,
         crate::types::GrantPointsResponse,
         crate::internal_quota::GrantQuotaEntitlementRequest,

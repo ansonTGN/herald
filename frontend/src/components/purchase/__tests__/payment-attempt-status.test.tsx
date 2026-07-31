@@ -30,6 +30,45 @@ function expectAbsent(...testids: string[]) {
 }
 
 describe('PaymentAttemptStatus provider-specific conditional branches', () => {
+  it('shows every fulfilled wallet grant as a separate result', () => {
+    render(
+      <PaymentAttemptStatus
+        status={makeStatusResponse({
+          status: 'Succeeded',
+          fulfillment: {
+            type: 'entitlement_mapping',
+            grantedAt: '2026-07-30T00:00:00Z',
+            pointGrants: [
+              {
+                resultId: 'fixed-result',
+                ruleId: 'fixed-rule',
+                bucketId: 'wallet-fixed',
+                pointsType: 'fixed',
+                points: 1000,
+                description: 'Fixed grant',
+              },
+              {
+                resultId: 'quota-result',
+                ruleId: 'quota-rule',
+                bucketId: 'wallet-quota',
+                pointsType: 'quota',
+                points: null,
+                description: '25 / 3600s quota',
+              },
+            ],
+          },
+        })}
+      />
+    )
+
+    expect(screen.getByTestId('payment-point-grant-fixed-result')).toHaveTextContent(
+      'wallet-fixed+1,000 fixed'
+    )
+    expect(screen.getByTestId('payment-point-grant-quota-result')).toHaveTextContent(
+      'wallet-quota25 / 3600s quota'
+    )
+  })
+
   describe('Stripe redirect branch', () => {
     it('renders redirect prompt when provider=stripe and stripeCheckoutUrl exists', () => {
       render(

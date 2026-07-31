@@ -33,8 +33,8 @@ import {
   listWallets,
   getWallet,
   listTransactions,
-  getRealmDefaultConfig,
-  updateRealmDefaultConfig,
+  getRegistrationRules,
+  upsertRegistrationRules,
   getPaymentAttemptStatus,
   listPaymentProviders,
   listPurchaseOptions,
@@ -89,7 +89,8 @@ import type {
   BucketDetailResponse,
   BucketOverviewResponse,
   ListWalletsByBucketResponse,
-  UpdateRealmConfigRequest,
+  UpsertRegistrationRulesRequest,
+  RegistrationRulesResponse,
   LegalAgreementSummary,
   ConsentStatusItem,
   RecordConsentRequest,
@@ -874,9 +875,9 @@ export const pointsDefaultConfigQueryOptions = (realmId: string) =>
     queryKey: queryKeys.pointsDefaultConfig(realmId),
     queryFn: async () => {
       try {
-        const response = await getRealmDefaultConfig({ path: { realmId } })
+        const response = await getRegistrationRules({ path: { realmId } })
         if (response.error) handleApiErrorWithStatus(response.error)
-        return response.data
+        return response.data as RegistrationRulesResponse
       } catch (error) {
         handleApiErrorWithStatus(error)
       }
@@ -885,15 +886,12 @@ export const pointsDefaultConfigQueryOptions = (realmId: string) =>
     staleTime: STALE_TIME_5_MIN,
   })
 
-// Accepts the full `UpdateRealmConfigRequest` (design §4.2.2) and forwards it
-// verbatim, including the optional `freePeriodicQuotaWindows` (None ⟺ leave
-// stored value untouched; Some([]) ⟺ clear; Some([...]) ⟺ replace).
 export const updatePointsDefaultConfigMutation = async (
   realmId: string,
-  data: UpdateRealmConfigRequest
+  data: UpsertRegistrationRulesRequest
 ) => {
   try {
-    const response = await updateRealmDefaultConfig({
+    const response = await upsertRegistrationRules({
       path: { realmId },
       body: data,
     })

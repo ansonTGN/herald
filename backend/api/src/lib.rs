@@ -316,11 +316,6 @@ pub async fn build_app_state_with_migrations(
         billing_repository.clone(),
         Arc::new(billing_policy),
         provider_product_api,
-        // `PostgresBillingRepository` implements `RegistrationPoolResolver`
-        // (infra/src/billing/postgres_repository.rs). Newly-synced draft
-        // mappings bind to the realm's registration-pool bucket since
-        // `bucket_id` is NOT NULL on `provider_entitlement_mappings`.
-        billing_repository.clone(),
     ));
     info!("Provider product sync service initialized");
 
@@ -351,19 +346,9 @@ pub async fn build_app_state_with_migrations(
     ));
     info!("Subscription service initialized");
 
-    // Create realm config service
-    let realm_config_service = Arc::new(points::services::RealmConfigService::new(
-        points_repository.clone(),
-        Arc::new(points_policy.clone()),
-    ));
-    info!("Realm config service initialized");
-
     // Create registration service
     let registration_service = Arc::new(points::services::RegistrationService::new(
         points_repository.clone(),
-        points_service.clone(),
-        Arc::new(points_policy.clone()),
-        billing_repository.clone(),
     ));
     info!("Registration service initialized");
 
@@ -412,6 +397,7 @@ pub async fn build_app_state_with_migrations(
     let fulfillment_service = Arc::new(PostgresFulfillmentService::new(
         points_repository.clone(),
         billing_repository.clone(),
+        payment_attempt_repository.clone(),
         user_role_repository.clone(),
         permission_checker.clone(),
     ));
@@ -508,7 +494,6 @@ pub async fn build_app_state_with_migrations(
         points_repository,
         points_service,
         subscription_service,
-        realm_config_service,
         registration_service,
         admin_user_service,
         role_assignment_service,

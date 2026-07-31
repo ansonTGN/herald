@@ -20,7 +20,6 @@ pub struct Model {
     pub billing_type: String,
     #[sea_orm(nullable)]
     pub external_price_id: Option<String>,
-    pub bucket_id: Uuid,
     #[sea_orm(nullable)]
     pub provider_metadata: Option<Json>,
     #[sea_orm(nullable)]

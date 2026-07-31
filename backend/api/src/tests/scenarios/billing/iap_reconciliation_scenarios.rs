@@ -381,16 +381,12 @@ mod tests {
         let realm_id = ctx._realm_id.clone();
         let pool: &PgPool = &ctx.app_state.pool;
         let client_app_id = uuid::Uuid::parse_str(&ctx._client_app_id).unwrap();
-        let bucket_id =
-            crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(pool, &realm_id)
-                .await;
 
         // Seed an active non-renewing Google subscription (in the poll set).
         seed_google_subscription(
             pool,
             &realm_id,
             client_app_id,
-            bucket_id,
             "gplay_nr_recon_1",
             "nr_recon_pass",
             "active",
@@ -449,15 +445,11 @@ mod tests {
         let realm_id = ctx._realm_id.clone();
         let pool: &PgPool = &ctx.app_state.pool;
         let client_app_id = uuid::Uuid::parse_str(&ctx._client_app_id).unwrap();
-        let bucket_id =
-            crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(pool, &realm_id)
-                .await;
 
         seed_google_subscription(
             pool,
             &realm_id,
             client_app_id,
-            bucket_id,
             "gplay_rec_recon_1",
             "rec_recon_plan",
             "active",
@@ -481,7 +473,6 @@ mod tests {
             pool,
             &realm_id,
             second_app_id,
-            bucket_id,
             "gplay_nr_recon_2",
             "nr_recon_pass_2",
             "active",
@@ -652,7 +643,6 @@ mod tests {
         pool: &PgPool,
         realm_id: &str,
         client_app_id: uuid::Uuid,
-        bucket_id: uuid::Uuid,
         external_subscription_id: &str,
         external_product_id: &str,
         status: &str,
@@ -664,11 +654,11 @@ mod tests {
                  payment_provider, status, entitlement_key, external_price_id,
                  provider_metadata, synced_at, current_period_start, current_period_end,
                  cancel_at_period_end, client_app_id, cancel_at, created_at, updated_at,
-                 bucket_id, billing_type)
+                 billing_type)
              VALUES ($1, $2, $3, $4, $5,
                      'google', $6, 'recon', NULL,
                      NULL, NOW(), NOW(), NOW() + INTERVAL '30 days',
-                     false, $7, NULL, NOW(), NOW(), $8, $9)",
+                     false, $7, NULL, NOW(), NOW(), $8)",
         )
         .bind(uuid::Uuid::now_v7())
         .bind(realm_id)
@@ -677,7 +667,6 @@ mod tests {
         .bind(external_product_id)
         .bind(status)
         .bind(client_app_id)
-        .bind(bucket_id)
         .bind(billing_type)
         .execute(pool)
         .await

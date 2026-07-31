@@ -80,8 +80,8 @@ mod tests {
 
     /// Build a `ProviderProductSyncService` wired to the test context but with a
     /// `FakeProviderApi` (canned `products`) in place of the real
-    /// `ConfiguredProviderProductApi`. The repository, policy, and bucket
-    /// resolver are the same real, DB-backed instances the app uses.
+    /// `ConfiguredProviderProductApi`. The repository and policy are the same
+    /// real, DB-backed instances the app uses.
     ///
     /// BE-T02 / BE-T03 reuse this directly; do NOT redefine.
     pub(super) async fn build_sync_service(
@@ -92,7 +92,6 @@ mod tests {
             herald_core::infrastructure::billing::PostgresBillingRepository,
             PermissionBasedBillingPolicy,
             FakeProviderApi,
-            herald_core::infrastructure::billing::PostgresBillingRepository,
         >,
     > {
         let repository = ctx.app_state.billing_repository.clone();
@@ -100,14 +99,10 @@ mod tests {
             ctx.app_state.permission_checker.clone(),
         ));
         let provider_api = Arc::new(FakeProviderApi { products });
-        // PostgresBillingRepository implements RegistrationPoolResolver
-        // (same wiring as schema_test_context.rs:193-207).
-        let bucket_resolver = ctx.app_state.billing_repository.clone();
         Arc::new(ProviderProductSyncService::new(
             repository,
             policy,
             provider_api,
-            bucket_resolver,
         ))
     }
 

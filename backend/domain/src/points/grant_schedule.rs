@@ -74,6 +74,9 @@ impl GrantPeriodType {
 
     /// Check if this grant type should stop after reaching max periods
     pub fn should_stop(&self, periods_granted: i64, max_periods: Option<i64>) -> bool {
+        if matches!(self, GrantPeriodType::Once) {
+            return periods_granted >= 1;
+        }
         if let Some(max) = max_periods {
             periods_granted >= max
         } else {
@@ -123,6 +126,10 @@ pub struct PointsGrantSchedule {
     pub granted_periods: i64,
     pub max_periods: Option<i64>,
     pub active: bool,
+    /// Distribution attribution. A schedule is always created by a free-periodic
+    /// fixed distribution rule, so both references are always present.
+    pub distribution_event_id: Uuid,
+    pub distribution_rule_id: Uuid,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -180,7 +187,7 @@ pub struct GrantSummary {
     pub processed: u64,
     pub skipped: u64,
     pub failed: u64,
-    pub total_points_granted: i64,
+    pub total_granted: i64,
 }
 
 /// Process result - Result of processing a single grant schedule

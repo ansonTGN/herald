@@ -179,7 +179,6 @@ impl SubscriptionBuilder {
             entitlement_key: self.entitlement_key,
             billing_type: self.billing_type,
             external_price_id: self.external_price_id,
-            bucket_id: Uuid::now_v7(),
             provider_metadata: self.provider_metadata,
             synced_at: self.synced_at,
             current_period_start: self.current_period_start,

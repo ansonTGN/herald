@@ -159,9 +159,31 @@ function PriceCard({
                 ? m['purchase.billing_type_one_time']()
                 : m['purchase.billing_type_subscription']()}
             </Badge>
-            {option.pointsPerPeriod != null && (
-              <div className="text-sm text-muted-foreground">
-                {option.pointsPerPeriod.toLocaleString()} points
+            {option.pointRules.length > 0 && (
+              <div className="space-y-1 text-sm text-muted-foreground">
+                {option.pointRules.map((rule) => (
+                  <div
+                    key={rule.id}
+                    data-testid={`purchase-point-rule-${rule.id}`}
+                    className="rounded border px-2 py-1"
+                  >
+                    <span className="font-mono text-xs">{rule.bucketId}</span>
+                    {rule.grantMode === 'fixed' ? (
+                      <span> · {rule.pointsAmount?.toLocaleString() ?? 0} points</span>
+                    ) : (
+                      <span>
+                        {' '}
+                        ·{' '}
+                        {(rule.quotaWindows ?? [])
+                          .map(
+                            (window) =>
+                              `${window.limit.toLocaleString()} / ${window.windowSeconds}s`
+                          )
+                          .join(', ')}
+                      </span>
+                    )}
+                  </div>
+                ))}
               </div>
             )}
             {option.amount != null && option.currency ? (
@@ -553,8 +575,12 @@ export function PurchasePointsPage({
             <div>
               <h2 className="text-2xl font-bold">{m['points.purchase_payment_title']()}</h2>
               <p className="text-muted-foreground">
-                {m['points.purchase_payment_description']({
-                  points: selectedOption?.pointsPerPeriod?.toLocaleString() ?? '',
+                {m['points.purchase_payment_grants_description']({
+                  grants: selectedOption
+                    ? m['points.purchase_account_grants']({
+                        count: selectedOption.pointRules.length,
+                      })
+                    : '',
                   price: selectedOption
                     ? selectedOption.amount != null && selectedOption.currency
                       ? formatInvoiceAmount(selectedOption.amount, selectedOption.currency)

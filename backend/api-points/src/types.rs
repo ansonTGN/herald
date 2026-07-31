@@ -217,29 +217,6 @@ pub struct PointsTransactionResponse {
     pub effective_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
-/// Points plan config response
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct PointsPlanConfigResponse {
-    pub config_id: Uuid,
-    pub realm_id: String,
-    pub plan_id: Uuid,
-    pub grant_period_type: String,
-    pub points_per_period: i64,
-    pub validity_days: i64,
-    pub grant_on_subscribe: bool,
-    pub max_periods: Option<i64>,
-    pub active: bool,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-/// List plan configs response wrapper
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct ListPlanConfigsResponse {
-    pub configs: Vec<PointsPlanConfigResponse>,
-}
-
 /// Consume points request
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -260,28 +237,6 @@ pub struct ConsumePointsResponse {
     pub user_id: Uuid,
     pub amount: i64,
     pub balance_after: i64,
-}
-
-/// Create plan config request
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct CreatePlanConfigRequest {
-    pub plan_id: String,
-    pub grant_period_type: String,
-    pub points_per_period: i64,
-    pub validity_days: i64,
-    pub grant_on_subscribe: bool,
-    pub max_periods: Option<i64>,
-}
-
-/// Update plan config request
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
-pub struct UpdatePlanConfigRequest {
-    pub grant_period_type: Option<String>,
-    pub points_per_period: Option<i64>,
-    pub validity_days: Option<i64>,
-    pub grant_on_subscribe: Option<bool>,
-    pub max_periods: Option<Option<i64>>,
 }
 
 /// Query parameters for listing transactions
@@ -340,77 +295,73 @@ pub struct UserWalletsQuery {
     pub page_size: Option<u64>,
 }
 
-/// Realm default config response
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+/// Read-side view of one registration distribution rule.
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct RealmDefaultConfigResponse {
-    pub realm_id: String,
-    pub registration_bonus_points: i64,
-    pub free_periodic_points_amount: i64,
-    pub free_periodic_grant_period_type: String,
-    pub free_periodic_validity_days: i64,
-    /// Free-periodic quota window definitions (design §4.2.2 / §4.3.2).
-    /// `None` ⟺ no window-model free-periodic grant (the registration path
-    /// skips it, fail-safe). Mirrors the stored JSONB column.
+pub struct RegistrationRuleResponse {
+    pub id: Uuid,
+    /// Target credit bucket.
+    pub bucket_id: Uuid,
+    /// Non-empty; only `registration` / `free_periodic_grant`.
+    pub trigger_sources: Vec<String>,
+    /// `fixed` or `quota`.
+    pub grant_mode: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub free_periodic_quota_windows: Option<Vec<QuotaWindowInput>>,
-    pub created_at: String,
-    pub updated_at: String,
+    pub points_amount: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub validity_days: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grant_period_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quota_windows: Option<Vec<QuotaWindowInput>>,
+    pub enabled: bool,
+    pub display_order: i32,
 }
 
-/// Create realm config request
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema, validator::Validate)]
+/// Write-side view of one registration distribution rule.
+/// `id` is `None` to create, `Some` to update an existing rule owned by the
+/// Realm's registration config.
+#[derive(Debug, Clone, Deserialize, ToSchema, validator::Validate)]
 #[serde(rename_all = "camelCase")]
-pub struct CreateRealmConfigRequest {
-    #[validate(range(min = 0))]
-    pub registration_bonus_points: i64,
-    #[validate(range(min = 0))]
-    pub free_periodic_points_amount: i64,
-    #[validate(length(min = 1))]
-    pub free_periodic_grant_period_type: String,
-    #[validate(range(min = 0))]
-    pub free_periodic_validity_days: i64,
-    /// Free-periodic quota windows (design §4.2.2). Nullable; window count ≤ 8
-    /// and per-window `windowSeconds > 0` / `limit >= 0` enforced in the
-    /// handler (the `validator` derive covers the per-window ranges; the count
-    /// cap is checked explicitly because `validator` has no built-in for
-    /// `Option<Vec<_>>` length on the outer Option).
-    pub free_periodic_quota_windows: Option<Vec<QuotaWindowInput>>,
+pub struct RegistrationRuleWrite {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<Uuid>,
+    pub bucket_id: Uuid,
+    /// Non-empty; the backend validates the registration-owner subset.
+    pub trigger_sources: Vec<String>,
+    /// `fixed` or `quota`.
+    pub grant_mode: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub points_amount: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub validity_days: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grant_period_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quota_windows: Option<Vec<QuotaWindowInput>>,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub display_order: i32,
 }
 
-/// Update realm config request
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema, validator::Validate)]
-#[serde(rename_all = "camelCase")]
-pub struct UpdateRealmConfigRequest {
-    #[validate(range(min = 0))]
-    pub registration_bonus_points: i64,
-    #[validate(range(min = 0))]
-    pub free_periodic_points_amount: i64,
-    #[validate(length(min = 1))]
-    pub free_periodic_grant_period_type: String,
-    #[validate(range(min = 0))]
-    pub free_periodic_validity_days: i64,
-    /// Free-periodic quota windows (design §4.2.2). `None` ⟺ leave the stored
-    /// value untouched (partial-update semantics); `Some([])` ⟺ clear;
-    /// `Some([...])` ⟺ replace. Same validation as create.
-    pub free_periodic_quota_windows: Option<Vec<QuotaWindowInput>>,
+fn default_true() -> bool {
+    true
 }
 
-/// User points config response
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+/// GET `/api/points/{realmId}/registration-rules` response.
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct UserPointsConfigResponse {
-    pub user_id: Uuid,
+pub struct RegistrationRulesResponse {
     pub realm_id: String,
-    pub registration_bonus_points: i64,
-    pub free_periodic_points_amount: i64,
-    pub free_periodic_grant_period_type: Option<String>,
-    pub free_periodic_validity_days: i64,
-    pub next_grant_time: Option<String>,
-    pub granted_periods: i64,
-    pub grant_schedule_id: Option<Uuid>,
-    pub created_at: String,
-    pub updated_at: String,
+    pub rules: Vec<RegistrationRuleResponse>,
+}
+
+/// PUT `/api/points/{realmId}/registration-rules` request body.
+#[derive(Debug, Clone, Deserialize, ToSchema, validator::Validate)]
+#[serde(rename_all = "camelCase")]
+pub struct UpsertRegistrationRulesRequest {
+    pub rules: Vec<RegistrationRuleWrite>,
 }
 
 /// Grant points request (admin)
@@ -705,108 +656,6 @@ mod tests {
         assert!(
             !json.contains("\"created_at\""),
             "Should not contain snake_case 'created_at'"
-        );
-    }
-
-    #[test]
-    fn test_points_plan_config_response_camelcase() {
-        let plan_config = PointsPlanConfigResponse {
-            config_id: uuid::Uuid::now_v7(),
-            realm_id: "test-realm".to_string(),
-            plan_id: uuid::Uuid::now_v7(),
-            grant_period_type: "monthly".to_string(),
-            points_per_period: 1000,
-            validity_days: 30,
-            grant_on_subscribe: true,
-            max_periods: Some(12),
-            active: true,
-            created_at: "2024-01-01T00:00:00Z".to_string(),
-            updated_at: "2024-01-01T00:00:00Z".to_string(),
-        };
-
-        let json = serde_json::to_string(&plan_config).unwrap();
-        println!("Serialized JSON: {}", json);
-
-        assert!(
-            json.contains("\"configId\""),
-            "Should contain camelCase 'configId'"
-        );
-        assert!(
-            json.contains("\"realmId\""),
-            "Should contain camelCase 'realmId'"
-        );
-        assert!(
-            json.contains("\"planId\""),
-            "Should contain camelCase 'planId'"
-        );
-        assert!(
-            json.contains("\"grantPeriodType\""),
-            "Should contain camelCase 'grantPeriodType'"
-        );
-        assert!(
-            json.contains("\"pointsPerPeriod\""),
-            "Should contain camelCase 'pointsPerPeriod'"
-        );
-        assert!(
-            json.contains("\"validityDays\""),
-            "Should contain camelCase 'validityDays'"
-        );
-        assert!(
-            json.contains("\"grantOnSubscribe\""),
-            "Should contain camelCase 'grantOnSubscribe'"
-        );
-        assert!(
-            json.contains("\"maxPeriods\""),
-            "Should contain camelCase 'maxPeriods'"
-        );
-        assert!(
-            json.contains("\"createdAt\""),
-            "Should contain camelCase 'createdAt'"
-        );
-        assert!(
-            json.contains("\"updatedAt\""),
-            "Should contain camelCase 'updatedAt'"
-        );
-
-        assert!(
-            !json.contains("\"config_id\""),
-            "Should not contain snake_case 'config_id'"
-        );
-        assert!(
-            !json.contains("\"realm_id\""),
-            "Should not contain snake_case 'realm_id'"
-        );
-        assert!(
-            !json.contains("\"plan_id\""),
-            "Should not contain snake_case 'plan_id'"
-        );
-        assert!(
-            !json.contains("\"grant_period_type\""),
-            "Should not contain snake_case 'grant_period_type'"
-        );
-        assert!(
-            !json.contains("\"points_per_period\""),
-            "Should not contain snake_case 'points_per_period'"
-        );
-        assert!(
-            !json.contains("\"validity_days\""),
-            "Should not contain snake_case 'validity_days'"
-        );
-        assert!(
-            !json.contains("\"grant_on_subscribe\""),
-            "Should not contain snake_case 'grant_on_subscribe'"
-        );
-        assert!(
-            !json.contains("\"max_periods\""),
-            "Should not contain snake_case 'max_periods'"
-        );
-        assert!(
-            !json.contains("\"created_at\""),
-            "Should not contain snake_case 'created_at'"
-        );
-        assert!(
-            !json.contains("\"updated_at\""),
-            "Should not contain snake_case 'updated_at'"
         );
     }
 

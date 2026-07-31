@@ -1,3 +1,4 @@
+pub mod distribution_rules;
 pub mod dtos;
 pub mod entities;
 pub mod errors;
@@ -6,12 +7,19 @@ pub mod grant_schedule;
 pub mod idempotency_service;
 pub mod policies;
 pub mod ports;
-pub mod realm_config;
 pub mod service;
 pub mod services;
 pub mod subscription_service;
-pub mod user_config;
 
+pub use distribution_rules::{
+    CapturedRuleRef, DistributionEvent, DistributionGrantResult, DistributionPolicy,
+    DistributionReplayCorruption, DistributionRuleError, DistributionRuleOwner,
+    DistributionRuleReference, DistributionRuleSelection, DistributionTrigger,
+    PointsDistributionRule, ReplayResultRows, RuleUpsert, credit_pair_for_trigger,
+    event_key_for_free_periodic, event_key_for_payment, event_key_for_registration,
+    event_key_for_subscription_period, event_key_for_subscription_upgrade, fold_replay_results,
+    quota_source_type_for_trigger, select_and_sort_rules, validate_rule_for_owner,
+};
 pub use entities::{
     CreditLedgerStatus, CreditSourceType, CreditType, IdempotencyKey, IdempotencyResult,
     IdempotencyStatus, PointsBalance, PointsConsumptionAllocation, PointsCreditLedger,
@@ -24,8 +32,8 @@ pub use expiration_service::{ExpirationService, ExpirationSummary};
 pub use idempotency_service::{IdempotencyService, IdempotencyStore};
 pub use policies::PointsPolicy;
 pub use ports::{
-    GrantScheduleUpdate, LedgerFilters, LedgerUpdate, Pagination, PointsRepository, ReclaimLocator,
-    TransactionFilters, UserConfigUpdate, WalletDelta, WalletFilters,
+    LedgerFilters, LedgerUpdate, Pagination, PointsRepository, ReclaimLocator, TransactionFilters,
+    WalletDelta, WalletFilters,
 };
 pub use service::PointsService;
 /// Stable display-key derivation for quota windows (design §4.2.2 / §4.4.3).
@@ -37,9 +45,4 @@ pub use subscription_service::{CancelMode, SubscriptionService};
 pub use grant_schedule::{
     GrantPeriodType, GrantSummary, PointsGrantRecord, PointsGrantSchedule, ProcessResult,
 };
-pub use realm_config::{
-    CreateRealmConfigInput, FREE_PERIODIC_QUOTA_WINDOWS_MAX, RealmDefaultConfig,
-    UpdateRealmConfigInput, validate_free_periodic_quota_windows,
-};
-pub use services::{GrantScheduler, RealmConfigService, RegistrationService};
-pub use user_config::UserPointsConfig;
+pub use services::{GrantScheduler, RegistrationService};

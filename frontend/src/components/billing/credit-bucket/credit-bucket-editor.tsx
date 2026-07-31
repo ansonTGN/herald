@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { AppForm, useAppForm } from '@/components/ui/tanstack-form'
@@ -8,7 +8,6 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
 import { NumberField, TextField } from '@/components/shared'
 import { getFieldErrorMessage } from '@/lib/form-utils'
@@ -20,12 +19,11 @@ import type {
   CreateCreditBucketFormData,
   UpdateCreditBucketFormData,
 } from '@/lib/schemas/credit-bucket-forms'
-import { clientAppsQueryOptions, entitlementMappingsQueryOptions } from '@/data/query-options'
+import { clientAppsQueryOptions } from '@/data/query-options'
 import { useCreateCreditBucket, useUpdateCreditBucket } from '@/data/credit-bucket-mutations'
-import type { BucketDetailResponse, EntitlementMappingResponse } from '@/lib/api-generated'
+import type { BucketDetailResponse } from '@/lib/api-generated'
 import { m } from '@/paraglide/messages'
 import { CreditBucketCoverageMultiselect } from './credit-bucket-coverage-multiselect'
-import { CreditBucketMappingsMultiselect } from './credit-bucket-mappings-multiselect'
 
 interface CreditBucketEditorProps {
   realmId: string
@@ -44,11 +42,8 @@ interface CreditBucketEditorProps {
  * - update (`bucket !== null`) → `useUpdateCreditBucket(realmId, bucket.id)`,
  *   bucketKey read-only (immutable identity)
  *
- * `receivesRegistrationCredits` Switch: when the server returns 409
- * `registration_pool_conflict` (another bucket already holds the registration
- * pool), a destructive Alert surfaces the conflict and instructs the admin to
- * unset it on the other bucket first — no silent override. NO isDefault
- * control anywhere.
+ * Registration and subscription grants are configured by distribution rules,
+ * so this editor only owns bucket identity, display, and client-app coverage.
  */
 export function CreditBucketEditor({ realmId, bucket, formKey, onSaved }: CreditBucketEditorProps) {
   const isCreate = bucket === null
@@ -57,12 +52,9 @@ export function CreditBucketEditor({ realmId, bucket, formKey, onSaved }: Credit
   const createMutation = useCreateCreditBucket(realmId)
   const updateMutation = useUpdateCreditBucket(realmId, bucketId)
 
-  // Coverage-set option source + mappings option source (query options).
+  // Coverage-set option source.
   const { data: clientAppsData, isLoading: clientAppsLoading } = useQuery({
     ...clientAppsQueryOptions(realmId, { pageSize: 100 }),
-  })
-  const { data: mappingsData, isLoading: mappingsLoading } = useQuery({
-    ...entitlementMappingsQueryOptions(realmId, { pageSize: 100 }),
   })
 
   const clientAppOptions = useMemo(
@@ -74,36 +66,20 @@ export function CreditBucketEditor({ realmId, bucket, formKey, onSaved }: Credit
       })),
     [clientAppsData]
   )
-  const mappingOptions = useMemo(
-    () =>
-      ((mappingsData as { items?: EntitlementMappingResponse[] } | undefined)?.items ?? []).map(
-        (mp) => ({
-          id: mp.id,
-          label: mp.entitlementKey,
-          hint: mp.externalProductId,
-        })
-      ),
-    [mappingsData]
-  )
-
   const createDefaults: CreateCreditBucketFormData = {
     bucketKey: '',
     name: '',
     description: null,
     displayOrder: 0,
     enabled: true,
-    receivesRegistrationCredits: false,
     clientAppIds: [],
-    entitlementMappingIds: [],
   }
   const updateDefaults: UpdateCreditBucketFormData = {
     name: '',
     description: null,
     displayOrder: 0,
     enabled: true,
-    receivesRegistrationCredits: false,
     clientAppIds: [],
-    entitlementMappingIds: [],
   }
 
   // Use a distinct form instance per mode to avoid schema/value shape drift.
@@ -152,30 +128,16 @@ export function CreditBucketEditor({ realmId, bucket, formKey, onSaved }: Credit
         description: bucket.description ?? null,
         displayOrder: bucket.displayOrder,
         enabled: bucket.enabled,
-        receivesRegistrationCredits: bucket.receivesRegistrationCredits,
         clientAppIds: bucket.clientApps.map((c) => c.id),
-        entitlementMappingIds: bucket.entitlementMappings.map((mp) => mp.id),
       },
       { keepDefaultValues: true }
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reset only on bucket/form identity change
   }, [formKey])
 
-  const [registrationConflict, setRegistrationConflict] = useState<string | null>(null)
-
   function handleSubmissionError(error: unknown) {
-    const code = readErrorCode(error)
-    if (code === 'registration_pool_conflict') {
-      setRegistrationConflict(m['credit_buckets.registration_pool_conflict']())
-      return
-    }
     toast.error(readErrorMessage(error))
   }
-
-  // Clear the conflict hint whenever the toggle flips back off.
-  useEffect(() => {
-    setRegistrationConflict(null)
-  }, [formKey])
 
   if (isCreate) {
     return (
@@ -204,9 +166,7 @@ export function CreditBucketEditor({ realmId, bucket, formKey, onSaved }: Credit
             <BucketFieldsBody
               form={createForm}
               clientAppOptions={clientAppOptions}
-              mappingOptions={mappingOptions}
-              multiselectsLoading={clientAppsLoading || mappingsLoading}
-              registrationConflict={registrationConflict}
+              multiselectsLoading={clientAppsLoading}
             />
             <SubmitButton
               isPending={createMutation.isPending}
@@ -242,10 +202,25 @@ export function CreditBucketEditor({ realmId, bucket, formKey, onSaved }: Credit
           <BucketFieldsBody
             form={updateForm}
             clientAppOptions={clientAppOptions}
-            mappingOptions={mappingOptions}
-            multiselectsLoading={clientAppsLoading || mappingsLoading}
-            registrationConflict={registrationConflict}
+            multiselectsLoading={clientAppsLoading}
           />
+          <div className="space-y-2" data-testid="credit-bucket-rule-references">
+            <Label>Distribution rule references</Label>
+            {bucket.ruleReferences.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No rules reference this account.</p>
+            ) : (
+              <ul className="space-y-1 text-sm">
+                {bucket.ruleReferences.map((reference) => (
+                  <li key={reference.ruleId} className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-xs">{reference.ruleId}</span>
+                    <span>{reference.ownerType.replaceAll('_', ' ')}</span>
+                    <span>{reference.triggerSources.join(', ')}</span>
+                    {!reference.enabled && <span className="text-muted-foreground">disabled</span>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
           <SubmitButton
             isPending={updateMutation.isPending}
             label={m['credit_buckets.update_button']()}
@@ -260,16 +235,12 @@ export function CreditBucketEditor({ realmId, bucket, formKey, onSaved }: Credit
 function BucketFieldsBody({
   form,
   clientAppOptions,
-  mappingOptions,
   multiselectsLoading,
-  registrationConflict,
 }: {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   form: any
   clientAppOptions: { id: string; label: string; hint?: string }[]
-  mappingOptions: { id: string; label: string; hint?: string }[]
   multiselectsLoading: boolean
-  registrationConflict: string | null
 }) {
   return (
     <>
@@ -328,34 +299,6 @@ function BucketFieldsBody({
         )}
       </form.Field>
 
-      <form.Field name="receivesRegistrationCredits">
-        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-        {(field: any) => (
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-2">
-              <Switch
-                id="bucket-registration"
-                checked={field.state.value}
-                onCheckedChange={field.handleChange}
-                data-testid="credit-bucket-editor-registration"
-              />
-              <Label htmlFor="bucket-registration">
-                {m['credit_buckets.field_registration']()}
-              </Label>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {m['credit_buckets.field_registration_help']()}
-            </p>
-          </div>
-        )}
-      </form.Field>
-
-      {registrationConflict && (
-        <Alert variant="destructive" data-testid="credit-bucket-editor-registration-conflict">
-          <AlertDescription>{registrationConflict}</AlertDescription>
-        </Alert>
-      )}
-
       {multiselectsLoading ? (
         <Skeleton className="h-10 w-full" />
       ) : (
@@ -374,24 +317,6 @@ function BucketFieldsBody({
                     ? getFieldErrorMessage(field.state.meta)
                     : undefined
                 }
-              />
-            </div>
-          )}
-        </form.Field>
-      )}
-
-      {multiselectsLoading ? (
-        <Skeleton className="h-10 w-full" />
-      ) : (
-        <form.Field name="entitlementMappingIds">
-          {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-          {(field: any) => (
-            <div className="space-y-1.5">
-              <Label>{m['credit_buckets.field_mappings']()}</Label>
-              <CreditBucketMappingsMultiselect
-                options={mappingOptions}
-                value={field.state.value ?? []}
-                onChange={field.handleChange}
               />
             </div>
           )}
@@ -425,20 +350,6 @@ function SubmitButton({ isPending, label }: { isPending: boolean; label: string 
       {isPending ? m['credit_buckets.saving']() : label}
     </Button>
   )
-}
-
-/** Extract an error `code` from a thrown API error object (409 bodies, etc.). */
-function readErrorCode(error: unknown): string | undefined {
-  if (error && typeof error === 'object') {
-    if ('code' in error && typeof (error as { code: unknown }).code === 'string') {
-      return (error as { code: string }).code
-    }
-    const content = error as { content?: unknown; error?: unknown }
-    if (content.content && typeof content.content === 'object') {
-      return readErrorCode(content.content)
-    }
-  }
-  return undefined
 }
 
 function readErrorMessage(error: unknown): string {

@@ -45,6 +45,7 @@ type PurchaseServiceImpl = PurchaseService<
     PostgresFulfillmentService<
         PostgresPointsRepository,
         PostgresBillingRepository,
+        PostgresPaymentAttemptRepository,
         PostgresUserRoleRepository,
         RedisPermissionChecker,
     >,
@@ -55,7 +56,6 @@ type ProviderProductSyncServiceImpl = herald_core::domain::billing::ProviderProd
     PostgresBillingRepository,
     PermissionBasedBillingPolicy,
     ConfiguredProviderProductApi,
-    PostgresBillingRepository,
 >;
 
 /// AppState for API handlers
@@ -124,22 +124,9 @@ pub struct AppState {
         >,
     >,
 
-    /// Realm config service (for realm default config management)
-    pub realm_config_service: Arc<
-        herald_core::domain::points::services::RealmConfigService<
-            PostgresPointsRepository,
-            PermissionBasedPointsPolicy,
-        >,
-    >,
-
     /// Registration service (for free user points on registration)
-    pub registration_service: Arc<
-        herald_core::domain::points::services::RegistrationService<
-            PostgresPointsRepository,
-            PermissionBasedPointsPolicy,
-            PostgresBillingRepository,
-        >,
-    >,
+    pub registration_service:
+        Arc<herald_core::domain::points::services::RegistrationService<PostgresPointsRepository>>,
 
     /// Public base URL for the API
     pub public_base_url: String,
@@ -229,6 +216,7 @@ pub struct AppState {
         PostgresFulfillmentService<
             PostgresPointsRepository,
             PostgresBillingRepository,
+            PostgresPaymentAttemptRepository,
             PostgresUserRoleRepository,
             RedisPermissionChecker,
         >,

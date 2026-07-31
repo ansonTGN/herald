@@ -204,25 +204,20 @@ mod tests {
     ) -> Uuid {
         let subscription_id = Uuid::now_v7();
 
-        // subscription.bucket_id is NOT NULL (eager binding); bind the realm's
-        // legacy test bucket so the pre-created row satisfies the constraint.
-        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
-            &ctx.app_state.pool,
-            realm_id,
-        )
-        .await;
-
+        // `subscription.bucket_id` was removed by the distribution-rules
+        // refactor (grant routing is configured via distribution rules).
+        // `billing_type` is NOT NULL (0011_pay_model).
         sqlx::query(
             "INSERT INTO subscription
                 (id, realm_id, user_id, external_subscription_id, external_product_id,
                  payment_provider, status, entitlement_key, external_price_id,
                  provider_metadata, synced_at, current_period_start, current_period_end,
                  cancel_at_period_end, client_app_id, cancel_at, created_at, updated_at,
-                 bucket_id, billing_type)
+                 billing_type)
              VALUES ($1, $2, $3, $4, $5,
                      $6, $7, $8, NULL,
                      NULL, NOW(), NOW(), NOW() + INTERVAL '30 days',
-                     false, $9, NULL, NOW(), NOW(), $10, 'recurring')",
+                     false, $9, NULL, NOW(), NOW(), 'recurring')",
         )
         .bind(subscription_id)
         .bind(realm_id)
@@ -233,7 +228,6 @@ mod tests {
         .bind(status)
         .bind(entitlement_key)
         .bind(client_app_id)
-        .bind(bucket_id)
         .execute(&ctx.app_state.pool)
         .await
         .expect("Failed to pre-create subscription");
@@ -866,23 +860,41 @@ mod tests {
             realm_id,
         )
         .await;
+        // Distribution-rules model: the mapping row carries no grant columns.
         sqlx::query(
             "INSERT INTO provider_entitlement_mappings
                 (id, realm_id, payment_provider, external_product_id, entitlement_key,
-                 billing_type, points_per_period, grant_on_subscribe, enabled, bucket_id,
-                 granted_role_ids, created_at, updated_at)
-             VALUES ($1, $2, 'stripe', $3, $4, 'one_time', $5, true, true, $6, $7, NOW(), NOW())",
+                 billing_type, enabled, granted_role_ids, created_at, updated_at)
+             VALUES ($1, $2, 'stripe', $3, $4, 'one_time', true, $5, NOW(), NOW())",
         )
         .bind(mapping_id)
         .bind(realm_id)
         .bind(format!("prod_stripe_{entitlement_key}"))
         .bind(entitlement_key)
-        .bind(points)
-        .bind(bucket_id)
         .bind(role_ids)
         .execute(&ctx.app_state.pool)
         .await
         .expect("Failed to create one-time mapping with granted_role_ids");
+
+        if let Some(points_amount) = points {
+            let rule_id = Uuid::now_v7();
+            sqlx::query(
+                "INSERT INTO points_distribution_rules
+                    (id, realm_id, owner_type, entitlement_mapping_id, bucket_id,
+                     trigger_sources, grant_mode, points_amount, validity_days,
+                     enabled, display_order)
+                 VALUES ($1, $2, 'entitlement_mapping', $3, $4, $5, 'fixed', $6, 0, true, 0)",
+            )
+            .bind(rule_id)
+            .bind(realm_id)
+            .bind(mapping_id)
+            .bind(bucket_id)
+            .bind(&["topup"][..])
+            .bind(points_amount)
+            .execute(&ctx.app_state.pool)
+            .await
+            .expect("Failed to seed mapping-owned topup distribution rule");
+        }
         mapping_id
     }
 
@@ -899,30 +911,35 @@ mod tests {
         amount: i64,
     ) -> Uuid {
         let attempt_id = Uuid::now_v7();
-        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
-            &ctx.app_state.pool,
-            realm_id,
-        )
-        .await;
         sqlx::query(
             "INSERT INTO payment_attempts
                 (id, realm_id, user_id, payment_provider, target_type, target_id,
-                 bucket_id, amount, currency, status, provider_reference,
+                 amount, currency, status, provider_reference,
                  provider_status, expires_at, created_at, updated_at)
              VALUES ($1, $2, $3, 'stripe', 'entitlement_mapping', $4,
-                     $5, $6, 'usd', 'Succeeded', $7,
+                     $5, 'usd', 'Succeeded', $6,
                      'succeeded', NOW() + INTERVAL '1 hour', NOW(), NOW())",
         )
         .bind(attempt_id)
         .bind(realm_id)
         .bind(user_id)
         .bind(mapping_id)
-        .bind(bucket_id)
         .bind(amount)
         .bind(charge_id)
         .execute(&ctx.app_state.pool)
         .await
         .expect("Failed to create Stripe succeeded payment_attempt snapshot");
+        // Mirror production: snapshot the mapping's enabled `topup` rules so
+        // `captured_bucket_ids` resolves the routing bucket for the
+        // async-payment-failed / charge.refunded revocation paths.
+        crate::tests::helpers::points_helpers::snapshot_attempt_rules_for_mapping(
+            &ctx.app_state.pool,
+            attempt_id,
+            realm_id,
+            mapping_id,
+            "topup",
+        )
+        .await;
         attempt_id
     }
 
@@ -1050,26 +1067,17 @@ mod tests {
         .await
         .expect("seed payment role grant");
 
-        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
-            &ctx.app_state.pool,
-            &realm_id,
-        )
-        .await;
-        sqlx::query(
-            "INSERT INTO points_credit_ledger
-                (id, user_id, realm_id, bucket_id, credit_type, source_type, source_id,
-                 granted_amount, used_amount, revoked_amount, status, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, 'topup_credit', 'topup', $5,
-                     500, 0, 0, 'active', NOW(), NOW())",
-        )
-        .bind(Uuid::now_v7())
-        .bind(user_id)
-        .bind(&realm_id)
-        .bind(bucket_id)
-        .bind(attempt_id.to_string())
-        .execute(&ctx.app_state.pool)
-        .await
-        .expect("seed topup_credit ledger entry");
+        // Seed a rule-attributed topup_credit ledger mirroring
+        // `fulfill_one_time_purchase` output, so the refund's
+        // `revoke_topup_source_proportional(source_id = attempt.id)` finds and
+        // revokes the grant. A raw unattributed ledger would be silently
+        // skipped (the revoke JOINs distribution_events on source_id and
+        // requires distribution_rule_id IS NOT NULL).
+        let _ledger_id =
+            crate::tests::helpers::points_helpers::seed_fulfilled_topup_ledger_for_attempt(
+                ctx, &realm_id, user_id, attempt_id, 500, None,
+            )
+            .await;
 
         // Pre-condition: 1 payment role grant.
         assert_eq!(

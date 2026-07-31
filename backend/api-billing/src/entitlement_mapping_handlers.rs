@@ -13,10 +13,13 @@ use crate::types::{
     BatchUpdateEntitlementMappingsRequest, BatchUpdateEntitlementMappingsResponse,
     CreateEntitlementMappingRequest, EntitlementMappingListResponse, EntitlementMappingQuery,
     EntitlementMappingResponse, EntitlementQuotaWindowResponse, OneTimeMappingItem,
-    OneTimeMappingListResponse, PartialSyncError, ProviderProductInfo, SyncProviderRequest,
-    SyncProviderResponse, UpdateEntitlementMappingRequest,
+    OneTimeMappingListResponse, PartialSyncError, PointDistributionRuleResponse,
+    PointDistributionRuleWrite, ProviderProductInfo, SyncProviderRequest, SyncProviderResponse,
+    UpdateEntitlementMappingRequest,
 };
-use herald_api_base::application::http::server::api_entities::ApiError;
+use herald_api_base::application::http::server::api_entities::{
+    ApiError, DistributionRuleErrorResponse,
+};
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
 use herald_core::domain::billing::CreateEntitlementMappingInput;
@@ -27,6 +30,10 @@ use herald_core::domain::billing::{
 use herald_core::domain::common::entities::app_errors::CoreError;
 use herald_core::domain::points::derive_window_key;
 use herald_core::domain::points::entities::QuotaWindow;
+use herald_core::domain::points::{
+    DistributionPolicy, DistributionRuleError, DistributionRuleOwner, DistributionTrigger,
+    PointsDistributionRule, RuleUpsert, validate_rule_for_owner,
+};
 
 /// 409 `mapping_in_use` body for a batch save blocked by the active-subscription
 /// lock. The whole batch transaction is rolled back.
@@ -47,33 +54,267 @@ pub struct MappingRoleNotInRealmErrorBody {
     pub realm_id: String,
 }
 
-/// Convert domain EntitlementMapping to API response
-fn mapping_to_response(m: EntitlementMapping) -> EntitlementMappingResponse {
+/// Convert a domain distribution rule into the read-side API DTO.
+pub(crate) fn rule_to_response(rule: PointsDistributionRule) -> PointDistributionRuleResponse {
+    let trigger_sources: Vec<String> = rule.trigger_sources.iter().map(|t| t.to_string()).collect();
+    let grant_mode = rule.policy.grant_mode().to_string();
+    let (points_amount, validity_days, grant_period_type, quota_windows) = match rule.policy {
+        DistributionPolicy::Fixed {
+            amount,
+            validity_days,
+            grant_period_type,
+        } => (
+            Some(amount),
+            Some(validity_days),
+            grant_period_type.map(|t| t.to_string()),
+            None,
+        ),
+        DistributionPolicy::Quota { windows } => {
+            let qw = Some(
+                windows
+                    .into_iter()
+                    .map(|w| EntitlementQuotaWindowResponse {
+                        window_seconds: w.window_seconds,
+                        limit: w.limit,
+                        key: w.key,
+                    })
+                    .collect(),
+            );
+            (None, None, None, qw)
+        }
+    };
+    PointDistributionRuleResponse {
+        id: rule.id,
+        bucket_id: rule.bucket_id,
+        trigger_sources,
+        grant_mode,
+        points_amount,
+        validity_days,
+        grant_period_type,
+        quota_windows,
+        enabled: rule.enabled,
+        display_order: rule.display_order,
+    }
+}
+
+/// Convert a write-side rule DTO into a domain [`RuleUpsert`], validating the
+/// trigger / policy shape. Returns a stable 400 on an illegal combination.
+fn distribution_rule_error(
+    status: StatusCode,
+    code: &str,
+    message: impl Into<String>,
+    rule_id: Option<Uuid>,
+    field: Option<&str>,
+) -> ApiError {
+    ApiError::distribution_rule_error(
+        status,
+        DistributionRuleErrorResponse {
+            code: code.to_string(),
+            message: message.into(),
+            rule_id,
+            field: field.map(str::to_string),
+        },
+    )
+}
+
+fn invalid_rule_field(
+    code: &'static str,
+    message: impl Into<String>,
+    rule_id: Option<Uuid>,
+    field: &'static str,
+) -> ApiError {
+    distribution_rule_error(StatusCode::BAD_REQUEST, code, message, rule_id, Some(field))
+}
+
+fn rule_write_to_upsert(write: PointDistributionRuleWrite) -> Result<RuleUpsert, ApiError> {
+    let rule_id = write.id;
+    if write.trigger_sources.is_empty() {
+        return Err(invalid_rule_field(
+            "invalid_distribution_rule",
+            "trigger_sources must be non-empty",
+            rule_id,
+            "triggerSources",
+        ));
+    }
+    let mut trigger_sources = Vec::with_capacity(write.trigger_sources.len());
+    for s in &write.trigger_sources {
+        let t = s.parse::<DistributionTrigger>().map_err(|_| {
+            invalid_rule_field(
+                "invalid_distribution_trigger",
+                format!("invalid distribution trigger: {s}"),
+                rule_id,
+                "triggerSources",
+            )
+        })?;
+        trigger_sources.push(t);
+    }
+    let policy = match write.grant_mode.as_str() {
+        "fixed" => {
+            let amount = write.points_amount.ok_or_else(|| {
+                invalid_rule_field(
+                    "invalid_distribution_policy",
+                    "points_amount is required for fixed grant_mode",
+                    rule_id,
+                    "pointsAmount",
+                )
+            })?;
+            if amount <= 0 {
+                return Err(invalid_rule_field(
+                    "invalid_distribution_policy",
+                    "points_amount must be > 0",
+                    rule_id,
+                    "pointsAmount",
+                ));
+            }
+            let validity_days = write.validity_days.unwrap_or(0);
+            if validity_days < 0 {
+                return Err(invalid_rule_field(
+                    "invalid_distribution_policy",
+                    "validity_days must be >= 0",
+                    rule_id,
+                    "validityDays",
+                ));
+            }
+            let grant_period_type = write
+                .grant_period_type
+                .as_deref()
+                .map(|s| {
+                    s.parse().map_err(|_| {
+                        invalid_rule_field(
+                            "invalid_distribution_policy",
+                            format!("invalid grant_period_type: {s}"),
+                            rule_id,
+                            "grantPeriodType",
+                        )
+                    })
+                })
+                .transpose()?;
+            DistributionPolicy::Fixed {
+                amount,
+                validity_days,
+                grant_period_type,
+            }
+        }
+        "quota" => {
+            let windows_in = write.quota_windows.ok_or_else(|| {
+                invalid_rule_field(
+                    "invalid_distribution_policy",
+                    "quota_windows is required for quota grant_mode",
+                    rule_id,
+                    "quotaWindows",
+                )
+            })?;
+            const QUOTA_WINDOWS_MAX: usize = 8;
+            if windows_in.len() > QUOTA_WINDOWS_MAX {
+                return Err(invalid_rule_field(
+                    "invalid_distribution_policy",
+                    format!(
+                        "quota_windows may have at most {} windows, got {}",
+                        QUOTA_WINDOWS_MAX,
+                        windows_in.len()
+                    ),
+                    rule_id,
+                    "quotaWindows",
+                ));
+            }
+            let mut windows = Vec::with_capacity(windows_in.len());
+            for w in windows_in {
+                if w.window_seconds <= 0 {
+                    return Err(invalid_rule_field(
+                        "invalid_distribution_policy",
+                        "quota_windows.windowSeconds must be > 0",
+                        rule_id,
+                        "quotaWindows",
+                    ));
+                }
+                if w.limit < 0 {
+                    return Err(invalid_rule_field(
+                        "invalid_distribution_policy",
+                        "quota_windows.limit must be >= 0",
+                        rule_id,
+                        "quotaWindows",
+                    ));
+                }
+                windows.push(QuotaWindow {
+                    window_seconds: w.window_seconds,
+                    limit: w.limit,
+                    key: derive_window_key(w.window_seconds),
+                });
+            }
+            DistributionPolicy::Quota { windows }
+        }
+        other => {
+            return Err(invalid_rule_field(
+                "invalid_distribution_policy",
+                format!("invalid grant_mode: {other} (expected 'fixed' or 'quota')"),
+                rule_id,
+                "grantMode",
+            ));
+        }
+    };
+    Ok(RuleUpsert {
+        id: write.id,
+        bucket_id: write.bucket_id,
+        trigger_sources,
+        policy,
+        enabled: write.enabled,
+        display_order: write.display_order,
+    })
+}
+
+fn map_distribution_rule_validation_error(
+    error: DistributionRuleError,
+    rule_id: Option<Uuid>,
+) -> ApiError {
+    let code = match &error {
+        DistributionRuleError::TriggerNotAllowedForOwner(_) => "invalid_distribution_trigger",
+        DistributionRuleError::PolicyNotAllowedForTrigger
+        | DistributionRuleError::InvalidFixedAmount
+        | DistributionRuleError::InvalidValidity
+        | DistributionRuleError::InvalidQuotaWindows => "invalid_distribution_policy",
+        DistributionRuleError::EmptyTriggerSources => "invalid_distribution_rule",
+        DistributionRuleError::BucketOutsideRealm
+        | DistributionRuleError::BucketDisabled
+        | DistributionRuleError::RuleOutsideOwner => "distribution_rule_conflict",
+    };
+    let status = match &error {
+        DistributionRuleError::BucketOutsideRealm
+        | DistributionRuleError::BucketDisabled
+        | DistributionRuleError::RuleOutsideOwner => StatusCode::CONFLICT,
+        _ => StatusCode::BAD_REQUEST,
+    };
+    let field = match &error {
+        DistributionRuleError::EmptyTriggerSources
+        | DistributionRuleError::TriggerNotAllowedForOwner(_) => Some("triggerSources"),
+        DistributionRuleError::PolicyNotAllowedForTrigger => Some("grantMode"),
+        DistributionRuleError::InvalidFixedAmount => Some("pointsAmount"),
+        DistributionRuleError::InvalidValidity => Some("validityDays"),
+        DistributionRuleError::InvalidQuotaWindows => Some("quotaWindows"),
+        DistributionRuleError::BucketOutsideRealm | DistributionRuleError::BucketDisabled => {
+            Some("bucketId")
+        }
+        DistributionRuleError::RuleOutsideOwner => Some("ruleId"),
+    };
+    distribution_rule_error(status, code, error.to_string(), rule_id, field)
+}
+
+/// Convert domain EntitlementMapping + its rules to API response
+fn mapping_to_response(
+    m: EntitlementMapping,
+    rules: Vec<PointsDistributionRule>,
+) -> EntitlementMappingResponse {
     EntitlementMappingResponse {
         id: m.id,
         payment_provider: m.payment_provider,
         external_product_id: m.external_product_id,
         external_price_id: m.external_price_id,
-        bucket_id: m.bucket_id,
         entitlement_key: m.entitlement_key,
         billing_type: m.billing_type.map(|bt| bt.as_str().to_string()),
         billing_period: m.billing_period,
         service_duration_days: m.service_duration_days,
-        points_per_period: m.points_per_period,
-        validity_days: m.validity_days,
-        grant_on_subscribe: m.grant_on_subscribe,
         enabled: m.enabled,
         provider_product_info: to_provider_product_info(m.provider_product_info),
-        quota_windows: m.quota_windows.map(|windows| {
-            windows
-                .into_iter()
-                .map(|w| EntitlementQuotaWindowResponse {
-                    window_seconds: w.window_seconds,
-                    limit: w.limit,
-                    key: w.key,
-                })
-                .collect()
-        }),
+        point_rules: rules.into_iter().map(rule_to_response).collect(),
         granted_role_ids: m.granted_role_ids,
         synced_at: m.synced_at.map(|dt| dt.to_rfc3339()),
         created_at: m.created_at.to_rfc3339(),
@@ -145,8 +386,23 @@ pub async fn list_entitlement_mappings(
             ApiError::internal("Failed to list entitlement mappings".to_string())
         })?;
 
-    let items: Vec<EntitlementMappingResponse> =
-        mappings.into_iter().map(mapping_to_response).collect();
+    let mut items = Vec::with_capacity(mappings.len());
+    for m in mappings {
+        let rules = state
+            .billing_repository
+            .find_mapping_rules(&realm_id, m.id)
+            .await
+            .map_err(|e| {
+                tracing::error!(
+                    realm_id = %realm_id,
+                    mapping_id = %m.id,
+                    error = %e,
+                    "Failed to load mapping rules"
+                );
+                ApiError::internal("Failed to list entitlement mappings".to_string())
+            })?;
+        items.push(mapping_to_response(m, rules));
+    }
 
     Ok(Json(EntitlementMappingListResponse {
         items,
@@ -203,13 +459,25 @@ pub async fn get_entitlement_mapping(
         return Err(ApiError::not_found("Mapping not found"));
     }
 
-    Ok(Json(mapping_to_response(mapping)))
+    let rules = state
+        .billing_repository
+        .find_mapping_rules(&realm_id, mapping.id)
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                mapping_id = %mapping.id,
+                error = %e,
+                "Failed to load mapping rules"
+            );
+            ApiError::internal("Failed to get entitlement mapping".to_string())
+        })?;
+
+    Ok(Json(mapping_to_response(mapping, rules)))
 }
 
 ///
 /// Generic over provider (IAP, Stripe, Creem). Required permission:
-/// `billing.manage`; credit-strategy fields (`pointsPerPeriod` /
-/// `grantOnSubscribe` / `validityDays`) additionally require `points.manage`
+/// `billing.manage`; distribution-rule fields additionally require `points.manage`
 /// (mirrors the batch update permission model). A duplicate
 /// `(realm, provider, product, price)` row violates
 /// `uq_pem_realm_provider_product_price` and surfaces as HTTP 409.
@@ -223,10 +491,10 @@ pub async fn get_entitlement_mapping(
     request_body = CreateEntitlementMappingRequest,
     responses(
         (status = 201, description = "Entitlement mapping created", body = EntitlementMappingResponse),
-        (status = 400, description = "Bad request - invalid billing_type / billing_period combo", body = herald_api_base::application::http::server::api_entities::ErrorResponse),
+        (status = 400, description = "Bad request, including invalid distribution rules", body = DistributionRuleErrorResponse),
         (status = 401, description = "Unauthorized", body = herald_api_base::application::http::server::api_entities::ErrorResponse),
         (status = 403, description = "Forbidden - missing billing.manage (or points.manage for credit fields)", body = herald_api_base::application::http::server::api_entities::ErrorResponse),
-        (status = 409, description = "Conflict - mapping already exists for this provider+product+price", body = herald_api_base::application::http::server::api_entities::ErrorResponse),
+        (status = 409, description = "Mapping or distribution-rule conflict", body = DistributionRuleErrorResponse),
         (status = 500, description = "Internal server error", body = herald_api_base::application::http::server::api_entities::ErrorResponse)
     ),
     security(("bearer_auth" = []))
@@ -246,28 +514,11 @@ pub async fn create_entitlement_mapping(
     // 1. billing.manage (realm boundary + business permission).
     require_billing_permission(&state, &identity, &realm_id, "manage").await?;
 
-    // 2. points.manage if any credit-strategy field is present (mirrors batch
-    let touches_credit_fields = request.points_per_period.is_some()
-        || request.grant_on_subscribe.is_some()
-        || request.validity_days.is_some();
-    if touches_credit_fields {
+    // 2. points.manage if the request carries distribution rules (the credit
+    // config dimension). An empty / absent rule set is a valid "no points
+    // grant" mapping and does not require points.manage.
+    if !request.point_rules.is_empty() {
         require_points_manage_permission(&state, &identity, &realm_id).await?;
-    }
-
-    // 3. Credit-strategy field validation.
-    if let Some(points) = request.points_per_period
-        && points < 0
-    {
-        return Err(ApiError::bad_request(
-            "points_per_period must be non-negative".to_string(),
-        ));
-    }
-    if let Some(validity) = request.validity_days
-        && validity < 0
-    {
-        return Err(ApiError::bad_request(
-            "validity_days must be non-negative".to_string(),
-        ));
     }
 
     request
@@ -284,11 +535,29 @@ pub async fn create_entitlement_mapping(
         .map_err(map_batch_error)?;
     }
 
-    // 5. billing_type parse + billing_period guard.
+    // 3. billing_type parse + billing_period guard.
     let billing_type = request
         .billing_type
         .parse::<herald_core::domain::billing::entities::BillingType>()
         .map_err(|e| ApiError::bad_request(format!("invalid billing_type: {e}")))?;
+
+    // 4. Materialize the rule upsert set (validates trigger/policy shape).
+    let point_rules = request
+        .point_rules
+        .into_iter()
+        .map(rule_write_to_upsert)
+        .collect::<Result<Vec<_>, _>>()?;
+    for rule in &point_rules {
+        let resolved = rule.clone().into_rule_for_owner(
+            &realm_id,
+            DistributionRuleOwner::EntitlementMapping(Uuid::nil()),
+        );
+        validate_rule_for_owner(&resolved, Some(billing_type.clone()))
+            .map_err(|error| map_distribution_rule_validation_error(error, rule.id))?;
+    }
+    let only_rule_id = (point_rules.len() == 1)
+        .then(|| point_rules[0].id)
+        .flatten();
 
     let mapping = state
         .entitlement_mapping_service
@@ -300,22 +569,28 @@ pub async fn create_entitlement_mapping(
                 external_product_id: request.external_product_id,
                 external_price_id: request.external_price_id,
                 entitlement_key: request.entitlement_key,
-                bucket_id: request.bucket_id,
                 billing_type,
                 billing_period: request.billing_period,
                 service_duration_days: request.service_duration_days,
-                points_per_period: request.points_per_period,
-                grant_on_subscribe: request.grant_on_subscribe,
-                validity_days: request.validity_days,
+                point_rules,
                 granted_role_ids: request.granted_role_ids,
                 enabled: request.enabled,
             },
         )
         .await
         .map_err(|e| match e {
-            CoreError::Conflict(_) => ApiError::conflict(
-                "mapping already exists for this provider+product+price".to_string(),
-            ),
+            CoreError::Conflict(message) if message.starts_with("distribution_rule_conflict:") => {
+                distribution_rule_error(
+                    StatusCode::CONFLICT,
+                    "distribution_rule_conflict",
+                    message,
+                    only_rule_id,
+                    None,
+                )
+            }
+            CoreError::Conflict(_) => {
+                ApiError::conflict("mapping already exists for this provider+product+price")
+            }
             other => {
                 herald_api_base::application::http::common::error_helpers::core_error_to_api_error(
                     other,
@@ -324,7 +599,23 @@ pub async fn create_entitlement_mapping(
             }
         })?;
 
-    Ok((StatusCode::CREATED, Json(mapping_to_response(mapping))))
+    let rules = state
+        .billing_repository
+        .find_mapping_rules(&realm_id, mapping.id)
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                mapping_id = %mapping.id,
+                error = %e,
+                "Failed to load created mapping rules"
+            );
+            ApiError::internal("Failed to load created mapping rules".to_string())
+        })?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(mapping_to_response(mapping, rules)),
+    ))
 }
 
 /// Update an entitlement mapping
@@ -339,10 +630,11 @@ pub async fn create_entitlement_mapping(
     request_body = UpdateEntitlementMappingRequest,
     responses(
         (status = 200, description = "Entitlement mapping updated successfully", body = EntitlementMappingResponse),
-        (status = 400, description = "Bad request", body = herald_api_base::application::http::server::api_entities::ErrorResponse),
+        (status = 400, description = "Bad request, including invalid distribution rules", body = DistributionRuleErrorResponse),
         (status = 401, description = "Unauthorized", body = herald_api_base::application::http::server::api_entities::ErrorResponse),
         (status = 403, description = "Forbidden - Insufficient permissions", body = herald_api_base::application::http::server::api_entities::ErrorResponse),
         (status = 404, description = "Mapping not found", body = herald_api_base::application::http::server::api_entities::ErrorResponse),
+        (status = 409, description = "Distribution rule conflicts with its owner or target bucket", body = DistributionRuleErrorResponse),
         (status = 500, description = "Internal server error", body = herald_api_base::application::http::server::api_entities::ErrorResponse)
     ),
     security(("bearer_auth" = []))
@@ -359,7 +651,12 @@ pub async fn update_entitlement_mapping(
         realm_id
     );
 
-    require_points_manage_permission(&state, &identity, &realm_id).await?;
+    require_billing_permission(&state, &identity, &realm_id, "manage").await?;
+
+    // points.manage when the PATCH carries distribution rules.
+    if request.point_rules.is_some() {
+        require_points_manage_permission(&state, &identity, &realm_id).await?;
+    }
 
     if let Some(ref key) = request.entitlement_key {
         if key.is_empty() || key.len() > 64 {
@@ -395,19 +692,11 @@ pub async fn update_entitlement_mapping(
         return Err(ApiError::not_found("Mapping not found"));
     }
 
-    if let Some(points) = request.points_per_period
-        && points < 0
-    {
-        return Err(ApiError::bad_request(
-            "points_per_period must be non-negative".to_string(),
-        ));
-    }
-
-    // is immutable on PATCH, so the NonRenewing invariant must hold for the
-    // *resolved* duration of an existing non_renewing mapping: Some(>=1). For
-    // other billing types the field is forced to None (meaningless outside
-    // non_renewing). 3-state: None = leave unchanged, Some(None) = clear,
-    // Some(Some(n)) = set.
+    // billing_type is immutable on PATCH, so the NonRenewing invariant must
+    // hold for the *resolved* duration of an existing non_renewing mapping:
+    // Some(>=1). For other billing types the field is forced to None
+    // (meaningless outside non_renewing). 3-state: None = leave unchanged,
+    // Some(None) = clear, Some(Some(n)) = set.
     let is_non_renewing = matches!(
         existing.billing_type,
         Some(herald_core::domain::billing::entities::BillingType::NonRenewing)
@@ -429,89 +718,103 @@ pub async fn update_entitlement_mapping(
         None
     };
 
-    // `None` = leave unchanged, `Some([])` = clear, `Some([...])` = replace.
-    let quota_windows = match request.quota_windows {
-        None => existing.quota_windows.clone(),
-        Some(ref windows) if windows.is_empty() => None,
-        Some(windows) => {
-            const QUOTA_WINDOWS_MAX: usize = 8;
-            if windows.len() > QUOTA_WINDOWS_MAX {
-                return Err(ApiError::bad_request(format!(
-                    "quota_windows may have at most {} windows, got {}",
-                    QUOTA_WINDOWS_MAX,
-                    windows.len()
-                )));
-            }
-            for w in &windows {
-                if w.window_seconds <= 0 {
-                    return Err(ApiError::bad_request(
-                        "quota_windows.windowSeconds must be > 0".to_string(),
-                    ));
-                }
-                if w.limit < 0 {
-                    return Err(ApiError::bad_request(
-                        "quota_windows.limit must be >= 0".to_string(),
-                    ));
-                }
-            }
-            Some(
-                windows
-                    .into_iter()
-                    .map(|w| QuotaWindow {
-                        window_seconds: w.window_seconds,
-                        limit: w.limit,
-                        key: derive_window_key(w.window_seconds),
-                    })
-                    .collect(),
-            )
-        }
+    // Materialize the optional rule upsert set (validates trigger/policy shape).
+    let point_rules = match request.point_rules {
+        Some(writes) => Some(
+            writes
+                .into_iter()
+                .map(rule_write_to_upsert)
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
+        None => None,
     };
+    if let Some(rules) = &point_rules {
+        for rule in rules {
+            let resolved = rule.clone().into_rule_for_owner(
+                &realm_id,
+                DistributionRuleOwner::EntitlementMapping(mapping_id),
+            );
+            validate_rule_for_owner(&resolved, existing.billing_type.clone())
+                .map_err(|error| map_distribution_rule_validation_error(error, rule.id))?;
+        }
+    }
 
-    let updated = EntitlementMapping {
+    let updated_mapping = EntitlementMapping {
         id: existing.id,
-        realm_id: existing.realm_id,
-        payment_provider: existing.payment_provider,
-        external_product_id: existing.external_product_id,
-        external_price_id: existing.external_price_id,
-        // Preserve the bound Bucket; this handler does not expose a way to
-        // reassign it via PATCH (bucket assignment is owned elsewhere).
-        bucket_id: existing.bucket_id,
+        realm_id: existing.realm_id.clone(),
+        payment_provider: existing.payment_provider.clone(),
+        external_product_id: existing.external_product_id.clone(),
+        external_price_id: existing.external_price_id.clone(),
         entitlement_key: request.entitlement_key.unwrap_or(existing.entitlement_key),
         billing_type: existing.billing_type,
         billing_period: existing.billing_period,
         service_duration_days,
-        points_per_period: request.points_per_period.or(existing.points_per_period),
-        validity_days: request.validity_days.or(existing.validity_days),
-        grant_on_subscribe: request
-            .grant_on_subscribe
-            .unwrap_or(existing.grant_on_subscribe),
-        grant_period_type: existing.grant_period_type,
-        max_periods: existing.max_periods,
         enabled: request.enabled.unwrap_or(existing.enabled),
         provider_product_info: existing.provider_product_info,
-        quota_windows,
-        // The single-PATCH path does not modify `granted_role_ids` (config is
-        // value so the round-trip is stable.
         granted_role_ids: existing.granted_role_ids,
         synced_at: existing.synced_at,
         created_at: existing.created_at,
         updated_at: chrono::Utc::now(),
     };
 
-    let updated = state
+    let updated = if let Some(rules) = point_rules {
+        // Atomic upsert of mapping base fields + rule set in one transaction.
+        state
+            .billing_repository
+            .upsert_mapping_with_rules(&realm_id, updated_mapping, rules)
+            .await
+            .map_err(|e| {
+                tracing::error!(
+                    mapping_id = %mapping_id,
+                    error = %e,
+                    "Failed to update entitlement mapping with rules"
+                );
+                match e {
+                    CoreError::Conflict(message) => distribution_rule_error(
+                        StatusCode::CONFLICT,
+                        "distribution_rule_conflict",
+                        message,
+                        None,
+                        None,
+                    ),
+                    CoreError::NotFound => {
+                        ApiError::not_found("Distribution rule or target bucket not found")
+                    }
+                    other => herald_api_base::application::http::common::error_helpers::core_error_to_api_error(
+                        other,
+                        "update entitlement mapping with rules",
+                    ),
+                }
+            })?
+    } else {
+        state
+            .billing_repository
+            .update_entitlement_mapping(updated_mapping)
+            .await
+            .map_err(|e| {
+                tracing::error!(
+                    mapping_id = %mapping_id,
+                    error = %e,
+                    "Failed to update entitlement mapping"
+                );
+                ApiError::internal("Failed to update entitlement mapping".to_string())
+            })?
+    };
+
+    let rules = state
         .billing_repository
-        .update_entitlement_mapping(updated)
+        .find_mapping_rules(&realm_id, updated.id)
         .await
         .map_err(|e| {
             tracing::error!(
-                mapping_id = %mapping_id,
+                mapping_id = %updated.id,
                 error = %e,
-                "Failed to update entitlement mapping"
+                "Failed to load updated mapping rules"
             );
-            ApiError::internal("Failed to update entitlement mapping".to_string())
+            ApiError::internal("Failed to load updated mapping rules".to_string())
         })?;
 
-    Ok(Json(mapping_to_response(updated)))
+    Ok(Json(mapping_to_response(updated, rules)))
 }
 
 /// List enabled one-time entitlement mappings for a realm
@@ -552,18 +855,29 @@ pub async fn list_one_time_mappings(
             ApiError::internal("Failed to list one-time mappings".to_string())
         })?;
 
-    let items: Vec<OneTimeMappingItem> = mappings
-        .into_iter()
-        .map(|m| OneTimeMappingItem {
+    let mut items: Vec<OneTimeMappingItem> = Vec::with_capacity(mappings.len());
+    for m in mappings {
+        let rules = state
+            .billing_repository
+            .find_mapping_rules(&realm_id, m.id)
+            .await
+            .map_err(|e| {
+                tracing::error!(
+                    realm_id = %realm_id,
+                    mapping_id = %m.id,
+                    error = %e,
+                    "Failed to load one-time mapping rules"
+                );
+                ApiError::internal("Failed to list one-time mappings".to_string())
+            })?;
+        items.push(OneTimeMappingItem {
             id: m.id.to_string(),
             entitlement_key: m.entitlement_key,
-            bucket_id: m.bucket_id,
             provider_product_info: to_provider_product_info(m.provider_product_info),
-            points_per_period: m.points_per_period,
+            point_rules: rules.into_iter().map(rule_to_response).collect(),
             payment_provider: m.payment_provider,
-            validity_days: m.validity_days,
-        })
-        .collect();
+        });
+    }
 
     Ok(Json(OneTimeMappingListResponse { items }))
 }
@@ -675,55 +989,10 @@ pub async fn batch_update_entitlement_mappings(
     // 1. billing.manage (realm boundary + business permission).
     require_billing_permission(&state, &identity, &realm_id, "manage").await?;
 
-    // 2. points.manage if any row writes a credit-strategy field.
-    let touches_credit_fields = request.updates.iter().any(|u| {
-        u.points_per_period.is_some()
-            || u.validity_days.is_some()
-            || u.grant_on_subscribe.is_some()
-            || u.quota_windows.is_some()
-    });
+    // 2. points.manage if any row writes a distribution rule set.
+    let touches_credit_fields = request.updates.iter().any(|u| u.point_rules.is_some());
     if touches_credit_fields {
         require_points_manage_permission(&state, &identity, &realm_id).await?;
-    }
-
-    // 3. Credit-strategy field validation.
-    for u in &request.updates {
-        if let Some(points) = u.points_per_period
-            && points < 0
-        {
-            return Err(ApiError::bad_request(format!(
-                "points_per_period must be non-negative for mapping {}",
-                u.mapping_id
-            )));
-        }
-        // ≤ 8, window_seconds > 0, limit >= 0. Matches the points-domain
-        // `FREE_PERIODIC_QUOTA_WINDOWS_MAX` cap and the `points_per_period < 0`
-        // inline-check style. Invalid → 400.
-        if let Some(windows) = &u.quota_windows {
-            const QUOTA_WINDOWS_MAX: usize = 8;
-            if windows.len() > QUOTA_WINDOWS_MAX {
-                return Err(ApiError::bad_request(format!(
-                    "quota_windows may have at most {} windows for mapping {}, got {}",
-                    QUOTA_WINDOWS_MAX,
-                    u.mapping_id,
-                    windows.len()
-                )));
-            }
-            for w in windows {
-                if w.window_seconds <= 0 {
-                    return Err(ApiError::bad_request(format!(
-                        "quota_windows.windowSeconds must be > 0 for mapping {}",
-                        u.mapping_id
-                    )));
-                }
-                if w.limit < 0 {
-                    return Err(ApiError::bad_request(format!(
-                        "quota_windows.limit must be >= 0 for mapping {}",
-                        u.mapping_id
-                    )));
-                }
-            }
-        }
     }
 
     let input = herald_core::domain::billing::BatchUpdateMappingsInput {
@@ -733,25 +1002,25 @@ pub async fn batch_update_entitlement_mappings(
         updates: request
             .updates
             .into_iter()
-            .map(|u| herald_core::domain::billing::PriceMappingUpdateInput {
-                mapping_id: u.mapping_id,
-                billing_type: u.billing_type,
-                points_per_period: u.points_per_period,
-                validity_days: u.validity_days,
-                grant_on_subscribe: u.grant_on_subscribe,
-                enabled: u.enabled,
-                quota_windows: u.quota_windows.map(|windows| {
-                    windows
-                        .into_iter()
-                        .map(|w| herald_core::domain::billing::QuotaWindowInput {
-                            window_seconds: w.window_seconds,
-                            limit: w.limit,
-                        })
-                        .collect()
-                }),
-                granted_role_ids: u.granted_role_ids,
+            .map(|u| {
+                let point_rules = match u.point_rules {
+                    Some(writes) => Some(
+                        writes
+                            .into_iter()
+                            .map(rule_write_to_upsert)
+                            .collect::<Result<Vec<_>, _>>()?,
+                    ),
+                    None => None,
+                };
+                Ok(herald_core::domain::billing::PriceMappingUpdateInput {
+                    mapping_id: u.mapping_id,
+                    billing_type: u.billing_type,
+                    enabled: u.enabled,
+                    point_rules,
+                    granted_role_ids: u.granted_role_ids,
+                })
             })
-            .collect(),
+            .collect::<Result<Vec<_>, ApiError>>()?,
     };
 
     // any row carrying a non-empty `granted_role_ids` must reference roles that
@@ -783,7 +1052,23 @@ pub async fn batch_update_entitlement_mappings(
         .await
         .map_err(map_batch_error)?;
 
-    let prices = result.prices.into_iter().map(mapping_to_response).collect();
+    let mut prices = Vec::with_capacity(result.prices.len());
+    for m in result.prices {
+        let rules = state
+            .billing_repository
+            .find_mapping_rules(&realm_id, m.id)
+            .await
+            .map_err(|e| {
+                tracing::error!(
+                    realm_id = %realm_id,
+                    mapping_id = %m.id,
+                    error = %e,
+                    "Failed to load batch-updated mapping rules"
+                );
+                ApiError::internal("Failed to load batch-updated mapping rules".to_string())
+            })?;
+        prices.push(mapping_to_response(m, rules));
+    }
     Ok((
         StatusCode::CREATED,
         Json(BatchUpdateEntitlementMappingsResponse {
@@ -820,6 +1105,17 @@ fn map_batch_error(err: BatchMappingError) -> ApiError {
                 role_id,
                 realm_id,
             })
+        }
+        BatchMappingError::Other(CoreError::Conflict(message))
+            if message.starts_with("distribution_rule_conflict:") =>
+        {
+            distribution_rule_error(
+                StatusCode::CONFLICT,
+                "distribution_rule_conflict",
+                message,
+                None,
+                None,
+            )
         }
         BatchMappingError::Other(core) => ApiError::from(core),
     }

@@ -271,11 +271,16 @@ pub async fn get_one_time_mappings(
         .map(|m| OneTimeMappingItem {
             id: m.id.to_string(),
             entitlement_key: m.entitlement_key,
-            bucket_id: m.bucket_id,
+            // The single-target mapping fields have been removed with the
+            // multi-wallet rule model; the external one-time-mappings view
+            // surfaces nil/None for them until it is migrated to the rule
+            // model. Rule-based points-pack surfacing is the responsibility of
+            // the payment-attempt / external-API migration item.
+            bucket_id: Uuid::nil(),
             provider_product_info: m.provider_product_info,
-            points_per_period: m.points_per_period,
+            points_per_period: None,
             payment_provider: m.payment_provider,
-            validity_days: m.validity_days,
+            validity_days: None,
         })
         .collect();
 

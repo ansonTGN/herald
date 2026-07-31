@@ -72,18 +72,22 @@ mod tests {
         row.get::<Vec<Uuid>, _>("granted_role_ids")
     }
 
-    /// Read the persisted `points_per_period` column directly from the DB.
-    /// `provider_entitlement_mappings.points_per_period` is declared
-    /// `INTEGER` (0002_billing.sql), so decode to `Option<i32>` to match the
-    /// actual SQL type (INT4) — the domain layer widens to i64 internally.
+    /// Read the persisted fixed-grant points for a mapping from its owned
+    /// distribution rule. `provider_entitlement_mappings.points_per_period` was
+    /// removed by the distribution-rules refactor; the grant amount now lives on
+    /// `points_distribution_rules.points_amount`. Returns the first fixed rule's
+    /// amount (the migrated equivalent of the old single mapping-level value).
     async fn fetch_mapping_points(ctx: &PaywallM1Context, mapping_id: Uuid) -> Option<i32> {
-        sqlx::query_scalar::<_, Option<i32>>(
-            "SELECT points_per_period FROM provider_entitlement_mappings WHERE id = $1",
+        sqlx::query_scalar::<_, Option<i64>>(
+            "SELECT points_amount FROM points_distribution_rules
+             WHERE entitlement_mapping_id = $1 AND grant_mode = 'fixed'
+             ORDER BY display_order LIMIT 1",
         )
         .bind(mapping_id)
         .fetch_one(&ctx.app_state.pool)
         .await
-        .expect("mapping row must exist")
+        .expect("mapping rule query must execute")
+        .map(|v| v as i32)
     }
 
     /// PUT batch with a single update carrying `grantedRoleIds` = `granted`.

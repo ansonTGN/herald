@@ -12,7 +12,6 @@ use herald_api::application::http::state::AppState;
 use herald_core::admin::user::init_admin_user;
 use herald_core::application::{ApplicationServiceBuilder, WebhookService};
 use herald_core::domain::points::PointsService;
-use herald_core::domain::points::services::RealmConfigService;
 use herald_core::infrastructure::PostgresCustomDomainMappingRepository;
 use herald_core::infrastructure::authentication::init_authentication_functions;
 use herald_core::infrastructure::authorization::policies::PermissionBasedPointsPolicy;
@@ -193,10 +192,6 @@ impl AsyncTestContext for SchemaTestContext {
                         pool_with_schema.clone(),
                     ),
                 ),
-                // PostgresBillingRepository implements RegistrationPoolResolver;
-                // newly-synced draft mappings bind to the realm's
-                // registration-pool bucket (bucket_id is NOT NULL).
-                billing_repository.clone(),
             ),
         );
 
@@ -238,19 +233,10 @@ impl AsyncTestContext for SchemaTestContext {
             ),
         );
 
-        // Create realm config service
-        let realm_config_service = Arc::new(RealmConfigService::new(
-            points_repository.clone(),
-            points_policy.clone(),
-        ));
-
         // Create registration service
         let registration_service = Arc::new(
             herald_core::domain::points::services::RegistrationService::new(
                 points_repository.clone(),
-                points_service.clone(),
-                points_policy,
-                billing_repository.clone(),
             ),
         );
 
@@ -317,6 +303,7 @@ impl AsyncTestContext for SchemaTestContext {
             herald_core::infrastructure::purchase::PostgresFulfillmentService::new(
                 points_repository.clone(),
                 billing_repository.clone(),
+                payment_attempt_repository.clone(),
                 user_role_repository.clone(),
                 permission_checker.clone(),
             ),
@@ -368,7 +355,6 @@ impl AsyncTestContext for SchemaTestContext {
             points_repository,
             points_service,
             subscription_service,
-            realm_config_service,
             registration_service,
             idempotency_service: Arc::new(herald_core::domain::points::IdempotencyService::new(
                 Arc::new(RedisIdempotencyStore::new(Arc::new(redis_manager.clone()))),

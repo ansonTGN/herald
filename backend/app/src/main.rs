@@ -124,10 +124,7 @@ async fn main() -> Result<()> {
         herald_core::infrastructure::billing::PostgresInvoiceRepository::new((*state.db).clone()),
     );
 
-    // Construct the quota-entitlement expiry cleanup scheduler. Under the
-    // window-quota model (points-grant-redesign §4.1) there is no pre-grant
-    // lead_time_map to assemble — the scheduler only sweeps already-lapsed
-    // quota entitlements. lead_time_map is retired (Legacy Cleanup Checklist).
+    // Construct the free-periodic schedule and quota-expiry worker.
     let grant_scheduler = Arc::new(GrantScheduler::new(
         state.points_repository.clone(),
         state.points_service.clone(),

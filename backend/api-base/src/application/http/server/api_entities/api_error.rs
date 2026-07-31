@@ -5,6 +5,18 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
+use uuid::Uuid;
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DistributionRuleErrorResponse {
+    pub code: String,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rule_id: Option<Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub field: Option<String>,
+}
 
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct ErrorResponse {
@@ -174,6 +186,26 @@ impl ApiError {
 
     pub fn conflict_json<T: Serialize>(body: T) -> Self {
         Self::with_json(StatusCode::CONFLICT, body)
+    }
+
+    pub fn distribution_rule_error(
+        status: StatusCode,
+        body: DistributionRuleErrorResponse,
+    ) -> Self {
+        let json_body = serde_json::to_value(&body).unwrap_or_else(|_| {
+            tracing::warn!(
+                status = %status,
+                "Failed to serialize distribution rule error body"
+            );
+            serde_json::json!({
+                "code": "invalid_distribution_rule",
+                "message": "Invalid distribution rule"
+            })
+        });
+        Self {
+            status,
+            body: ErrorBody::Custom(json_body),
+        }
     }
 }
 

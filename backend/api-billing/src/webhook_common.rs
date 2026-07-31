@@ -1,8 +1,25 @@
 use herald_core::domain::common::entities::app_errors::CoreError;
+use herald_core::domain::payment_attempt::{PaymentAttempt, PaymentAttemptRepository};
 use herald_core::domain::points::entities::{PointsTransaction, TransactionType};
 use herald_core::domain::purchase::metadata_keys;
 use serde_json::Value;
 use uuid::Uuid;
+
+pub async fn captured_bucket_ids(
+    app_state: &herald_api_base::application::http::state::AppState,
+    attempt: &PaymentAttempt,
+) -> Result<Vec<Uuid>, CoreError> {
+    let mut bucket_ids = app_state
+        .payment_attempt_repository
+        .find_captured_rule_refs(&attempt.realm_id, attempt.id)
+        .await?
+        .into_iter()
+        .map(|rule| rule.bucket_id)
+        .collect::<Vec<_>>();
+    bucket_ids.sort_unstable();
+    bucket_ids.dedup();
+    Ok(bucket_ids)
+}
 
 pub fn create_placeholder_transaction(
     user_id: uuid::Uuid,
@@ -34,6 +51,10 @@ pub fn create_placeholder_transaction(
         correlation_id: None,
         effective_at: None,
         created_at: chrono::Utc::now(),
+        // Placeholder transactions are direct-write rows (no rule attribution);
+        // both attribution fields are NULL.
+        distribution_event_id: None,
+        distribution_rule_id: None,
     }
 }
 

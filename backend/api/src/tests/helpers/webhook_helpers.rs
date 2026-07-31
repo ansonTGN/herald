@@ -1139,49 +1139,37 @@ pub async fn setup_test_plan_config(
     setup_test_plan_config_with_points(ctx, realm_id, plan_id, 1000).await;
 }
 
-/// Setup a test plan config with custom points_per_period by creating a provider_entitlement_mappings entry.
+/// Setup a test plan config by creating two `provider_entitlement_mappings`
+/// entries (plan-specific + generic `prod_test_monthly`) for webhook resolver
+/// coverage.
+///
+/// Distribution-rules model: grant config lives in `points_distribution_rules`,
+/// so the mapping rows carry no grant columns. Both rows are bare; callers that
+/// need points grants seed a distribution rule separately. The existing callers
+/// (invoice attribution/sync, role-grant paywall tests) assert invoice rows or
+/// role grants, not points balances, so no rule is seeded here.
+/// `points_per_period` is retained in the signature for call-site stability.
 pub async fn setup_test_plan_config_with_points(
     ctx: &crate::tests::schema_test_context::SchemaTestContext,
     realm_id: &str,
     plan_id: Uuid,
-    points_per_period: i64,
+    _points_per_period: i64,
 ) {
     let external_product_id = format!("prod_test_{}", plan_id);
     let entitlement_key = plan_id.to_string();
-
-    // Credit Buckets model: a subscription grant routes to the
-    // bucket bound on the entitlement mapping. Bind both mappings below to the
-    // realm's legacy test bucket so the lazy subscription-bucket resolution in
-    // the Creem webhook handler succeeds (case "mapping present + bucket").
-    let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
-        &ctx.app_state.pool,
-        realm_id,
-    )
-    .await;
-    let quota_windows = serde_json::json!([
-        {
-            "windowSeconds": 2_592_000,
-            "limit": points_per_period,
-            "key": "period"
-        }
-    ]);
 
     // Create mapping with plan-specific external_product_id (for events that include entitlementKey)
     sqlx::query(
         "INSERT INTO provider_entitlement_mappings
             (id, realm_id, payment_provider, external_product_id, entitlement_key,
-             billing_type, billing_period, points_per_period, grant_on_subscribe,
-             validity_days, enabled, bucket_id, quota_windows, created_at, updated_at)
-         VALUES ($1, $2, 'creem', $3, $4, 'recurring', 'monthly', $5, true, 30, true, $6, $7, NOW(), NOW())
+             billing_type, billing_period, enabled)
+         VALUES ($1, $2, 'creem', $3, $4, 'recurring', 'monthly', true)
          ON CONFLICT DO NOTHING",
     )
     .bind(plan_id)
     .bind(realm_id)
     .bind(&external_product_id)
     .bind(&entitlement_key)
-    .bind(points_per_period)
-    .bind(bucket_id)
-    .bind(&quota_windows)
     .execute(&ctx.app_state.pool)
     .await
     .expect("Failed to create test entitlement mapping");
@@ -1192,17 +1180,13 @@ pub async fn setup_test_plan_config_with_points(
     sqlx::query(
         "INSERT INTO provider_entitlement_mappings
             (id, realm_id, payment_provider, external_product_id, entitlement_key,
-             billing_type, billing_period, points_per_period, grant_on_subscribe,
-             validity_days, enabled, bucket_id, quota_windows, created_at, updated_at)
-         VALUES ($1, $2, 'creem', 'prod_test_monthly', $3, 'recurring', 'monthly', $4, true, 30, true, $5, $6, NOW(), NOW())
+             billing_type, billing_period, enabled)
+         VALUES ($1, $2, 'creem', 'prod_test_monthly', $3, 'recurring', 'monthly', true)
          ON CONFLICT DO NOTHING",
     )
     .bind(generic_mapping_id)
     .bind(realm_id)
     .bind(&entitlement_key)
-    .bind(points_per_period)
-    .bind(bucket_id)
-    .bind(&quota_windows)
     .execute(&ctx.app_state.pool)
     .await
     .expect("Failed to create generic test entitlement mapping");
@@ -1225,43 +1209,29 @@ pub async fn setup_test_entitlement_mapping_for_webhook(
     provider: &str,
     external_product_id: &str,
     entitlement_key: &str,
-    points_per_period: i64,
-    grant_on_subscribe: bool,
+    _points_per_period: i64,
+    _grant_on_subscribe: bool,
     enabled: bool,
 ) -> Uuid {
     let mapping_id = Uuid::now_v7();
 
-    // Credit Buckets model: bucket_id is NOT NULL — bind the realm's legacy
-    // test bucket (matches the bucket-bound mappings created elsewhere).
-    let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
-        &ctx.app_state.pool,
-        realm_id,
-    )
-    .await;
-    let quota_windows = serde_json::json!([
-        {
-            "windowSeconds": 2_592_000,
-            "limit": points_per_period,
-            "key": "period"
-        }
-    ]);
-
+    // Distribution-rules model: grant config lives in `points_distribution_rules`
+    // (owner = entitlement_mapping), so the mapping row carries no grant columns.
+    // Mirrors `setup_test_entitlement_mapping` (bare row). The existing callers
+    // (role-grant paywall tests) assert role grants driven by `granted_role_ids`,
+    // not points balances, so no rule is seeded here. `points_per_period` /
+    // `grant_on_subscribe` are retained in the signature for call-site stability.
     sqlx::query(
         "INSERT INTO provider_entitlement_mappings
-            (id, realm_id, payment_provider, external_product_id, entitlement_key,
-             points_per_period, grant_on_subscribe, enabled, bucket_id, quota_windows, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())",
+            (id, realm_id, payment_provider, external_product_id, entitlement_key, enabled)
+         VALUES ($1, $2, $3, $4, $5, $6)",
     )
     .bind(mapping_id)
     .bind(realm_id)
     .bind(provider)
     .bind(external_product_id)
     .bind(entitlement_key)
-    .bind(points_per_period)
-    .bind(grant_on_subscribe)
     .bind(enabled)
-    .bind(bucket_id)
-    .bind(quota_windows)
     .execute(&ctx.app_state.pool)
     .await
     .expect("Failed to create test entitlement mapping for webhook");

@@ -34,6 +34,14 @@ pub struct Model {
     pub effective_at: Option<DateTimeWithTimeZone>,
     pub status: String, // "active" | "revoked" | "expired" | "fully_used"
 
+    /// Distribution attribution. Both NULL = direct write (admin/sdk grant,
+    /// demo/test-only internal quota); both set = rule-executed grant.
+    /// Paired-null invariant enforced by `points_credit_ledger_attribution_pair`.
+    #[sea_orm(nullable)]
+    pub distribution_event_id: Option<Uuid>,
+    #[sea_orm(nullable)]
+    pub distribution_rule_id: Option<Uuid>,
+
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
 }

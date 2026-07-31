@@ -41,6 +41,7 @@ mod tests {
     use crate::tests::helpers::billing_helpers::setup_stripe_config;
     use crate::tests::helpers::points_helpers::{
         create_points_wallet, ensure_test_bucket_for_realm, get_points_wallet_by_user,
+        snapshot_attempt_rules_for_mapping,
     };
     use crate::tests::helpers::rbac_helpers::create_role;
     use crate::tests::helpers::webhook_helpers::{
@@ -69,10 +70,11 @@ mod tests {
     }
 
     /// Create a one-time entitlement mapping that grants `role_ids` on payment.
-    /// When `points` is `None`, `points_per_period` is left NULL — the W1
-    /// pure-entitlement case (no points, role only). Mirrors
-    /// `create_one_time_mapping_with_points` but also binds
-    /// `granted_role_ids` (sqlx `Vec<Uuid>` → Postgres `uuid[]`).
+    /// When `points` is `None` no distribution rule is seeded — the W1
+    /// pure-entitlement case (no points, role only). When `points` is
+    /// `Some(n)`, a fixed `topup` rule owned by this mapping is seeded so the
+    /// one-time fulfillment grants `n` topup points (mirrors the grant
+    /// semantics the old mapping-level `points_per_period` encoded).
     async fn create_one_time_mapping_with_role(
         ctx: &TestContext,
         realm_id: &str,
@@ -87,29 +89,46 @@ mod tests {
             "currency": "usd"
         });
 
-        // Credit Buckets model: bucket_id is NOT NULL — bind the realm's legacy
-        // test bucket (matches the bucket-bound mappings created elsewhere).
-        let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, realm_id).await;
-
+        // `bucket_id` is only needed when a distribution rule is seeded (the
+        // rule targets a credit bucket); resolve it lazily for that case.
         sqlx::query(
             "INSERT INTO provider_entitlement_mappings
                 (id, realm_id, payment_provider, external_product_id, entitlement_key,
-                 billing_type, points_per_period, grant_on_subscribe, enabled,
-                 provider_product_info, bucket_id, granted_role_ids, created_at, updated_at)
-             VALUES ($1, $2, 'stripe', $3, $4, 'one_time', $5, true, $6, $7, $8, $9, NOW(), NOW())",
+                 billing_type, enabled, provider_product_info, granted_role_ids,
+                 created_at, updated_at)
+             VALUES ($1, $2, 'stripe', $3, $4, 'one_time', $5, $6, $7, NOW(), NOW())",
         )
         .bind(mapping_id)
         .bind(realm_id)
         .bind(format!("prod_{}", mapping_id))
         .bind(format!("one-time-role-{}", mapping_id))
-        .bind(points)
         .bind(enabled)
         .bind(provider_product_info)
-        .bind(bucket_id)
         .bind(role_ids) // Vec<Uuid> → Postgres uuid[]
         .execute(&ctx.app_state.pool)
         .await
         .expect("Failed to create one-time mapping with granted_role_ids");
+
+        if let Some(points_amount) = points {
+            let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, realm_id).await;
+            let rule_id = Uuid::now_v7();
+            sqlx::query(
+                "INSERT INTO points_distribution_rules
+                    (id, realm_id, owner_type, entitlement_mapping_id, bucket_id,
+                     trigger_sources, grant_mode, points_amount, validity_days,
+                     enabled, display_order)
+                 VALUES ($1, $2, 'entitlement_mapping', $3, $4, $5, 'fixed', $6, 0, true, 0)",
+            )
+            .bind(rule_id)
+            .bind(realm_id)
+            .bind(mapping_id)
+            .bind(bucket_id)
+            .bind(&["topup"][..])
+            .bind(points_amount)
+            .execute(&ctx.app_state.pool)
+            .await
+            .expect("Failed to seed mapping-owned topup distribution rule");
+        }
         mapping_id
     }
 
@@ -124,26 +143,34 @@ mod tests {
         currency: &str,
     ) -> Uuid {
         let attempt_id = Uuid::now_v7();
-        // Credit Buckets model: bucket_id is NOT NULL — scope the attempt to the
-        // realm's legacy test bucket so the fulfillment handler routes to it.
-        let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, realm_id).await;
         sqlx::query(
             "INSERT INTO payment_attempts
                 (id, realm_id, user_id, payment_provider, target_type, target_id,
-                 bucket_id, amount, currency, status, expires_at, created_at, updated_at)
+                 amount, currency, status, expires_at, created_at, updated_at)
              VALUES ($1, $2, $3, 'stripe', 'entitlement_mapping', $4,
-                     $5, $6, $7, 'Pending', NOW() + INTERVAL '2 hours', NOW(), NOW())",
+                     $5, $6, 'Pending', NOW() + INTERVAL '2 hours', NOW(), NOW())",
         )
         .bind(attempt_id)
         .bind(realm_id)
         .bind(user_id)
         .bind(mapping_id)
-        .bind(bucket_id)
         .bind(amount)
         .bind(currency)
         .execute(&ctx.app_state.pool)
         .await
         .expect("Failed to create pending payment attempt");
+        // Mirror production `create_payment_attempt`: snapshot the mapping's
+        // enabled `topup` rules (one-time trigger) so first fulfillment replays
+        // them via `CapturedPaymentRules`. A no-points mapping captures nothing
+        // (valid zero-result event).
+        snapshot_attempt_rules_for_mapping(
+            &ctx.app_state.pool,
+            attempt_id,
+            realm_id,
+            mapping_id,
+            "topup",
+        )
+        .await;
         attempt_id
     }
 

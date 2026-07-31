@@ -27,9 +27,6 @@ pub struct Subscription {
     pub billing_type: BillingType,
     /// External price ID from the payment provider
     pub external_price_id: Option<String>,
-    /// Credit bucket bound to this subscription (NOT NULL — resolved eagerly
-    /// from the entitlement mapping at subscription creation time).
-    pub bucket_id: Uuid,
     /// Provider-specific metadata as JSON
     pub provider_metadata: Option<serde_json::Value>,
     /// Last sync timestamp from provider
@@ -186,7 +183,12 @@ pub struct PaymentEvent {
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
-/// EntitlementMapping domain entity - maps provider products to Herald entitlement keys
+/// EntitlementMapping domain entity - maps provider products to Herald entitlement keys.
+///
+/// Points distribution is configured via a rule set (`points_distribution_rules`)
+/// owned by this mapping; the old scalar credit-strategy fields have been removed and are
+/// no longer carried here. Rules are loaded separately via the rule query ports
+/// and surfaced as `point_rules` on the management responses.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EntitlementMapping {
     pub id: Uuid,
@@ -194,25 +196,15 @@ pub struct EntitlementMapping {
     pub payment_provider: String,
     pub external_product_id: String,
     pub external_price_id: Option<String>,
-    pub bucket_id: Uuid,
     pub entitlement_key: String,
     pub billing_type: Option<BillingType>,
     pub billing_period: Option<String>,
     /// Fixed service-period length (days) for non-renewing mappings
-    /// `None` otherwise. Kept semantically isolated from `validity_days`
+    /// `None` otherwise. Kept semantically isolated from rule `validity_days`
     /// (one-time credit expiry) — never overloaded by billing_type.
     pub service_duration_days: Option<i64>,
-    pub points_per_period: Option<i64>,
-    pub grant_period_type: Option<String>,
-    pub validity_days: Option<i64>,
-    pub grant_on_subscribe: bool,
-    pub max_periods: Option<i64>,
     pub enabled: bool,
     pub provider_product_info: Option<serde_json::Value>,
-    /// no window-model grant (legacy `points_per_period` pool semantics apply).
-    /// Non-empty ⟺ this mapping grants a window entitlement at subscription
-    /// lifecycle time (snapshotted — A2). Reuses the points-domain `QuotaWindow`
-    pub quota_windows: Option<Vec<crate::points::entities::QuotaWindow>>,
     /// Cross-cutting config dimension orthogonal to `billing_type` / points.
     /// Empty ⟺ no role grant (pure points / pure payment record). Non-empty ⟺
     pub granted_role_ids: Vec<Uuid>,
@@ -342,19 +334,12 @@ mod billing_type_tests {
             payment_provider: String::new(),
             external_product_id: String::new(),
             external_price_id: None,
-            bucket_id: Uuid::nil(),
             entitlement_key: String::new(),
             billing_type: None,
             billing_period: None,
             service_duration_days: None,
-            points_per_period: None,
-            grant_period_type: None,
-            validity_days: None,
-            grant_on_subscribe: false,
-            max_periods: None,
             enabled: false,
             provider_product_info: None,
-            quota_windows: None,
             granted_role_ids: Vec::new(),
             synced_at: None,
             created_at: chrono::DateTime::parse_from_rfc3339("1970-01-01T00:00:00Z")

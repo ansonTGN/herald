@@ -12,10 +12,6 @@ pub mod metadata_keys {
     pub const TARGET_TYPE: &str = "targetType";
     pub const TARGET_ID: &str = "targetId";
     pub const ATTEMPT_ID: &str = "attemptId";
-    /// Diagnostic/webhook fallback for the credit Bucket the purchase is bound to.
-    /// Source of truth remains `payment_attempt.bucket_id` /
-    /// `subscription.bucket_id`; this is only a redundancy/diagnostic channel.
-    pub const HERALD_BUCKET_ID: &str = "heraldBucketId";
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -33,7 +29,6 @@ pub struct PreparePaymentAttemptInput {
 pub struct PurchaseTargetSnapshot {
     pub target_type: PurchasableTarget,
     pub target_id: Uuid,
-    pub bucket_id: Uuid,
     pub amount: i64,
     pub currency: String,
     pub title: String,

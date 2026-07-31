@@ -27,6 +27,71 @@ pub struct ProviderProductInfo {
     pub price_metadata: Option<HashMap<String, String>>,
 }
 
+/// Read-side view of one distribution rule. Surfaced on Mapping responses and
+/// registration-rule responses.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PointDistributionRuleResponse {
+    pub id: Uuid,
+    /// Target credit bucket.
+    pub bucket_id: Uuid,
+    /// Non-empty; only the triggers legal for the parent owner / billing type.
+    pub trigger_sources: Vec<String>,
+    /// `fixed` or `quota`.
+    pub grant_mode: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub points_amount: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub validity_days: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grant_period_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quota_windows: Option<Vec<EntitlementQuotaWindowResponse>>,
+    pub enabled: bool,
+    pub display_order: i32,
+}
+
+/// Write-side view of one distribution rule. `id` is `None` to create,
+/// `Some` to update an existing rule under the same parent owner.
+#[derive(Debug, Clone, Deserialize, ToSchema, validator::Validate)]
+#[serde(rename_all = "camelCase")]
+pub struct PointDistributionRuleWrite {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<Uuid>,
+    pub bucket_id: Uuid,
+    /// Non-empty; the backend validates the owner/billing-type subset.
+    pub trigger_sources: Vec<String>,
+    /// `fixed` or `quota`.
+    pub grant_mode: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub points_amount: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub validity_days: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grant_period_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quota_windows: Option<Vec<QuotaWindowInput>>,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub display_order: i32,
+}
+
+/// Reference to a distribution rule that targets a Credit Bucket. Surfaced on
+/// the bucket management views; user-facing balance responses never carry this
+/// field.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DistributionRuleReferenceResponse {
+    pub rule_id: Uuid,
+    /// `entitlement_mapping` / `realm_registration`.
+    pub owner_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entitlement_mapping_id: Option<Uuid>,
+    pub trigger_sources: Vec<String>,
+    pub enabled: bool,
+}
+
 /// Response for a single entitlement mapping
 #[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -36,8 +101,6 @@ pub struct EntitlementMappingResponse {
     pub external_product_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub external_price_id: Option<String>,
-    /// Bound credit bucket (non-null; matches domain entity).
-    pub bucket_id: Uuid,
     pub entitlement_key: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub billing_type: Option<String>,
@@ -46,18 +109,13 @@ pub struct EntitlementMappingResponse {
     /// Non-renewing service-period length (days). Present only for
     #[serde(skip_serializing_if = "Option::is_none")]
     pub service_duration_days: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub points_per_period: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub validity_days: Option<i64>,
-    pub grant_on_subscribe: bool,
     pub enabled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provider_product_info: Option<ProviderProductInfo>,
-    /// window-model grant. Each window carries the stable display `key`
-    /// (derived from `windowSeconds`), the limit, and the window length.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub quota_windows: Option<Vec<EntitlementQuotaWindowResponse>>,
+    /// Distribution rules owned by this mapping. Loaded separately and
+    /// surfaced as `pointRules`; an empty array is a valid "no points grant"
+    /// mapping (role-only / pure payment record).
+    pub point_rules: Vec<PointDistributionRuleResponse>,
     /// (not skip-serializing) so the frontend always sees the field; empty
     /// array when no role grant is configured.
     pub granted_role_ids: Vec<Uuid>,
@@ -67,8 +125,7 @@ pub struct EntitlementMappingResponse {
     pub updated_at: String,
 }
 
-/// Read-side quota window view. Mirrors the domain `QuotaWindow`
-/// snapshot carried on an entitlement mapping.
+/// Read-side quota window view.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct EntitlementQuotaWindowResponse {
@@ -110,29 +167,25 @@ pub struct UpdateEntitlementMappingRequest {
     pub entitlement_key: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub points_per_period: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub validity_days: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub grant_on_subscribe: Option<bool>,
     /// Non-renewing service-period length (days). Same 3-state semantics as
-    /// `quota_windows`: `None` ⟺ leave unchanged; `Some(null)` ⟺ clear (only
+    /// `point_rules`: `None` ⟺ leave unchanged; `Some(null)` ⟺ clear (only
     /// valid when the stored billing_type is not `non_renewing`); `Some(n)` ⟺
     #[serde(skip_serializing_if = "Option::is_none")]
     pub service_duration_days: Option<Option<i64>>,
-    /// stored value untouched; `Some([])` ⟺ clear (no window grant);
-    /// `Some([...])` ⟺ replace. Same validation as batch update.
+    /// Points distribution rule upsert set owned by this mapping. `None` ⟺
+    /// leave the existing rule set untouched; `Some(rules)` ⟺ upsert the given
+    /// rules under this mapping (rules absent from the set are left untouched;
+    /// disabling requires explicit `enabled = false`). Non-empty / present
+    /// triggers the `points.manage` credit-field permission gate.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub quota_windows: Option<Vec<QuotaWindowInput>>,
+    pub point_rules: Option<Vec<PointDistributionRuleWrite>>,
 }
 
 ///
 /// Generic over provider (IAP, Stripe, Creem). The
 /// `uq_pem_realm_provider_product_price` unique constraint is enforced by the
-/// repository and surfaces as HTTP 409. Credit-strategy fields
-/// (`pointsPerPeriod` / `grantOnSubscribe` / `validityDays`) additionally
-/// require the `points.manage` permission.
+/// repository and surfaces as HTTP 409. A request that carries `pointRules`
+/// additionally requires the `points.manage` permission.
 #[derive(Debug, Deserialize, ToSchema, validator::Validate)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateEntitlementMappingRequest {
@@ -144,7 +197,6 @@ pub struct CreateEntitlementMappingRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub external_price_id: Option<String>,
     pub entitlement_key: String,
-    pub bucket_id: Uuid,
     /// `"recurring"` / `"one_time"` / `"non_renewing"`.
     #[validate(custom(function = "validate_create_billing_type"))]
     pub billing_type: String,
@@ -155,15 +207,12 @@ pub struct CreateEntitlementMappingRequest {
     /// Non-renewing service-period length (days). Required (`>= 1`) when
     #[serde(skip_serializing_if = "Option::is_none")]
     pub service_duration_days: Option<i64>,
-    /// Credit-strategy field (requires `points.manage`).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub points_per_period: Option<i64>,
-    /// Credit-strategy field.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub grant_on_subscribe: Option<bool>,
-    /// One-time validity window (days).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub validity_days: Option<i64>,
+    /// Initial points distribution rules owned by the new mapping (upsert
+    /// set; empty / omitted is a valid "no points grant" mapping). Each rule
+    /// is validated against the mapping's billing type before persistence.
+    /// Non-empty triggers the `points.manage` credit-field permission gate.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub point_rules: Vec<PointDistributionRuleWrite>,
     /// Roles auto-granted on payment success.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub granted_role_ids: Vec<Uuid>,
@@ -217,15 +266,12 @@ pub struct PartialSyncError {
 pub struct OneTimeMappingItem {
     pub id: String,
     pub entitlement_key: String,
-    /// Bound credit bucket (non-null; matches domain entity).
-    pub bucket_id: Uuid,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provider_product_info: Option<ProviderProductInfo>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub points_per_period: Option<i64>,
+    /// Distribution rules owned by this mapping (topup trigger). The frontend
+    /// renders the per-account grants; an empty array means no points grant.
+    pub point_rules: Vec<PointDistributionRuleResponse>,
     pub payment_provider: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub validity_days: Option<i64>,
 }
 
 /// Response for listing one-time mappings
@@ -335,7 +381,7 @@ pub struct CancelSubscriptionResponse {
 /// persistence, so callers cannot drift window identity. Mirrors the
 /// points-domain quota-window input shape; kept local to billing so
 /// api-billing does not depend on api-points.
-#[derive(Debug, Deserialize, ToSchema, validator::Validate)]
+#[derive(Debug, Clone, Deserialize, ToSchema, validator::Validate)]
 #[serde(rename_all = "camelCase")]
 pub struct QuotaWindowInput {
     /// Sliding window length in seconds. Must be > 0.
@@ -350,8 +396,8 @@ pub struct QuotaWindowInput {
 /// Single price-mapping row within a batch save.
 ///
 /// One row per price of a product; `entitlement_key` is shared across the
-/// product's prices. Credit-strategy fields (`points_per_period` etc.)
-/// require `points.manage` server-side.
+/// product's prices. A row that carries `point_rules` requires `points.manage`
+/// server-side.
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PriceMappingUpdate {
@@ -359,17 +405,12 @@ pub struct PriceMappingUpdate {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub billing_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub points_per_period: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub validity_days: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub grant_on_subscribe: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
-    /// `Some([])` ⟺ clear (no window grant); `Some(non-empty)` ⟺ set.
-    /// Non-empty triggers the `points.manage` credit-field permission gate.
+    /// `None` ⟺ leave the existing rule set untouched; `Some(rules)` ⟺ upsert
+    /// the given rules under this mapping. Non-empty / present triggers the
+    /// `points.manage` credit-field permission gate.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub quota_windows: Option<Vec<QuotaWindowInput>>,
+    pub point_rules: Option<Vec<PointDistributionRuleWrite>>,
     /// `Some([])` ⟺ clear (no role grant); `Some(non-empty)` ⟺ set.
     /// Non-empty triggers realm-membership validation server-side (does NOT
     /// require `roles.manage`).
@@ -425,8 +466,11 @@ pub struct PurchaseOptionView {
     pub amount: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub currency: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub points_per_period: Option<i64>,
+    /// Distribution rules owned by this mapping (the purchasable points
+    /// entitlement). The frontend renders per-account grants; quota and fixed
+    /// credits are shown separately and must NOT be summed. Empty ⟺ no points
+    /// grant for this option.
+    pub point_rules: Vec<PointDistributionRuleResponse>,
     pub enabled: bool,
     /// Whether purchasing this option grants a role that is one-per-user
     /// `billing_type=one_time` + non-empty `granted_role_ids`; points packages

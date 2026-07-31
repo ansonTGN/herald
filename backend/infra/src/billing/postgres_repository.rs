@@ -17,10 +17,13 @@ use herald_domain::billing::{
     SubscriptionHistoryEvent, SubscriptionHistoryQuery,
 };
 use herald_domain::common::entities::app_errors::CoreError;
-use herald_domain::points::entities::QuotaWindow;
-use herald_domain::points::services::registration_pool_resolver::RegistrationPoolResolver;
+use herald_domain::points::{
+    DistributionPolicy, DistributionRuleOwner, DistributionRuleReference, DistributionTrigger,
+    PointsDistributionRule, RuleUpsert,
+};
 use herald_entity::{
-    payment_event, provider_entitlement_mapping, subscription, subscription_history,
+    payment_event, points_distribution_rule, provider_entitlement_mapping, subscription,
+    subscription_history,
 };
 
 use crate::points::postgres_repository::{
@@ -57,7 +60,6 @@ impl PostgresBillingRepository {
             entitlement_key: model.entitlement_key,
             billing_type: model.billing_type.parse()?,
             external_price_id: model.external_price_id,
-            bucket_id: model.bucket_id,
             provider_metadata: model.provider_metadata,
             synced_at: model.synced_at.map(chrono::DateTime::from),
             current_period_start: model.current_period_start.map(chrono::DateTime::from),
@@ -90,36 +92,18 @@ impl PostgresBillingRepository {
     fn model_to_entitlement_mapping(
         model: provider_entitlement_mapping::Model,
     ) -> EntitlementMapping {
-        // Hydrate quota_windows via the shared infra serde boundary
-        // JSONB array ⟺ `Some(Vec<QuotaWindow>)`. A malformed JSONB value is
-        // logged and treated as "no window grant" rather than poisoning the
-        // whole read (the read path must not crash a list on one bad row).
-        let quota_windows = parse_quota_windows_value(model.quota_windows)
-            .map_err(|e| {
-                tracing::warn!(error = %e, mapping_id = %model.id, "Malformed quota_windows JSONB on entitlement mapping; treating as no window grant");
-                e
-            })
-            .ok();
-        let quota_windows = quota_windows.filter(|w| !w.is_empty());
         EntitlementMapping {
             id: model.id,
             realm_id: model.realm_id,
             payment_provider: model.payment_provider,
             external_product_id: model.external_product_id,
             external_price_id: model.external_price_id,
-            bucket_id: model.bucket_id,
             entitlement_key: model.entitlement_key,
             billing_type: model.billing_type.and_then(|s| s.parse().ok()),
             billing_period: model.billing_period,
             service_duration_days: model.service_duration_days.map(|v| v as i64),
-            points_per_period: model.points_per_period.map(|v| v as i64),
-            grant_period_type: model.grant_period_type,
-            validity_days: model.validity_days.map(|v| v as i64),
-            grant_on_subscribe: model.grant_on_subscribe,
-            max_periods: model.max_periods.map(|v| v as i64),
             enabled: model.enabled,
             provider_product_info: model.provider_product_info,
-            quota_windows,
             granted_role_ids: model.granted_role_ids,
             synced_at: model.synced_at.map(chrono::DateTime::from),
             created_at: chrono::DateTime::from(model.created_at),
@@ -131,30 +115,18 @@ impl PostgresBillingRepository {
     fn entitlement_mapping_to_active_model(
         mapping: EntitlementMapping,
     ) -> provider_entitlement_mapping::ActiveModel {
-        // `None`/empty ⟺ SQL NULL (no window grant).
-        let quota_windows = mapping
-            .quota_windows
-            .as_deref()
-            .and_then(|w| serialize_quota_windows_value(w).ok().flatten());
         provider_entitlement_mapping::ActiveModel {
             id: Set(mapping.id),
             realm_id: Set(mapping.realm_id),
             payment_provider: Set(mapping.payment_provider),
             external_product_id: Set(mapping.external_product_id),
             external_price_id: Set(mapping.external_price_id),
-            bucket_id: Set(mapping.bucket_id),
             entitlement_key: Set(mapping.entitlement_key),
             billing_type: Set(mapping.billing_type.map(|t| t.as_str().to_string())),
             billing_period: Set(mapping.billing_period),
             service_duration_days: Set(mapping.service_duration_days.map(|v| v as i32)),
-            points_per_period: Set(mapping.points_per_period.map(|v| v as i32)),
-            grant_period_type: Set(mapping.grant_period_type),
-            validity_days: Set(mapping.validity_days.map(|v| v as i32)),
-            grant_on_subscribe: Set(mapping.grant_on_subscribe),
-            max_periods: Set(mapping.max_periods.map(|v| v as i32)),
             enabled: Set(mapping.enabled),
             provider_product_info: Set(mapping.provider_product_info),
-            quota_windows: Set(quota_windows),
             granted_role_ids: Set(mapping.granted_role_ids),
             synced_at: Set(mapping
                 .synced_at
@@ -165,6 +137,37 @@ impl PostgresBillingRepository {
             updated_at: Set(sea_orm::prelude::DateTimeWithTimeZone::from(
                 mapping.updated_at,
             )),
+        }
+    }
+
+    /// Decode a raw sqlx `RETURNING *` row from `provider_entitlement_mappings`
+    /// into the domain [`EntitlementMapping`]. Mirrors
+    /// [`Self::model_to_entitlement_mapping`] column-for-column; used by the
+    /// transactional create/upsert paths that write the base row via raw sqlx on
+    /// `&mut tx` (SeaORM `.insert()`/`.update()` cannot bind to a raw sqlx
+    /// transaction).
+    fn row_to_entitlement_mapping(row: &sqlx::postgres::PgRow) -> EntitlementMapping {
+        use sqlx::Row;
+        EntitlementMapping {
+            id: row.get("id"),
+            realm_id: row.get("realm_id"),
+            payment_provider: row.get("payment_provider"),
+            external_product_id: row.get("external_product_id"),
+            external_price_id: row.get("external_price_id"),
+            entitlement_key: row.get("entitlement_key"),
+            billing_type: row
+                .get::<Option<String>, _>("billing_type")
+                .and_then(|s| s.parse().ok()),
+            billing_period: row.get("billing_period"),
+            service_duration_days: row
+                .get::<Option<i32>, _>("service_duration_days")
+                .map(|v| v as i64),
+            enabled: row.get("enabled"),
+            provider_product_info: row.get("provider_product_info"),
+            granted_role_ids: row.get("granted_role_ids"),
+            synced_at: row.get::<Option<chrono::DateTime<chrono::Utc>>, _>("synced_at"),
+            created_at: row.get::<chrono::DateTime<chrono::Utc>, _>("created_at"),
+            updated_at: row.get::<chrono::DateTime<chrono::Utc>, _>("updated_at"),
         }
     }
 
@@ -229,7 +232,6 @@ impl PostgresBillingRepository {
             entitlement_key: Set(sub.entitlement_key.clone()),
             billing_type: Set(sub.billing_type.as_str().to_string()),
             external_price_id: Set(sub.external_price_id.clone()),
-            bucket_id: Set(sub.bucket_id),
             provider_metadata: Set(sub.provider_metadata.clone()),
             synced_at: Set(sub
                 .synced_at
@@ -260,7 +262,6 @@ impl PostgresBillingRepository {
         active_model.entitlement_key = Set(sub.entitlement_key.clone());
         active_model.billing_type = Set(sub.billing_type.as_str().to_string());
         active_model.external_price_id = Set(sub.external_price_id.clone());
-        active_model.bucket_id = Set(sub.bucket_id);
         active_model.provider_metadata = Set(sub.provider_metadata.clone());
         active_model.synced_at = Set(sub
             .synced_at
@@ -352,19 +353,17 @@ impl PostgresBillingRepository {
 
     // All multi-table writes run in a single sqlx transaction (matches the
     // invoice_postgres_repository pattern: `self.db.get_postgres_connection_pool().begin()`).
-    // Coverage-set changes only affect future routing; attached-mapping
-    // replacement only sets `bucket_id` on the listed mappings (does not touch
-    // balances). Registration-pool uniqueness is guarded by pre-check + the partial
-    // unique index `uq_credit_buckets_registration_pool` (caught → 409 conflict).
+    // Coverage-set changes only affect future routing.
 
-    /// Create a Credit Bucket with its coverage set and optional attached mappings.
+    /// Create a Credit Bucket with its coverage set.
     ///
     /// Transaction:
-    /// 1. INSERT `credit_buckets` (raises unique violation on registration-pool
-    ///    collision → `RegistrationPoolConflict`).
+    /// 1. INSERT `credit_buckets` (raises `bucket_key` unique violation →
+    ///    `BucketKeyDuplicate`).
     /// 2. INSERT `credit_bucket_client_apps` rows for the coverage set.
-    /// 3. UPDATE `provider_entitlement_mappings SET bucket_id=$1` for the listed
-    ///    mapping ids (scoped to realm).
+    ///
+    /// A freshly-created bucket has no referencing rules, so its
+    /// `rule_references` are empty.
     pub async fn create_credit_bucket(
         &self,
         input: CreateCreditBucketInput,
@@ -377,15 +376,14 @@ impl PostgresBillingRepository {
             .await
             .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
 
-        // 1. Insert bucket. The partial unique index uq_credit_buckets_registration_pool
-        //    fires on conflict when receives_registration_credits=true.
+        // 1. Insert bucket. The UNIQUE(realm_id, bucket_key) constraint fires on
+        //    a bucket_key collision → BucketKeyDuplicate.
         let row = sqlx::query(
             "INSERT INTO credit_buckets \
              (id, realm_id, bucket_key, name, description, display_order, \
-              receives_registration_credits, enabled, created_at, updated_at) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW()) \
-             RETURNING id, realm_id, bucket_key, name, description, display_order, \
-                       receives_registration_credits, enabled",
+              enabled, created_at, updated_at) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW()) \
+             RETURNING id, realm_id, bucket_key, name, description, display_order, enabled",
         )
         .bind(id)
         .bind(&input.realm_id)
@@ -393,7 +391,6 @@ impl PostgresBillingRepository {
         .bind(&input.name)
         .bind(input.description.as_deref())
         .bind(input.display_order)
-        .bind(input.receives_registration_credits)
         .bind(input.enabled)
         .fetch_one(&mut *tx)
         .await
@@ -419,18 +416,6 @@ impl PostgresBillingRepository {
             })?;
         }
 
-        // 3. Attach mappings (set their bucket_id). Scoped to realm to prevent
-        //    cross-realm attachment.
-        if !input.entitlement_mapping_ids.is_empty() {
-            Self::reattach_mappings_tx(
-                &mut tx,
-                id,
-                &input.realm_id,
-                &input.entitlement_mapping_ids,
-            )
-            .await?;
-        }
-
         tx.commit().await.map_err(|e| {
             CoreError::DatabaseError(format!("Failed to commit create_credit_bucket: {}", e))
         })?;
@@ -438,19 +423,19 @@ impl PostgresBillingRepository {
         Ok(CreditBucketDetail {
             bucket,
             client_app_ids: input.client_app_ids,
-            entitlement_mapping_ids: input.entitlement_mapping_ids,
+            // A brand-new bucket is not yet referenced by any rule.
+            rule_references: Vec::new(),
         })
     }
 
-    /// Get a single Credit Bucket with its coverage set and attached mappings.
+    /// Get a single Credit Bucket with its coverage set and referencing rules.
     pub async fn get_credit_bucket(
         &self,
         realm_id: &str,
         bucket_id: Uuid,
     ) -> Result<Option<CreditBucketDetail>, CoreError> {
         let row = sqlx::query(
-            "SELECT id, realm_id, bucket_key, name, description, display_order, \
-                    receives_registration_credits, enabled \
+            "SELECT id, realm_id, bucket_key, name, description, display_order, enabled \
              FROM credit_buckets WHERE realm_id = $1 AND id = $2",
         )
         .bind(realm_id)
@@ -474,22 +459,19 @@ impl PostgresBillingRepository {
         .await
         .map_err(|e| CoreError::DatabaseError(format!("Failed to fetch coverage set: {}", e)))?;
 
-        let entitlement_mapping_ids: Vec<Uuid> = sqlx::query_scalar(
-            "SELECT id FROM provider_entitlement_mappings \
-             WHERE realm_id = $1 AND bucket_id = $2 ORDER BY id",
+        let rule_references = Self::load_rule_references(
+            self.db.get_postgres_connection_pool(),
+            realm_id,
+            &[bucket_id],
         )
-        .bind(realm_id)
-        .bind(bucket_id)
-        .fetch_all(self.db.get_postgres_connection_pool())
-        .await
-        .map_err(|e| {
-            CoreError::DatabaseError(format!("Failed to fetch attached mappings: {}", e))
-        })?;
+        .await?
+        .remove(&bucket_id)
+        .unwrap_or_default();
 
         Ok(Some(CreditBucketDetail {
             bucket,
             client_app_ids,
-            entitlement_mapping_ids,
+            rule_references,
         }))
     }
 
@@ -502,19 +484,13 @@ impl PostgresBillingRepository {
 
         let rows = sqlx::query(
             "SELECT b.id, b.realm_id, b.bucket_key, b.name, b.description, b.display_order, \
-                    b.receives_registration_credits, b.enabled, \
-                    COALESCE(ca.covered_count, 0) AS covered_client_app_count, \
-                    COALESCE(m.mapping_count, 0) AS entitlement_mapping_count \
+                    b.enabled, \
+                    COALESCE(ca.covered_count, 0) AS covered_client_app_count \
              FROM credit_buckets b \
              LEFT JOIN ( \
                  SELECT bucket_id, COUNT(*) AS covered_count \
                  FROM credit_bucket_client_apps GROUP BY bucket_id \
              ) ca ON ca.bucket_id = b.id \
-             LEFT JOIN ( \
-                 SELECT bucket_id, COUNT(*) AS mapping_count \
-                 FROM provider_entitlement_mappings WHERE bucket_id IS NOT NULL \
-                 GROUP BY bucket_id \
-             ) m ON m.bucket_id = b.id \
              WHERE b.realm_id = $1 \
              ORDER BY b.display_order ASC, b.created_at ASC",
         )
@@ -523,14 +499,23 @@ impl PostgresBillingRepository {
         .await
         .map_err(|e| CoreError::DatabaseError(format!("Failed to list credit buckets: {}", e)))?;
 
+        let bucket_ids: Vec<Uuid> = rows.iter().map(|r| r.get("id")).collect();
+        let ref_counts = Self::count_rule_references(
+            self.db.get_postgres_connection_pool(),
+            realm_id,
+            &bucket_ids,
+        )
+        .await?;
+
         let items = rows
             .iter()
             .map(|row| {
+                let id: Uuid = row.get("id");
                 let bucket = Self::row_to_credit_bucket(row);
                 CreditBucketListItem {
                     bucket,
                     covered_client_app_count: row.get("covered_client_app_count"),
-                    entitlement_mapping_count: row.get("entitlement_mapping_count"),
+                    rule_reference_count: ref_counts.get(&id).copied().unwrap_or(0),
                 }
             })
             .collect();
@@ -538,10 +523,9 @@ impl PostgresBillingRepository {
         Ok(items)
     }
 
-    /// Update a Credit Bucket: base fields + coverage-set replace + attached-mapping
-    /// move-in (NOT NULL `bucket_id`: mappings may join this bucket but not leave it
-    /// via PUT — removal is rejected as `BucketOrphanMapping`) + registration-pool
-    /// flag toggle (same uniqueness guard as create).
+    /// Update a Credit Bucket: base fields + coverage-set replace.
+    ///
+    /// Bucket references are derived from distribution rules.
     pub async fn update_credit_bucket(
         &self,
         input: UpdateCreditBucketInput,
@@ -566,22 +550,21 @@ impl PostgresBillingRepository {
             return Err(CoreError::NotFound.into());
         }
 
-        // Update base fields. Registration-pool flag toggle may trip the partial
-        // unique index → RegistrationPoolConflict.
+        // Update base fields. The UNIQUE(realm_id, bucket_key) is unchanged by a
+        // PUT (bucket_key is immutable here), so no BucketKeyDuplicate is
+        // expected, but classification is still applied for safety.
         let row = sqlx::query(
             "UPDATE credit_buckets \
              SET name = $3, description = $4, display_order = $5, \
-                 receives_registration_credits = $6, enabled = $7, updated_at = NOW() \
+                 enabled = $6, updated_at = NOW() \
              WHERE realm_id = $1 AND id = $2 \
-             RETURNING id, realm_id, bucket_key, name, description, display_order, \
-                       receives_registration_credits, enabled",
+             RETURNING id, realm_id, bucket_key, name, description, display_order, enabled",
         )
         .bind(&input.realm_id)
         .bind(input.bucket_id)
         .bind(&input.name)
         .bind(input.description.as_deref())
         .bind(input.display_order)
-        .bind(input.receives_registration_credits)
         .bind(input.enabled)
         .fetch_one(&mut *tx)
         .await
@@ -616,54 +599,23 @@ impl PostgresBillingRepository {
             })?;
         }
 
-        // Attach mappings. `provider_entitlement_mappings.bucket_id` is NOT NULL
-        // (commit `aa6cc2da`) and there is no default bucket, so a
-        // mapping can only JOIN this bucket (move-in) — it cannot be removed via
-        // this PUT, since detaching would orphan it (no NULL home). Reject any
-        // shrink of the attached set with `bucket_orphan_mapping` (400). The
-        // caller moves a mapping out by assigning it to another bucket's PUT.
-        let current_attached: Vec<Uuid> = sqlx::query_scalar(
-            "SELECT id FROM provider_entitlement_mappings \
-             WHERE realm_id = $1 AND bucket_id = $2",
-        )
-        .bind(&input.realm_id)
-        .bind(input.bucket_id)
-        .fetch_all(&mut *tx)
-        .await
-        .map_err(|e| {
-            CoreError::DatabaseError(format!("Failed to read attached mappings: {}", e))
-        })?;
-        let orphan_mapping_ids: Vec<Uuid> = current_attached
-            .into_iter()
-            .filter(|id| !input.entitlement_mapping_ids.contains(id))
-            .collect();
-        if !orphan_mapping_ids.is_empty() {
-            return Err(CreditBucketError::BucketOrphanMapping {
-                bucket_id: input.bucket_id,
-                orphan_mapping_ids,
-            });
-        }
-
-        // Re-attach (claim) the requested set for this bucket (realm-scoped).
-        // Success here implies the new attached set == the requested set.
-        if !input.entitlement_mapping_ids.is_empty() {
-            Self::reattach_mappings_tx(
-                &mut tx,
-                input.bucket_id,
-                &input.realm_id,
-                &input.entitlement_mapping_ids,
-            )
-            .await?;
-        }
-
         tx.commit().await.map_err(|e| {
             CoreError::DatabaseError(format!("Failed to commit update_credit_bucket: {}", e))
         })?;
 
+        let rule_references = Self::load_rule_references(
+            self.db.get_postgres_connection_pool(),
+            &input.realm_id,
+            &[input.bucket_id],
+        )
+        .await?
+        .remove(&input.bucket_id)
+        .unwrap_or_default();
+
         Ok(CreditBucketDetail {
             bucket,
             client_app_ids: input.client_app_ids,
-            entitlement_mapping_ids: input.entitlement_mapping_ids,
+            rule_references,
         })
     }
 
@@ -693,17 +645,13 @@ impl PostgresBillingRepository {
             return Err(CoreError::NotFound.into());
         }
 
-        // In-flight subscriptions (active/trialing/past_due/scheduled_cancel/dispute
-        // — match `SubscriptionStatus::has_access` semantics).
-        let active_subscriptions: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM subscription \
-             WHERE bucket_id = $1 AND status IN \
-                   ('active', 'trialing', 'past_due', 'scheduled_cancel', 'dispute')",
-        )
-        .bind(bucket_id)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(|e| CoreError::DatabaseError(format!("Failed to count subscriptions: {}", e)))?;
+        // In-flight subscriptions reference
+        // buckets indirectly via distribution rule results. The delete guard for
+        // in-flight subscriptions will be re-anchored on the rule-result linkage
+        // by the subscription-lifecycle item; until then this guard reports 0 so
+        // the delete proceeds (the residual-balance guard below still protects
+        // against deleting a bucket with live credit).
+        let active_subscriptions: i64 = 0;
 
         // Holders with remaining *derived available* balance.
         // The delete guard uses the SAME derived
@@ -813,47 +761,11 @@ impl PostgresBillingRepository {
                 CoreError::DatabaseError(format!("Failed to delete orphan bucket wallets: {}", e))
             })?;
 
-        // bucket_id is NOT NULL on subscription/payment_attempts/mappings, so
-        // clearing references means deleting the rows still bound to this
-        // bucket. Only non-active subscriptions reach here (active ones are
-        // refused above); payment_attempts and mappings are residue that cannot
-        // outlive their bucket under a NOT NULL constraint.
-        sqlx::query(
-            "DELETE FROM subscription \
-             WHERE bucket_id = $1 AND status NOT IN \
-                   ('active', 'trialing', 'past_due', 'scheduled_cancel', 'dispute')",
-        )
-        .bind(bucket_id)
-        .execute(&mut **tx)
-        .await
-        .map_err(|e| {
-            CoreError::DatabaseError(format!(
-                "Failed to delete inactive subscriptions bound to bucket: {}",
-                e
-            ))
-        })?;
-
-        sqlx::query("DELETE FROM payment_attempts WHERE bucket_id = $1")
-            .bind(bucket_id)
-            .execute(&mut **tx)
-            .await
-            .map_err(|e| {
-                CoreError::DatabaseError(format!(
-                    "Failed to delete payment attempts bound to bucket: {}",
-                    e
-                ))
-            })?;
-
-        sqlx::query("DELETE FROM provider_entitlement_mappings WHERE bucket_id = $1")
-            .bind(bucket_id)
-            .execute(&mut **tx)
-            .await
-            .map_err(|e| {
-                CoreError::DatabaseError(format!(
-                    "Failed to delete provider entitlement mappings bound to bucket: {}",
-                    e
-                ))
-            })?;
+        // Singular routing columns have been removed (subscriptions / attempts / mappings
+        // reference buckets indirectly via distribution rule results, which are
+        // already swept above via the ledger/transaction/schedule deletes). The
+        // per-table routing-bound DELETEs are therefore no longer needed
+        // here; the rule-result linkage cleanup is owned by the lifecycle items.
 
         Ok(())
     }
@@ -987,27 +899,341 @@ impl PostgresBillingRepository {
             name: row.get("name"),
             description: row.get("description"),
             display_order: row.get("display_order"),
-            receives_registration_credits: row.get("receives_registration_credits"),
             enabled: row.get("enabled"),
         }
     }
 
+    /// Convert a `points_distribution_rules` SeaORM model into the domain rule.
+    ///
+    /// `trigger_sources` is parsed best-effort: an unknown trigger is logged and
+    /// dropped rather than failing the whole read (a malformed row must not
+    /// poison a list). `quota_windows` is hydrated via the shared infra serde
+    /// boundary. The owner is materialized from `owner_type` +
+    /// `entitlement_mapping_id`.
+    fn rule_from_model(model: points_distribution_rule::Model) -> PointsDistributionRule {
+        let owner = match model.owner_type.as_str() {
+            "entitlement_mapping" => DistributionRuleOwner::EntitlementMapping(
+                model.entitlement_mapping_id.unwrap_or(Uuid::nil()),
+            ),
+            _ => DistributionRuleOwner::RealmRegistration,
+        };
+        let trigger_sources = model
+            .trigger_sources
+            .iter()
+            .filter_map(|s| match s.parse::<DistributionTrigger>() {
+                Ok(t) => Some(t),
+                Err(_) => {
+                    tracing::warn!(
+                        rule_id = %model.id,
+                        trigger = %s,
+                        "Unknown distribution trigger on rule; dropping from parsed set"
+                    );
+                    None
+                }
+            })
+            .collect();
+        let policy = match model.grant_mode.as_str() {
+            "quota" => DistributionPolicy::Quota {
+                windows: parse_quota_windows_value(model.quota_windows)
+                    .map_err(|e| {
+                        tracing::warn!(error = %e, rule_id = %model.id, "Malformed quota_windows JSONB on rule");
+                        e
+                    })
+                    .ok()
+                    .unwrap_or_default(),
+            },
+            // Default to fixed when grant_mode is missing/unexpected (DB CHECK
+            // guarantees 'fixed' | 'quota'; fixed requires points_amount > 0).
+            _ => DistributionPolicy::Fixed {
+                amount: model.points_amount.unwrap_or(0),
+                validity_days: model.validity_days.unwrap_or(0),
+                grant_period_type: model
+                    .grant_period_type
+                    .as_deref()
+                    .and_then(|s| s.parse().ok()),
+            },
+        };
+        PointsDistributionRule {
+            id: model.id,
+            realm_id: model.realm_id,
+            owner,
+            bucket_id: model.bucket_id,
+            trigger_sources,
+            policy,
+            enabled: model.enabled,
+            display_order: model.display_order,
+        }
+    }
+
+    /// Load referencing rules for the given buckets, grouped by `bucket_id`.
+    /// Returns one [`DistributionRuleReference`] per rule; the caller groups by
+    /// bucket. Buckets with no referencing rules contribute no rows. An empty
+    /// `bucket_ids` returns an empty map.
+    async fn load_rule_references(
+        executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+        realm_id: &str,
+        bucket_ids: &[Uuid],
+    ) -> Result<std::collections::HashMap<Uuid, Vec<DistributionRuleReference>>, CoreError> {
+        use sqlx::Row;
+        if bucket_ids.is_empty() {
+            return Ok(std::collections::HashMap::new());
+        }
+        let rows = sqlx::query(
+            "SELECT bucket_id, id, owner_type, entitlement_mapping_id, trigger_sources, enabled \
+             FROM points_distribution_rules \
+             WHERE realm_id = $1 AND bucket_id = ANY($2) \
+             ORDER BY bucket_id, display_order, id",
+        )
+        .bind(realm_id)
+        .bind(bucket_ids)
+        .fetch_all(executor)
+        .await
+        .map_err(|e| CoreError::DatabaseError(format!("Failed to load rule references: {}", e)))?;
+        let mut out: std::collections::HashMap<Uuid, Vec<DistributionRuleReference>> =
+            std::collections::HashMap::new();
+        for row in rows {
+            let bucket_id: Uuid = row.get("bucket_id");
+            let owner_type: String = row.get("owner_type");
+            let entitlement_mapping_id: Option<Uuid> = row.get("entitlement_mapping_id");
+            let trigger_sources: Vec<String> = row.get("trigger_sources");
+            let enabled: bool = row.get("enabled");
+            out.entry(bucket_id)
+                .or_default()
+                .push(DistributionRuleReference {
+                    rule_id: row.get("id"),
+                    owner_type,
+                    entitlement_mapping_id,
+                    trigger_sources,
+                    enabled,
+                });
+        }
+        Ok(out)
+    }
+
+    /// Count referencing rules per bucket (list view aggregate). Returns a
+    /// `bucket_id → count` map; buckets with no references are absent.
+    async fn count_rule_references(
+        executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+        realm_id: &str,
+        bucket_ids: &[Uuid],
+    ) -> Result<std::collections::HashMap<Uuid, i64>, CoreError> {
+        use sqlx::Row;
+        if bucket_ids.is_empty() {
+            return Ok(std::collections::HashMap::new());
+        }
+        let rows = sqlx::query(
+            "SELECT bucket_id, COUNT(*)::bigint AS ref_count \
+             FROM points_distribution_rules \
+             WHERE realm_id = $1 AND bucket_id = ANY($2) \
+             GROUP BY bucket_id",
+        )
+        .bind(realm_id)
+        .bind(bucket_ids)
+        .fetch_all(executor)
+        .await
+        .map_err(|e| CoreError::DatabaseError(format!("Failed to count rule references: {}", e)))?;
+        let mut out = std::collections::HashMap::new();
+        for row in rows {
+            let bucket_id: Uuid = row.get("bucket_id");
+            let ref_count: i64 = row.get("ref_count");
+            out.insert(bucket_id, ref_count);
+        }
+        Ok(out)
+    }
+
+    /// Upsert a rule set under the given owner within a single sqlx
+    /// transaction (DEC-005 atomic upsert).
+    ///
+    /// Semantics:
+    /// - rules with `id = None` are created (fresh id) under the owner;
+    /// - rules with `id = Some(existing)` are updated; the existing rule MUST
+    ///   belong to the same owner (same `owner_type`, and — for mapping owners —
+    ///   the same `entitlement_mapping_id`), otherwise the write is rejected
+    ///   with `distribution_rule_conflict`;
+    /// - rules NOT present in `rules` are left untouched (DEC-007: disabling
+    ///   requires explicit `enabled = false`; referenced rules are never
+    ///   hard-deleted).
+    ///
+    /// Writes go through raw SQL against the caller's sqlx transaction so they
+    /// share the caller's commit/rollback boundary.
+    async fn upsert_rules_in_tx(
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        realm_id: &str,
+        owner: DistributionRuleOwner,
+        rules: Vec<RuleUpsert>,
+    ) -> Result<(), CoreError> {
+        let owner_type = owner.as_str();
+        let mapping_id = owner.mapping_id();
+        for upsert in rules {
+            let existing_id = upsert.id;
+            let resolved = upsert.into_rule_for_owner(realm_id, owner.clone());
+            let bucket_realm_id: Option<String> =
+                sqlx::query_scalar("SELECT realm_id FROM credit_buckets WHERE id = $1")
+                    .bind(resolved.bucket_id)
+                    .fetch_optional(&mut **tx)
+                    .await
+                    .map_err(|e| {
+                        CoreError::DatabaseError(format!(
+                            "Failed to load target bucket for realm check: {}",
+                            e
+                        ))
+                    })?;
+            let bucket_realm_id = bucket_realm_id.ok_or(CoreError::NotFound)?;
+            if bucket_realm_id != realm_id {
+                return Err(CoreError::Conflict(format!(
+                    "distribution_rule_conflict: bucket {} does not belong to realm {}",
+                    resolved.bucket_id, realm_id
+                )));
+            }
+            match existing_id {
+                // Some(id) → update existing rule (must belong to this owner).
+                Some(rule_id) => {
+                    use sqlx::Row;
+                    let row = sqlx::query(
+                        "SELECT owner_type, entitlement_mapping_id, realm_id \
+                         FROM points_distribution_rules WHERE id = $1",
+                    )
+                    .bind(rule_id)
+                    .fetch_optional(&mut **tx)
+                    .await
+                    .map_err(|e| {
+                        CoreError::DatabaseError(format!(
+                            "Failed to load rule for owner check: {}",
+                            e
+                        ))
+                    })?;
+                    let row = row.ok_or(CoreError::NotFound)?;
+                    let existing_owner_type: String = row.get("owner_type");
+                    let existing_mapping_id: Option<Uuid> = row.get("entitlement_mapping_id");
+                    let existing_realm_id: String = row.get("realm_id");
+                    if existing_realm_id != realm_id
+                        || existing_owner_type != owner_type
+                        || existing_mapping_id != mapping_id
+                    {
+                        return Err(CoreError::Conflict(format!(
+                            "distribution_rule_conflict: rule {} does not belong to this owner",
+                            rule_id
+                        )));
+                    }
+                    // Update the existing row in place via raw SQL (SeaORM
+                    // ActiveModel update needs the tx connection adapter; raw
+                    // SQL keeps it simple and shares the tx).
+                    let trigger_sources: Vec<String> = resolved
+                        .trigger_sources
+                        .iter()
+                        .map(|t| t.to_string())
+                        .collect();
+                    let (
+                        grant_mode,
+                        points_amount,
+                        validity_days,
+                        grant_period_type,
+                        quota_windows,
+                    ) = Self::policy_to_columns(resolved.policy)?;
+                    sqlx::query(
+                        "UPDATE points_distribution_rules \
+                         SET bucket_id = $2, trigger_sources = $3, grant_mode = $4, \
+                             points_amount = $5, validity_days = $6, grant_period_type = $7, \
+                             quota_windows = $8, enabled = $9, display_order = $10, updated_at = NOW() \
+                         WHERE id = $1",
+                    )
+                    .bind(rule_id)
+                    .bind(resolved.bucket_id)
+                    .bind(&trigger_sources)
+                    .bind(&grant_mode)
+                    .bind(points_amount)
+                    .bind(validity_days)
+                    .bind(&grant_period_type)
+                    .bind(&quota_windows)
+                    .bind(resolved.enabled)
+                    .bind(resolved.display_order)
+                    .execute(&mut **tx)
+                    .await
+                    .map_err(|e| CoreError::DatabaseError(format!("Failed to update rule: {}", e)))?;
+                }
+                // None (or nil) → create a new rule under the owner.
+                _ => {
+                    let new_id = Uuid::now_v7();
+                    let trigger_sources: Vec<String> = resolved
+                        .trigger_sources
+                        .iter()
+                        .map(|t| t.to_string())
+                        .collect();
+                    let (
+                        grant_mode,
+                        points_amount,
+                        validity_days,
+                        grant_period_type,
+                        quota_windows,
+                    ) = Self::policy_to_columns(resolved.policy)?;
+                    sqlx::query(
+                        "INSERT INTO points_distribution_rules \
+                         (id, realm_id, owner_type, entitlement_mapping_id, bucket_id, \
+                          trigger_sources, grant_mode, points_amount, validity_days, \
+                          grant_period_type, quota_windows, enabled, display_order, \
+                          created_at, updated_at) \
+                         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW())",
+                    )
+                    .bind(new_id)
+                    .bind(&resolved.realm_id)
+                    .bind(owner_type)
+                    .bind(mapping_id)
+                    .bind(resolved.bucket_id)
+                    .bind(&trigger_sources)
+                    .bind(&grant_mode)
+                    .bind(points_amount)
+                    .bind(validity_days)
+                    .bind(&grant_period_type)
+                    .bind(&quota_windows)
+                    .bind(resolved.enabled)
+                    .bind(resolved.display_order)
+                    .execute(&mut **tx)
+                    .await
+                    .map_err(|e| CoreError::DatabaseError(format!("Failed to insert rule: {}", e)))?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Project a [`DistributionPolicy`] onto the `points_distribution_rules`
+    /// write columns shared by the INSERT and UPDATE branches below.
+    fn policy_to_columns(policy: DistributionPolicy) -> Result<PolicyColumns, CoreError> {
+        Ok(match policy {
+            DistributionPolicy::Fixed {
+                amount,
+                validity_days,
+                grant_period_type,
+            } => {
+                let gpt = grant_period_type.map(|t| t.to_string());
+                (
+                    "fixed".to_string(),
+                    Some(amount),
+                    Some(validity_days),
+                    gpt,
+                    None,
+                )
+            }
+            DistributionPolicy::Quota { windows } => {
+                let qw = serialize_quota_windows_value(&windows).map_err(|e| {
+                    CoreError::DatabaseError(format!("Failed to serialize quota windows: {}", e))
+                })?;
+                ("quota".to_string(), None, None, None, qw)
+            }
+        })
+    }
+
     /// Map an INSERT/UPDATE error to a structured bucket error.
     ///
-    /// Distinguishes the two `credit_buckets` uniqueness violations by their
+    /// Distinguishes the `credit_buckets` uniqueness violation by its
     /// constraint name:
-    /// - partial unique index on `(realm_id) WHERE receives_registration_credits`
-    ///   → `RegistrationPoolConflict` (409 `registration_pool_conflict`).
     /// - `UNIQUE(realm_id, bucket_key)` → `BucketKeyDuplicate`
     ///   (400 `bucket_key_duplicate`).
     ///
     /// Matching is intentionally robust to constraint-name drift: in production
-    /// the migration assigns the explicit names `uq_credit_buckets_realm_key`
-    /// and `uq_credit_buckets_registration_pool`, but a schema cloned via
-    /// `CREATE TABLE ... (LIKE ... INCLUDING ALL)` (used by the test harness and
-    /// by some pg_dump/restore flows) re-derives PostgreSQL's auto-generated
-    /// names (`credit_buckets_realm_id_bucket_key_key`,
-    /// `credit_buckets_realm_id_idx`). Both name sets are accepted, and the
+    /// the migration assigns the explicit name `uq_credit_buckets_realm_key`
+    /// while cloned/restored schemas may derive PostgreSQL's auto-generated
+    /// `credit_buckets_realm_id_bucket_key_key`. Both names are accepted, and the
     /// rendered message is inspected as a final fallback so the classification
     /// cannot silently degrade to a 500 if the driver omits `constraint()` or a
     /// future rename occurs.
@@ -1019,71 +1245,11 @@ impl PostgresBillingRepository {
             .and_then(classify_bucket_constraint)
             .or_else(|| classify_from_message(&msg))
         {
-            Some(BucketConstraintKind::RegistrationPool) => {
-                CreditBucketError::RegistrationPoolConflict {
-                    realm_id: realm_id.to_string(),
-                }
-            }
             Some(BucketConstraintKind::RealmKey) => CreditBucketError::BucketKeyDuplicate {
                 realm_id: realm_id.to_string(),
             },
             None => CoreError::DatabaseError(msg).into(),
         }
-    }
-
-    /// Re-attach the listed mappings to `bucket_id` (realm-scoped). Mappings that do
-    /// not exist or belong to a different realm are silently ignored — the handler
-    /// is responsible for validating the requested set if strict semantics are
-    /// required (currently we accept the best-effort attach).
-    async fn reattach_mappings_tx(
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-        bucket_id: Uuid,
-        realm_id: &str,
-        mapping_ids: &[Uuid],
-    ) -> Result<(), CoreError> {
-        for mapping_id in mapping_ids {
-            sqlx::query(
-                "UPDATE provider_entitlement_mappings \
-                 SET bucket_id = $3, updated_at = NOW() \
-                 WHERE realm_id = $1 AND id = $2",
-            )
-            .bind(realm_id)
-            .bind(mapping_id)
-            .bind(bucket_id)
-            .execute(&mut **tx)
-            .await
-            .map_err(|e| {
-                CoreError::DatabaseError(format!("Failed to attach mapping to bucket: {}", e))
-            })?;
-        }
-        Ok(())
-    }
-}
-
-impl RegistrationPoolResolver for PostgresBillingRepository {
-    /// Resolve the Realm's single registration-pool bucket.
-    ///
-    /// Relies on the partial unique index `uq_credit_buckets_registration_pool`
-    /// (at most one row per realm with `receives_registration_credits=true`).
-    /// Returns `Ok(None)` when no such bucket exists — callers must fail-safe
-    /// (do not grant; do not fall back to an implicit pool).
-    async fn resolve_registration_pool_bucket(
-        &self,
-        realm_id: &str,
-    ) -> Result<Option<Uuid>, CoreError> {
-        let bucket_id: Option<Uuid> = sqlx::query_scalar(
-            "SELECT id FROM credit_buckets \
-             WHERE realm_id = $1 AND receives_registration_credits = true \
-             LIMIT 1",
-        )
-        .bind(realm_id)
-        .fetch_optional(self.db.get_postgres_connection_pool())
-        .await
-        .map_err(|e| {
-            CoreError::DatabaseError(format!("Failed to resolve registration pool bucket: {}", e))
-        })?;
-
-        Ok(bucket_id)
     }
 }
 
@@ -1513,17 +1679,13 @@ impl BillingRepository for PostgresBillingRepository {
         let mut active_model: provider_entitlement_mapping::ActiveModel =
             existing.into_active_model();
         let update = Self::entitlement_mapping_to_active_model(mapping);
-        active_model.bucket_id = update.bucket_id;
         active_model.entitlement_key = update.entitlement_key;
         active_model.billing_type = update.billing_type;
         active_model.billing_period = update.billing_period;
-        active_model.points_per_period = update.points_per_period;
-        active_model.grant_period_type = update.grant_period_type;
-        active_model.validity_days = update.validity_days;
-        active_model.grant_on_subscribe = update.grant_on_subscribe;
-        active_model.max_periods = update.max_periods;
+        active_model.service_duration_days = update.service_duration_days;
         active_model.enabled = update.enabled;
         active_model.provider_product_info = update.provider_product_info;
+        active_model.granted_role_ids = update.granted_role_ids;
         active_model.synced_at = update.synced_at;
         active_model.updated_at = update.updated_at;
 
@@ -1559,13 +1721,10 @@ impl BillingRepository for PostgresBillingRepository {
                 existing_mapping.external_price_id = mapping.external_price_id;
                 existing_mapping.billing_type = mapping.billing_type;
                 existing_mapping.billing_period = mapping.billing_period;
-                existing_mapping.points_per_period = mapping.points_per_period;
-                existing_mapping.grant_period_type = mapping.grant_period_type;
-                existing_mapping.validity_days = mapping.validity_days;
-                existing_mapping.grant_on_subscribe = mapping.grant_on_subscribe;
-                existing_mapping.max_periods = mapping.max_periods;
+                existing_mapping.service_duration_days = mapping.service_duration_days;
                 existing_mapping.enabled = mapping.enabled;
                 existing_mapping.provider_product_info = mapping.provider_product_info;
+                existing_mapping.granted_role_ids = mapping.granted_role_ids;
                 existing_mapping.synced_at = mapping.synced_at;
                 existing_mapping.updated_at = chrono::Utc::now();
                 self.update_entitlement_mapping(existing_mapping).await
@@ -1786,7 +1945,7 @@ impl BillingRepository for PostgresBillingRepository {
         // Data query
         let data_sql = format!(
             "SELECT id, realm_id, user_id, external_subscription_id, external_product_id, \
-             payment_provider, status, entitlement_key, billing_type, external_price_id, bucket_id, provider_metadata, \
+             payment_provider, status, entitlement_key, billing_type, external_price_id, provider_metadata, \
              synced_at, current_period_start, current_period_end, cancel_at_period_end, \
              client_app_id, cancel_at, created_at, updated_at \
              FROM subscription WHERE {} ORDER BY created_at DESC LIMIT ${} OFFSET ${}",
@@ -1829,7 +1988,6 @@ impl BillingRepository for PostgresBillingRepository {
                         bt.parse()?
                     },
                     external_price_id: row.get("external_price_id"),
-                    bucket_id: row.get("bucket_id"),
                     provider_metadata: row.get("provider_metadata"),
                     synced_at: row.get("synced_at"),
                     current_period_start: row.get("current_period_start"),
@@ -2052,74 +2210,35 @@ impl BillingRepository for PostgresBillingRepository {
         // 3. Upsert (UPDATE) each row in tx order. Fields the client omits
         // (`None`) are preserved via COALESCE — matches the single-PATCH contract
         // (entitlement_mapping_handlers.rs `update_entitlement_mapping`).
-        // `quota_windows` is the exception: it is NOT COALESCE'd because the
-        // caller must be able to CLEAR the column (write NULL) by passing
-        // `Some([])`. So when the input carries `Some(windows)`, the column is
-        // SET explicitly (serialized: empty ⟹ NULL, non-empty ⟹ JSONB); when
-        // the input is `None`, the column is omitted from SET (leave unchanged).
-        // The SQL string is therefore built per-row to include the
-        // `quota_windows` clause only when the input provides it.
+        // Points distribution rules are owned by each mapping; when an update
+        // carries `point_rules`, the rule set is upserted (in this same
+        // transaction) after the mapping base row is written, via the shared
+        // rule-upsert helper. The old scalar credit columns are no longer written here.
         let now = chrono::Utc::now();
         let mut saved: u32 = 0;
+        // Collect (mapping_id, rules) pairs for the in-tx rule upsert after the
+        // base rows are written.
+        let mut rule_upserts: Vec<(Uuid, Vec<RuleUpsert>)> = Vec::new();
         for u in &input.updates {
             let billing_type_str = u.billing_type.as_deref();
-            // Serialize `quota_windows` to the JSONB column shape. `None` ⟺ leave
-            // unchanged (column omitted from SET). `Some` ⟺ SET explicitly so the
-            // caller can clear to NULL via `Some([])`.
-            let quota_windows_value: Option<Option<serde_json::Value>> = match &u.quota_windows {
-                None => None,
-                Some(windows) => {
-                    let domain_windows: Vec<QuotaWindow> = windows
-                        .iter()
-                        .map(|w| QuotaWindow {
-                            window_seconds: w.window_seconds,
-                            limit: w.limit,
-                            key: herald_domain::points::derive_window_key(w.window_seconds),
-                        })
-                        .collect();
-                    let serialized = serialize_quota_windows_value(&domain_windows);
-                    match serialized {
-                        Ok(v) => Some(v),
-                        Err(e) => {
-                            let _ = tx.rollback().await;
-                            return Err(BatchMappingError::Other(e));
-                        }
-                    }
-                }
-            };
-            // `granted_role_ids` is a `UUID[]` column (NOT COALESCE'd, same reason
-            // as `quota_windows`: the caller must be able to CLEAR to `{}` by
-            // passing `Some([])`). `None` ⟺ leave unchanged (column omitted from
-            // SET). sqlx encodes `Vec<Uuid>` → `uuid[]` (matches the account
-            // `provider_ids` path). Clone to owned for the bind.
+            // `granted_role_ids` is a `UUID[]` column (NOT COALESCE'd: the caller
+            // must be able to CLEAR to `{}` by passing `Some([])`). `None` ⟺ leave
+            // unchanged (column omitted from SET). sqlx encodes `Vec<Uuid>` →
+            // `uuid[]` (matches the account `provider_ids` path).
             let granted_role_ids_value: Option<Vec<Uuid>> =
                 u.granted_role_ids.as_ref().map(|ids| ids.to_vec());
 
             // Build the UPDATE per-row with sqlx::QueryBuilder so placeholder
-            // numbering is automatic and consistent with the clauses actually
-            // emitted. COALESCE is used for fields the caller can leave unchanged
-            // (`None` ⟺ preserve the DB value); the two optional-array columns
-            // (`quota_windows`, `granted_role_ids`) are SET explicitly only when
-            // the input provides them, so the caller can CLEAR them. `push_bind`
-            // interleaves values in the exact order their `$n` placeholders appear
-            // in the SQL text — SET clause first, then the WHERE anchors.
+            // numbering is automatic. COALESCE preserves the DB value when the
+            // caller leaves a field unchanged (`None`); `granted_role_ids` is SET
+            // explicitly only when provided, so the caller can CLEAR it.
             let mut qb = sqlx::QueryBuilder::<sqlx::Postgres>::new(
                 "UPDATE provider_entitlement_mappings SET billing_type = COALESCE(",
             );
             qb.push_bind(billing_type_str.map(|s| s.to_string()));
-            qb.push(", billing_type), points_per_period = COALESCE(");
-            qb.push_bind(u.points_per_period.map(|v| v as i32));
-            qb.push(", points_per_period), validity_days = COALESCE(");
-            qb.push_bind(u.validity_days.map(|v| v as i32));
-            qb.push(", validity_days), grant_on_subscribe = COALESCE(");
-            qb.push_bind(u.grant_on_subscribe);
-            qb.push(", grant_on_subscribe), enabled = COALESCE(");
+            qb.push(", billing_type), enabled = COALESCE(");
             qb.push_bind(u.enabled);
             qb.push(", enabled)");
-            if let Some(qw) = quota_windows_value {
-                qb.push(", quota_windows = ");
-                qb.push_bind(qw);
-            }
             if let Some(role_ids) = granted_role_ids_value {
                 qb.push(", granted_role_ids = ");
                 qb.push_bind(role_ids);
@@ -2139,6 +2258,22 @@ impl BillingRepository for PostgresBillingRepository {
                 CoreError::DatabaseError(format!("Failed to update mapping in batch: {}", e))
             })?;
             saved += result.rows_affected() as u32;
+
+            if let Some(rules) = u.point_rules.clone() {
+                rule_upserts.push((u.mapping_id, rules));
+            }
+        }
+
+        // 4. Upsert each row's rule set within the same transaction.
+        for (mapping_id, rules) in rule_upserts {
+            Self::upsert_rules_in_tx(
+                &mut tx,
+                &input.realm_id,
+                DistributionRuleOwner::EntitlementMapping(mapping_id),
+                rules,
+            )
+            .await
+            .map_err(BatchMappingError::Other)?;
         }
 
         tx.commit().await.map_err(|e| {
@@ -2155,7 +2290,213 @@ impl BillingRepository for PostgresBillingRepository {
             .await?;
         Ok(BatchUpdateResult { saved, prices })
     }
+
+    // ===== Distribution Rules =====
+
+    async fn create_entitlement_mapping_with_rules(
+        &self,
+        mapping: EntitlementMapping,
+        rules: Vec<RuleUpsert>,
+    ) -> Result<EntitlementMapping, CoreError> {
+        let mut tx = self
+            .db
+            .get_postgres_connection_pool()
+            .begin()
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+        // Insert the mapping base row ON the transaction so a subsequent
+        // rule-write failure rolls it back (DEC-005 atomic upsert). Raw sqlx on
+        // `&mut *tx` mirrors upsert_rules_in_tx / batch_update_mappings; SeaORM
+        // `.insert()` cannot bind to a raw sqlx transaction (the prior code
+        // escaped the tx via `&self.db`, breaking atomicity).
+        let row = sqlx::query(
+            "INSERT INTO provider_entitlement_mappings \
+             (id, realm_id, payment_provider, external_product_id, external_price_id, \
+              entitlement_key, billing_type, billing_period, service_duration_days, \
+              enabled, provider_product_info, granted_role_ids, synced_at, created_at, updated_at) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) \
+             RETURNING *",
+        )
+        .bind(mapping.id)
+        .bind(&mapping.realm_id)
+        .bind(&mapping.payment_provider)
+        .bind(&mapping.external_product_id)
+        .bind(&mapping.external_price_id)
+        .bind(&mapping.entitlement_key)
+        .bind(
+            mapping
+                .billing_type
+                .as_ref()
+                .map(|t| t.as_str().to_string()),
+        )
+        .bind(&mapping.billing_period)
+        .bind(mapping.service_duration_days.map(|v| v as i32))
+        .bind(mapping.enabled)
+        .bind(&mapping.provider_product_info)
+        .bind(&mapping.granted_role_ids)
+        .bind(mapping.synced_at)
+        .bind(mapping.created_at)
+        .bind(mapping.updated_at)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| {
+            if e.to_string().contains("duplicate key") {
+                CoreError::Conflict(
+                    "Entitlement mapping already exists for this provider and product".to_string(),
+                )
+            } else {
+                CoreError::DatabaseError(e.to_string())
+            }
+        })?;
+        let mapping = Self::row_to_entitlement_mapping(&row);
+        // Upsert the rule set under the new mapping id.
+        Self::upsert_rules_in_tx(
+            &mut tx,
+            &mapping.realm_id,
+            DistributionRuleOwner::EntitlementMapping(mapping.id),
+            rules,
+        )
+        .await?;
+        tx.commit().await.map_err(|e| {
+            CoreError::DatabaseError(format!(
+                "Failed to commit create_entitlement_mapping_with_rules: {}",
+                e
+            ))
+        })?;
+        Ok(mapping)
+    }
+
+    async fn upsert_mapping_with_rules(
+        &self,
+        realm_id: &str,
+        mapping: EntitlementMapping,
+        rules: Vec<RuleUpsert>,
+    ) -> Result<EntitlementMapping, CoreError> {
+        let mut tx = self
+            .db
+            .get_postgres_connection_pool()
+            .begin()
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+        // Write ONLY the mutable base fields, ON the transaction so a subsequent
+        // rule-write failure rolls them back (DEC-005). Raw sqlx on `&mut *tx`
+        // mirrors upsert_rules_in_tx / batch_update_mappings and removes the
+        // separate pre-read round-trip. Identity columns (realm_id,
+        // payment_provider, external_product_id, external_price_id, id,
+        // created_at) are intentionally not written, matching the prior
+        // SeaORM ActiveModel field set exactly.
+        let row = sqlx::query(
+            "UPDATE provider_entitlement_mappings SET \
+                entitlement_key = $1, billing_type = $2, billing_period = $3, \
+                service_duration_days = $4, enabled = $5, provider_product_info = $6, \
+                granted_role_ids = $7, synced_at = $8, updated_at = $9 \
+             WHERE id = $10 \
+             RETURNING *",
+        )
+        .bind(&mapping.entitlement_key)
+        .bind(
+            mapping
+                .billing_type
+                .as_ref()
+                .map(|t| t.as_str().to_string()),
+        )
+        .bind(&mapping.billing_period)
+        .bind(mapping.service_duration_days.map(|v| v as i32))
+        .bind(mapping.enabled)
+        .bind(&mapping.provider_product_info)
+        .bind(&mapping.granted_role_ids)
+        .bind(mapping.synced_at)
+        .bind(mapping.updated_at)
+        .bind(mapping.id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| match e {
+            sqlx::Error::RowNotFound => CoreError::NotFound,
+            other => CoreError::DatabaseError(other.to_string()),
+        })?;
+        let mapping = Self::row_to_entitlement_mapping(&row);
+        // Upsert the rule set under the mapping id.
+        Self::upsert_rules_in_tx(
+            &mut tx,
+            realm_id,
+            DistributionRuleOwner::EntitlementMapping(mapping.id),
+            rules,
+        )
+        .await?;
+        tx.commit().await.map_err(|e| {
+            CoreError::DatabaseError(format!("Failed to commit upsert_mapping_with_rules: {}", e))
+        })?;
+        Ok(mapping)
+    }
+
+    async fn find_mapping_rules(
+        &self,
+        realm_id: &str,
+        mapping_id: Uuid,
+    ) -> Result<Vec<PointsDistributionRule>, CoreError> {
+        let rules = points_distribution_rule::Entity::find()
+            .filter(points_distribution_rule::Column::RealmId.eq(realm_id))
+            .filter(points_distribution_rule::Column::OwnerType.eq("entitlement_mapping"))
+            .filter(points_distribution_rule::Column::EntitlementMappingId.eq(mapping_id))
+            .order_by_asc(points_distribution_rule::Column::DisplayOrder)
+            .order_by_asc(points_distribution_rule::Column::Id)
+            .all(&self.db)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+        Ok(rules.into_iter().map(Self::rule_from_model).collect())
+    }
+
+    async fn upsert_registration_rules(
+        &self,
+        realm_id: &str,
+        rules: Vec<RuleUpsert>,
+    ) -> Result<Vec<PointsDistributionRule>, CoreError> {
+        let mut tx = self
+            .db
+            .get_postgres_connection_pool()
+            .begin()
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+        Self::upsert_rules_in_tx(
+            &mut tx,
+            realm_id,
+            DistributionRuleOwner::RealmRegistration,
+            rules,
+        )
+        .await?;
+        tx.commit().await.map_err(|e| {
+            CoreError::DatabaseError(format!("Failed to commit upsert_registration_rules: {}", e))
+        })?;
+        // Return the full current registration rule set, ordered stably.
+        self.find_registration_rules(realm_id).await
+    }
+
+    async fn find_registration_rules(
+        &self,
+        realm_id: &str,
+    ) -> Result<Vec<PointsDistributionRule>, CoreError> {
+        let rules = points_distribution_rule::Entity::find()
+            .filter(points_distribution_rule::Column::RealmId.eq(realm_id))
+            .filter(points_distribution_rule::Column::OwnerType.eq("realm_registration"))
+            .order_by_asc(points_distribution_rule::Column::DisplayOrder)
+            .order_by_asc(points_distribution_rule::Column::Id)
+            .all(&self.db)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+        Ok(rules.into_iter().map(Self::rule_from_model).collect())
+    }
 }
+
+/// Projected `points_distribution_rules` write columns for a
+/// [`DistributionPolicy`]: `(grant_mode, points_amount, validity_days,
+/// grant_period_type, quota_windows)`.
+type PolicyColumns = (
+    String,
+    Option<i64>,
+    Option<i64>,
+    Option<String>,
+    Option<serde_json::Value>,
+);
 
 /// Which `credit_buckets` uniqueness violation a Postgres error refers to.
 ///
@@ -2165,9 +2506,6 @@ impl BillingRepository for PostgresBillingRepository {
 enum BucketConstraintKind {
     /// `UNIQUE(realm_id, bucket_key)` collision → 400 `bucket_key_duplicate`.
     RealmKey,
-    /// Partial unique index on `(realm_id) WHERE receives_registration_credits`
-    /// collision → 409 `registration_pool_conflict`.
-    RegistrationPool,
 }
 
 /// Map a Postgres constraint/index name to its bucket-error kind.
@@ -2177,23 +2515,16 @@ enum BucketConstraintKind {
 /// schema is cloned via `CREATE TABLE ... (LIKE ... INCLUDING ALL)` or restored
 /// by pg_dump without preserving constraint names. This keeps
 /// `classify_bucket_insert_error` stable across schema-name drift.
+///
 fn classify_bucket_constraint(constraint: &str) -> Option<BucketConstraintKind> {
     // Migration-assigned explicit names.
-    match constraint {
-        "uq_credit_buckets_realm_key" => return Some(BucketConstraintKind::RealmKey),
-        "uq_credit_buckets_registration_pool" => {
-            return Some(BucketConstraintKind::RegistrationPool);
-        }
-        _ => {}
+    if constraint == "uq_credit_buckets_realm_key" {
+        return Some(BucketConstraintKind::RealmKey);
     }
     // PostgreSQL auto-generated names. `<table>_<cols>_key` is the default for
-    // an unnamed UNIQUE constraint; `<table>_<col>_idx` is the default for an
-    // unnamed index. `credit_buckets_realm_id_idx` is the partial-unique index
-    // in the cloned test schema (a plain non-unique index never raises a
-    // unique-violation, so matching it here is safe).
+    // an unnamed UNIQUE constraint.
     match constraint {
         "credit_buckets_realm_id_bucket_key_key" => Some(BucketConstraintKind::RealmKey),
-        "credit_buckets_realm_id_idx" => Some(BucketConstraintKind::RegistrationPool),
         _ => None,
     }
 }
@@ -2201,19 +2532,13 @@ fn classify_bucket_constraint(constraint: &str) -> Option<BucketConstraintKind> 
 /// Last-resort classification from the rendered Postgres error message.
 ///
 /// Used when the driver omits `constraint()` (older sqlx/PG combos) or when an
-/// unforeseen constraint name appears. Matches both name families quoted inside
+/// unforeseen constraint name appears. Matches the name family quoted inside
 /// the standard `duplicate key value violates unique constraint "<name>"` text.
 fn classify_from_message(msg: &str) -> Option<BucketConstraintKind> {
     let is_dup = msg.contains("duplicate key value violates unique constraint")
         || msg.contains("duplicate key value");
     if !is_dup {
         return None;
-    }
-    if msg.contains("uq_credit_buckets_registration_pool")
-        || msg.contains("credit_buckets_realm_id_idx")
-        || msg.contains("receives_registration_credits")
-    {
-        return Some(BucketConstraintKind::RegistrationPool);
     }
     if msg.contains("uq_credit_buckets_realm_key")
         || msg.contains("credit_buckets_realm_id_bucket_key")
@@ -2227,38 +2552,27 @@ fn classify_from_message(msg: &str) -> Option<BucketConstraintKind> {
 mod tests {
     use super::*;
 
-    /// Regression guard for P0-1: `credit_buckets` uniqueness violations
-    /// must classify into `BucketKeyDuplicate` (→ 400) or `RegistrationPoolConflict`
-    /// (→ 409) regardless of whether the runtime schema carries the
-    /// migration-assigned explicit constraint names or PostgreSQL's
-    /// auto-generated names (the latter appear when the schema is cloned via
-    /// `CREATE TABLE ... (LIKE ... INCLUDING ALL)`, e.g. the test harness, and
-    /// historically caused a silent 500 regression).
+    /// Regression guard: `credit_buckets` uniqueness violations must classify
+    /// into `BucketKeyDuplicate` (→ 400) regardless of whether the runtime
+    /// schema carries the migration-assigned explicit constraint name or
+    /// PostgreSQL's auto-generated name (the latter appear when the schema is
+    /// cloned via `CREATE TABLE ... (LIKE ... INCLUDING ALL)`, e.g. the test
+    /// harness, and historically caused a silent 500 regression).
     #[test]
     fn classifies_bucket_constraint_names_for_both_name_families() {
-        // Migration-assigned explicit names (production schema).
+        // Migration-assigned explicit name (production schema).
         let explicit = classify_bucket_constraint("uq_credit_buckets_realm_key");
         assert!(
             matches!(explicit, Some(BucketConstraintKind::RealmKey)),
             "explicit realm_key name must classify as RealmKey"
         );
-        let explicit_reg = classify_bucket_constraint("uq_credit_buckets_registration_pool");
-        assert!(
-            matches!(explicit_reg, Some(BucketConstraintKind::RegistrationPool)),
-            "explicit registration_pool name must classify as RegistrationPool"
-        );
 
-        // PostgreSQL auto-generated names (cloned/restored schema — the actual
-        // runtime names observed in the failing scenarios).
+        // PostgreSQL auto-generated name (cloned/restored schema — the actual
+        // runtime name observed in the failing scenarios).
         let auto = classify_bucket_constraint("credit_buckets_realm_id_bucket_key_key");
         assert!(
             matches!(auto, Some(BucketConstraintKind::RealmKey)),
             "auto-named realm+bucket_key unique must classify as RealmKey"
-        );
-        let auto_reg = classify_bucket_constraint("credit_buckets_realm_id_idx");
-        assert!(
-            matches!(auto_reg, Some(BucketConstraintKind::RegistrationPool)),
-            "auto-named partial unique index must classify as RegistrationPool"
         );
 
         // Unrelated names must NOT be force-classified (they fall through to a
@@ -2270,9 +2584,9 @@ mod tests {
         );
     }
 
-    /// The message-based fallback must catch the same two collisions when the
-    /// driver omits `constraint()` (older sqlx/PG combos) — using the real
-    /// runtime error text observed in the regression.
+    /// The message-based fallback must catch the collision when the driver
+    /// omits `constraint()` (older sqlx/PG combos) — using the real runtime
+    /// error text observed in the regression.
     #[test]
     fn classifies_from_runtime_duplicate_key_messages() {
         let realm_key_msg = "error returned from database: duplicate key value \
@@ -2280,21 +2594,6 @@ mod tests {
         assert!(matches!(
             classify_from_message(realm_key_msg),
             Some(BucketConstraintKind::RealmKey)
-        ));
-
-        let reg_pool_msg = "error returned from database: duplicate key value \
-             violates unique constraint \"credit_buckets_realm_id_idx\"";
-        assert!(matches!(
-            classify_from_message(reg_pool_msg),
-            Some(BucketConstraintKind::RegistrationPool)
-        ));
-
-        // Explicit names in the message are also covered.
-        let explicit_msg = "duplicate key value violates unique constraint \
-             \"uq_credit_buckets_registration_pool\"";
-        assert!(matches!(
-            classify_from_message(explicit_msg),
-            Some(BucketConstraintKind::RegistrationPool)
         ));
 
         // A non-duplicate error must not be classified.

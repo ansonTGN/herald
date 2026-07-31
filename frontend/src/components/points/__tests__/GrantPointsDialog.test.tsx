@@ -136,7 +136,7 @@ describe('GrantPointsDialog', () => {
             coveredClientAppCount: 0,
             displayOrder: 0,
             entitlementMappingCount: 0,
-            receivesRegistrationCredits: false,
+            ruleReferenceCount: 0,
           },
         ])
       )

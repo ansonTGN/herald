@@ -60,14 +60,41 @@ async fn test_scenario_admin_update_entitlement_points_policy(ctx: &mut TestCont
 
     println!("[Step 3] Admin updates entitlement mapping points policy");
 
-    let points_per_period = 1000;
+    // Distribution-rules model: the points policy is configured as a fixed
+    // `subscription_initial` distribution rule owned by the mapping (the
+    // new-model equivalent of the removed `pointsPerPeriod` / `validityDays` /
+    // `grantOnSubscribe` fields). The rule is validated against the mapping's
+    // billing_type, so set `billing_type='recurring'` (grant_on_subscribe=true
+    // maps to `subscription_initial`) before PATCHing. Mirror the canonical
+    // `entitlement_mapping_crud_scenarios::test_update_entitlement_mapping_set_points_policy`.
+    let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+        &ctx._app_state.pool,
+        &ctx._realm_id,
+    )
+    .await;
+    sqlx::query(
+        "UPDATE provider_entitlement_mappings
+         SET billing_type = 'recurring', billing_period = 'monthly'
+         WHERE id = $1",
+    )
+    .bind(mapping_id)
+    .execute(&ctx._app_state.pool)
+    .await
+    .expect("Failed to set billing_type for points-policy PATCH");
+
+    let points_amount = 1000;
     let validity_days = 30;
-    let grant_on_subscribe = true;
 
     let update_payload = json!({
-        "pointsPerPeriod": points_per_period,
-        "validityDays": validity_days,
-        "grantOnSubscribe": grant_on_subscribe
+        "pointRules": [{
+            "bucketId": bucket_id,
+            "triggerSources": ["subscription_initial"],
+            "grantMode": "fixed",
+            "pointsAmount": points_amount,
+            "validityDays": validity_days,
+            "enabled": true,
+            "displayOrder": 0
+        }]
     });
 
     let request = Request::builder()
@@ -91,20 +118,27 @@ async fn test_scenario_admin_update_entitlement_points_policy(ctx: &mut TestCont
     let body: serde_json::Value =
         serde_json::from_slice(&body_bytes).expect("Failed to parse JSON");
 
+    let rules = body["pointRules"]
+        .as_array()
+        .expect("pointRules must be an array in the new-model response");
+    assert_eq!(rules.len(), 1, "the upserted rule must be returned");
     assert_eq!(
-        body["pointsPerPeriod"].as_i64(),
-        Some(points_per_period),
-        "Points per period should match"
+        rules[0]["grantMode"], "fixed",
+        "grantMode should match the fixed points policy"
     );
     assert_eq!(
-        body["validityDays"].as_i64(),
+        rules[0]["pointsAmount"].as_i64(),
+        Some(points_amount),
+        "Points amount should match"
+    );
+    assert_eq!(
+        rules[0]["validityDays"].as_i64(),
         Some(validity_days),
         "Validity days should match"
     );
     assert_eq!(
-        body["grantOnSubscribe"].as_bool(),
-        Some(grant_on_subscribe),
-        "Grant on subscribe should match"
+        rules[0]["triggerSources"][0], "subscription_initial",
+        "trigger should reflect grant-on-subscribe (subscription_initial)"
     );
 
     println!("\n✅ Scenario 24 完成：管理员成功更新积分套餐配置");

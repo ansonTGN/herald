@@ -482,6 +482,10 @@ pub struct PointsCreditLedger {
     /// state migration, zero delay.
     pub effective_at: Option<chrono::DateTime<chrono::Utc>>,
     pub status: CreditLedgerStatus,
+    /// Distribution attribution. Both `None` = direct write (admin/sdk grant,
+    /// demo/test-only internal quota); both `Some` = rule-executed grant.
+    pub distribution_event_id: Option<Uuid>,
+    pub distribution_rule_id: Option<Uuid>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
@@ -582,6 +586,9 @@ pub struct PointsTransaction {
     /// (`points.manage`); the HTTP layer forces `None` on the `points.view`
     /// path and `skip_serializing_if` omits the key entirely.
     pub effective_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// Distribution attribution (see `PointsCreditLedger`).
+    pub distribution_event_id: Option<Uuid>,
+    pub distribution_rule_id: Option<Uuid>,
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
@@ -685,7 +692,7 @@ pub struct Paginated<T> {
 ///
 /// `key` is a stable display key derived from config (e.g. "5h"/"week"/"month"),
 /// NOT a row ordinal. Downstream DTO / frontend identifies a window row by `key`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct QuotaWindow {
     /// Sliding window length in seconds (month ≈ 30d)
     pub window_seconds: i64,
@@ -808,6 +815,9 @@ pub struct PointsQuotaEntitlement {
     pub effective_until: Option<chrono::DateTime<chrono::Utc>>,
     pub status: QuotaEntitlementStatus,
     pub idempotency_key: String,
+    /// Distribution attribution (see `PointsCreditLedger`).
+    pub distribution_event_id: Option<Uuid>,
+    pub distribution_rule_id: Option<Uuid>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }

@@ -11,6 +11,12 @@ use uuid::Uuid;
 
 use herald_domain::common::entities::app_errors::CoreError;
 use herald_domain::points::{
+    DistributionEvent, DistributionGrantResult, DistributionPolicy, DistributionRuleOwner,
+    DistributionRuleSelection, DistributionTrigger, PointsDistributionRule, ReplayResultRows,
+    credit_pair_for_trigger, fold_replay_results, quota_source_type_for_trigger,
+    select_and_sort_rules,
+};
+use herald_domain::points::{
     dtos::RevokePointsOutput,
     entities::{
         ConsumptionAllocationView, CreditLedgerStatus, CreditSourceType, CreditType, Paginated,
@@ -28,14 +34,13 @@ use herald_domain::points::{
 };
 // Import mapping functions for ORM conversions
 use crate::points::{
-    points_consumption_allocation_from_model, points_consumption_allocation_to_active_model,
-    points_credit_ledger_from_model, points_credit_ledger_to_active_model,
-    points_revocation_record_from_model, points_revocation_record_to_active_model,
+    points_consumption_allocation_from_model, points_credit_ledger_from_model,
+    points_credit_ledger_to_active_model, points_revocation_record_from_model,
+    points_revocation_record_to_active_model,
 };
 use herald_entity::{
-    account, points_consumption_allocation, points_credit_ledger, points_grant_record,
-    points_grant_schedule, points_revocation_record, points_transaction, points_wallet,
-    realm_default_config, user_points_config,
+    account, points_consumption_allocation, points_credit_ledger, points_grant_schedule,
+    points_transaction, points_wallet,
 };
 
 /// Custom struct for SQLx query results from points_wallets table
@@ -91,6 +96,10 @@ struct PointsTransactionRow {
     /// path supplies the column via an explicit LEFT JOIN.
     #[sqlx(default)]
     pub effective_at: Option<sea_orm::prelude::DateTimeWithTimeZone>,
+    #[sqlx(default)]
+    pub distribution_event_id: Option<Uuid>,
+    #[sqlx(default)]
+    pub distribution_rule_id: Option<Uuid>,
     pub created_at: sea_orm::prelude::DateTimeWithTimeZone,
     pub updated_at: sea_orm::prelude::DateTimeWithTimeZone,
     pub expires_at: Option<sea_orm::prelude::DateTimeWithTimeZone>,
@@ -116,6 +125,13 @@ struct PointsCreditLedgerRow {
     /// balance.
     pub effective_at: Option<sea_orm::prelude::DateTimeWithTimeZone>,
     pub status: String,
+    /// Distribution attribution. `#[sqlx(default)]` so legacy `SELECT`
+    /// projections that predate the columns still deserialize to NULL rather
+    /// than erroring (the write paths populate them).
+    #[sqlx(default)]
+    pub distribution_event_id: Option<Uuid>,
+    #[sqlx(default)]
+    pub distribution_rule_id: Option<Uuid>,
     pub created_at: sea_orm::prelude::DateTimeWithTimeZone,
     pub updated_at: sea_orm::prelude::DateTimeWithTimeZone,
 }
@@ -157,6 +173,10 @@ struct PointsQuotaEntitlementRow {
     pub effective_until: Option<sea_orm::prelude::DateTimeWithTimeZone>,
     pub status: String,
     pub idempotency_key: String,
+    #[sqlx(default)]
+    pub distribution_event_id: Option<Uuid>,
+    #[sqlx(default)]
+    pub distribution_rule_id: Option<Uuid>,
     pub created_at: sea_orm::prelude::DateTimeWithTimeZone,
     pub updated_at: sea_orm::prelude::DateTimeWithTimeZone,
 }
@@ -179,8 +199,7 @@ pub(crate) struct QuotaWindowDbJson {
 
 /// Parse a raw JSONB value into the domain `Vec<QuotaWindow>`. `None` /
 /// `Null` ⟹ empty vec (the column is nullable; empty means "no window-model
-/// grant"). Used to hydrate `RealmDefaultConfig.free_periodic_quota_windows`
-/// and shares the `QuotaWindowDbJson` serde boundary
+/// grant"). Shares the `QuotaWindowDbJson` serde boundary
 /// with the `points_quota_entitlements.quota_windows` path.
 /// `pub(crate)` so the billing infra repository reuses it for
 /// `provider_entitlement_mappings.quota_windows`.
@@ -284,6 +303,20 @@ mod constraints {
 }
 
 impl PostgresPointsRepository {
+    fn proportional_refund_for_grant(
+        granted_amount: i64,
+        remaining_amount: i64,
+        refund_amount: i64,
+        original_payment_amount: i64,
+    ) -> i64 {
+        let rounded = (i128::from(granted_amount) * i128::from(refund_amount)
+            + i128::from(original_payment_amount) / 2)
+            / i128::from(original_payment_amount);
+        i64::try_from(rounded)
+            .unwrap_or(i64::MAX)
+            .min(remaining_amount)
+    }
+
     pub fn new(db: Arc<DatabaseConnection>, pool: PgPool) -> Self {
         Self { db, pool }
     }
@@ -387,6 +420,8 @@ impl PostgresPointsRepository {
             // `list_transactions` path uses the JOIN-aware raw SQL.
             effective_at: None,
             created_at: chrono::DateTime::from(model.created_at),
+            distribution_event_id: model.distribution_event_id,
+            distribution_rule_id: model.distribution_rule_id,
         })
     }
 
@@ -423,6 +458,8 @@ impl PostgresPointsRepository {
             // populate this row (see `find_transactions`, refund replay).
             effective_at: row.effective_at.map(chrono::DateTime::from),
             created_at: chrono::DateTime::from(row.created_at),
+            distribution_event_id: row.distribution_event_id,
+            distribution_rule_id: row.distribution_rule_id,
         })
     }
 
@@ -455,38 +492,8 @@ impl PostgresPointsRepository {
             created_at: Set(sea_orm::prelude::DateTimeWithTimeZone::from(
                 transaction.created_at,
             )),
-        }
-    }
-
-    fn model_to_user_points_config(
-        model: user_points_config::Model,
-    ) -> herald_domain::points::user_config::UserPointsConfig {
-        // Parse grant period type if present
-        let free_periodic_grant_period_type = model.free_periodic_grant_period_type.and_then(|s| {
-            s.parse::<herald_domain::points::grant_schedule::GrantPeriodType>()
-                .map_err(|e| {
-                    tracing::error!(
-                        "Failed to parse free_periodic_grant_period_type '{}': {}",
-                        s,
-                        e
-                    );
-                    e
-                })
-                .ok()
-        });
-
-        herald_domain::points::user_config::UserPointsConfig {
-            user_id: model.user_id,
-            realm_id: model.realm_id,
-            registration_bonus_points: model.registration_bonus_points,
-            free_periodic_points_amount: model.free_periodic_points_amount,
-            free_periodic_grant_period_type,
-            free_periodic_validity_days: model.free_periodic_validity_days,
-            next_grant_time: model.next_grant_time.map(chrono::DateTime::from),
-            granted_periods: model.granted_periods,
-            grant_schedule_id: model.grant_schedule_id,
-            created_at: chrono::DateTime::from(model.created_at),
-            updated_at: chrono::DateTime::from(model.updated_at),
+            distribution_event_id: Set(transaction.distribution_event_id),
+            distribution_rule_id: Set(transaction.distribution_rule_id),
         }
     }
 
@@ -514,6 +521,8 @@ impl PostgresPointsRepository {
             active: model.active,
             created_at: chrono::DateTime::from(model.created_at),
             updated_at: chrono::DateTime::from(model.updated_at),
+            distribution_event_id: model.distribution_event_id,
+            distribution_rule_id: model.distribution_rule_id,
         })
     }
 
@@ -627,6 +636,8 @@ impl PostgresPointsRepository {
             status: row.status.parse()?,
             created_at: chrono::DateTime::from(row.created_at),
             updated_at: chrono::DateTime::from(row.updated_at),
+            distribution_event_id: row.distribution_event_id,
+            distribution_rule_id: row.distribution_rule_id,
         })
     }
 
@@ -661,6 +672,8 @@ impl PostgresPointsRepository {
             idempotency_key: row.idempotency_key,
             created_at: chrono::DateTime::from(row.created_at),
             updated_at: chrono::DateTime::from(row.updated_at),
+            distribution_event_id: row.distribution_event_id,
+            distribution_rule_id: row.distribution_rule_id,
         })
     }
 
@@ -923,36 +936,6 @@ impl PostgresPointsRepository {
                     .collect()
             }
         }
-    }
-
-    async fn find_active_ledgers_by_credit_type_for_update(
-        tx: &mut Transaction<'_, Postgres>,
-        realm_id: &str,
-        user_id: Uuid,
-        credit_type: CreditType,
-    ) -> Result<Vec<PointsCreditLedger>, CoreError> {
-        let rows = sqlx::query_as::<_, PointsCreditLedgerRow>(
-            r#"
-            SELECT * FROM points_credit_ledger
-            WHERE realm_id = $1
-              AND user_id = $2
-              AND credit_type = $3
-              AND status = 'active'
-              AND remaining_amount > 0
-            ORDER BY created_at ASC
-            FOR UPDATE
-            "#,
-        )
-        .bind(realm_id)
-        .bind(user_id)
-        .bind(credit_type.to_string())
-        .fetch_all(&mut **tx)
-        .await
-        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-        rows.into_iter()
-            .map(Self::row_to_points_credit_ledger)
-            .collect()
     }
 
     async fn find_active_ledgers_by_credit_type_and_bucket_for_update(
@@ -1363,16 +1346,19 @@ impl PostgresPointsRepository {
             INSERT INTO points_transactions (
                 id, wallet_id, user_id, realm_id, bucket_id, type, amount, balance_after,
                 topup_balance_after, subscription_balance_after, credit_type, description,
-                client_app_id, subscription_id, external_ref_id, correlation_id, created_at, updated_at
+                client_app_id, subscription_id, external_ref_id, correlation_id,
+                distribution_event_id, distribution_rule_id, created_at, updated_at
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8,
                 $9, $10, $11, $12,
-                $13, $14, $15, $16, $17, NOW()
+                $13, $14, $15, $16,
+                $17, $18, $19, NOW()
             )
             RETURNING id, realm_id, wallet_id, user_id, bucket_id, type, amount, balance_after,
                       topup_balance_after, subscription_balance_after, credit_type,
                       description, client_app_id, subscription_id, external_ref_id, correlation_id,
                       NULL::timestamptz AS effective_at,
+                      distribution_event_id, distribution_rule_id,
                       created_at, updated_at, expires_at
             "#,
         )
@@ -1392,6 +1378,8 @@ impl PostgresPointsRepository {
         .bind(transaction.subscription_id)
         .bind(transaction.external_ref_id)
         .bind(transaction.correlation_id.clone())
+        .bind(transaction.distribution_event_id)
+        .bind(transaction.distribution_rule_id)
         .bind(transaction.created_at)
         .fetch_one(&mut **tx)
         .await
@@ -1409,11 +1397,11 @@ impl PostgresPointsRepository {
             INSERT INTO points_credit_ledger (
                 id, user_id, realm_id, bucket_id, credit_type, source_type, source_id,
                 granted_amount, used_amount, revoked_amount, expires_at, effective_at,
-                status, created_at, updated_at
+                status, distribution_event_id, distribution_rule_id, created_at, updated_at
             ) VALUES (
                 $1, $2, $3, $4, $5, $6,
                 $7, $8, $9, $10, $11, $12,
-                $13, $14, $15
+                $13, $14, $15, $16, $17
             )
             RETURNING *
             "#,
@@ -1431,6 +1419,8 @@ impl PostgresPointsRepository {
         .bind(ledger.expires_at)
         .bind(ledger.effective_at)
         .bind(ledger.status.to_string())
+        .bind(ledger.distribution_event_id)
+        .bind(ledger.distribution_rule_id)
         .bind(ledger.created_at)
         .bind(ledger.updated_at)
         .fetch_one(&mut **tx)
@@ -1584,6 +1574,1167 @@ impl PostgresPointsRepository {
         }
         Ok((total_revoked, ledger_ids))
     }
+
+    async fn revoke_distribution_source_in_tx(
+        tx: &mut Transaction<'_, Postgres>,
+        realm_id: &str,
+        user_id: Uuid,
+        source_id: &str,
+        revocation_type: RevocationType,
+        reason: &str,
+        reference_id: &str,
+    ) -> Result<RevokePointsOutput, CoreError> {
+        let ledgers = sqlx::query_as::<_, (Uuid, i64)>(
+            "SELECT l.id, l.remaining_amount \
+             FROM points_credit_ledger l \
+             JOIN points_distribution_events e ON e.id = l.distribution_event_id \
+             WHERE e.realm_id = $1 AND e.user_id = $2 \
+               AND (e.source_id = $3 OR e.event_key LIKE $4) \
+               AND l.distribution_rule_id IS NOT NULL AND l.remaining_amount > 0 \
+             ORDER BY l.bucket_id, l.id FOR UPDATE OF l",
+        )
+        .bind(realm_id)
+        .bind(user_id)
+        .bind(source_id)
+        .bind(format!("subscription:{source_id}:%"))
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        let (total_revoked, ledger_ids) = Self::revoke_ledger_list_in_tx(
+            tx,
+            realm_id,
+            user_id,
+            ledgers,
+            revocation_type,
+            reason,
+            Some(reference_id),
+        )
+        .await?;
+
+        sqlx::query(
+            "UPDATE points_quota_entitlements q \
+             SET status = 'revoked', effective_until = LEAST(COALESCE(effective_until, NOW()), NOW()), \
+                 updated_at = NOW() \
+             FROM points_distribution_events e \
+             WHERE e.id = q.distribution_event_id \
+               AND e.realm_id = $1 AND e.user_id = $2 \
+               AND (e.source_id = $3 OR e.event_key LIKE $4) \
+               AND q.distribution_rule_id IS NOT NULL AND q.status = 'active'",
+        )
+        .bind(realm_id)
+        .bind(user_id)
+        .bind(source_id)
+        .bind(format!("subscription:{source_id}:%"))
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        Ok(RevokePointsOutput {
+            revocation_id: Uuid::now_v7(),
+            ledger_ids,
+            total_revoked,
+            revoked_at: chrono::Utc::now(),
+        })
+    }
+
+    async fn deactivate_free_periodic_results_in_tx(
+        tx: &mut Transaction<'_, Postgres>,
+        realm_id: &str,
+        user_id: Uuid,
+        deactivate_at: chrono::DateTime<chrono::Utc>,
+    ) -> Result<(), CoreError> {
+        sqlx::query(
+            "UPDATE points_quota_entitlements q \
+             SET status = 'revoked', \
+                 effective_until = LEAST(COALESCE(q.effective_until, $3), $3), \
+                 updated_at = NOW() \
+             FROM points_distribution_rules r \
+             WHERE r.id = q.distribution_rule_id \
+               AND q.realm_id = $1 AND q.user_id = $2 AND q.status = 'active' \
+               AND q.source_type = 'free_periodic_grant' \
+               AND r.owner_type = 'realm_registration' \
+               AND 'free_periodic_grant' = ANY(r.trigger_sources)",
+        )
+        .bind(realm_id)
+        .bind(user_id)
+        .bind(deactivate_at)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        sqlx::query(
+            "UPDATE points_grant_schedules s \
+             SET active = FALSE, updated_at = NOW() \
+             FROM points_distribution_rules r \
+             WHERE r.id = s.distribution_rule_id \
+               AND s.realm_id = $1 AND s.user_id = $2 AND s.active = TRUE \
+               AND r.owner_type = 'realm_registration' \
+               AND 'free_periodic_grant' = ANY(r.trigger_sources)",
+        )
+        .bind(realm_id)
+        .bind(user_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+        Ok(())
+    }
+
+    // ===================================================================
+    // Multi-rule distribution executor (atomic + idempotent + replay)
+    // ===================================================================
+
+    /// Validate a target bucket exists, belongs to the realm and is enabled.
+    /// Disabled or cross-realm buckets fail the whole event (all-or-nothing).
+    async fn bucket_enabled_in_realm_in_tx(
+        tx: &mut Transaction<'_, Postgres>,
+        realm_id: &str,
+        bucket_id: Uuid,
+    ) -> Result<bool, CoreError> {
+        let exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM credit_buckets WHERE id = $1 AND realm_id = $2 AND enabled = TRUE)",
+        )
+        .bind(bucket_id)
+        .bind(realm_id)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+        Ok(exists)
+    }
+
+    /// Load the owner's enabled rules that declare `trigger`, in stable
+    /// `(display_order, rule_id)` order. Used by the `CurrentOwnerRules`
+    /// first-run selection. For a registration event the caller selects both
+    /// `Registration` and `FreePeriodicGrant` (two passes through this loader
+    /// share one transaction so the new user's whole initial set is atomic).
+    async fn load_current_owner_rules_in_tx(
+        tx: &mut Transaction<'_, Postgres>,
+        realm_id: &str,
+        owner: &DistributionRuleOwner,
+        trigger: DistributionTrigger,
+    ) -> Result<Vec<PointsDistributionRule>, CoreError> {
+        let (owner_type, mapping_id) = match owner {
+            DistributionRuleOwner::EntitlementMapping(id) => ("entitlement_mapping", Some(*id)),
+            DistributionRuleOwner::RealmRegistration => ("realm_registration", None),
+        };
+        let rows = sqlx::query(
+            "SELECT id, realm_id, owner_type, entitlement_mapping_id, bucket_id, trigger_sources, \
+                    grant_mode, points_amount, validity_days, grant_period_type, quota_windows, \
+                    enabled, display_order \
+             FROM points_distribution_rules \
+             WHERE realm_id = $1 AND owner_type = $2 AND enabled = TRUE \
+               AND ($3::uuid IS NULL OR entitlement_mapping_id = $3) \
+             ORDER BY display_order, id",
+        )
+        .bind(realm_id)
+        .bind(owner_type)
+        .bind(mapping_id)
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+        let all: Vec<PointsDistributionRule> = rows
+            .into_iter()
+            .map(|r| rule_row_to_domain(&r))
+            .collect::<Result<_, _>>()?;
+        Ok(select_and_sort_rules_owned(all, trigger))
+    }
+
+    /// Load a single rule by id (for `ScheduledRule`). Returns the rule
+    /// regardless of `enabled` state: a scheduled free-periodic period replays
+    /// the schedule-bound rule even if the rule was later disabled, because the
+    /// schedule is the active contract for subsequent periods.
+    async fn load_single_rule_in_tx(
+        tx: &mut Transaction<'_, Postgres>,
+        realm_id: &str,
+        rule_id: Uuid,
+    ) -> Result<PointsDistributionRule, CoreError> {
+        let row = sqlx::query(
+            "SELECT id, realm_id, owner_type, entitlement_mapping_id, bucket_id, trigger_sources, \
+                    grant_mode, points_amount, validity_days, grant_period_type, quota_windows, \
+                    enabled, display_order \
+             FROM points_distribution_rules \
+             WHERE id = $1 AND realm_id = $2",
+        )
+        .bind(rule_id)
+        .bind(realm_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?
+        .ok_or(CoreError::NotFound)?;
+        rule_row_to_domain(&row)
+    }
+
+    /// Load the payment-attempt rule snapshot (for `CapturedPaymentRules`).
+    /// Returns `(rule, captured_bucket_id)` per snapshot row, in stable
+    /// `(display_order, rule_id)` order. A rule disabled after snapshot capture
+    /// is still fulfilled: the snapshot is the contract for an already-paid
+    /// attempt, and the captured bucket is used (not the rule's current
+    /// bucket).
+    async fn load_captured_payment_rules(
+        tx: &mut Transaction<'_, Postgres>,
+        realm_id: &str,
+        payment_attempt_id: Uuid,
+        trigger: DistributionTrigger,
+    ) -> Result<Vec<(PointsDistributionRule, Uuid)>, CoreError> {
+        use sqlx::Row;
+        let rows = sqlx::query(
+            "SELECT r.id, r.realm_id, r.owner_type, r.entitlement_mapping_id, r.bucket_id, \
+                    r.trigger_sources, r.grant_mode, r.points_amount, r.validity_days, \
+                    r.grant_period_type, r.quota_windows, r.enabled, r.display_order, \
+                    s.bucket_id AS captured_bucket_id \
+             FROM payment_attempt_point_rules s \
+             JOIN points_distribution_rules r ON r.id = s.rule_id \
+             WHERE s.payment_attempt_id = $1 AND r.realm_id = $2 \
+             ORDER BY r.display_order, r.id",
+        )
+        .bind(payment_attempt_id)
+        .bind(realm_id)
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        let mut out: Vec<(PointsDistributionRule, Uuid)> = Vec::with_capacity(rows.len());
+        for row in rows {
+            let rule = rule_row_to_domain(&row)?;
+            let captured_bucket_id: Uuid = row.get("captured_bucket_id");
+            out.push((rule, captured_bucket_id));
+        }
+        // Stable trigger containment + de-dup (pure). The captured snapshot may
+        // carry rules declaring multiple triggers; only those declaring this
+        // event's trigger fire.
+        let picked = select_and_sort_captured(out, trigger);
+        Ok(picked)
+    }
+
+    /// Insert a `processing` event row. On the unique-key conflict, another
+    /// concurrent caller has already committed (or is committing) the same
+    /// `(realm, user, trigger, event_key)`; return the existing row's id +
+    /// status so the caller can take the replay branch. A `processing` row is
+    /// never committed (the inserting transaction either upgrades it to
+    /// `completed` in the same commit or rolls back), so an observed
+    /// `processing` status here means another in-flight caller — serialize by
+    /// retrying the lock.
+    async fn insert_or_load_event_in_tx(
+        tx: &mut Transaction<'_, Postgres>,
+        event: &DistributionEvent,
+    ) -> Result<EventInsertOutcome, CoreError> {
+        use sqlx::Row;
+        let event_id = Uuid::now_v7();
+        let owner_type = event.owner.as_str();
+        let mapping_id = event.owner.mapping_id();
+        let trigger_str = event.trigger.as_str();
+        let inserted = sqlx::query(
+            "INSERT INTO points_distribution_events \
+                (id, realm_id, user_id, trigger, event_key, source_id, owner_type, \
+                 entitlement_mapping_id, status) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'processing') \
+             ON CONFLICT (realm_id, user_id, trigger, event_key) DO NOTHING",
+        )
+        .bind(event_id)
+        .bind(&event.realm_id)
+        .bind(event.user_id)
+        .bind(trigger_str)
+        .bind(&event.event_key)
+        .bind(&event.source_id)
+        .bind(owner_type)
+        .bind(mapping_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        if inserted.rows_affected() == 1 {
+            return Ok(EventInsertOutcome::InsertedProcessing(event_id));
+        }
+        // Conflict: load the existing row. Lock FOR UPDATE so concurrent
+        // replayers serialize; a processing row blocks until that tx commits/
+        // rolls back (then the caller re-enters the executor).
+        let row = sqlx::query(
+            "SELECT id, status FROM points_distribution_events \
+             WHERE realm_id = $1 AND user_id = $2 AND trigger = $3 AND event_key = $4 \
+             FOR UPDATE",
+        )
+        .bind(&event.realm_id)
+        .bind(event.user_id)
+        .bind(trigger_str)
+        .bind(&event.event_key)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+        let id: Uuid = row.get("id");
+        let status: String = row.get("status");
+        Ok(EventInsertOutcome::Existing { id, status })
+    }
+
+    /// Lock + read a completed event for replay: `id`, `result_count`.
+    async fn lock_completed_event_for_replay_in_tx(
+        tx: &mut Transaction<'_, Postgres>,
+        event_id: Uuid,
+    ) -> Result<Option<i32>, CoreError> {
+        use sqlx::Row;
+        let row = sqlx::query(
+            "SELECT result_count FROM points_distribution_events \
+             WHERE id = $1 AND status = 'completed' FOR UPDATE",
+        )
+        .bind(event_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+        Ok(row
+            .map(|r| r.get::<Option<i32>, _>("result_count"))
+            .and_then(|c| c))
+    }
+
+    /// Finalize an event: set `status='completed'`, `result_count`,
+    /// `completed_at=NOW()`. Only valid for a row inserted in this same
+    /// transaction (a processing row); replayed completed rows take the replay
+    /// branch instead.
+    async fn complete_event_in_tx(
+        tx: &mut Transaction<'_, Postgres>,
+        event_id: Uuid,
+        result_count: i32,
+    ) -> Result<(), CoreError> {
+        sqlx::query(
+            "UPDATE points_distribution_events \
+             SET status = 'completed', result_count = $2, completed_at = NOW() \
+             WHERE id = $1 AND status = 'processing'",
+        )
+        .bind(event_id)
+        .bind(result_count)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Replay: read fixed ledger rows attributed to `event_id`. Returns
+    /// `(rule_id, bucket_id, ledger_id, amount)`. The first-period ledger of a
+    /// free-periodic schedule is included here and folded out by
+    /// `fold_replay_results` via the schedule's first-ledger id.
+    async fn replay_ledger_rows_in_tx(
+        tx: &mut Transaction<'_, Postgres>,
+        event_id: Uuid,
+    ) -> Result<Vec<(Uuid, Uuid, Uuid, i64)>, CoreError> {
+        use sqlx::Row;
+        let rows = sqlx::query(
+            "SELECT distribution_rule_id, bucket_id, id, granted_amount \
+             FROM points_credit_ledger \
+             WHERE distribution_event_id = $1 AND distribution_rule_id IS NOT NULL \
+             ORDER BY distribution_rule_id",
+        )
+        .bind(event_id)
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+        Ok(rows
+            .into_iter()
+            .map(|r| {
+                (
+                    r.get::<Uuid, _>("distribution_rule_id"),
+                    r.get::<Uuid, _>("bucket_id"),
+                    r.get::<Uuid, _>("id"),
+                    r.get::<i64, _>("granted_amount"),
+                )
+            })
+            .collect())
+    }
+
+    /// Replay: read quota entitlement rows attributed to `event_id`. Returns
+    /// `(rule_id, bucket_id, entitlement_id)`.
+    async fn replay_quota_rows_in_tx(
+        tx: &mut Transaction<'_, Postgres>,
+        event_id: Uuid,
+    ) -> Result<Vec<(Uuid, Uuid, Uuid)>, CoreError> {
+        use sqlx::Row;
+        let rows = sqlx::query(
+            "SELECT distribution_rule_id, bucket_id, id \
+             FROM points_quota_entitlements \
+             WHERE distribution_event_id = $1 AND distribution_rule_id IS NOT NULL \
+             ORDER BY distribution_rule_id",
+        )
+        .bind(event_id)
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+        Ok(rows
+            .into_iter()
+            .map(|r| {
+                (
+                    r.get::<Uuid, _>("distribution_rule_id"),
+                    r.get::<Uuid, _>("bucket_id"),
+                    r.get::<Uuid, _>("id"),
+                )
+            })
+            .collect())
+    }
+
+    /// Replay: read schedule rows attributed to `event_id` joined to their
+    /// first-period ledger via `points_grant_records`. Returns
+    /// `(rule_id, bucket_id, schedule_id, first_ledger_id)`. The first-ledger is
+    /// resolved through the grant-record bridge so it folds into the Schedule
+    /// result rather than being double-counted as a Fixed result.
+    async fn replay_schedule_rows_in_tx(
+        tx: &mut Transaction<'_, Postgres>,
+        event_id: Uuid,
+    ) -> Result<Vec<(Uuid, Uuid, Uuid, Uuid)>, CoreError> {
+        use sqlx::Row;
+        let rows = sqlx::query(
+            "SELECT s.distribution_rule_id, s.bucket_id, s.id AS schedule_id, \
+                    gr.ledger_id AS first_ledger_id \
+             FROM points_grant_schedules s \
+             LEFT JOIN points_grant_records gr \
+                    ON gr.schedule_id = s.id AND gr.period_number = 1 \
+             WHERE s.distribution_event_id = $1 \
+             ORDER BY s.distribution_rule_id",
+        )
+        .bind(event_id)
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+        let mut out = Vec::with_capacity(rows.len());
+        for r in rows {
+            let first_ledger_id: Option<Uuid> = r.get("first_ledger_id");
+            out.push((
+                r.get::<Uuid, _>("distribution_rule_id"),
+                r.get::<Uuid, _>("bucket_id"),
+                r.get::<Uuid, _>("schedule_id"),
+                first_ledger_id.unwrap_or(Uuid::nil()),
+            ));
+        }
+        Ok(out)
+    }
+
+    /// First-run execution: resolve rules for `selection`, validate every
+    /// target bucket, write all results + the first-period schedule of
+    /// free-periodic fixed rules, then finalize the event as `completed` with
+    /// `result_count`. Everything commits in the caller's transaction; any
+    /// failure propagates as `Err` so the caller rolls back and the
+    /// `processing` event row never persists.
+    ///
+    /// Zero matched rules is a valid completed event: writes nothing but
+    /// `result_count = 0` and the completion record.
+    #[allow(clippy::too_many_arguments)]
+    async fn execute_first_run_in_tx(
+        tx: &mut Transaction<'_, Postgres>,
+        event_id: Uuid,
+        event: &DistributionEvent,
+        selection: &DistributionRuleSelection,
+    ) -> Result<Vec<DistributionGrantResult>, CoreError> {
+        let realm_id = &event.realm_id;
+        let trigger = event.trigger;
+
+        // Resolve the rule set + target buckets for the selection. Each variant
+        // produces `(rule, effective_bucket_id)` pairs in stable
+        // `(display_order, rule_id)` order, de-duplicated by rule id.
+        let mut resolved: Vec<(PointsDistributionRule, Uuid, DistributionTrigger)> = match selection
+        {
+            DistributionRuleSelection::CapturedPaymentRules(refs) => {
+                if refs.is_empty() {
+                    // No captured rules: a valid zero-result completed event.
+                    Vec::new()
+                } else {
+                    // The payment attempt id is the event source for a topup /
+                    // subscription_initial fulfillment. The snapshot is loaded by
+                    // payment_attempt_id; the JOIN already returns the captured
+                    // bucket, which is the contract for an already-paid attempt.
+                    let payment_attempt_id = Uuid::parse_str(&event.source_id).map_err(|_| {
+                        CoreError::DatabaseError(format!(
+                            "captured-payment selection requires a UUID source_id, got '{}'",
+                            event.source_id
+                        ))
+                    })?;
+                    Self::load_captured_payment_rules(tx, realm_id, payment_attempt_id, trigger)
+                        .await?
+                        .into_iter()
+                        .map(|(rule, bucket_id)| (rule, bucket_id, trigger))
+                        .collect()
+                }
+            }
+            DistributionRuleSelection::CurrentOwnerRules => {
+                // A registration event selects both Registration and
+                // FreePeriodicGrant rules in one transaction (a new user's whole
+                // initial grant set is atomic). For all other triggers a single
+                // pass suffices.
+                let triggers: &[DistributionTrigger] = match trigger {
+                    DistributionTrigger::Registration => &[
+                        DistributionTrigger::Registration,
+                        DistributionTrigger::FreePeriodicGrant,
+                    ],
+                    _ => std::slice::from_ref(&trigger),
+                };
+                let mut acc: Vec<(PointsDistributionRule, Uuid, DistributionTrigger)> = Vec::new();
+                for t in triggers {
+                    let rules =
+                        Self::load_current_owner_rules_in_tx(tx, realm_id, &event.owner, *t)
+                            .await?;
+                    for r in rules {
+                        if !acc.iter().any(|(x, _, _)| x.id == r.id) {
+                            let bucket_id = r.bucket_id;
+                            acc.push((r, bucket_id, *t));
+                        }
+                    }
+                }
+                acc
+            }
+            DistributionRuleSelection::ScheduledRule(rule_id) => {
+                let rule = Self::load_single_rule_in_tx(tx, realm_id, *rule_id).await?;
+                let bucket_id: Uuid = sqlx::query_scalar(
+                    "SELECT bucket_id FROM points_grant_schedules \
+                     WHERE realm_id = $1 AND user_id = $2 AND distribution_rule_id = $3",
+                )
+                .bind(realm_id)
+                .bind(event.user_id)
+                .bind(rule_id)
+                .fetch_optional(&mut **tx)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?
+                .ok_or(CoreError::NotFound)?;
+                vec![(rule, bucket_id, DistributionTrigger::FreePeriodicGrant)]
+            }
+        };
+        resolved.sort_by(|(left, _, _), (right, _, _)| {
+            left.display_order
+                .cmp(&right.display_order)
+                .then_with(|| left.id.cmp(&right.id))
+        });
+
+        // Validate every target bucket exists, is in-realm and enabled BEFORE
+        // any write (all-or-nothing). Use the effective bucket (captured for
+        // snapshots, rule.bucket_id otherwise).
+        for (rule, bucket_id, _) in &resolved {
+            if !Self::bucket_enabled_in_realm_in_tx(tx, realm_id, *bucket_id).await? {
+                return Err(CoreError::BadRequest(format!(
+                    "distribution target bucket {} for rule {} is disabled or outside realm",
+                    bucket_id, rule.id
+                )));
+            }
+        }
+
+        let now = chrono::Utc::now();
+
+        let mut results: Vec<DistributionGrantResult> = Vec::new();
+        for (rule, bucket_id, execution_trigger) in &resolved {
+            let (credit_type, source_type) = credit_pair_for_trigger(*execution_trigger);
+            match &rule.policy {
+                DistributionPolicy::Fixed {
+                    amount,
+                    validity_days,
+                    grant_period_type,
+                } => {
+                    if matches!(selection, DistributionRuleSelection::ScheduledRule(_)) {
+                        let ledger = Self::execute_scheduled_fixed_in_tx(
+                            tx,
+                            event_id,
+                            event,
+                            rule.id,
+                            *bucket_id,
+                            source_type,
+                            now,
+                        )
+                        .await?;
+                        results.push(DistributionGrantResult::Fixed {
+                            rule_id: rule.id,
+                            bucket_id: *bucket_id,
+                            ledger_id: ledger.id,
+                            amount: ledger.granted_amount,
+                        });
+                    } else if let Some(period_type) = grant_period_type {
+                        // Free-periodic fixed: schedule + first-period ledger +
+                        // grant record + transaction. The first ledger is folded
+                        // into the Schedule result (not emitted as Fixed).
+                        let schedule_id = Uuid::now_v7();
+                        let expires_at = period_type.calculate_expiration(now, *validity_days);
+                        let first_ledger = Self::write_rule_ledger_in_tx(
+                            tx,
+                            event_id,
+                            rule.id,
+                            *bucket_id,
+                            event.user_id,
+                            realm_id,
+                            credit_type,
+                            source_type,
+                            *amount,
+                            *validity_days,
+                            Some(now),
+                            expires_at,
+                            now,
+                        )
+                        .await?;
+                        // The wallet + transaction for the first grant.
+                        Self::write_rule_transaction_in_tx(
+                            tx,
+                            event_id,
+                            rule.id,
+                            *bucket_id,
+                            event.user_id,
+                            realm_id,
+                            credit_type,
+                            source_type,
+                            *amount,
+                            now,
+                        )
+                        .await?;
+                        // points_grant_records bridges (schedule, period=1) →
+                        // ledger so replay can fold the first ledger out.
+                        Self::write_grant_record_in_tx(
+                            tx,
+                            schedule_id,
+                            first_ledger.id,
+                            event.user_id,
+                            realm_id,
+                            1,
+                            *amount,
+                            now,
+                        )
+                        .await?;
+                        // Schedule row (NOT NULL attribution). next_grant_time
+                        // = base + 1 period; granted_periods = 1.
+                        Self::write_schedule_in_tx(
+                            tx,
+                            schedule_id,
+                            event_id,
+                            rule.id,
+                            *bucket_id,
+                            event.user_id,
+                            realm_id,
+                            *period_type,
+                            now,
+                            *amount,
+                            *validity_days,
+                        )
+                        .await?;
+                        results.push(DistributionGrantResult::Schedule {
+                            rule_id: rule.id,
+                            bucket_id: *bucket_id,
+                            schedule_id,
+                            first_ledger_id: first_ledger.id,
+                        });
+                    } else {
+                        // Plain fixed grant: ledger + transaction. Result is a
+                        // Fixed carrying the ledger id.
+                        let expires_at = Self::fixed_expires_at(*validity_days, credit_type);
+                        let ledger = Self::write_rule_ledger_in_tx(
+                            tx,
+                            event_id,
+                            rule.id,
+                            *bucket_id,
+                            event.user_id,
+                            realm_id,
+                            credit_type,
+                            source_type,
+                            *amount,
+                            *validity_days,
+                            None,
+                            expires_at,
+                            now,
+                        )
+                        .await?;
+                        Self::write_rule_transaction_in_tx(
+                            tx,
+                            event_id,
+                            rule.id,
+                            *bucket_id,
+                            event.user_id,
+                            realm_id,
+                            credit_type,
+                            source_type,
+                            *amount,
+                            now,
+                        )
+                        .await?;
+                        results.push(DistributionGrantResult::Fixed {
+                            rule_id: rule.id,
+                            bucket_id: *bucket_id,
+                            ledger_id: ledger.id,
+                            amount: *amount,
+                        });
+                    }
+                }
+                DistributionPolicy::Quota { windows } => {
+                    let quota_source = quota_source_type_for_trigger(*execution_trigger)?;
+                    let entitlement = Self::write_quota_entitlement_in_tx(
+                        tx,
+                        event_id,
+                        rule.id,
+                        *bucket_id,
+                        event.user_id,
+                        realm_id,
+                        credit_type,
+                        quota_source,
+                        &event.source_id,
+                        windows,
+                        event.effective_from,
+                        event.effective_until,
+                        now,
+                    )
+                    .await?;
+                    results.push(DistributionGrantResult::Quota {
+                        rule_id: rule.id,
+                        bucket_id: *bucket_id,
+                        entitlement_id: entitlement.id,
+                    });
+                }
+            }
+        }
+
+        // Finalize the event: result_count covers zero-rule events too.
+        let result_count = i32::try_from(results.len()).map_err(|_| {
+            CoreError::InternalServerError("distribution event result count overflow".to_string())
+        })?;
+        Self::complete_event_in_tx(tx, event_id, result_count).await?;
+        Ok(results)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn execute_scheduled_fixed_in_tx(
+        tx: &mut Transaction<'_, Postgres>,
+        event_id: Uuid,
+        event: &DistributionEvent,
+        rule_id: Uuid,
+        bucket_id: Uuid,
+        source_type: CreditSourceType,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<PointsCreditLedger, CoreError> {
+        let row = sqlx::query(
+            "SELECT id, grant_period_type, base_time, points_per_period, validity_days, \
+                    granted_periods, max_periods, active \
+             FROM points_grant_schedules \
+             WHERE realm_id = $1 AND user_id = $2 AND distribution_rule_id = $3 \
+             FOR UPDATE",
+        )
+        .bind(&event.realm_id)
+        .bind(event.user_id)
+        .bind(rule_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?
+        .ok_or(CoreError::NotFound)?;
+
+        let schedule_id: Uuid = row.get("id");
+        let active: bool = row.get("active");
+        if !active {
+            return Err(CoreError::BadRequest(
+                "free-periodic grant schedule is inactive".to_string(),
+            ));
+        }
+        let period_type = herald_domain::points::grant_schedule::GrantPeriodType::from_str(
+            row.get::<&str, _>("grant_period_type"),
+        )
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+        let base_time: chrono::DateTime<chrono::Utc> = row.get("base_time");
+        let points_per_period: i64 = row.get("points_per_period");
+        let validity_days: i64 = row.get("validity_days");
+        let granted_periods: i64 = row.get("granted_periods");
+        let max_periods: Option<i64> = row.get("max_periods");
+        let period_number = granted_periods + 1;
+        let expires_at = period_type.calculate_expiration(event.effective_from, validity_days);
+
+        let ledger = Self::write_rule_ledger_in_tx(
+            tx,
+            event_id,
+            rule_id,
+            bucket_id,
+            event.user_id,
+            &event.realm_id,
+            CreditType::FreePeriodicCredit,
+            source_type,
+            points_per_period,
+            validity_days,
+            Some(event.effective_from),
+            expires_at,
+            now,
+        )
+        .await?;
+        Self::write_rule_transaction_in_tx(
+            tx,
+            event_id,
+            rule_id,
+            bucket_id,
+            event.user_id,
+            &event.realm_id,
+            CreditType::FreePeriodicCredit,
+            source_type,
+            points_per_period,
+            now,
+        )
+        .await?;
+        Self::write_grant_record_in_tx(
+            tx,
+            schedule_id,
+            ledger.id,
+            event.user_id,
+            &event.realm_id,
+            period_number,
+            points_per_period,
+            event.effective_from,
+        )
+        .await?;
+
+        let should_stop = period_type.should_stop(period_number, max_periods);
+        let next_grant_time = period_type.next_grant_time(base_time, period_number);
+        sqlx::query(
+            "UPDATE points_grant_schedules \
+             SET next_grant_time = $2, granted_periods = $3, active = $4, updated_at = NOW() \
+             WHERE id = $1",
+        )
+        .bind(schedule_id)
+        .bind(next_grant_time)
+        .bind(period_number)
+        .bind(!should_stop)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        Ok(ledger)
+    }
+
+    /// Expiration for a plain (non-periodic) fixed grant. validity_days == 0
+    /// ⟺ permanent (None). credit_type drives nothing special here today but
+    /// is accepted so future per-type validity rules live in one place.
+    fn fixed_expires_at(
+        validity_days: i64,
+        _credit_type: CreditType,
+    ) -> Option<chrono::DateTime<chrono::Utc>> {
+        if validity_days == 0 {
+            None
+        } else {
+            Some(chrono::Utc::now() + chrono::Duration::days(validity_days))
+        }
+    }
+
+    /// Write a rule-attributed ledger row + ensure its wallet exists + advance
+    /// the wallet lifetime totals. Returns the persisted ledger.
+    async fn write_rule_ledger_in_tx(
+        tx: &mut Transaction<'_, Postgres>,
+        event_id: Uuid,
+        rule_id: Uuid,
+        bucket_id: Uuid,
+        user_id: Uuid,
+        realm_id: &str,
+        credit_type: CreditType,
+        source_type: CreditSourceType,
+        amount: i64,
+        _validity_days: i64,
+        effective_at: Option<chrono::DateTime<chrono::Utc>>,
+        expires_at: Option<chrono::DateTime<chrono::Utc>>,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<PointsCreditLedger, CoreError> {
+        let wallet = Self::ensure_wallet_in_tx(tx, realm_id, user_id, bucket_id).await?;
+        if wallet.status != WalletStatus::Active {
+            return Err(CoreError::BadRequest(format!(
+                "Cannot grant points to {} wallet",
+                wallet.status.as_str()
+            )));
+        }
+        let ledger = PointsCreditLedger {
+            id: Uuid::now_v7(),
+            user_id,
+            realm_id: realm_id.to_string(),
+            bucket_id,
+            credit_type,
+            source_type,
+            source_id: format!("distribution:{event_id}"),
+            granted_amount: amount,
+            used_amount: 0,
+            revoked_amount: 0,
+            remaining_amount: amount,
+            expires_at,
+            effective_at,
+            status: CreditLedgerStatus::Active,
+            created_at: now,
+            updated_at: now,
+            distribution_event_id: Some(event_id),
+            distribution_rule_id: Some(rule_id),
+        };
+        let created = Self::create_ledger_in_tx(tx, &ledger).await?;
+        let delta = WalletDelta::grant(credit_type, amount);
+        let _ = Self::apply_wallet_delta_in_tx(tx, wallet.id, delta).await?;
+        Ok(created)
+    }
+
+    /// Write the rule-attributed `points_transactions` row for a grant. Uses the
+    /// derived bucket available balance as `balance_after` so it matches the
+    /// user-visible semantics.
+    async fn write_rule_transaction_in_tx(
+        tx: &mut Transaction<'_, Postgres>,
+        event_id: Uuid,
+        rule_id: Uuid,
+        bucket_id: Uuid,
+        user_id: Uuid,
+        realm_id: &str,
+        credit_type: CreditType,
+        source_type: CreditSourceType,
+        amount: i64,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<(), CoreError> {
+        let wallet = Self::ensure_wallet_in_tx(tx, realm_id, user_id, bucket_id).await?;
+        let derived = Self::compute_available_balance_in_tx(
+            tx,
+            realm_id,
+            user_id,
+            std::slice::from_ref(&bucket_id),
+            now,
+        )
+        .await?;
+        let (balance_after, topup_after, subscription_after) =
+            Self::derived_to_balance_snapshots(&derived);
+        let transaction_type = Self::determine_transaction_type(credit_type, source_type);
+        let external_ref_id = format!("distribution:{event_id}:{rule_id}");
+        let txn = PointsTransaction {
+            id: Uuid::now_v7(),
+            wallet_id: wallet.id,
+            user_id,
+            realm_id: realm_id.to_string(),
+            bucket_id,
+            transaction_type,
+            amount,
+            balance_after,
+            topup_balance_after: topup_after,
+            subscription_balance_after: subscription_after,
+            credit_type: Some(credit_type),
+            description: Some(format!(
+                "{}: {} points granted",
+                source_type.as_str(),
+                amount
+            )),
+            client_app_id: None,
+            subscription_id: None,
+            external_ref_id: Some(external_ref_id),
+            correlation_id: None,
+            effective_at: None,
+            created_at: now,
+            distribution_event_id: Some(event_id),
+            distribution_rule_id: Some(rule_id),
+        };
+        let _ = Self::create_transaction_in_tx(tx, txn).await?;
+        Ok(())
+    }
+
+    /// Write a `points_grant_records` bridge row linking
+    /// `(schedule_id, period_number)` to its ledger, so replay can fold the
+    /// schedule's first-period ledger out of the Fixed result set.
+    async fn write_grant_record_in_tx(
+        tx: &mut Transaction<'_, Postgres>,
+        schedule_id: Uuid,
+        ledger_id: Uuid,
+        user_id: Uuid,
+        realm_id: &str,
+        period_number: i64,
+        granted_amount: i64,
+        grant_time: chrono::DateTime<chrono::Utc>,
+    ) -> Result<(), CoreError> {
+        sqlx::query(
+            "INSERT INTO points_grant_records \
+                (id, schedule_id, user_id, realm_id, ledger_id, period_number, \
+                 granted_amount, grant_time, created_at) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())",
+        )
+        .bind(Uuid::now_v7())
+        .bind(schedule_id)
+        .bind(user_id)
+        .bind(realm_id)
+        .bind(ledger_id)
+        .bind(period_number)
+        .bind(granted_amount)
+        .bind(grant_time)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Write a `points_grant_schedules` row with NOT NULL distribution
+    /// attribution. `granted_periods = 1` and `next_grant_time` = base + 1
+    /// period because the first period was just granted inline.
+    async fn write_schedule_in_tx(
+        tx: &mut Transaction<'_, Postgres>,
+        schedule_id: Uuid,
+        event_id: Uuid,
+        rule_id: Uuid,
+        bucket_id: Uuid,
+        user_id: Uuid,
+        realm_id: &str,
+        period_type: herald_domain::points::grant_schedule::GrantPeriodType,
+        base_time: chrono::DateTime<chrono::Utc>,
+        points_per_period: i64,
+        validity_days: i64,
+    ) -> Result<(), CoreError> {
+        let next_grant_time = period_type.next_grant_time(base_time, 1);
+        sqlx::query(
+            "INSERT INTO points_grant_schedules \
+                (id, user_id, realm_id, bucket_id, subscription_id, entitlement_key, \
+                 grant_period_type, base_time, next_grant_time, points_per_period, \
+                 validity_days, granted_periods, max_periods, active, \
+                 distribution_event_id, distribution_rule_id, created_at, updated_at) \
+             VALUES ($1, $2, $3, $4, NULL, '', $5, $6, $7, $8, $9, 1, NULL, $10, $11, $12, NOW(), NOW())",
+        )
+        .bind(schedule_id)
+        .bind(user_id)
+        .bind(realm_id)
+        .bind(bucket_id)
+        .bind(period_type.to_string())
+        .bind(base_time)
+        .bind(next_grant_time)
+        .bind(points_per_period)
+        .bind(validity_days)
+        .bind(!period_type.should_stop(1, None))
+        .bind(event_id)
+        .bind(rule_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Write a rule-attributed `points_quota_entitlements` row. The unique
+    /// `(distribution_event_id, distribution_rule_id)` partial index makes the
+    /// rule-attributed grant idempotent at the (event, rule) level.
+    async fn write_quota_entitlement_in_tx(
+        tx: &mut Transaction<'_, Postgres>,
+        event_id: Uuid,
+        rule_id: Uuid,
+        bucket_id: Uuid,
+        user_id: Uuid,
+        realm_id: &str,
+        credit_type: CreditType,
+        source_type: herald_domain::points::entities::QuotaSourceType,
+        source_id: &str,
+        windows: &[QuotaWindow],
+        effective_from: chrono::DateTime<chrono::Utc>,
+        effective_until: Option<chrono::DateTime<chrono::Utc>>,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<PointsQuotaEntitlement, CoreError> {
+        let windows_json = serialize_quota_windows_value(windows)?;
+        let id = Uuid::now_v7();
+        let idempotency_key = format!("distribution:{event_id}:{rule_id}");
+        let row = sqlx::query_as::<_, PointsQuotaEntitlementRow>(
+            "INSERT INTO points_quota_entitlements \
+                (id, user_id, realm_id, bucket_id, credit_type, source_type, source_id, \
+                 quota_windows, effective_from, effective_until, status, idempotency_key, \
+                 distribution_event_id, distribution_rule_id, created_at, updated_at) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active', $11, $12, $13, $14, $14) \
+             RETURNING *",
+        )
+        .bind(id)
+        .bind(user_id)
+        .bind(realm_id)
+        .bind(bucket_id)
+        .bind(credit_type.as_str())
+        .bind(source_type.as_str())
+        .bind(source_id)
+        .bind(&windows_json)
+        .bind(effective_from)
+        .bind(effective_until)
+        .bind(&idempotency_key)
+        .bind(event_id)
+        .bind(rule_id)
+        .bind(now)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+        Self::row_to_points_quota_entitlement(row)
+    }
+}
+
+/// Outcome of attempting to insert a `processing` event row.
+enum EventInsertOutcome {
+    /// This transaction inserted the processing row; the caller owns first-run
+    /// execution.
+    InsertedProcessing(Uuid),
+    /// A row for this key already exists (committed by another caller). When
+    /// `status == "completed"` the caller replays; when `status ==
+    /// "processing"` another in-flight caller holds it and the caller retries.
+    Existing { id: Uuid, status: String },
+}
+
+/// Hydrate a `PointsDistributionRule` from a raw sqlx row carrying the rule
+/// columns. Used by the executor's rule-loading helpers so they stay on raw
+/// sqlx (sharing the caller's transaction) rather than SeaORM, which cannot run
+/// against a raw `sqlx::Transaction`.
+fn rule_row_to_domain(row: &sqlx::postgres::PgRow) -> Result<PointsDistributionRule, CoreError> {
+    use sqlx::Row;
+    let owner = match row.try_get::<String, _>("owner_type") {
+        Ok(s) if s == "entitlement_mapping" => {
+            DistributionRuleOwner::EntitlementMapping(row.get("entitlement_mapping_id"))
+        }
+        _ => DistributionRuleOwner::RealmRegistration,
+    };
+    let trigger_sources: Vec<String> = row.get("trigger_sources");
+    let trigger_sources = trigger_sources
+        .iter()
+        .filter_map(|s| match s.parse::<DistributionTrigger>() {
+            Ok(t) => Some(t),
+            Err(_) => {
+                tracing::warn!(
+                    trigger = %s,
+                    "Unknown distribution trigger on rule; dropping from parsed set"
+                );
+                None
+            }
+        })
+        .collect();
+    let grant_mode: String = row.get("grant_mode");
+    let policy = if grant_mode == "quota" {
+        let raw: Option<serde_json::Value> = row.get("quota_windows");
+        DistributionPolicy::Quota {
+            windows: parse_quota_windows_value(raw).unwrap_or_default(),
+        }
+    } else {
+        let grant_period_type: Option<String> = row.get("grant_period_type");
+        DistributionPolicy::Fixed {
+            amount: row.get("points_amount"),
+            validity_days: row.get("validity_days"),
+            grant_period_type: grant_period_type.as_deref().and_then(|s| s.parse().ok()),
+        }
+    };
+    Ok(PointsDistributionRule {
+        id: row.get("id"),
+        realm_id: row.get("realm_id"),
+        owner,
+        bucket_id: row.get("bucket_id"),
+        trigger_sources,
+        policy,
+        enabled: row.get("enabled"),
+        display_order: row.get("display_order"),
+    })
+}
+
+/// Owned-rule stable selection (the trait helper takes `&[PointsDistributionRule]`
+/// by reference; the executor owns the loaded set so adapt to owned values).
+fn select_and_sort_rules_owned(
+    rules: Vec<PointsDistributionRule>,
+    trigger: DistributionTrigger,
+) -> Vec<PointsDistributionRule> {
+    // De-dup + filter + stable (display_order, rule_id) via the pure helper;
+    // `PointsDistributionRule: Clone`, so collect owned directly.
+    select_and_sort_rules(&rules, trigger)
+        .into_iter()
+        .cloned()
+        .collect()
+}
+
+/// Captured-snapshot stable selection: keep rules declaring `trigger`, using
+/// the captured bucket id (not the rule's current bucket). Stable
+/// `(display_order, rule_id)` order, de-dup by rule id.
+fn select_and_sort_captured(
+    captured: Vec<(PointsDistributionRule, Uuid)>,
+    trigger: DistributionTrigger,
+) -> Vec<(PointsDistributionRule, Uuid)> {
+    let mut picked: Vec<(PointsDistributionRule, Uuid)> = captured
+        .into_iter()
+        .filter(|(r, _)| r.trigger_sources.contains(&trigger))
+        .collect();
+    picked.sort_by(|a, b| {
+        a.0.display_order
+            .cmp(&b.0.display_order)
+            .then_with(|| a.0.id.cmp(&b.0.id))
+    });
+    let mut out: Vec<(PointsDistributionRule, Uuid)> = Vec::with_capacity(picked.len());
+    for item in picked {
+        if !out.iter().any(|(r, _)| r.id == item.0.id) {
+            out.push(item);
+        }
+    }
+    out
 }
 
 impl PointsRepository for PostgresPointsRepository {
@@ -2212,236 +3363,6 @@ impl PointsRepository for PostgresPointsRepository {
         }
     }
 
-    fn update_ledger(
-        &self,
-        ledger_id: Uuid,
-        updates: LedgerUpdate,
-    ) -> impl std::future::Future<Output = Result<PointsCreditLedger, CoreError>> + Send {
-        let db = self.db.clone();
-        async move {
-            let ledger = points_credit_ledger::Entity::find_by_id(ledger_id)
-                .one(&*db)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?
-                .ok_or_else(|| CoreError::BadRequest(format!("Ledger not found: {}", ledger_id)))?;
-
-            let mut active =
-                points_credit_ledger_to_active_model(&points_credit_ledger_from_model(ledger));
-
-            match updates {
-                LedgerUpdate::Consumption(amount) => {
-                    let current_used = active.used_amount.clone().take();
-                    let current_granted = active.granted_amount.clone().take();
-                    let current_revoked = active.revoked_amount.clone().take();
-
-                    let new_used = match current_used {
-                        Some(v) => v + amount,
-                        None => amount,
-                    };
-
-                    // remaining_amount is a generated column: granted_amount - used_amount - revoked_amount
-                    // We cannot update it directly; the database computes it automatically
-                    let new_remaining = match (&current_granted, &current_used, &current_revoked) {
-                        (Some(g), Some(u), Some(r)) => g - (u + amount) - r,
-                        (Some(g), None, Some(r)) => g - amount - r,
-                        (Some(g), Some(u), None) => g - (u + amount),
-                        (Some(g), None, None) => g - amount,
-                        _ => -amount, // This should not happen
-                    };
-
-                    active.used_amount = Set(new_used);
-
-                    // Update status if fully used
-                    if new_remaining <= 0 {
-                        active.status = Set(CreditLedgerStatus::FullyUsed.to_string());
-                    }
-                }
-                LedgerUpdate::Revocation(amount) => {
-                    let current_revoked = active.revoked_amount.clone().take();
-                    let current_granted = active.granted_amount.clone().take();
-                    let current_used = active.used_amount.clone().take();
-
-                    let new_revoked = match current_revoked {
-                        Some(v) => v + amount,
-                        None => amount,
-                    };
-
-                    // remaining_amount is a generated column: granted_amount - used_amount - revoked_amount
-                    // We cannot update it directly; the database computes it automatically
-                    let new_remaining = match (&current_granted, &current_used, &current_revoked) {
-                        (Some(g), Some(u), Some(r)) => g - u - (r + amount),
-                        (Some(g), None, Some(r)) => g - (r + amount),
-                        (Some(g), Some(u), None) => g - u - amount,
-                        (Some(g), None, None) => g - amount,
-                        _ => -amount, // This should not happen
-                    };
-
-                    active.revoked_amount = Set(new_revoked);
-
-                    // Update status if revoked
-                    if new_remaining <= 0 {
-                        active.status = Set(CreditLedgerStatus::Revoked.to_string());
-                    }
-                }
-                LedgerUpdate::SetExpiration(expires_at) => {
-                    active.expires_at = Set(Some(sea_orm::prelude::DateTimeWithTimeZone::from(
-                        expires_at,
-                    )));
-                }
-                LedgerUpdate::SetStatus(status) => {
-                    active.status = Set(status.to_string());
-                }
-            }
-
-            active.updated_at = Set(chrono::Utc::now().into());
-
-            let result = active
-                .update(&*db)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-            Ok(points_credit_ledger_from_model(result))
-        }
-    }
-
-    fn find_active_ledgers_by_credit_type(
-        &self,
-        realm_id: &str,
-        user_id: Uuid,
-        credit_type: CreditType,
-    ) -> impl std::future::Future<Output = Result<Vec<PointsCreditLedger>, CoreError>> + Send {
-        let pool = self.pool.clone();
-        let realm_id = realm_id.to_string();
-
-        async move {
-            let credit_type_str = credit_type.to_string();
-            let status_str = CreditLedgerStatus::Active.to_string();
-
-            let rows = sqlx::query_as::<
-                _,
-                (
-                    Uuid,
-                    Uuid,
-                    String,
-                    String,
-                    String,
-                    String,
-                    i64,
-                    i64,
-                    i64,
-                    i64,
-                    Option<chrono::DateTime<chrono::Utc>>,
-                    String,
-                    chrono::DateTime<chrono::Utc>,
-                    chrono::DateTime<chrono::Utc>,
-                ),
-            >(
-                "SELECT id, user_id, realm_id, credit_type, source_type, source_id,
-                        granted_amount, used_amount, revoked_amount, remaining_amount,
-                        expires_at, status, created_at, updated_at
-                 FROM points_credit_ledger
-                 WHERE realm_id = $1
-                   AND user_id = $2
-                   AND credit_type = $3
-                   AND status = $4
-                   AND remaining_amount > 0
-                 ORDER BY created_at ASC",
-            )
-            .bind(&realm_id)
-            .bind(user_id)
-            .bind(&credit_type_str)
-            .bind(&status_str)
-            .fetch_all(&pool)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-            // Convert rows to domain entities
-            let ledgers: Result<Vec<_>, _> = rows
-                .into_iter()
-                .map(
-                    |(
-                        id,
-                        user_id,
-                        realm_id,
-                        credit_type,
-                        source_type,
-                        source_id,
-                        granted_amount,
-                        used_amount,
-                        revoked_amount,
-                        remaining_amount,
-                        expires_at,
-                        status,
-                        created_at,
-                        updated_at,
-                    )| {
-                        let credit_type: CreditType = credit_type.parse()?;
-                        let source_type: CreditSourceType = source_type.parse()?;
-                        let status: CreditLedgerStatus = status.parse()?;
-
-                        Ok(PointsCreditLedger {
-                            id,
-                            user_id,
-                            realm_id,
-                            bucket_id: Uuid::nil(),
-                            credit_type,
-                            source_type,
-                            source_id,
-                            granted_amount,
-                            used_amount,
-                            revoked_amount,
-                            remaining_amount,
-                            expires_at,
-                            effective_at: None,
-                            status,
-                            created_at,
-                            updated_at,
-                        })
-                    },
-                )
-                .collect();
-
-            ledgers
-        }
-    }
-
-    fn create_consumption_allocation(
-        &self,
-        allocation: PointsConsumptionAllocation,
-    ) -> impl std::future::Future<Output = Result<PointsConsumptionAllocation, CoreError>> + Send
-    {
-        let db = self.db.clone();
-        async move {
-            let active_model = points_consumption_allocation_to_active_model(&allocation);
-            let result = active_model
-                .insert(&*db)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-            Ok(points_consumption_allocation_from_model(result))
-        }
-    }
-
-    fn find_consumption_allocations_by_transaction(
-        &self,
-        transaction_id: Uuid,
-    ) -> impl std::future::Future<Output = Result<Vec<PointsConsumptionAllocation>, CoreError>> + Send
-    {
-        let db = self.db.clone();
-        async move {
-            let allocations = points_consumption_allocation::Entity::find()
-                .filter(points_consumption_allocation::Column::TransactionId.eq(transaction_id))
-                .all(&*db)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-            allocations
-                .into_iter()
-                .map(|m| Ok(points_consumption_allocation_from_model(m)))
-                .collect()
-        }
-    }
-
     fn find_consumption_allocations_by_correlation_id(
         &self,
         realm_id: &str,
@@ -2510,27 +3431,6 @@ impl PointsRepository for PostgresPointsRepository {
         }
     }
 
-    fn find_revocation_by_idempotency_key(
-        &self,
-        idempotency_key: &str,
-    ) -> impl std::future::Future<Output = Result<Option<PointsRevocationRecord>, CoreError>> + Send
-    {
-        let db = self.db.clone();
-        let idempotency_key = idempotency_key.to_string();
-        async move {
-            // Note: This assumes idempotency_key is stored in the reference_id field
-            // or we need to add it to the revocation_records table
-            // For now, we'll use reference_id as the idempotency key
-            let result = points_revocation_record::Entity::find()
-                .filter(points_revocation_record::Column::ReferenceId.eq(&idempotency_key))
-                .one(&*db)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-            Ok(result.map(points_revocation_record_from_model))
-        }
-    }
-
     fn find_expired_ledgers(
         &self,
         expiration_time: chrono::DateTime<chrono::Utc>,
@@ -2559,319 +3459,6 @@ impl PointsRepository for PostgresPointsRepository {
         }
     }
 
-    fn find_realm_config(
-        &self,
-        realm_id: &str,
-    ) -> impl std::future::Future<
-        Output = Result<Option<herald_domain::points::realm_config::RealmDefaultConfig>, CoreError>,
-    > + Send {
-        let db = self.db.clone();
-        let realm_id = realm_id.to_string();
-        async move {
-            let result = realm_default_config::Entity::find_by_id(realm_id.clone())
-                .one(&*db)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-            result
-                .map(|model| -> Result<_, CoreError> {
-                    // Parse grant period type
-                    let grant_period_type = model
-                        .free_periodic_grant_period_type
-                        .parse::<herald_domain::points::grant_schedule::GrantPeriodType>()
-                        .map_err(|e| {
-                            CoreError::DatabaseError(format!(
-                                "Invalid grant period type in database: {}",
-                                e
-                            ))
-                        })?;
-
-                    let free_periodic_quota_windows =
-                        parse_quota_windows_value(model.free_periodic_quota_windows)?;
-
-                    Ok(herald_domain::points::realm_config::RealmDefaultConfig {
-                        realm_id: model.realm_id,
-                        registration_bonus_points: model.registration_bonus_points,
-                        free_periodic_points_amount: model.free_periodic_points_amount,
-                        free_periodic_grant_period_type: grant_period_type,
-                        free_periodic_validity_days: model.free_periodic_validity_days,
-                        free_periodic_quota_windows,
-                        created_at: chrono::DateTime::from(model.created_at),
-                        updated_at: chrono::DateTime::from(model.updated_at),
-                    })
-                })
-                .transpose()
-        }
-    }
-
-    fn create_realm_config(
-        &self,
-        config: herald_domain::points::CreateRealmConfigInput,
-    ) -> impl std::future::Future<
-        Output = Result<herald_domain::points::realm_config::RealmDefaultConfig, CoreError>,
-    > + Send {
-        let db = self.db.clone();
-        async move {
-            // Parse grant period type
-            let grant_period_type = config
-                .free_periodic_grant_period_type
-                .parse::<herald_domain::points::grant_schedule::GrantPeriodType>()
-                .map_err(|e| CoreError::BadRequest(format!("Invalid grant period type: {}", e)))?;
-
-            let now = chrono::Utc::now();
-            // write-path DTO now carries `free_periodic_quota_windows`.
-            // `None` ⟺ leave column NULL (no window grant); `Some([])` ⟺ same;
-            // `Some([...])` ⟺ persist the snapshot (keys already derived by the
-            // api layer via `derive_window_key`).
-            let quota_windows_value = config
-                .free_periodic_quota_windows
-                .as_deref()
-                .map(serialize_quota_windows_value)
-                .transpose()?
-                .flatten();
-            let active_model = realm_default_config::ActiveModel {
-                realm_id: Set(config.realm_id.clone()),
-                registration_bonus_points: Set(config.registration_bonus_points),
-                free_periodic_points_amount: Set(config.free_periodic_points_amount),
-                free_periodic_grant_period_type: Set(config.free_periodic_grant_period_type),
-                free_periodic_validity_days: Set(config.free_periodic_validity_days),
-                free_periodic_quota_windows: Set(quota_windows_value),
-                created_at: Set(now.into()),
-                updated_at: Set(now.into()),
-            };
-
-            let result = active_model
-                .insert(&*db)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-            let free_periodic_quota_windows =
-                parse_quota_windows_value(result.free_periodic_quota_windows)?;
-
-            Ok(herald_domain::points::realm_config::RealmDefaultConfig {
-                realm_id: result.realm_id,
-                registration_bonus_points: result.registration_bonus_points,
-                free_periodic_points_amount: result.free_periodic_points_amount,
-                free_periodic_grant_period_type: grant_period_type,
-                free_periodic_validity_days: result.free_periodic_validity_days,
-                free_periodic_quota_windows,
-                created_at: chrono::DateTime::from(result.created_at),
-                updated_at: chrono::DateTime::from(result.updated_at),
-            })
-        }
-    }
-
-    fn update_realm_config(
-        &self,
-        realm_id: &str,
-        input: herald_domain::points::UpdateRealmConfigInput,
-    ) -> impl std::future::Future<
-        Output = Result<herald_domain::points::realm_config::RealmDefaultConfig, CoreError>,
-    > + Send {
-        let db = self.db.clone();
-        let realm_id = realm_id.to_string();
-        async move {
-            // Parse grant period type
-            let grant_period_type = input
-                .free_periodic_grant_period_type
-                .parse::<herald_domain::points::grant_schedule::GrantPeriodType>()
-                .map_err(|e| CoreError::BadRequest(format!("Invalid grant period type: {}", e)))?;
-
-            let model = realm_default_config::Entity::find_by_id(realm_id.clone())
-                .one(&*db)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?
-                .ok_or(CoreError::NotFound)?;
-
-            let mut active: realm_default_config::ActiveModel = model.into();
-            active.registration_bonus_points = Set(input.registration_bonus_points);
-            active.free_periodic_points_amount = Set(input.free_periodic_points_amount);
-            active.free_periodic_grant_period_type = Set(input.free_periodic_grant_period_type);
-            active.free_periodic_validity_days = Set(input.free_periodic_validity_days);
-            // `None` ⟺ leave the stored column untouched (partial-update
-            // semantics, so a caller editing only the bonus points does not
-            // clobber an existing window config); `Some([...])` ⟺ replace,
-            // `Some([])` ⟺ clear to NULL.
-            if let Some(windows) = input.free_periodic_quota_windows.as_deref() {
-                active.free_periodic_quota_windows = Set(serialize_quota_windows_value(windows)?);
-            }
-            active.updated_at = Set(chrono::Utc::now().into());
-
-            let result = active
-                .update(&*db)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-            let free_periodic_quota_windows =
-                parse_quota_windows_value(result.free_periodic_quota_windows)?;
-
-            Ok(herald_domain::points::realm_config::RealmDefaultConfig {
-                realm_id: result.realm_id,
-                registration_bonus_points: result.registration_bonus_points,
-                free_periodic_points_amount: result.free_periodic_points_amount,
-                free_periodic_grant_period_type: grant_period_type,
-                free_periodic_validity_days: result.free_periodic_validity_days,
-                free_periodic_quota_windows,
-                created_at: chrono::DateTime::from(result.created_at),
-                updated_at: chrono::DateTime::from(result.updated_at),
-            })
-        }
-    }
-
-    fn find_user_config(
-        &self,
-        user_id: Uuid,
-    ) -> impl std::future::Future<
-        Output = Result<Option<herald_domain::points::user_config::UserPointsConfig>, CoreError>,
-    > + Send {
-        let db = self.db.clone();
-        async move {
-            let result = user_points_config::Entity::find_by_id(user_id)
-                .one(&*db)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-            result
-                .map(|model| Ok(Self::model_to_user_points_config(model)))
-                .transpose()
-        }
-    }
-
-    fn create_user_config(
-        &self,
-        config: herald_domain::points::user_config::UserPointsConfig,
-    ) -> impl std::future::Future<
-        Output = Result<herald_domain::points::user_config::UserPointsConfig, CoreError>,
-    > + Send {
-        let db = self.db.clone();
-        async move {
-            let active_model = user_points_config::ActiveModel {
-                user_id: Set(config.user_id),
-                realm_id: Set(config.realm_id.clone()),
-                registration_bonus_points: Set(config.registration_bonus_points),
-                free_periodic_points_amount: Set(config.free_periodic_points_amount),
-                free_periodic_grant_period_type: Set(config
-                    .free_periodic_grant_period_type
-                    .map(|pt| pt.to_string())),
-                free_periodic_validity_days: Set(config.free_periodic_validity_days),
-                next_grant_time: Set(config.next_grant_time.map(|dt| dt.into())),
-                granted_periods: Set(config.granted_periods),
-                grant_schedule_id: Set(config.grant_schedule_id),
-                created_at: Set(config.created_at.into()),
-                updated_at: Set(config.updated_at.into()),
-            };
-
-            let result = active_model
-                .insert(&*db)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-            Ok(Self::model_to_user_points_config(result))
-        }
-    }
-
-    fn update_user_config(
-        &self,
-        user_id: Uuid,
-        next_grant_time: Option<chrono::DateTime<chrono::Utc>>,
-        granted_periods: i64,
-        grant_schedule_id: Option<Uuid>,
-    ) -> impl std::future::Future<
-        Output = Result<herald_domain::points::user_config::UserPointsConfig, CoreError>,
-    > + Send {
-        let db = self.db.clone();
-        async move {
-            let model = user_points_config::Entity::find_by_id(user_id)
-                .one(&*db)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?
-                .ok_or(CoreError::NotFound)?;
-
-            let mut active: user_points_config::ActiveModel = model.into();
-            active.next_grant_time = Set(next_grant_time.map(|dt| dt.into()));
-            active.granted_periods = Set(granted_periods);
-            active.grant_schedule_id = Set(grant_schedule_id);
-            active.updated_at = Set(chrono::Utc::now().into());
-
-            let result = active
-                .update(&*db)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-            Ok(Self::model_to_user_points_config(result))
-        }
-    }
-
-    fn list_user_configs_by_realm(
-        &self,
-        realm_id: &str,
-        pagination: &herald_domain::points::ports::Pagination,
-    ) -> impl std::future::Future<
-        Output = Result<
-            herald_domain::points::entities::Paginated<
-                herald_domain::points::user_config::UserPointsConfig,
-            >,
-            CoreError,
-        >,
-    > + Send {
-        let db = self.db.clone();
-        let realm_id = realm_id.to_string();
-        let pagination = *pagination;
-        async move {
-            let page = pagination.page;
-            let page_size = pagination.page_size;
-            let _offset = (page - 1) * page_size;
-
-            let query = user_points_config::Entity::find()
-                .filter(user_points_config::Column::RealmId.eq(&realm_id));
-
-            let total = query
-                .clone()
-                .count(&*db)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-            let results = query
-                .order_by_asc(user_points_config::Column::CreatedAt)
-                .paginate(&*db, page_size)
-                .fetch_page(page - 1)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-            let configs = results
-                .into_iter()
-                .map(|model| Ok(Self::model_to_user_points_config(model)))
-                .collect::<Result<Vec<_>, CoreError>>()?;
-
-            Ok(Paginated {
-                total,
-                page,
-                page_size,
-                data: configs,
-            })
-        }
-    }
-
-    fn find_grant_schedule(
-        &self,
-        schedule_id: Uuid,
-    ) -> impl std::future::Future<
-        Output = Result<
-            Option<herald_domain::points::grant_schedule::PointsGrantSchedule>,
-            CoreError,
-        >,
-    > + Send {
-        let db = self.db.clone();
-        async move {
-            let result = points_grant_schedule::Entity::find_by_id(schedule_id)
-                .one(&*db)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-            result.map(Self::model_to_grant_schedule).transpose()
-        }
-    }
-
     fn find_due_grant_schedules(
         &self,
         before: chrono::DateTime<chrono::Utc>,
@@ -2897,538 +3484,6 @@ impl PointsRepository for PostgresPointsRepository {
                 .into_iter()
                 .map(Self::model_to_grant_schedule)
                 .collect()
-        }
-    }
-
-    fn find_grant_schedules_by_user(
-        &self,
-        user_id: Uuid,
-    ) -> impl std::future::Future<
-        Output = Result<Vec<herald_domain::points::grant_schedule::PointsGrantSchedule>, CoreError>,
-    > + Send {
-        let db = self.db.clone();
-        async move {
-            let models = points_grant_schedule::Entity::find()
-                .filter(points_grant_schedule::Column::UserId.eq(user_id))
-                .order_by_asc(points_grant_schedule::Column::CreatedAt)
-                .all(&*db)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-            models
-                .into_iter()
-                .map(Self::model_to_grant_schedule)
-                .collect()
-        }
-    }
-
-    fn find_user_config_by_realm(
-        &self,
-        realm_id: &str,
-        user_id: Uuid,
-    ) -> impl std::future::Future<
-        Output = Result<Option<herald_domain::points::user_config::UserPointsConfig>, CoreError>,
-    > + Send {
-        let db = self.db.clone();
-        let realm_id = realm_id.to_string();
-        async move {
-            let result = user_points_config::Entity::find()
-                .filter(user_points_config::Column::RealmId.eq(&realm_id))
-                .filter(user_points_config::Column::UserId.eq(user_id))
-                .one(&*db)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-            result
-                .map(|model| Ok(Self::model_to_user_points_config(model)))
-                .transpose()
-        }
-    }
-
-    fn update_user_points_config(
-        &self,
-        config_id: Uuid,
-        update: herald_domain::points::ports::UserConfigUpdate,
-    ) -> impl std::future::Future<
-        Output = Result<herald_domain::points::user_config::UserPointsConfig, CoreError>,
-    > + Send {
-        let db = self.db.clone();
-        async move {
-            let model = user_points_config::Entity::find_by_id(config_id)
-                .one(&*db)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?
-                .ok_or(CoreError::NotFound)?;
-
-            let mut active: user_points_config::ActiveModel = model.into();
-
-            match update {
-                herald_domain::points::ports::UserConfigUpdate::DisableDailyGrant {
-                    next_grant_time,
-                } => {
-                    active.free_periodic_points_amount = Set(0);
-                    active.next_grant_time = Set(next_grant_time.map(|dt| dt.into()));
-                }
-            }
-
-            active.updated_at = Set(chrono::Utc::now().into());
-
-            let result = active
-                .update(&*db)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-            Ok(Self::model_to_user_points_config(result))
-        }
-    }
-
-    fn find_grant_schedules_by_user_realm(
-        &self,
-        realm_id: &str,
-        user_id: Uuid,
-    ) -> impl std::future::Future<
-        Output = Result<Vec<herald_domain::points::grant_schedule::PointsGrantSchedule>, CoreError>,
-    > + Send {
-        let db = self.db.clone();
-        let realm_id = realm_id.to_string();
-        async move {
-            let models = points_grant_schedule::Entity::find()
-                .filter(points_grant_schedule::Column::RealmId.eq(&realm_id))
-                .filter(points_grant_schedule::Column::UserId.eq(user_id))
-                .order_by_asc(points_grant_schedule::Column::CreatedAt)
-                .all(&*db)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-            models
-                .into_iter()
-                .map(Self::model_to_grant_schedule)
-                .collect()
-        }
-    }
-
-    fn apply_grant_schedule_update(
-        &self,
-        schedule_id: Uuid,
-        update: herald_domain::points::ports::GrantScheduleUpdate,
-    ) -> impl std::future::Future<
-        Output = Result<herald_domain::points::grant_schedule::PointsGrantSchedule, CoreError>,
-    > + Send {
-        let db = self.db.clone();
-        async move {
-            let model = points_grant_schedule::Entity::find_by_id(schedule_id)
-                .one(&*db)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?
-                .ok_or(CoreError::NotFound)?;
-
-            let mut active_model: points_grant_schedule::ActiveModel = model.into();
-
-            match update {
-                herald_domain::points::ports::GrantScheduleUpdate::Disable => {
-                    active_model.active = Set(false);
-                }
-            }
-
-            active_model.updated_at = Set(chrono::Utc::now().into());
-
-            let result = active_model
-                .update(&*db)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-            Self::model_to_grant_schedule(result)
-        }
-    }
-
-    fn find_grant_schedule_by_subscription(
-        &self,
-        subscription_id: Uuid,
-    ) -> impl std::future::Future<
-        Output = Result<
-            Option<herald_domain::points::grant_schedule::PointsGrantSchedule>,
-            CoreError,
-        >,
-    > + Send {
-        let db = self.db.clone();
-        async move {
-            let result = points_grant_schedule::Entity::find()
-                .filter(points_grant_schedule::Column::SubscriptionId.eq(Some(subscription_id)))
-                .one(&*db)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-            result.map(Self::model_to_grant_schedule).transpose()
-        }
-    }
-
-    fn create_grant_schedule(
-        &self,
-        schedule: herald_domain::points::grant_schedule::PointsGrantSchedule,
-    ) -> impl std::future::Future<
-        Output = Result<herald_domain::points::grant_schedule::PointsGrantSchedule, CoreError>,
-    > + Send {
-        let db = self.db.clone();
-        async move {
-            let active_model = points_grant_schedule::ActiveModel {
-                id: Set(schedule.id),
-                user_id: Set(schedule.user_id),
-                realm_id: Set(schedule.realm_id.clone()),
-                bucket_id: Set(schedule.bucket_id),
-                subscription_id: Set(schedule.subscription_id),
-                entitlement_key: Set(schedule.entitlement_key.unwrap_or_default()),
-                grant_period_type: Set(schedule.grant_period_type.to_string()),
-                base_time: Set(schedule.base_time.into()),
-                next_grant_time: Set(schedule.next_grant_time.into()),
-                points_per_period: Set(schedule.points_per_period),
-                validity_days: Set(schedule.validity_days),
-                granted_periods: Set(schedule.granted_periods),
-                max_periods: Set(schedule.max_periods),
-                active: Set(schedule.active),
-                created_at: Set(schedule.created_at.into()),
-                updated_at: Set(schedule.updated_at.into()),
-            };
-
-            let result = active_model
-                .insert(&*db)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-            Self::model_to_grant_schedule(result)
-        }
-    }
-
-    fn update_grant_schedule(
-        &self,
-        schedule_id: Uuid,
-        next_grant_time: chrono::DateTime<chrono::Utc>,
-        granted_periods: i64,
-        is_active: bool,
-    ) -> impl std::future::Future<
-        Output = Result<herald_domain::points::grant_schedule::PointsGrantSchedule, CoreError>,
-    > + Send {
-        let db = self.db.clone();
-        async move {
-            let model = points_grant_schedule::Entity::find_by_id(schedule_id)
-                .one(&*db)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?
-                .ok_or(CoreError::NotFound)?;
-
-            let mut active_model: points_grant_schedule::ActiveModel = model.into();
-            active_model.next_grant_time = Set(next_grant_time.into());
-            active_model.granted_periods = Set(granted_periods);
-            active_model.active = Set(is_active);
-            active_model.updated_at = Set(chrono::Utc::now().into());
-
-            let result = active_model
-                .update(&*db)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-            Self::model_to_grant_schedule(result)
-        }
-    }
-
-    fn deactivate_grant_schedule(
-        &self,
-        schedule_id: Uuid,
-    ) -> impl std::future::Future<Output = Result<(), CoreError>> + Send {
-        let db = self.db.clone();
-        async move {
-            let model = points_grant_schedule::Entity::find_by_id(schedule_id)
-                .one(&*db)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?
-                .ok_or(CoreError::NotFound)?;
-
-            let mut active: points_grant_schedule::ActiveModel = model.into();
-            active.active = Set(false);
-            active.updated_at = Set(chrono::Utc::now().into());
-
-            active
-                .update(&*db)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-            Ok(())
-        }
-    }
-
-    fn find_grant_record(
-        &self,
-        schedule_id: Uuid,
-        period_number: i64,
-    ) -> impl std::future::Future<
-        Output = Result<
-            Option<herald_domain::points::grant_schedule::PointsGrantRecord>,
-            CoreError,
-        >,
-    > + Send {
-        let db = self.db.clone();
-        async move {
-            let result = points_grant_record::Entity::find()
-                .filter(points_grant_record::Column::ScheduleId.eq(schedule_id))
-                .filter(points_grant_record::Column::PeriodNumber.eq(period_number))
-                .one(&*db)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-            result
-                .map(|model| -> Result<_, CoreError> {
-                    Ok(herald_domain::points::grant_schedule::PointsGrantRecord {
-                        id: model.id,
-                        schedule_id: model.schedule_id,
-                        user_id: model.user_id,
-                        realm_id: model.realm_id,
-                        period_number: model.period_number,
-                        granted_amount: model.granted_amount,
-                        grant_time: chrono::DateTime::from(model.grant_time),
-                        ledger_id: model.ledger_id,
-                        created_at: chrono::DateTime::from(model.created_at),
-                    })
-                })
-                .transpose()
-        }
-    }
-
-    fn create_grant_record(
-        &self,
-        record: herald_domain::points::grant_schedule::PointsGrantRecord,
-    ) -> impl std::future::Future<
-        Output = Result<herald_domain::points::grant_schedule::PointsGrantRecord, CoreError>,
-    > + Send {
-        let db = self.db.clone();
-        async move {
-            let active_model = points_grant_record::ActiveModel {
-                id: Set(record.id),
-                schedule_id: Set(record.schedule_id),
-                user_id: Set(record.user_id),
-                realm_id: Set(record.realm_id.clone()),
-                period_number: Set(record.period_number),
-                granted_amount: Set(record.granted_amount),
-                grant_time: Set(record.grant_time.into()),
-                ledger_id: Set(record.ledger_id),
-                created_at: Set(record.created_at.into()),
-            };
-
-            let result = active_model
-                .insert(&*db)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-            Ok(herald_domain::points::grant_schedule::PointsGrantRecord {
-                id: result.id,
-                schedule_id: result.schedule_id,
-                user_id: result.user_id,
-                realm_id: result.realm_id,
-                period_number: result.period_number,
-                granted_amount: result.granted_amount,
-                grant_time: chrono::DateTime::from(result.grant_time),
-                ledger_id: result.ledger_id,
-                created_at: chrono::DateTime::from(result.created_at),
-            })
-        }
-    }
-
-    fn list_grant_records_by_schedule(
-        &self,
-        schedule_id: Uuid,
-        pagination: &herald_domain::points::ports::Pagination,
-    ) -> impl std::future::Future<
-        Output = Result<
-            herald_domain::points::entities::Paginated<
-                herald_domain::points::grant_schedule::PointsGrantRecord,
-            >,
-            CoreError,
-        >,
-    > + Send {
-        let db = self.db.clone();
-        let pagination = *pagination;
-        async move {
-            let page = pagination.page;
-            let page_size = pagination.page_size;
-
-            let query = points_grant_record::Entity::find()
-                .filter(points_grant_record::Column::ScheduleId.eq(schedule_id));
-
-            let total = query
-                .clone()
-                .count(&*db)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-            let results = query
-                .order_by_desc(points_grant_record::Column::GrantTime)
-                .paginate(&*db, page_size)
-                .fetch_page(page - 1)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-            let records = results
-                .into_iter()
-                .map(|model| {
-                    Ok(herald_domain::points::grant_schedule::PointsGrantRecord {
-                        id: model.id,
-                        schedule_id: model.schedule_id,
-                        user_id: model.user_id,
-                        realm_id: model.realm_id,
-                        period_number: model.period_number,
-                        granted_amount: model.granted_amount,
-                        grant_time: chrono::DateTime::from(model.grant_time),
-                        ledger_id: model.ledger_id,
-                        created_at: chrono::DateTime::from(model.created_at),
-                    })
-                })
-                .collect::<Result<Vec<_>, CoreError>>()?;
-
-            Ok(Paginated {
-                total,
-                page,
-                page_size,
-                data: records,
-            })
-        }
-    }
-
-    fn list_grant_records_by_user(
-        &self,
-        user_id: Uuid,
-        pagination: &herald_domain::points::ports::Pagination,
-    ) -> impl std::future::Future<
-        Output = Result<
-            herald_domain::points::entities::Paginated<
-                herald_domain::points::grant_schedule::PointsGrantRecord,
-            >,
-            CoreError,
-        >,
-    > + Send {
-        let db = self.db.clone();
-        let pagination = *pagination;
-        async move {
-            let page = pagination.page;
-            let page_size = pagination.page_size;
-
-            let query = points_grant_record::Entity::find()
-                .filter(points_grant_record::Column::UserId.eq(user_id));
-
-            let total = query
-                .clone()
-                .count(&*db)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-            let results = query
-                .order_by_desc(points_grant_record::Column::GrantTime)
-                .paginate(&*db, page_size)
-                .fetch_page(page - 1)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-            let records = results
-                .into_iter()
-                .map(|model| {
-                    Ok(herald_domain::points::grant_schedule::PointsGrantRecord {
-                        id: model.id,
-                        schedule_id: model.schedule_id,
-                        user_id: model.user_id,
-                        realm_id: model.realm_id,
-                        period_number: model.period_number,
-                        granted_amount: model.granted_amount,
-                        grant_time: chrono::DateTime::from(model.grant_time),
-                        ledger_id: model.ledger_id,
-                        created_at: chrono::DateTime::from(model.created_at),
-                    })
-                })
-                .collect::<Result<Vec<_>, CoreError>>()?;
-
-            Ok(Paginated {
-                total,
-                page,
-                page_size,
-                data: records,
-            })
-        }
-    }
-
-    fn find_active_ledgers_by_expiration(
-        &self,
-        realm_id: &str,
-        user_id: Uuid,
-    ) -> impl std::future::Future<Output = Result<Vec<PointsCreditLedger>, CoreError>> + Send {
-        let db = self.db.clone();
-        let realm_id = realm_id.to_string();
-        async move {
-            // Find all active ledgers with remaining balance > 0
-            // Sort by expires_at ASC (soonest expiring first), NULL last (permanent credits)
-            let ledgers = points_credit_ledger::Entity::find()
-                .filter(points_credit_ledger::Column::RealmId.eq(&realm_id))
-                .filter(points_credit_ledger::Column::UserId.eq(user_id))
-                .filter(
-                    points_credit_ledger::Column::Status.eq(CreditLedgerStatus::Active.to_string()),
-                )
-                .filter(points_credit_ledger::Column::RemainingAmount.gt(0))
-                .order_by_asc(points_credit_ledger::Column::ExpiresAt) // NULL values sort last
-                .order_by_asc(points_credit_ledger::Column::CreatedAt) // Fallback: FIFO for permanent credits
-                .all(&*db)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-            ledgers
-                .into_iter()
-                .map(|m| Ok(points_credit_ledger_from_model(m)))
-                .collect()
-        }
-    }
-
-    fn count_paid_users_in_realm(
-        &self,
-        realm_id: &str,
-        start_date: Option<chrono::DateTime<chrono::Utc>>,
-        end_date: Option<chrono::DateTime<chrono::Utc>>,
-    ) -> impl std::future::Future<Output = Result<u64, CoreError>> + Send {
-        let pool = self.pool.clone();
-        let realm_id = realm_id.to_string();
-        async move {
-            let mut query = r#"
-                SELECT COUNT(DISTINCT user_id) as count
-                FROM subscriptions
-                WHERE realm_id = $1
-                AND status = 'active'
-            "#
-            .to_string();
-
-            let mut index = 2;
-
-            if start_date.is_some() {
-                query.push_str(&format!(" AND created_at >= ${}", index));
-                index += 1;
-            }
-
-            if end_date.is_some() {
-                query.push_str(&format!(" AND created_at <= ${}", index));
-            }
-
-            let mut query_builder = sqlx::query_as::<_, (i64,)>(&query).bind(realm_id);
-
-            if let Some(start) = start_date {
-                query_builder =
-                    query_builder.bind(sea_orm::prelude::DateTimeWithTimeZone::from(start));
-            }
-
-            if let Some(end) = end_date {
-                query_builder =
-                    query_builder.bind(sea_orm::prelude::DateTimeWithTimeZone::from(end));
-            }
-
-            let result = query_builder
-                .fetch_optional(&pool)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-            result
-                .map(|(count,)| count as u64)
-                .ok_or(CoreError::NotFound)
         }
     }
 
@@ -3734,6 +3789,8 @@ impl PointsRepository for PostgresPointsRepository {
                             correlation_id: Some(correlation_id.clone()),
                             effective_at: None,
                             created_at: now,
+                            distribution_event_id: None,
+                            distribution_rule_id: None,
                         },
                     )
                     .await?;
@@ -3814,6 +3871,8 @@ impl PointsRepository for PostgresPointsRepository {
                         correlation_id: Some(correlation_id.clone()),
                         effective_at: None,
                         created_at: now,
+                        distribution_event_id: None,
+                        distribution_rule_id: None,
                     },
                 )
                 .await?;
@@ -4066,106 +4125,6 @@ impl PointsRepository for PostgresPointsRepository {
         }
     }
 
-    fn revoke_subscription_credits_by_entitlement_atomic(
-        &self,
-        realm_id: &str,
-        user_id: Uuid,
-        bucket_id: Uuid,
-        entitlement_key: &str,
-        revocation_type: RevocationType,
-        reason: String,
-        reference_id: Option<String>,
-        idempotency_key: Option<String>,
-    ) -> impl std::future::Future<Output = Result<RevokePointsOutput, CoreError>> + Send {
-        let pool = self.pool.clone();
-        let realm_id = realm_id.to_string();
-        let entitlement_key = entitlement_key.to_string();
-        async move {
-            let mut tx = pool
-                .begin()
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-            if let Some(ref key) = idempotency_key
-                && Self::check_completed_idempotency_in_tx(&mut tx, &realm_id, key)
-                    .await?
-                    .is_some()
-            {
-                tx.commit()
-                    .await
-                    .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-                return Ok(RevokePointsOutput::empty());
-            }
-
-            let _wallet = match Self::find_wallet_by_user_bucket_for_update(
-                &mut tx, &realm_id, user_id, bucket_id,
-            )
-            .await?
-            {
-                Some(acc) => acc,
-                None => {
-                    tx.commit()
-                        .await
-                        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-                    return Ok(RevokePointsOutput::empty());
-                }
-            };
-
-            // Match exact entitlement_key (initial grants) and entitlement_key:* (renewals).
-            // Use colon separator to prevent "tier" matching "tier_premium".
-            // Scope by bucket_id so cross-pool subscription credits are never touched.
-            let exact = entitlement_key.clone();
-            let prefix = format!("{}:%", entitlement_key);
-            let ledgers = sqlx::query_as::<_, (Uuid, i64)>(
-                "SELECT id, remaining_amount
-                 FROM points_credit_ledger
-                 WHERE realm_id = $1
-                   AND user_id = $2
-                   AND bucket_id = $3
-                   AND credit_type = 'subscription_credit'
-                   AND (source_id = $4 OR source_id LIKE $5)
-                   AND status = 'active'
-                   AND remaining_amount > 0
-                 ORDER BY created_at ASC
-                 FOR UPDATE",
-            )
-            .bind(&realm_id)
-            .bind(user_id)
-            .bind(bucket_id)
-            .bind(&exact)
-            .bind(&prefix)
-            .fetch_all(&mut *tx)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-            let (total_revoked, ledger_ids) = Self::revoke_ledger_list_in_tx(
-                &mut tx,
-                &realm_id,
-                user_id,
-                ledgers,
-                revocation_type,
-                &reason,
-                reference_id.as_deref(),
-            )
-            .await?;
-
-            if let Some(ref key) = idempotency_key {
-                Self::record_completed_idempotency_in_tx(&mut tx, &realm_id, key, Uuid::now_v7())
-                    .await?;
-            }
-
-            tx.commit()
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-            Ok(RevokePointsOutput {
-                revocation_id: Uuid::now_v7(),
-                ledger_ids,
-                total_revoked,
-                revoked_at: chrono::Utc::now(),
-            })
-        }
-    }
-
     fn revoke_topup_proportional_atomic(
         &self,
         realm_id: &str,
@@ -4195,31 +4154,11 @@ impl PointsRepository for PostgresPointsRepository {
                 return Ok(RevokePointsOutput::empty());
             }
 
-            let _wallet = match Self::find_wallet_by_user_bucket_for_update(
-                &mut tx, &realm_id, user_id, bucket_id,
-            )
-            .await?
-            {
-                Some(acc) => acc,
-                None => {
-                    Self::record_completed_idempotency_in_tx(
-                        &mut tx,
-                        &realm_id,
-                        &idempotency_key,
-                        Uuid::now_v7(),
-                    )
-                    .await?;
-                    tx.commit()
-                        .await
-                        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-                    return Ok(RevokePointsOutput::empty());
-                }
-            };
-
-            let ledgers = Self::find_active_ledgers_by_credit_type_for_update(
+            let ledgers = Self::find_active_ledgers_by_credit_type_and_bucket_for_update(
                 &mut tx,
                 &realm_id,
                 user_id,
+                bucket_id,
                 CreditType::TopupCredit,
             )
             .await?;
@@ -4227,18 +4166,124 @@ impl PointsRepository for PostgresPointsRepository {
             let mut total_revoked = 0i64;
             let mut ledger_ids = Vec::new();
             for ledger in ledgers {
-                if ledger.remaining_amount <= 0 {
-                    continue;
-                }
-                // Only revoke ledgers in the target bucket — never dip into other pools.
-                if ledger.bucket_id != bucket_id {
+                let amount_to_revoke = Self::proportional_refund_for_grant(
+                    ledger.remaining_amount,
+                    ledger.remaining_amount,
+                    refund_amount,
+                    original_payment_amount,
+                );
+                if amount_to_revoke <= 0 {
                     continue;
                 }
 
-                // Integer arithmetic with rounding: (a * b + b/2) / b ≈ round(a * b/b)
-                let amount_to_revoke = (ledger.remaining_amount * refund_amount
-                    + original_payment_amount / 2)
-                    / original_payment_amount;
+                let updated_ledger = Self::update_ledger_in_tx(
+                    &mut tx,
+                    ledger.id,
+                    LedgerUpdate::Revocation(amount_to_revoke),
+                )
+                .await?;
+                Self::create_revocation_record_in_tx(
+                    &mut tx,
+                    &PointsRevocationRecord {
+                        id: Uuid::now_v7(),
+                        ledger_id: updated_ledger.id,
+                        user_id,
+                        realm_id: realm_id.clone(),
+                        revocation_type: RevocationType::RefundRevoke,
+                        revoked_amount: amount_to_revoke,
+                        reason: format!(
+                            "Proportional refund ({}/{})",
+                            refund_amount, original_payment_amount
+                        ),
+                        reference_id: Some(refund_id.clone()),
+                        created_at: chrono::Utc::now(),
+                    },
+                )
+                .await?;
+                total_revoked += amount_to_revoke;
+                ledger_ids.push(updated_ledger.id);
+            }
+
+            Self::record_completed_idempotency_in_tx(
+                &mut tx,
+                &realm_id,
+                &idempotency_key,
+                Uuid::now_v7(),
+            )
+            .await?;
+            tx.commit()
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+            Ok(RevokePointsOutput {
+                revocation_id: Uuid::now_v7(),
+                ledger_ids,
+                total_revoked,
+                revoked_at: chrono::Utc::now(),
+            })
+        }
+    }
+
+    fn revoke_topup_source_proportional_atomic(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        source_id: &str,
+        refund_amount: i64,
+        original_payment_amount: i64,
+        refund_id: &str,
+    ) -> impl std::future::Future<Output = Result<RevokePointsOutput, CoreError>> + Send {
+        let pool = self.pool.clone();
+        let realm_id = realm_id.to_string();
+        let source_id = source_id.to_string();
+        let refund_id = refund_id.to_string();
+        async move {
+            let idempotency_key = format!("refund:topup:{}", refund_id);
+            let mut tx = pool
+                .begin()
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            if Self::check_completed_idempotency_in_tx(&mut tx, &realm_id, &idempotency_key)
+                .await?
+                .is_some()
+            {
+                tx.commit()
+                    .await
+                    .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+                return Ok(RevokePointsOutput::empty());
+            }
+
+            let ledgers = sqlx::query_as::<_, PointsCreditLedgerRow>(
+                "SELECT l.* \
+                 FROM points_credit_ledger l \
+                 JOIN points_distribution_events e ON e.id = l.distribution_event_id \
+                 WHERE e.realm_id = $1 AND e.user_id = $2 AND e.source_id = $3 \
+                   AND l.credit_type = 'topup_credit' \
+                   AND l.distribution_rule_id IS NOT NULL \
+                   AND l.status = 'active' AND l.remaining_amount > 0 \
+                 ORDER BY l.bucket_id, l.id FOR UPDATE OF l",
+            )
+            .bind(&realm_id)
+            .bind(user_id)
+            .bind(&source_id)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?
+            .into_iter()
+            .map(Self::row_to_points_credit_ledger)
+            .collect::<Result<Vec<_>, _>>()?;
+
+            let mut total_revoked = 0i64;
+            let mut ledger_ids = Vec::new();
+            for ledger in ledgers {
+                // Calculate independently from each original rule grant, then
+                // cap at its unused balance so unrelated credits are untouched.
+                let amount_to_revoke = Self::proportional_refund_for_grant(
+                    ledger.granted_amount,
+                    ledger.remaining_amount,
+                    refund_amount,
+                    original_payment_amount,
+                );
                 if amount_to_revoke <= 0 {
                     continue;
                 }
@@ -4288,214 +4333,6 @@ impl PointsRepository for PostgresPointsRepository {
                 total_revoked,
                 revoked_at: chrono::Utc::now(),
             })
-        }
-    }
-
-    fn refund_points_atomic(
-        &self,
-        realm_id: &str,
-        user_id: Uuid,
-        bucket_id: Uuid,
-        refund_reference: String,
-        refund_amount: i64,
-        reason: String,
-    ) -> impl std::future::Future<Output = Result<PointsTransaction, CoreError>> + Send {
-        let pool = self.pool.clone();
-        let realm_id = realm_id.to_string();
-        async move {
-            let mut tx = pool
-                .begin()
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-            if let Some(existing) = sqlx::query_as::<_, PointsTransactionRow>(
-                r#"
-                SELECT id, realm_id, wallet_id, user_id, bucket_id, type, amount, balance_after,
-                       topup_balance_after, subscription_balance_after, credit_type,
-                       description, client_app_id, subscription_id, external_ref_id, correlation_id,
-                       created_at, updated_at, expires_at
-                FROM points_transactions
-                WHERE realm_id = $1 AND user_id = $2 AND bucket_id = $3 AND external_ref_id = $4 AND type = 'refund'
-                LIMIT 1
-                "#,
-            )
-            .bind(&realm_id)
-            .bind(user_id)
-            .bind(bucket_id)
-            .bind(&refund_reference)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?
-            {
-                tx.commit()
-                    .await
-                    .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-                return Self::points_transaction_row_to_domain(existing);
-            }
-
-            let wallet =
-                Self::find_wallet_by_user_bucket_for_update(&mut tx, &realm_id, user_id, bucket_id)
-                    .await?
-                    .ok_or(CoreError::NotFound)?;
-            // `wallet.total_balance` no longer exists (column dropped).
-            // The refund availability precheck uses the derived available
-            // balance for this bucket (same predicate as consumption — "seen
-            // balance == spendable balance"). The subsequent ledger-drain loop
-            // is the authoritative revocation; this precheck is an early
-            // user-facing error for the obviously-insufficient case.
-            let now = chrono::Utc::now();
-            let derived = Self::compute_available_balance_in_tx(
-                &mut tx,
-                &realm_id,
-                user_id,
-                std::slice::from_ref(&bucket_id),
-                now,
-            )
-            .await?;
-            let available: i64 = derived.iter().map(|(_, amt)| amt).sum();
-            if available < refund_amount {
-                return Err(CoreError::BadRequest(format!(
-                    "Insufficient balance: available={}, required={}",
-                    available, refund_amount
-                )));
-            }
-
-            // Refund = revoke the refunded points from the ledger so the
-            // projection (wallet columns) and the source of truth (ledger
-            // remaining_amount) never diverge. Drain across all five credit
-            // types in a fixed priority so a refund against any balance
-            // composition actually revokes — same priority as consume.
-            // Bucket-scoped ledger locks prevent cross-bucket contention
-            // since refunds target a single Bucket.
-            let refund_types = [
-                CreditType::SubscriptionCredit,
-                CreditType::TopupCredit,
-                CreditType::GrantedCredit,
-                CreditType::RegistrationCredit,
-                CreditType::FreePeriodicCredit,
-            ];
-            let mut total_revoked = 0i64;
-            // Per-type revoke counters are no longer consumed (the wallet
-            // delta is zero and the derived SUM replaces the typed
-            // snapshot source), but the per-credit-type drain loop still
-            // determines WHICH ledgers to revoke. Counters retained with
-            // leading underscore to keep the per-type accounting visible for
-            // debugging without tripping dead-code warnings.
-            let mut _subscription_revoked = 0i64;
-            let mut _topup_revoked = 0i64;
-            let mut _granted_revoked = 0i64;
-            let mut _registration_revoked = 0i64;
-            let mut _free_periodic_revoked = 0i64;
-            for credit_type in refund_types {
-                let still_to_revoke = refund_amount - total_revoked;
-                if still_to_revoke <= 0 {
-                    break;
-                }
-                // Bucket-scoped lock: refund targets the requested bucket only.
-                let ledgers = Self::find_active_ledgers_by_credit_type_and_bucket_for_update(
-                    &mut tx,
-                    &realm_id,
-                    user_id,
-                    bucket_id,
-                    credit_type,
-                )
-                .await?;
-                let mut remaining = still_to_revoke;
-                let mut plan: Vec<(Uuid, i64)> = Vec::new();
-                for ledger in ledgers.into_iter() {
-                    if remaining <= 0 {
-                        break;
-                    }
-                    let take = ledger.remaining_amount.min(remaining);
-                    if take <= 0 {
-                        continue;
-                    }
-                    plan.push((ledger.id, take));
-                    remaining -= take;
-                }
-                if plan.is_empty() {
-                    continue;
-                }
-                let (revoked, _) = Self::revoke_ledger_list_in_tx(
-                    &mut tx,
-                    &realm_id,
-                    user_id,
-                    plan,
-                    RevocationType::RefundRevoke,
-                    &reason,
-                    Some(&refund_reference),
-                )
-                .await?;
-                total_revoked += revoked;
-                match credit_type {
-                    CreditType::SubscriptionCredit => _subscription_revoked += revoked,
-                    CreditType::TopupCredit => _topup_revoked += revoked,
-                    CreditType::GrantedCredit => _granted_revoked += revoked,
-                    CreditType::RegistrationCredit => _registration_revoked += revoked,
-                    CreditType::FreePeriodicCredit => _free_periodic_revoked += revoked,
-                }
-            }
-
-            // Fail loud (Rule 12): if the precheck passed but draining across all
-            // five types still did not cover the refund (e.g. the balance changed
-            // between read and lock, or remaining_amounts did not match the
-            // projection), never write a 0/partial transaction silently.
-            if total_revoked != refund_amount {
-                return Err(CoreError::InternalServerError(format!(
-                    "refund revoke drift: requested {} but revoked {}",
-                    refund_amount, total_revoked
-                )));
-            }
-
-            // Apply the net revocation to the wallet analytics (single writer).
-            // Revocation advances no analytics column (revocation moves
-            // `remaining_amount` only), so the delta is zero; kept for explicit
-            // single-writer discipline. The post-revoke available balance for
-            // `balance_after` is sourced from the in-tx derived SUM below.
-            let delta = WalletDelta::zero();
-            let _ = Self::apply_wallet_delta_in_tx(&mut tx, wallet.id, delta).await?;
-
-            let now = chrono::Utc::now();
-            let derived = Self::compute_available_balance_in_tx(
-                &mut tx,
-                &realm_id,
-                user_id,
-                std::slice::from_ref(&bucket_id),
-                now,
-            )
-            .await?;
-            let (balance_after, topup_after, subscription_after) =
-                Self::derived_to_balance_snapshots(&derived);
-
-            let transaction = Self::create_transaction_in_tx(
-                &mut tx,
-                PointsTransaction {
-                    id: Uuid::now_v7(),
-                    wallet_id: wallet.id,
-                    user_id,
-                    realm_id: realm_id.clone(),
-                    bucket_id,
-                    transaction_type: TransactionType::Refund,
-                    amount: -total_revoked,
-                    balance_after,
-                    topup_balance_after: topup_after,
-                    subscription_balance_after: subscription_after,
-                    credit_type: None,
-                    description: Some(reason),
-                    client_app_id: None,
-                    subscription_id: None,
-                    external_ref_id: Some(refund_reference),
-                    correlation_id: None,
-                    effective_at: None,
-                    created_at: now,
-                },
-            )
-            .await?;
-
-            tx.commit()
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-            Ok(transaction)
         }
     }
 
@@ -4561,6 +4398,8 @@ impl PointsRepository for PostgresPointsRepository {
                     status: CreditLedgerStatus::Active,
                     created_at: now,
                     updated_at: now,
+                    distribution_event_id: None,
+                    distribution_rule_id: None,
                 });
             }
 
@@ -4590,6 +4429,8 @@ impl PointsRepository for PostgresPointsRepository {
                 status: CreditLedgerStatus::Active,
                 created_at: now,
                 updated_at: now,
+                distribution_event_id: None,
+                distribution_rule_id: None,
             };
             let created_ledger = Self::create_ledger_in_tx(&mut tx, &ledger).await?;
             let delta = WalletDelta::grant(credit_type, amount);
@@ -4639,6 +4480,8 @@ impl PointsRepository for PostgresPointsRepository {
                     correlation_id: None,
                     effective_at,
                     created_at: now,
+                    distribution_event_id: None,
+                    distribution_rule_id: None,
                 },
             )
             .await?;
@@ -4709,6 +4552,8 @@ impl PointsRepository for PostgresPointsRepository {
                 status: CreditLedgerStatus::Active,
                 created_at: now,
                 updated_at: now,
+                distribution_event_id: None,
+                distribution_rule_id: None,
             };
 
             Self::create_ledger_in_tx(&mut tx, &ledger).await?;
@@ -4752,6 +4597,8 @@ impl PointsRepository for PostgresPointsRepository {
                     correlation_id: None,
                     effective_at: None,
                     created_at: now,
+                    distribution_event_id: None,
+                    distribution_rule_id: None,
                 },
             )
             .await?;
@@ -5113,6 +4960,8 @@ impl PointsRepository for PostgresPointsRepository {
                 status: CreditLedgerStatus::Active,
                 created_at: now,
                 updated_at: now,
+                distribution_event_id: None,
+                distribution_rule_id: None,
             };
             let created_ledger = Self::create_ledger_in_tx(&mut tx, &ledger).await?;
             let delta = WalletDelta::grant(credit_type, amount);
@@ -5161,6 +5010,8 @@ impl PointsRepository for PostgresPointsRepository {
                     correlation_id: None,
                     effective_at,
                     created_at: now,
+                    distribution_event_id: None,
+                    distribution_rule_id: None,
                 },
             )
             .await?;
@@ -5588,12 +5439,16 @@ impl PointsRepository for PostgresPointsRepository {
                 INSERT INTO points_quota_entitlements (
                     id, user_id, realm_id, bucket_id, credit_type, source_type,
                     source_id, quota_windows, effective_from, effective_until,
-                    status, idempotency_key, created_at, updated_at
+                    status, idempotency_key,
+                    distribution_event_id, distribution_rule_id,
+                    created_at, updated_at
                 )
                 VALUES (
-                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $13
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+                    $13, $14,
+                    $15, $15
                 )
-                ON CONFLICT (realm_id, user_id, bucket_id, credit_type, idempotency_key)
+                ON CONFLICT (realm_id, user_id, bucket_id, credit_type, idempotency_key) WHERE distribution_rule_id IS NULL
                 DO NOTHING
                 RETURNING *
                 "#,
@@ -5610,6 +5465,8 @@ impl PointsRepository for PostgresPointsRepository {
             .bind(entitlement.effective_until)
             .bind(entitlement.status.as_str())
             .bind(&entitlement.idempotency_key)
+            .bind(entitlement.distribution_event_id)
+            .bind(entitlement.distribution_rule_id)
             .bind(entitlement.created_at)
             .fetch_optional(&pool)
             .await
@@ -5731,6 +5588,204 @@ impl PointsRepository for PostgresPointsRepository {
             Ok(usize::try_from(affected).unwrap_or(usize::MAX))
         }
     }
+
+    fn execute_distribution_event_atomic(
+        &self,
+        event: DistributionEvent,
+        selection: DistributionRuleSelection,
+    ) -> impl std::future::Future<Output = Result<Vec<DistributionGrantResult>, CoreError>> + Send
+    {
+        let pool = self.pool.clone();
+        async move {
+            loop {
+                let mut tx = pool
+                    .begin()
+                    .await
+                    .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+                match Self::insert_or_load_event_in_tx(&mut tx, &event).await? {
+                    EventInsertOutcome::Existing { id, status } if status == "completed" => {
+                        // Replay branch: lock + read the completed event and
+                        // reconstruct the FIRST-run result set WITHOUT reading
+                        // current rule / bucket config.
+                        let result_count =
+                            match Self::lock_completed_event_for_replay_in_tx(&mut tx, id).await? {
+                                Some(count) => count,
+                                // Raced: the row is no longer completed between
+                                // the load and the lock. Restart the loop so the
+                                // insert path re-evaluates.
+                                None => {
+                                    drop(tx);
+                                    continue;
+                                }
+                            };
+                        let rows = ReplayResultRows {
+                            ledger_rows: Self::replay_ledger_rows_in_tx(&mut tx, id).await?,
+                            entitlement_rows: Self::replay_quota_rows_in_tx(&mut tx, id).await?,
+                            schedule_rows: Self::replay_schedule_rows_in_tx(&mut tx, id).await?,
+                        };
+                        let results = fold_replay_results(rows, result_count, id)?;
+                        // Commit releases the row locks; nothing was written.
+                        tx.commit()
+                            .await
+                            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+                        return Ok(results);
+                    }
+                    EventInsertOutcome::Existing { status: ref s, .. } if s == "processing" => {
+                        // Another in-flight caller holds the processing row.
+                        // Drop this transaction and retry; the holder will
+                        // either commit (→ replay) or roll back (→ first run).
+                        drop(tx);
+                        continue;
+                    }
+                    EventInsertOutcome::Existing { id, status } => {
+                        return Err(CoreError::DatabaseError(format!(
+                            "distribution event {} in unexpected status '{}'",
+                            id, status
+                        )));
+                    }
+                    EventInsertOutcome::InsertedProcessing(event_id) => {
+                        // First-run branch: resolve rules, validate buckets,
+                        // write all results + complete the event in one commit.
+                        let results =
+                            Self::execute_first_run_in_tx(&mut tx, event_id, &event, &selection)
+                                .await?;
+                        tx.commit()
+                            .await
+                            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+                        return Ok(results);
+                    }
+                }
+            }
+        }
+    }
+
+    fn revoke_distribution_source_atomic(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        source_id: &str,
+        revocation_type: RevocationType,
+        reason: String,
+        idempotency_key: String,
+    ) -> impl std::future::Future<Output = Result<RevokePointsOutput, CoreError>> + Send {
+        let pool = self.pool.clone();
+        let realm_id = realm_id.to_string();
+        let source_id = source_id.to_string();
+        async move {
+            let mut tx = pool
+                .begin()
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+            if Self::check_completed_idempotency_in_tx(&mut tx, &realm_id, &idempotency_key)
+                .await?
+                .is_some()
+            {
+                tx.commit()
+                    .await
+                    .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+                return Ok(RevokePointsOutput::empty());
+            }
+            let output = Self::revoke_distribution_source_in_tx(
+                &mut tx,
+                &realm_id,
+                user_id,
+                &source_id,
+                revocation_type,
+                &reason,
+                &idempotency_key,
+            )
+            .await?;
+            Self::record_completed_idempotency_in_tx(
+                &mut tx,
+                &realm_id,
+                &idempotency_key,
+                output.revocation_id,
+            )
+            .await?;
+            tx.commit()
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+            Ok(output)
+        }
+    }
+
+    fn replace_distribution_source_atomic(
+        &self,
+        source_id: &str,
+        revocation_type: RevocationType,
+        reason: String,
+        event: DistributionEvent,
+        selection: DistributionRuleSelection,
+    ) -> impl std::future::Future<Output = Result<Vec<DistributionGrantResult>, CoreError>> + Send
+    {
+        let pool = self.pool.clone();
+        let source_id = source_id.to_string();
+        async move {
+            loop {
+                let mut tx = pool
+                    .begin()
+                    .await
+                    .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+                match Self::insert_or_load_event_in_tx(&mut tx, &event).await? {
+                    EventInsertOutcome::Existing { id, status } if status == "completed" => {
+                        let Some(result_count) =
+                            Self::lock_completed_event_for_replay_in_tx(&mut tx, id).await?
+                        else {
+                            drop(tx);
+                            continue;
+                        };
+                        let rows = ReplayResultRows {
+                            ledger_rows: Self::replay_ledger_rows_in_tx(&mut tx, id).await?,
+                            entitlement_rows: Self::replay_quota_rows_in_tx(&mut tx, id).await?,
+                            schedule_rows: Self::replay_schedule_rows_in_tx(&mut tx, id).await?,
+                        };
+                        let results = fold_replay_results(rows, result_count, id)?;
+                        tx.commit()
+                            .await
+                            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+                        return Ok(results);
+                    }
+                    EventInsertOutcome::Existing { status: ref s, .. } if s == "processing" => {
+                        drop(tx);
+                        continue;
+                    }
+                    EventInsertOutcome::Existing { id, status } => {
+                        return Err(CoreError::DatabaseError(format!(
+                            "distribution event {} in unexpected status '{}'",
+                            id, status
+                        )));
+                    }
+                    EventInsertOutcome::InsertedProcessing(event_id) => {
+                        Self::deactivate_free_periodic_results_in_tx(
+                            &mut tx,
+                            &event.realm_id,
+                            event.user_id,
+                            event.effective_from,
+                        )
+                        .await?;
+                        Self::revoke_distribution_source_in_tx(
+                            &mut tx,
+                            &event.realm_id,
+                            event.user_id,
+                            &source_id,
+                            revocation_type,
+                            &reason,
+                            &event.event_key,
+                        )
+                        .await?;
+                        let results =
+                            Self::execute_first_run_in_tx(&mut tx, event_id, &event, &selection)
+                                .await?;
+                        tx.commit()
+                            .await
+                            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+                        return Ok(results);
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -5757,6 +5812,23 @@ mod tests {
         assert!(result.is_ok());
         let account = result.unwrap();
         assert_eq!(account.total_topup_granted, 100);
+    }
+
+    #[test]
+    fn proportional_refund_is_calculated_per_original_rule_grant() {
+        assert_eq!(
+            PostgresPointsRepository::proportional_refund_for_grant(100, 100, 1, 4),
+            25
+        );
+        assert_eq!(
+            PostgresPointsRepository::proportional_refund_for_grant(250, 250, 1, 4),
+            63
+        );
+        assert_eq!(
+            PostgresPointsRepository::proportional_refund_for_grant(250, 20, 1, 4),
+            20,
+            "refund revocation must never exceed the rule grant's unused balance"
+        );
     }
 
     // The allocate-by-expiry loop is the heart of the consume allocation plan. It is extracted as
@@ -5802,6 +5874,8 @@ mod tests {
             status: CreditLedgerStatus::Active,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
+            distribution_event_id: None,
+            distribution_rule_id: None,
         }
     }
 

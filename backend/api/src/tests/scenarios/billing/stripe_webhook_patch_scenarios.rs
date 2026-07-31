@@ -120,7 +120,13 @@ mod tests {
         }
     }
 
-    /// Create a quota-entitlement-backed subscription credit entry.
+    /// Create a quota-entitlement-backed subscription credit entry attributed
+    /// to a completed subscription-period distribution event + rule, mirroring
+    /// production `handle_subscription_paid` output. The attributed event/rule
+    /// are required for a subsequent cancel/refund/expiry/dispute webhook's
+    /// `revoke_distribution_source_in_tx` to find and revoke the entitlement
+    /// (it JOINs `q.distribution_event_id = e.id` and requires
+    /// `q.distribution_rule_id IS NOT NULL`).
     async fn create_subscription_credit_with_ledger(
         ctx: &SchemaTestContext,
         user_id: Uuid,
@@ -133,33 +139,30 @@ mod tests {
             realm_id,
         )
         .await;
-        let entitlement_source_id = source_id
+        // `source_id` arrives as `"{entitlement_key}:{subscription_uuid}"; the
+        // subscription UUID is the revoke key production matches on.
+        let subscription_id = source_id
             .rsplit(':')
             .next()
             .filter(|part| Uuid::parse_str(part).is_ok())
-            .unwrap_or(source_id);
-        let quota_windows = crate::tests::helpers::points_helpers::quota_windows_jsonb(&[(
-            2_592_000, amount, "period",
-        )]);
+            .map(|part| Uuid::parse_str(part).expect("subscription id suffix is a valid UUID"))
+            .expect("source_id must carry a subscription UUID suffix");
+        let effective_from = chrono::Utc::now() - chrono::Duration::seconds(1);
+        let effective_until = Some(chrono::Utc::now() + chrono::Duration::days(30));
 
-        sqlx::query(
-            "INSERT INTO points_quota_entitlements
-                (id, user_id, realm_id, bucket_id, credit_type, source_type, source_id,
-                 quota_windows, effective_from, effective_until, status, idempotency_key,
-                 created_at, updated_at)
-             VALUES ($1, $2, $3, $4, 'subscription_credit', 'subscription_initial', $5,
-                     $6, NOW(), NOW() + INTERVAL '30 days', 'active', $7, NOW(), NOW())",
+        crate::tests::helpers::points_helpers::seed_attributed_subscription_quota(
+            ctx,
+            realm_id,
+            user_id,
+            subscription_id,
+            bucket_id,
+            herald_core::domain::points::entities::CreditType::SubscriptionCredit,
+            herald_core::domain::points::entities::QuotaSourceType::SubscriptionInitial,
+            &[(2_592_000, amount, "period")],
+            effective_from,
+            effective_until,
         )
-        .bind(Uuid::now_v7())
-        .bind(user_id)
-        .bind(realm_id)
-        .bind(bucket_id)
-        .bind(entitlement_source_id)
-        .bind(quota_windows)
-        .bind(format!("test-sub-entitlement:{}", entitlement_source_id))
-        .execute(&ctx.app_state.pool)
-        .await
-        .expect("Failed to create subscription quota entitlement");
+        .await;
 
         sqlx::query(
             "UPDATE points_wallets
@@ -246,22 +249,17 @@ mod tests {
         status: &str,
         entitlement_key: &str,
     ) -> Uuid {
-        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
-            &ctx.app_state.pool,
-            realm_id,
-        )
-        .await;
         let subscription_id = Uuid::now_v7();
         sqlx::query(
             "INSERT INTO subscription
                 (id, realm_id, user_id, external_subscription_id, external_product_id,
                  payment_provider, status, entitlement_key, external_price_id,
                  provider_metadata, synced_at, current_period_start, current_period_end,
-                 cancel_at_period_end, client_app_id, cancel_at, bucket_id, created_at, updated_at, billing_type)
+                 cancel_at_period_end, client_app_id, cancel_at, created_at, updated_at, billing_type)
              VALUES ($1, $2, $3, $4, $5,
                      $6, $7, $8, NULL,
                      NULL, NOW(), NOW(), NOW() + INTERVAL '30 days',
-                     false, $9, NULL, $10, NOW(), NOW(), 'recurring')",
+                     false, $9, NULL, NOW(), NOW(), 'recurring')",
         )
         .bind(subscription_id)
         .bind(realm_id)
@@ -272,7 +270,6 @@ mod tests {
         .bind(status)
         .bind(entitlement_key)
         .bind(client_app_id)
-        .bind(bucket_id)
         .execute(&ctx.app_state.pool)
         .await
         .expect("Failed to pre-create subscription");
@@ -351,27 +348,36 @@ mod tests {
         payment_provider: &str,
     ) -> Uuid {
         let attempt_id = Uuid::now_v7();
-        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
-            &ctx.app_state.pool,
-            realm_id,
-        )
-        .await;
         sqlx::query(
             "INSERT INTO payment_attempts
                 (id, realm_id, user_id, payment_provider, target_type, target_id,
-                 bucket_id, amount, currency, status, expires_at, created_at, updated_at)
+                 amount, currency, status, expires_at, created_at, updated_at)
              VALUES ($1, $2, $3, $4, 'entitlement_mapping', $5,
-                 $6, 1000, 'usd', 'Pending', NOW() + INTERVAL '1 hour', NOW(), NOW())",
+                 1000, 'usd', 'Pending', NOW() + INTERVAL '1 hour', NOW(), NOW())",
         )
         .bind(attempt_id)
         .bind(realm_id)
         .bind(user_id)
         .bind(payment_provider)
         .bind(mapping_id)
-        .bind(bucket_id)
         .execute(&ctx.app_state.pool)
         .await
         .expect("Failed to create pending payment attempt");
+
+        // This bypasses production `create_payment_attempt`, which writes the
+        // `payment_attempt_point_rules` snapshot fulfillment reads to route the
+        // grant. Every caller pairs this with a one_time mapping (`topup`
+        // trigger), so capture that mapping's enabled `topup` rule here —
+        // otherwise the subsequent webhook fulfillment grants 0 points.
+        crate::tests::helpers::points_helpers::snapshot_attempt_rules_for_mapping(
+            &ctx.app_state.pool,
+            attempt_id,
+            realm_id,
+            mapping_id,
+            "topup",
+        )
+        .await;
+
         attempt_id
     }
 

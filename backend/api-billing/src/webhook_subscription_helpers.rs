@@ -10,6 +10,7 @@ use herald_core::domain::billing::{
     SubscriptionHistoryEvent, calculate_changes, serialize_subscription_state,
 };
 use herald_core::domain::common::entities::app_errors::CoreError;
+use herald_core::domain::points::DistributionPolicy;
 use herald_core::infrastructure::billing::PostgresBillingRepository;
 
 pub(crate) struct SyncSubscriptionInput {
@@ -20,10 +21,6 @@ pub(crate) struct SyncSubscriptionInput {
     pub external_product_id: String,
     pub client_app_id: Option<Uuid>,
     pub entitlement_key: String,
-    /// Routing bucket for the subscription. Resolved eagerly by the caller from
-    /// the entitlement mapping before sync; used only on the create branch
-    /// (existing rows keep their bound bucket_id on update).
-    pub bucket_id: Uuid,
     pub external_price_id: Option<String>,
     pub provider_metadata: Option<Value>,
     pub status: herald_core::domain::billing::SubscriptionStatus,
@@ -99,6 +96,27 @@ pub(crate) struct ResolvedEntitlement {
     /// Price-level mapping resolved for this webhook event. Strategy source for
     /// points issuance (US-EM-008).
     pub mapping: EntitlementMapping,
+}
+
+pub(crate) async fn mapping_rule_value(
+    app_state: &AppState,
+    realm_id: &str,
+    mapping_id: Uuid,
+) -> Result<i64, CoreError> {
+    let rules = app_state
+        .billing_repository
+        .find_mapping_rules(realm_id, mapping_id)
+        .await?;
+    Ok(rules
+        .into_iter()
+        .filter(|rule| rule.enabled)
+        .map(|rule| match rule.policy {
+            DistributionPolicy::Fixed { amount, .. } => amount,
+            DistributionPolicy::Quota { windows } => {
+                windows.into_iter().map(|window| window.limit).sum()
+            }
+        })
+        .sum())
 }
 
 /// Fail-loud resolution error. Never silently degrades — callers
@@ -347,29 +365,6 @@ pub(crate) async fn resolve_entitlement_mapping(
     }
 }
 
-/// Resolve the routing bucket_id for an entitlement key (eager binding).
-///
-/// Replaces the former lazy `resolve_and_bind_subscription_bucket`: the caller
-/// resolves the bucket from the (non-null) entitlement mapping BEFORE creating
-/// the subscription, so every subscription row has a bucket_id at insert time.
-///
-/// - mapping absent or disabled → `EntitlementMappingNotFound` (callers that
-///   want a graceful skip handle this error explicitly)
-/// - mapping present → its non-null `bucket_id`
-pub(crate) async fn resolve_bucket_id_for_entitlement(
-    app_state: &AppState,
-    realm_id: &str,
-    entitlement_key: &str,
-) -> Result<Uuid, CoreError> {
-    let mapping = app_state
-        .billing_repository
-        .find_entitlement_mapping_by_key(realm_id, entitlement_key)
-        .await?
-        .filter(|mapping| mapping.enabled)
-        .ok_or(CoreError::EntitlementMappingNotFound)?;
-    Ok(mapping.bucket_id)
-}
-
 pub(crate) async fn sync_subscription(
     app_state: &AppState,
     input: SyncSubscriptionInput,
@@ -390,7 +385,6 @@ pub(crate) async fn sync_subscription(
         cancel_at_period_end,
         cancel_at,
         existing_subscription,
-        bucket_id,
     } = input;
 
     let existing = {
@@ -477,7 +471,6 @@ pub(crate) async fn sync_subscription(
             // (non_renewing is fulfilled via the purchase path, not webhook
             billing_type: BillingType::Recurring,
             external_price_id,
-            bucket_id,
             provider_metadata,
             synced_at: Some(now),
             current_period_start,
@@ -517,7 +510,6 @@ pub(crate) async fn sync_subscription_in_txn(
         cancel_at_period_end,
         cancel_at,
         existing_subscription,
-        bucket_id,
     } = input;
 
     let existing = {
@@ -604,7 +596,6 @@ pub(crate) async fn sync_subscription_in_txn(
             // (non_renewing is fulfilled via the purchase path, not webhook
             billing_type: BillingType::Recurring,
             external_price_id,
-            bucket_id,
             provider_metadata,
             synced_at: Some(now),
             current_period_start,

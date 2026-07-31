@@ -224,8 +224,6 @@ async fn fulfillment_grants_to_attempt_snapshot_bucket(ctx: &mut TestContext) {
         insert_attempt_with_bucket_snapshot(pool, &realm_id, user_id, mapping_id, Some(bucket_a))
             .await;
     let attempt = load_attempt(ctx, attempt_id).await;
-    assert_eq!(attempt.bucket_id, bucket_a, "snapshot bucket = A");
-
     let provider_tx_id = format!("sub_snap_{}", attempt_id);
     let result = ctx
         .app_state
@@ -234,6 +232,11 @@ async fn fulfillment_grants_to_attempt_snapshot_bucket(ctx: &mut TestContext) {
         .await;
 
     assert!(result.is_ok(), "fulfillment should succeed: {:?}", result);
+    assert_eq!(
+        result.as_ref().unwrap().point_grants[0].bucket_id,
+        bucket_a,
+        "captured rule grants to bucket A"
+    );
 
     let ledger_count_a =
         count_ledger_in_bucket(pool, user_id, bucket_a, "subscription_credit").await;
@@ -320,8 +323,8 @@ async fn fulfillment_freezes_subscription_bucket_on_first_renewal(ctx: &mut Test
         "subscription.bucket_id frozen to the attempt snapshot bucket"
     );
     assert_eq!(
-        attempt.bucket_id, frozen,
-        "snapshot == frozen subscription bucket"
+        result.point_grants[0].bucket_id, frozen,
+        "captured rule target == frozen subscription bucket"
     );
 }
 
@@ -377,9 +380,6 @@ async fn mapping_bucket_change_after_purchase_does_not_reroute_inflight_attempt(
     let attempt_id =
         insert_attempt_with_bucket_snapshot(pool, &realm_id, user_id, mapping_id, Some(bucket_a))
             .await;
-    let attempt_snapshot = load_attempt(ctx, attempt_id).await;
-    assert_eq!(attempt_snapshot.bucket_id, bucket_a);
-
     sqlx::query(
         "UPDATE provider_entitlement_mappings SET bucket_id = $1, updated_at = NOW() WHERE id = $2",
     )
@@ -404,17 +404,16 @@ async fn mapping_bucket_change_after_purchase_does_not_reroute_inflight_attempt(
 
     // Reload the attempt so we read what fulfillment will see.
     let attempt = load_attempt(ctx, attempt_id).await;
-    assert_eq!(
-        attempt.bucket_id, bucket_a,
-        "attempt snapshot is unchanged after mapping re-point"
-    );
-
-    let _result = ctx
+    let result = ctx
         .app_state
         .fulfillment_service
         .fulfill_subscription_purchase(&attempt, format!("sub_a7_{}", attempt_id))
         .await
         .expect("fulfillment should succeed (snapshot route)");
+    assert_eq!(
+        result.point_grants[0].bucket_id, bucket_a,
+        "captured rule target is unchanged after mapping re-point"
+    );
 
     let ledger_a = count_ledger_in_bucket(pool, user_id, bucket_a, "subscription_credit").await;
     assert_eq!(ledger_a, 1, "ledger row landed in snapshot bucket A");
@@ -487,7 +486,6 @@ async fn subscription_paid_renews_to_same_bucket_pool(ctx: &mut TestContext) {
         .handle_subscription_paid(
             user_id,
             subscription_id,
-            bucket,
             &realm_id,
             &mapping,
             true, // is_renewal
@@ -569,7 +567,6 @@ async fn subscription_upgrade_revokes_old_and_grants_new_within_same_bucket(ctx:
         .handle_subscription_paid(
             user_id,
             subscription_id,
-            bucket,
             &realm_id,
             &old_mapping_seed,
             false,
@@ -584,19 +581,17 @@ async fn subscription_upgrade_revokes_old_and_grants_new_within_same_bucket(ctx:
         sum_ledger_granted_in_bucket(pool, user_id, bucket, "subscription_credit").await;
     assert_eq!(balance_after_seed, 400, "old-plan grant seeded");
 
-    let old_mapping = mapping_for_key(ctx, &realm_id, &old_key).await;
     let new_mapping = mapping_for_key(ctx, &realm_id, &new_key).await;
     let result = ctx
         .app_state
         .subscription_service
         .handle_subscription_upgrade(
             user_id,
-            bucket,
             &realm_id,
             subscription_id,
-            &old_mapping,
             &new_mapping,
             period_end,
+            &format!("evt_upgrade_{}", Uuid::now_v7()),
         )
         .await;
 
@@ -680,7 +675,6 @@ async fn subscription_cancel_revokes_only_subscription_bucket_pool(ctx: &mut Tes
         .handle_subscription_paid(
             user_id,
             subscription_id,
-            bucket_sub,
             &realm_id,
             &mapping_cancel_seed,
             false,
@@ -715,7 +709,6 @@ async fn subscription_cancel_revokes_only_subscription_bucket_pool(ctx: &mut Tes
         .subscription_service
         .handle_subscription_cancel(
             user_id,
-            bucket_sub,
             &realm_id,
             subscription_id,
             CancelMode::ImmediateCancel,
@@ -807,7 +800,6 @@ async fn subscription_refund_revokes_only_subscription_bucket_pool(ctx: &mut Tes
         .handle_subscription_paid(
             user_id,
             subscription_id,
-            bucket_sub,
             &realm_id,
             &mapping_refund_seed,
             false,
@@ -915,7 +907,6 @@ async fn subscription_downgrade_preserves_current_cycle(ctx: &mut TestContext) {
         .handle_subscription_paid(
             user_id,
             subscription_id,
-            bucket,
             &realm_id,
             &old_mapping_dg_seed,
             false,
@@ -938,7 +929,6 @@ async fn subscription_downgrade_preserves_current_cycle(ctx: &mut TestContext) {
         .handle_subscription_downgrade(
             user_id,
             subscription_id,
-            bucket,
             &realm_id,
             &old_mapping_dg,
             &new_mapping_dg,

@@ -188,6 +188,66 @@ async fn test_scenario_free_user_registration_grants_initial_bonus(ctx: &mut Tes
     );
 }
 
+/// Registration completion must include every registration and free-periodic target.
+#[test_context(TestContext)]
+#[tokio::test]
+async fn test_multi_wallet_grant_rule_registration_and_free_periodic_multi_account(
+    ctx: &mut TestContext,
+) {
+    let user_id = crate::tests::scenarios::points::fixtures::create_test_user(
+        &ctx.app_state.pool,
+        &ctx._realm_id,
+        &format!(
+            "multi-wallet-registration-{}@example.com",
+            uuid::Uuid::now_v7()
+        ),
+    )
+    .await;
+    let bucket_a =
+        super::multi_wallet_grant_rule_scenarios::seed_bucket(ctx, &ctx._realm_id, true).await;
+    let bucket_b =
+        super::multi_wallet_grant_rule_scenarios::seed_bucket(ctx, &ctx._realm_id, true).await;
+    super::multi_wallet_grant_rule_scenarios::seed_rule(
+        ctx,
+        &ctx._realm_id,
+        None,
+        bucket_a,
+        &["registration"],
+        "fixed",
+        Some(20),
+        true,
+        0,
+    )
+    .await;
+    super::multi_wallet_grant_rule_scenarios::seed_rule(
+        ctx,
+        &ctx._realm_id,
+        None,
+        bucket_b,
+        &["free_periodic_grant"],
+        "quota",
+        None,
+        true,
+        1,
+    )
+    .await;
+    ctx.app_state
+        .registration_service
+        .handle_user_registration(user_id, &ctx._realm_id)
+        .await
+        .expect("registration rule set executes atomically");
+    let results: i64 = sqlx::query_scalar(
+        "SELECT
+           (SELECT COUNT(*) FROM points_credit_ledger WHERE user_id = $1)
+         + (SELECT COUNT(*) FROM points_quota_entitlements WHERE user_id = $1)",
+    )
+    .bind(user_id)
+    .fetch_one(&ctx.app_state.pool)
+    .await
+    .unwrap();
+    assert_eq!(results, 2, "both registration rule families must execute");
+}
+
 /// ============================================================================
 /// Scenario 2: Prevent duplicate registration bonuses
 /// ============================================================================

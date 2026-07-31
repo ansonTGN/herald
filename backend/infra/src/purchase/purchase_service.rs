@@ -28,7 +28,6 @@ fn build_herald_metadata(
     target_type: &str,
     target_id: Uuid,
     attempt_id: Uuid,
-    bucket_id: Uuid,
 ) -> HashMap<String, String> {
     let mut metadata = HashMap::new();
     metadata.insert(
@@ -47,12 +46,6 @@ fn build_herald_metadata(
     metadata.insert(
         metadata_keys::ATTEMPT_ID.to_string(),
         attempt_id.to_string(),
-    );
-    // Diagnostic/webhook fallback. Source of truth remains the
-    // payment_attempt / subscription snapshot columns.
-    metadata.insert(
-        metadata_keys::HERALD_BUCKET_ID.to_string(),
-        bucket_id.to_string(),
     );
     metadata
 }
@@ -138,7 +131,12 @@ where
                     payment_provider: input.payment_provider,
                     target_type: target.target_type.to_string(),
                     target_id: target.target_id,
-                    bucket_id: target.bucket_id,
+                    billing_type: target.billing_type.clone().ok_or_else(|| {
+                        CoreError::BillingError(format!(
+                            "Entitlement mapping '{}' has no billing_type set",
+                            target.target_id
+                        ))
+                    })?,
                     amount: target.amount,
                     currency: target.currency.clone(),
                     provider_reference: None,
@@ -234,7 +232,12 @@ where
                     payment_provider: input.payment_provider,
                     target_type: target.target_type.to_string(),
                     target_id: target.target_id,
-                    bucket_id: target.bucket_id,
+                    billing_type: target.billing_type.clone().ok_or_else(|| {
+                        CoreError::BillingError(format!(
+                            "Entitlement mapping '{}' has no billing_type set",
+                            target.target_id
+                        ))
+                    })?,
                     amount,
                     currency: target.currency.clone(),
                     // Bind the store-side transaction id up-front (Apple
@@ -395,10 +398,6 @@ where
             }
         }
 
-        // Purchase creation is the source-of-truth snapshot site for
-        // `payment_attempt.bucket_id`.
-        let bucket_id = mapping.bucket_id;
-
         let (amount, currency, title) = mapping
             .provider_product_info
             .as_ref()
@@ -423,7 +422,6 @@ where
         Ok(PurchaseTargetSnapshot {
             target_type: parsed_target_type,
             target_id,
-            bucket_id,
             amount,
             currency,
             title,
@@ -493,14 +491,7 @@ where
             CoreError::Conflict("Creem product mapping missing external_product_id".into())
         })?;
         let client = self.get_creem_client_for_realm(realm_id).await?;
-        let metadata = build_herald_metadata(
-            realm_id,
-            user_id,
-            target_type,
-            target_id,
-            attempt_id,
-            target.bucket_id,
-        );
+        let metadata = build_herald_metadata(realm_id, user_id, target_type, target_id, attempt_id);
 
         let session = client
             .create_checkout_session(&CreemCreateCheckoutRequest {
@@ -552,14 +543,7 @@ where
     ) -> PurchaseResult<(Option<String>, PaymentContext)> {
         let client = self.get_stripe_client_for_realm(realm_id).await?;
 
-        let metadata = build_herald_metadata(
-            realm_id,
-            user_id,
-            target_type,
-            target_id,
-            attempt_id,
-            target.bucket_id,
-        );
+        let metadata = build_herald_metadata(realm_id, user_id, target_type, target_id, attempt_id);
 
         let mode = match target.billing_type {
             Some(BillingType::OneTime) => Some("payment".to_string()),

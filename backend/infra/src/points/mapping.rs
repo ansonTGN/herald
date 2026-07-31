@@ -43,6 +43,11 @@ pub fn points_credit_ledger_from_model(model: points_credit_ledger::Model) -> Po
         status: parse_enum_with_default(&model.status, "status", CreditLedgerStatus::Active),
         created_at: chrono::DateTime::from(model.created_at),
         updated_at: chrono::DateTime::from(model.updated_at),
+        // Direct-write rows (admin/sdk grant, demo/test-only internal quota)
+        // carry NULL attribution; rule-executed grants set both. The mapping
+        // helpers preserve whatever the row carries.
+        distribution_event_id: model.distribution_event_id,
+        distribution_rule_id: model.distribution_rule_id,
     }
 }
 
@@ -108,6 +113,8 @@ pub fn points_credit_ledger_to_active_model(
         status: Set(domain.status.to_string()),
         created_at: Set(domain.created_at.into()),
         updated_at: Set(domain.updated_at.into()),
+        distribution_event_id: Set(domain.distribution_event_id),
+        distribution_rule_id: Set(domain.distribution_rule_id),
     }
 }
 

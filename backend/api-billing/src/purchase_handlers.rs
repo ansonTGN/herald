@@ -107,13 +107,19 @@ pub struct FulfillmentResultResponse {
     pub fulfillment_type: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subscription_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub points_type: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub points: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub transaction_id: Option<Uuid>,
+    pub point_grants: Vec<PointGrantResponse>,
     pub granted_at: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PointGrantResponse {
+    pub rule_id: Uuid,
+    pub bucket_id: Uuid,
+    pub result_id: Uuid,
+    pub points_type: String,
+    pub points: Option<i64>,
+    pub description: String,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -123,12 +129,7 @@ pub struct FulfillPaymentResponse {
     pub fulfillment_type: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subscription_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub points_type: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub points: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub transaction_id: Option<Uuid>,
+    pub point_grants: Vec<PointGrantResponse>,
     pub granted_at: String,
 }
 
@@ -233,16 +234,22 @@ fn fulfillment_result_to_response(result: FulfillmentResult) -> FulfillPaymentRe
                 "subscription_updated".to_string()
             }
             herald_core::domain::purchase::FulfillmentType::PointsGranted => {
-                "points_granted".to_string()
+                "point_grants".to_string()
             }
         },
         subscription_id: result.subscription_id,
-        points_type: result
-            .points_granted
-            .as_ref()
-            .map(|pg| pg.points_type.clone()),
-        points: result.points_granted.as_ref().map(|pg| pg.points),
-        transaction_id: result.points_granted.as_ref().map(|pg| pg.transaction_id),
+        point_grants: result
+            .point_grants
+            .into_iter()
+            .map(|grant| PointGrantResponse {
+                rule_id: grant.rule_id,
+                bucket_id: grant.bucket_id,
+                result_id: grant.result_id,
+                points_type: grant.points_type,
+                points: grant.points,
+                description: grant.description,
+            })
+            .collect(),
         granted_at: result.granted_at.to_rfc3339(),
     }
 }

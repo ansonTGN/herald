@@ -14,7 +14,7 @@ use crate::tests::helpers::webhook_helpers::*;
 use crate::tests::scenarios::points::fixtures::*;
 use crate::tests::schema_test_context::SchemaTestContext;
 use herald_core::domain::points::entities::{
-    CreditSourceType, CreditType, QuotaEntitlementStatus, QuotaSourceType, RevocationType,
+    CreditType, QuotaEntitlementStatus, QuotaSourceType, RevocationType,
 };
 use sqlx::Row;
 use test_context::test_context;
@@ -41,27 +41,26 @@ async fn test_refund_topup_proportional_recovery(ctx: &mut SchemaTestContext) {
     // Configure Creem webhook for this realm
     ctx.with_creem_config(&realm_id, None, None, None).await;
 
-    // Grant 10000 topup credits
-    let ledger_id = create_credit_ledger_entry_v2(
-        ctx,
-        user_id,
-        &realm_id,
-        CreditType::TopupCredit,
-        CreditSourceType::Topup,
-        payment_id.clone(),
-        10000,
+    // Seed the payment_attempt snapshot (the Creem refund webhook resolves the
+    // originating attempt by provider_reference; without it the handler fails
+    // loud with "no payment_attempt for payment_id") AND a rule-attributed
+    // topup ledger mirroring `fulfill_one_time_purchase` output, so the refund's
+    // `revoke_topup_source_proportional(source_id = attempt.id)` finds and
+    // proportionally revokes the grant. A raw unattributed ledger is silently
+    // skipped (the revoke JOINs distribution_events on source_id and requires
+    // distribution_rule_id IS NOT NULL).
+    let bucket_id = get_wallet_bucket_id(ctx, &realm_id, user_id).await;
+    let (attempt_id, mapping_id, rule_id) =
+        create_payment_attempt_snapshot(ctx, &realm_id, user_id, &payment_id, bucket_id, 10000)
+            .await;
+    let ledger_id = seed_attributed_topup_ledger(
+        ctx, &realm_id, user_id, attempt_id, mapping_id, rule_id, bucket_id, 10000,
         None, // No expiry
     )
     .await;
 
     // Consume 3000, remaining 7000
     consume_points_from_ledger(ctx, ledger_id, 3000).await;
-
-    // Seed the payment_attempts snapshot the Creem refund webhook resolves the
-    // routing bucket from. Without it the handler fails loud with
-    // "no payment_attempt for payment_id".
-    let bucket_id = get_wallet_bucket_id(ctx, &realm_id, user_id).await;
-    create_payment_attempt_snapshot(ctx, &realm_id, user_id, &payment_id, bucket_id, 10000).await;
 
     // DEBUG: Verify ledger was created
     let all_ledgers = get_all_ledgers_for_user(ctx, user_id, &realm_id)
@@ -110,6 +109,19 @@ async fn test_refund_topup_proportional_recovery(ctx: &mut SchemaTestContext) {
     assert_eq!(revocations[0].reference_id, Some(refund_id));
 }
 
+/// Refund recovery follows original attributed results and cannot spill into unrelated credit.
+#[test_context(SchemaTestContext)]
+#[tokio::test]
+async fn test_multi_wallet_grant_rule_refund_recovers_each_original_result(
+    ctx: &mut SchemaTestContext,
+) {
+    super::multi_wallet_grant_rule_scenarios::assert_two_account_fixed_event(
+        ctx,
+        herald_core::domain::points::DistributionTrigger::Topup,
+    )
+    .await;
+}
+
 // ============================================================================
 // Test 2: Subscription Refund - Revoke Active Quota Entitlement
 // ============================================================================
@@ -141,10 +153,10 @@ async fn test_refund_subscription_only_unused(ctx: &mut SchemaTestContext) {
             (id, realm_id, user_id, status, entitlement_key,
              external_subscription_id, external_product_id, payment_provider,
              current_period_start, current_period_end, cancel_at_period_end,
-             bucket_id, created_at, updated_at, billing_type)
+             created_at, updated_at, billing_type)
          VALUES ($1, $2, $3, 'active', $4, $5, $6, 'creem',
                  NOW() - INTERVAL '1 day', NOW() + INTERVAL '30 days', false,
-                 $7, NOW(), NOW(), 'recurring')",
+                 NOW(), NOW(), 'recurring')",
     )
     .bind(subscription_id)
     .bind(&realm_id)
@@ -152,7 +164,6 @@ async fn test_refund_subscription_only_unused(ctx: &mut SchemaTestContext) {
     .bind(plan_id.to_string())
     .bind(&external_subscription_id)
     .bind(format!("prod_test_{}", plan_id))
-    .bind(bucket_id)
     .execute(&ctx.app_state.pool)
     .await
     .expect("seed subscription");
@@ -160,14 +171,14 @@ async fn test_refund_subscription_only_unused(ctx: &mut SchemaTestContext) {
     // Seed an active SubscriptionCredit quota entitlement keyed by subscription_id.
     let effective_from = chrono::Utc::now() - chrono::Duration::days(1);
     let effective_until = Some(chrono::Utc::now() + chrono::Duration::days(30));
-    grant_quota_entitlement_for_test(
+    seed_attributed_subscription_quota(
         ctx,
         &realm_id,
         user_id,
+        subscription_id,
         bucket_id,
         CreditType::SubscriptionCredit,
         QuotaSourceType::SubscriptionInitial,
-        &subscription_id.to_string(),
         &[(2_592_000, 5000, "period")],
         effective_from,
         effective_until,
@@ -290,25 +301,17 @@ async fn test_refund_created_idempotency(ctx: &mut SchemaTestContext) {
     ctx.with_creem_config(&realm_id, None, None, None).await;
 
     // Grant 10000 topup credits
-    let ledger_id = create_credit_ledger_entry_v2(
-        ctx,
-        user_id,
-        &realm_id,
-        CreditType::TopupCredit,
-        CreditSourceType::Topup,
-        payment_id.clone(),
-        10000,
-        None,
+    let bucket_id = get_wallet_bucket_id(ctx, &realm_id, user_id).await;
+    let (attempt_id, mapping_id, rule_id) =
+        create_payment_attempt_snapshot(ctx, &realm_id, user_id, &payment_id, bucket_id, 10000)
+            .await;
+    let ledger_id = seed_attributed_topup_ledger(
+        ctx, &realm_id, user_id, attempt_id, mapping_id, rule_id, bucket_id, 10000, None,
     )
     .await;
 
     // Consume 3000, remaining 7000
     consume_points_from_ledger(ctx, ledger_id, 3000).await;
-
-    // Seed the payment_attempts snapshot the Creem refund webhook resolves the
-    // routing bucket from.
-    let bucket_id = get_wallet_bucket_id(ctx, &realm_id, user_id).await;
-    create_payment_attempt_snapshot(ctx, &realm_id, user_id, &payment_id, bucket_id, 10000).await;
 
     // Build refund event with a shared event_id
     let event = build_refund_created_event_with_user(
@@ -370,21 +373,15 @@ async fn test_refund_topup_same_refund_id_different_event_id_is_idempotent(
     create_points_wallet(ctx, user_id, &realm_id).await;
     ctx.with_creem_config(&realm_id, None, None, None).await;
 
-    let ledger_id = create_credit_ledger_entry_v2(
-        ctx,
-        user_id,
-        &realm_id,
-        CreditType::TopupCredit,
-        CreditSourceType::Topup,
-        payment_id.clone(),
-        10000,
-        None,
+    let bucket_id = get_wallet_bucket_id(ctx, &realm_id, user_id).await;
+    let (attempt_id, mapping_id, rule_id) =
+        create_payment_attempt_snapshot(ctx, &realm_id, user_id, &payment_id, bucket_id, 10000)
+            .await;
+    let ledger_id = seed_attributed_topup_ledger(
+        ctx, &realm_id, user_id, attempt_id, mapping_id, rule_id, bucket_id, 10000, None,
     )
     .await;
     consume_points_from_ledger(ctx, ledger_id, 3000).await;
-
-    let bucket_id = get_wallet_bucket_id(ctx, &realm_id, user_id).await;
-    create_payment_attempt_snapshot(ctx, &realm_id, user_id, &payment_id, bucket_id, 10000).await;
 
     let app = ctx.create_unified_test_router();
     for _ in 0..2 {
@@ -438,10 +435,10 @@ async fn test_refund_subscription_same_refund_id_different_event_id_is_idempoten
             (id, realm_id, user_id, status, entitlement_key,
              external_subscription_id, external_product_id, payment_provider,
              current_period_start, current_period_end, cancel_at_period_end,
-             bucket_id, created_at, updated_at, billing_type)
+             created_at, updated_at, billing_type)
          VALUES ($1, $2, $3, 'active', $4, $5, $6, 'creem',
                  NOW() - INTERVAL '1 day', NOW() + INTERVAL '30 days', false,
-                 $7, NOW(), NOW(), 'recurring')",
+                 NOW(), NOW(), 'recurring')",
     )
     .bind(subscription_id)
     .bind(&realm_id)
@@ -449,7 +446,6 @@ async fn test_refund_subscription_same_refund_id_different_event_id_is_idempoten
     .bind(plan_id.to_string())
     .bind(&external_subscription_id)
     .bind(format!("prod_test_{}", plan_id))
-    .bind(bucket_id)
     .execute(&ctx.app_state.pool)
     .await
     .expect("seed subscription");
@@ -457,14 +453,14 @@ async fn test_refund_subscription_same_refund_id_different_event_id_is_idempoten
     // Seed an active SubscriptionCredit quota entitlement keyed by subscription_id.
     let effective_from = chrono::Utc::now() - chrono::Duration::days(1);
     let effective_until = Some(chrono::Utc::now() + chrono::Duration::days(30));
-    grant_quota_entitlement_for_test(
+    seed_attributed_subscription_quota(
         ctx,
         &realm_id,
         user_id,
+        subscription_id,
         bucket_id,
         CreditType::SubscriptionCredit,
         QuotaSourceType::SubscriptionInitial,
-        &subscription_id.to_string(),
         &[(2_592_000, 5000, "period")],
         effective_from,
         effective_until,

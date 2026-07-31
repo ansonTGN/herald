@@ -168,14 +168,6 @@ pub trait RealmRepository: Send + Sync {
 }
 
 #[cfg_attr(test, mockall::automock)]
-pub trait RealmPointsConfigInitializer: Send + Sync {
-    fn create_default_realm_points_config(
-        &self,
-        realm_id: &str,
-    ) -> impl Future<Output = Result<(), CoreError>> + Send;
-}
-
-#[cfg_attr(test, mockall::automock)]
 pub trait RealmService: Send + Sync {
     fn create_realm(
         &self,

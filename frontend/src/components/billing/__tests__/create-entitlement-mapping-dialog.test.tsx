@@ -24,7 +24,15 @@ vi.mock('@/hooks/use-permission', () => ({
 // real query. The bucket list must be non-empty for the bucket Select.
 const { bucketsHolder } = vi.hoisted(() => ({
   bucketsHolder: {
-    current: [] as Array<{ id: string; name: string }>,
+    current: [] as Array<{
+      id: string
+      name: string
+      bucketKey: string
+      displayOrder: number
+      enabled: boolean
+      coveredClientAppCount: number
+      ruleReferenceCount: number
+    }>,
   },
 }))
 
@@ -100,7 +108,17 @@ import { m } from '@/paraglide/messages'
 
 // --- Fixtures --------------------------------------------------------------
 
-const BUCKETS = [{ id: 'bucket-1', name: 'Default Bucket' }]
+const BUCKETS = [
+  {
+    id: 'bucket-1',
+    name: 'Default Bucket',
+    bucketKey: 'default',
+    displayOrder: 0,
+    enabled: true,
+    coveredClientAppCount: 1,
+    ruleReferenceCount: 0,
+  },
+]
 
 function makeQueryClient() {
   return new QueryClient({
@@ -129,9 +147,6 @@ async function fillCreateForm(user: ReturnType<typeof userEvent.setup>) {
 
   await user.type(screen.getByTestId('create-mapping-entitlement-key-input'), 'premium')
 
-  await user.click(screen.getByTestId('create-mapping-bucket-select'))
-  await user.click(await screen.findByRole('option', { name: 'Default Bucket' }))
-
   // Billing Type = recurring (so billingPeriod becomes visible + required)
   await user.click(screen.getByTestId('create-mapping-billing-type-select'))
   await user.click(await screen.findByRole('option', { name: /recurring/i }))
@@ -139,6 +154,10 @@ async function fillCreateForm(user: ReturnType<typeof userEvent.setup>) {
   // Billing Period (required because recurring)
   await user.click(screen.getByTestId('create-mapping-billing-period-select'))
   await user.click(await screen.findByRole('option', { name: /month/i }))
+
+  await user.click(screen.getByTestId('point-rule-add'))
+  await user.click(screen.getByTestId('point-rule-bucket'))
+  await user.click(await screen.findByRole('option', { name: 'Default Bucket' }))
 }
 
 function renderDialog(open = true) {
@@ -174,15 +193,16 @@ async function fillCreateFormNonRenewing(user: ReturnType<typeof userEvent.setup
 
   await user.type(screen.getByTestId('create-mapping-entitlement-key-input'), 'premium')
 
-  await user.click(screen.getByTestId('create-mapping-bucket-select'))
-  await user.click(await screen.findByRole('option', { name: 'Default Bucket' }))
-
   // Billing Type = non_renewing (option label = billing.billing_type_non_renewing).
   await user.click(screen.getByTestId('create-mapping-billing-type-select'))
   await user.click(await screen.findByRole('option', { name: /non-renewing/i }))
 
   // Conditional non-renewing duration field.
   await user.type(screen.getByTestId('create-mapping-service-duration-days-input'), '30')
+
+  await user.click(screen.getByTestId('point-rule-add'))
+  await user.click(screen.getByTestId('point-rule-bucket'))
+  await user.click(await screen.findByRole('option', { name: 'Default Bucket' }))
 }
 
 beforeEach(() => {
@@ -213,7 +233,12 @@ describe('CreateEntitlementMappingDialog — submit success', () => {
     expect(body.paymentProvider).toBe('apple')
     expect(body.externalProductId).toBe('com.example.app.premium')
     expect(body.entitlementKey).toBe('premium')
-    expect(body.bucketId).toBe('bucket-1')
+    expect(body.pointRules).toEqual([
+      expect.objectContaining({
+        bucketId: 'bucket-1',
+        triggerSources: ['subscription_initial'],
+      }),
+    ])
     expect(body.billingType).toBe('recurring')
     expect(body.billingPeriod).toBe('monthly')
 
@@ -327,8 +352,6 @@ describe('CreateEntitlementMappingDialog — client-side validation', () => {
       'com.example.app.premium'
     )
     await user.type(screen.getByTestId('create-mapping-entitlement-key-input'), 'premium')
-    await user.click(screen.getByTestId('create-mapping-bucket-select'))
-    await user.click(await screen.findByRole('option', { name: 'Default Bucket' }))
     await user.click(screen.getByTestId('create-mapping-billing-type-select'))
     await user.click(await screen.findByRole('option', { name: /recurring/i }))
     // billingPeriod select intentionally left empty.

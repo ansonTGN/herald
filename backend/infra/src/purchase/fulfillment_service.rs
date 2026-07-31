@@ -5,8 +5,12 @@ use std::sync::Arc;
 use herald_domain::authorization::PermissionService;
 use herald_domain::billing::{BillingRepository, BillingType, Subscription, SubscriptionStatus};
 use herald_domain::common::entities::app_errors::CoreError;
-use herald_domain::payment_attempt::PaymentAttempt;
-use herald_domain::points::{CreditSourceType, CreditType, PointsRepository};
+use herald_domain::payment_attempt::{PaymentAttempt, PaymentAttemptRepository};
+use herald_domain::points::{
+    DistributionEvent, DistributionGrantResult, DistributionRuleOwner, DistributionRuleSelection,
+    DistributionTrigger, PointsRepository, credit_pair_for_trigger, event_key_for_payment,
+    event_key_for_subscription_period,
+};
 use herald_domain::purchase::{
     FulfillmentResult, FulfillmentService, FulfillmentType, PointsGrant,
 };
@@ -26,8 +30,10 @@ fn billing_period_to_days(period: Option<&str>) -> i64 {
 /// Implementation of fulfillment service for unified purchase handling.
 ///
 /// Generics:
-/// - `P`: points repository (credits grant).
+/// - `P`: points repository (distribution rule executor).
 /// - `B`: billing repository (entitlement mapping + subscription).
+/// - `PA`: payment-attempt repository — loads the rule/bucket snapshot captured
+///   at purchase creation for the `CapturedPaymentRules` executor selection.
 /// - `U`: user-role repository — used by the payment-driven role grant loop
 ///   event, not an authenticated admin action (no `Identity::System` variant
 ///   exists — `backend/domain/src/authentication/identity.rs:27`).
@@ -35,35 +41,40 @@ fn billing_period_to_days(period: Option<&str>) -> i64 {
 ///   after a grant so subsequent permission checks see the new role. Injecting
 ///   this port keeps the fulfillment service free of any direct Redis
 ///   dependency (the concrete `RedisPermissionChecker` lives in infra).
-pub struct PostgresFulfillmentService<P, B, U, C>
+pub struct PostgresFulfillmentService<P, B, PA, U, C>
 where
     P: PointsRepository,
     B: BillingRepository,
+    PA: PaymentAttemptRepository,
     U: UserRoleRepository,
     C: PermissionService,
 {
     points_repository: Arc<P>,
     billing_repository: Arc<B>,
+    payment_attempt_repository: Arc<PA>,
     user_role_repository: Arc<U>,
     permission_service: Arc<C>,
 }
 
-impl<P, B, U, C> PostgresFulfillmentService<P, B, U, C>
+impl<P, B, PA, U, C> PostgresFulfillmentService<P, B, PA, U, C>
 where
     P: PointsRepository,
     B: BillingRepository,
+    PA: PaymentAttemptRepository,
     U: UserRoleRepository,
     C: PermissionService,
 {
     pub fn new(
         points_repository: Arc<P>,
         billing_repository: Arc<B>,
+        payment_attempt_repository: Arc<PA>,
         user_role_repository: Arc<U>,
         permission_service: Arc<C>,
     ) -> Self {
         Self {
             points_repository,
             billing_repository,
+            payment_attempt_repository,
             user_role_repository,
             permission_service,
         }
@@ -139,12 +150,129 @@ where
 
         Ok(())
     }
+
+    /// Execute the distribution rules captured on the payment attempt at
+    /// purchase creation, returning the multi-rule grant set. This is the single
+    /// shared first-fulfillment points path for every provider (Stripe / Creem /
+    /// IAP) and every purchase shape (topup / subscription-initial / non-renewing
+    /// initial) — there is no per-provider fork.
+    ///
+    /// The captured snapshot is frozen at attempt creation: a rule disabled after
+    /// capture still fires for this already-paid attempt. Replay of an
+    /// already-completed event returns the first-run
+    /// results without re-reading current rules (the executor's unique-key
+    /// serialization + completion record handle this).
+    async fn execute_captured_payment_rules(
+        &self,
+        attempt: &PaymentAttempt,
+        mapping_id: uuid::Uuid,
+        trigger: DistributionTrigger,
+        event_key: String,
+        source_id: String,
+    ) -> Result<Vec<PointsGrant>, CoreError> {
+        // Load the captured rule/bucket refs. An empty set is a valid
+        // zero-rule attempt: the executor still completes a zero-result event
+        // so a replay is idempotent, and we return an empty grant array.
+        let refs = self
+            .payment_attempt_repository
+            .find_captured_rule_refs(&attempt.realm_id, attempt.id)
+            .await?;
+
+        let owner = DistributionRuleOwner::EntitlementMapping(mapping_id);
+        let event = DistributionEvent {
+            realm_id: attempt.realm_id.clone(),
+            user_id: attempt.user_id,
+            owner,
+            trigger,
+            event_key,
+            source_id,
+            effective_from: chrono::Utc::now(),
+            effective_until: None,
+        };
+
+        let results = self
+            .points_repository
+            .execute_distribution_event_atomic(
+                event,
+                DistributionRuleSelection::CapturedPaymentRules(refs),
+            )
+            .await?;
+
+        Ok(Self::grant_results_to_points_grants(
+            results,
+            trigger,
+            &attempt.payment_provider,
+        ))
+    }
+
+    /// Fold the executor's heterogeneous grant results into the flat
+    /// `PointsGrant` array carried by `FulfillmentResult`. Each entry surfaces
+    /// the rule id, target bucket, concrete result id (ledger / entitlement /
+    /// schedule), credit type and amount. Quota grants report `points = None`
+    /// (their value is a rolling window surfaced via the balance/quota APIs);
+    /// fixed and schedule first-period grants report the granted amount.
+    fn grant_results_to_points_grants(
+        results: Vec<DistributionGrantResult>,
+        trigger: DistributionTrigger,
+        payment_provider: &str,
+    ) -> Vec<PointsGrant> {
+        let (credit_type, _source_type) = credit_pair_for_trigger(trigger);
+        let points_type = credit_type.as_str().to_string();
+        let provider_label = payment_provider;
+        results
+            .into_iter()
+            .map(|result| match result {
+                DistributionGrantResult::Fixed {
+                    rule_id,
+                    bucket_id,
+                    ledger_id,
+                    amount,
+                } => PointsGrant {
+                    rule_id,
+                    bucket_id,
+                    result_id: ledger_id,
+                    points_type: points_type.clone(),
+                    points: Some(amount),
+                    description: format!("{trigger} grant ({provider_label})"),
+                },
+                DistributionGrantResult::Quota {
+                    rule_id,
+                    bucket_id,
+                    entitlement_id,
+                } => PointsGrant {
+                    rule_id,
+                    bucket_id,
+                    result_id: entitlement_id,
+                    points_type: points_type.clone(),
+                    points: None,
+                    description: format!("{trigger} quota entitlement ({provider_label})"),
+                },
+                DistributionGrantResult::Schedule {
+                    rule_id,
+                    bucket_id,
+                    schedule_id,
+                    first_ledger_id: _,
+                } => PointsGrant {
+                    rule_id,
+                    bucket_id,
+                    result_id: schedule_id,
+                    points_type: points_type.clone(),
+                    // The schedule's first-period amount is not carried on the
+                    // result variant; quota-style null keeps the schedule's
+                    // rolling nature explicit on the grant array.
+                    points: None,
+                    description: format!("{trigger} scheduled grant ({provider_label})"),
+                },
+            })
+            .collect()
+    }
 }
 
-impl<P, B, U, C> FulfillmentService for PostgresFulfillmentService<P, B, U, C>
+impl<P, B, PA, U, C> FulfillmentService for PostgresFulfillmentService<P, B, PA, U, C>
 where
     P: PointsRepository + Send + Sync,
     B: BillingRepository + Send + Sync,
+    PA: PaymentAttemptRepository + Send + Sync,
     U: UserRoleRepository + Send + Sync,
     C: PermissionService + Send + Sync,
 {
@@ -177,35 +305,9 @@ where
             "Fulfilling one-time purchase"
         );
 
-        // Idempotency: check ledger by source_id first
-        if let Some(existing_ledger) = self
-            .points_repository
-            .find_ledger_by_source_id(&attempt.realm_id, &attempt.id.to_string())
-            .await?
-        {
-            tracing::info!(
-                payment_attempt_id = %attempt.id,
-                ledger_id = %existing_ledger.id,
-                "Existing credit ledger found for payment attempt, returning existing fulfillment"
-            );
-
-            return Ok(FulfillmentResult {
-                fulfillment_type: FulfillmentType::PointsGranted,
-                subscription_id: None,
-                points_granted: Some(PointsGrant {
-                    transaction_id: existing_ledger.id,
-                    points_type: "topup_credit".to_string(),
-                    points: existing_ledger.granted_amount,
-                    description: format!(
-                        "One-time purchase (Payment: {})",
-                        provider_transaction_id
-                    ),
-                }),
-                granted_at: existing_ledger.created_at,
-            });
-        }
-
-        // Read mapping from billing_repository by target_id with realm isolation check
+        // Read mapping from billing_repository by target_id with realm isolation check.
+        // The mapping owns the distribution rules; its id is the rule owner and
+        // the entitlement-key source for the role grant.
         let mapping = self
             .billing_repository
             .find_entitlement_mapping_by_id(attempt.target_id)
@@ -218,76 +320,26 @@ where
                 ))
             })?;
 
-        // `points_per_period` (or a non-positive value) no longer 500s. Instead
-        // of erroring, we skip the points grant but still fall through to the
-        // role-grant step below — mirroring the subscription path's graceful
-        // skip at the equivalent branch.
-        let points_opt: Option<i64> = match mapping.points_per_period {
-            Some(points) if points > 0 => Some(points),
-            _ => {
-                tracing::info!(
-                    payment_attempt_id = %attempt.id,
-                    entitlement_key = %mapping.entitlement_key,
-                    "No points_per_period configured for one-time mapping, skipping points grant"
-                );
-                None
-            }
-        };
+        // Execute the captured rule snapshot. The executor is idempotent on the
+        // event key `payment:{attempt_id}`: a replayed (already-completed) event
+        // returns the first-run results without re-reading current rules, and a
+        // zero-rule attempt completes an empty event. `source_id` = attempt id
+        // (the snapshot locator the executor's CapturedPaymentRules branch
+        // parses back into a payment_attempt_id).
+        let granted_at = chrono::Utc::now();
+        let point_grants = self
+            .execute_captured_payment_rules(
+                attempt,
+                mapping.id,
+                DistributionTrigger::Topup,
+                event_key_for_payment(attempt.id),
+                attempt.id.to_string(),
+            )
+            .await?;
 
-        // Calculate expiration from validity_days
-        let expires_at = mapping
-            .validity_days
-            .map(|days| chrono::Utc::now() + chrono::Duration::days(days));
-
-        // Grant TopupCredit via points_repository only when points were configured.
-        // Use attempt.id as source_id AND idempotency_key to prevent double-grant on concurrent webhooks.
-        // Route grant to `attempt.bucket_id` snapshot (source of truth). Live
-        // mapping.bucket_id is not consulted.
-        let points_grant = if let Some(points) = points_opt {
-            let bucket_id = attempt.bucket_id;
-            let credit_ledger = self
-                .points_repository
-                .grant_points_atomic(
-                    &attempt.realm_id,
-                    attempt.user_id,
-                    bucket_id,
-                    CreditType::TopupCredit,
-                    CreditSourceType::Topup,
-                    points,
-                    expires_at,
-                    // One-time purchase: immediately available.
-                    None,
-                    Some(attempt.id.to_string()),
-                    Some(format!(
-                        "One-time purchase: {} ({} points) via {}",
-                        mapping.entitlement_key, points, provider_transaction_id
-                    )),
-                    Some(format!("one_time_purchase:{}", attempt.id)),
-                )
-                .await?;
-
-            tracing::info!(
-                payment_attempt_id = %attempt.id,
-                user_id = %attempt.user_id,
-                points,
-                entitlement_key = %mapping.entitlement_key,
-                "One-time purchase fulfilled, topup_credit granted"
-            );
-
-            Some(PointsGrant {
-                transaction_id: credit_ledger.id,
-                points_type: "topup_credit".to_string(),
-                points,
-                description: format!(
-                    "One-time purchase: {} ({} points) via {}",
-                    mapping.entitlement_key, points, provider_transaction_id
-                ),
-            })
-        } else {
-            None
-        };
-
-        // permanent: source_id = attempt.id, expires_at = None.
+        // Role grant follows the points transaction, keeping the existing
+        // idempotent / best-effort-cache-invalidation compensation semantics.
+        // One-time role grants are permanent: source_id = attempt.id.
         if !mapping.granted_role_ids.is_empty() {
             self.grant_payment_roles(
                 &attempt.realm_id,
@@ -299,11 +351,12 @@ where
             .await?;
         }
 
+        let _ = provider_transaction_id;
         Ok(FulfillmentResult {
             fulfillment_type: FulfillmentType::PointsGranted,
             subscription_id: None,
-            points_granted: points_grant,
-            granted_at: chrono::Utc::now(),
+            point_grants,
+            granted_at,
         })
     }
 
@@ -327,10 +380,11 @@ where
     }
 }
 
-impl<P, B, U, C> PostgresFulfillmentService<P, B, U, C>
+impl<P, B, PA, U, C> PostgresFulfillmentService<P, B, PA, U, C>
 where
     P: PointsRepository + Send + Sync,
     B: BillingRepository + Send + Sync,
+    PA: PaymentAttemptRepository + Send + Sync,
     U: UserRoleRepository + Send + Sync,
     C: PermissionService + Send + Sync,
 {
@@ -374,10 +428,27 @@ where
                 "Existing subscription found for payment attempt, returning existing fulfillment"
             );
 
+            let period_start_token = existing_subscription
+                .current_period_start
+                .unwrap_or(existing_subscription.created_at)
+                .to_rfc3339();
+            let point_grants = self
+                .execute_captured_payment_rules(
+                    attempt,
+                    attempt.target_id,
+                    DistributionTrigger::SubscriptionInitial,
+                    event_key_for_subscription_period(
+                        existing_subscription.id,
+                        &period_start_token,
+                    ),
+                    attempt.id.to_string(),
+                )
+                .await?;
+
             return Ok(FulfillmentResult {
                 fulfillment_type: FulfillmentType::SubscriptionCreated,
                 subscription_id: Some(existing_subscription.id),
-                points_granted: None,
+                point_grants,
                 granted_at: existing_subscription.created_at,
             });
         }
@@ -396,12 +467,6 @@ where
             })?;
 
         let entitlement_key = mapping.entitlement_key.clone();
-
-        // Fulfillment routes by the `payment_attempt.bucket_id` snapshot taken
-        // at purchase creation. Live `mapping.bucket_id` is intentionally
-        // NOT consulted here — mapping re-bucketing must not affect in-flight
-        // attempts.
-        let bucket_id = attempt.bucket_id;
 
         let now = chrono::Utc::now();
         // Derive the service-period length from the billing type. NonRenewing
@@ -429,8 +494,7 @@ where
         // because there is no auto-renewal to flip off.
         let cancel_at = matches!(billing_type, BillingType::NonRenewing).then_some(period_end);
 
-        // is stamped at fulfillment time so downstream reads (api-ext, recon)
-        // need not re-join the mapping.
+        // Initial points fulfillment uses the captured rule snapshot below.
         let subscription = Subscription {
             id: uuid::Uuid::now_v7(),
             realm_id: attempt.realm_id.clone(),
@@ -442,7 +506,6 @@ where
             entitlement_key: entitlement_key.clone(),
             billing_type,
             external_price_id: mapping.external_price_id.clone(),
-            bucket_id,
             provider_metadata: None,
             synced_at: Some(now),
             current_period_start: Some(now),
@@ -475,67 +538,30 @@ where
             "Subscription created successfully"
         );
 
-        // Grant subscription credits if mapping is configured for it (single
-        // up-front grant at subscribe time).
-        let points_granted = if mapping.grant_on_subscribe {
-            match mapping.points_per_period {
-                Some(points) if points > 0 => {
-                    // bucket_id snapshot already resolved above; pass through.
-                    let credit_ledger = self
-                        .points_repository
-                        .grant_points_atomic(
-                            &attempt.realm_id,
-                            attempt.user_id,
-                            bucket_id,
-                            CreditType::SubscriptionCredit,
-                            CreditSourceType::SubscriptionInitial,
-                            points,
-                            Some(period_end),
-                            // One-time grant on subscribe: immediately available.
-                            None,
-                            Some(entitlement_key.clone()),
-                            None,
-                            Some(format!("subscription_initial_grant:{}", attempt.id)),
-                        )
-                        .await?;
+        // Execute the captured subscription_initial rule snapshot. The event
+        // key is `subscription:{subscription_id}:period:{period_start}` (shared
+        // with the renewal key so a replayed period webhook converges on the
+        // same row); `source_id` = attempt id so the executor's
+        // CapturedPaymentRules branch resolves the snapshot. The executor is
+        // idempotent on the event key and freezes the first-run result set.
+        let period_start_token = created_subscription
+            .current_period_start
+            .unwrap_or(created_subscription.created_at)
+            .to_rfc3339();
+        let point_grants = self
+            .execute_captured_payment_rules(
+                attempt,
+                mapping.id,
+                DistributionTrigger::SubscriptionInitial,
+                event_key_for_subscription_period(created_subscription.id, &period_start_token),
+                attempt.id.to_string(),
+            )
+            .await?;
 
-                    tracing::info!(
-                        subscription_id = %created_subscription.id,
-                        user_id = %attempt.user_id,
-                        points,
-                        "Subscription credits granted on subscribe"
-                    );
-
-                    Some(PointsGrant {
-                        transaction_id: credit_ledger.id,
-                        points_type: "subscription_credit".to_string(),
-                        points,
-                        description: format!(
-                            "Subscription grant: {} points for {}",
-                            points, entitlement_key
-                        ),
-                    })
-                }
-                _ => {
-                    tracing::info!(
-                        subscription_id = %created_subscription.id,
-                        "No points_per_period configured, skipping credit grant"
-                    );
-                    None
-                }
-            }
-        } else {
-            tracing::info!(
-                subscription_id = %created_subscription.id,
-                "grant_on_subscribe is false, skipping credit grant"
-            );
-            None
-        };
-
-        // regardless of whether points were granted, so a subscription mapping
-        // that grants only roles (no points) still grants them. Source id is
-        // the subscription id; expiry aligns to the period end so roles
-        // naturally lapse at expiry for NonRenewing (and the M4 sweep /
+        // Role grant follows the points transaction, keeping the existing
+        // idempotent / best-effort-cache-invalidation compensation semantics.
+        // Source id is the subscription id; expiry aligns to the period end so
+        // roles naturally lapse at expiry for NonRenewing (and the M4 sweep /
         // explicit revoke catch them).
         if !mapping.granted_role_ids.is_empty() {
             self.grant_payment_roles(
@@ -548,10 +574,11 @@ where
             .await?;
         }
 
+        let _ = entitlement_key;
         Ok(FulfillmentResult {
             fulfillment_type: FulfillmentType::SubscriptionCreated,
             subscription_id: Some(created_subscription.id),
-            points_granted,
+            point_grants,
             granted_at: created_subscription.created_at,
         })
     }

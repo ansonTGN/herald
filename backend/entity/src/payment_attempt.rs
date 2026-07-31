@@ -11,7 +11,6 @@ pub struct Model {
     pub payment_provider: String,
     pub target_type: String,
     pub target_id: Uuid,
-    pub bucket_id: Uuid,
     pub amount: i64,
     pub currency: String,
     pub status: String,

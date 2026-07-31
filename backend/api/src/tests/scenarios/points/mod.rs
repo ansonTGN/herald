@@ -90,6 +90,7 @@ mod test_83_response_non_leak_dto_hidden;
 // resolver reads `lines.data[].period.{start,end}`. Exercises the renewal
 // grant END-TO-END via the webhook HTTP path: single-line period → grant;
 // line without a period → SKIP (P0).
+pub mod multi_wallet_grant_rule_scenarios;
 mod test_84_stripe_invoice_period_normalization;
 mod test_90_window_slide_multi_min;
 mod test_92_mixed_consume_atomicity;

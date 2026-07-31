@@ -132,6 +132,19 @@ async fn test_subscription_downgrade_no_immediate_revoke(ctx: &mut SchemaTestCon
     .await;
 }
 
+/// A downgrade does not mutate the current period; the next renewal reads the new mapping.
+#[test_context(SchemaTestContext)]
+#[tokio::test]
+async fn test_multi_wallet_grant_rule_downgrade_defers_new_mapping_until_renewal(
+    ctx: &mut SchemaTestContext,
+) {
+    super::multi_wallet_grant_rule_scenarios::assert_two_account_fixed_event(
+        ctx,
+        herald_core::domain::points::DistributionTrigger::SubscriptionRenewal,
+    )
+    .await;
+}
+
 // ============================================================================
 // Test 2: Subscription Downgrade Event Idempotency
 // ============================================================================

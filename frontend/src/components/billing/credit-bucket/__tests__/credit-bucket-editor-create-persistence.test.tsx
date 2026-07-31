@@ -26,8 +26,7 @@ function withQueryClient(ui: React.ReactNode) {
 // ===== Follow-up verification (outside T01..T06) =====
 //
 // Question: does the CREATE branch of CreditBucketEditor wipe entered values
-// when a re-render is triggered by flipping the `receivesRegistrationCredits`
-// Switch (which does NOT mark the name field touched)?
+// when a re-render is triggered after editing another field?
 //
 // `createDefaults` is a fresh object every render. If TanStack Form's internal
 // update effect compares defaultValues by reference (not deep equality) and
@@ -43,7 +42,7 @@ function withQueryClient(ui: React.ReactNode) {
 // against future refactors of the defaults object.
 
 describe('CreditBucketEditor (create) — value persistence across re-render', () => {
-  it('keeps the typed bucket name after the registration Switch is flipped', async () => {
+  it('keeps the typed bucket name after another field triggers a re-render', async () => {
     const user = userEvent.setup()
     server.use(
       ...creditBucketsHandlers,
@@ -65,13 +64,11 @@ describe('CreditBucketEditor (create) — value persistence across re-render', (
 
     expect((nameInput as HTMLInputElement).value).toBe('Seasonal Promo')
 
-    // Flip the registration Switch — triggers a re-render WITHOUT marking the
-    // name field touched. If createDefaults-instability wipes untouched values,
-    // the typed name will be gone after this click.
-    const regSwitch = screen.getByRole('switch', { name: /registration/i })
-    expect(regSwitch).not.toBeChecked()
-    await user.click(regSwitch)
-    expect(regSwitch).toBeChecked()
+    expect(screen.queryByRole('switch', { name: /registration/i })).not.toBeInTheDocument()
+    const enabledSwitch = screen.getByRole('switch', { name: /enabled/i })
+    expect(enabledSwitch).toBeChecked()
+    await user.click(enabledSwitch)
+    expect(enabledSwitch).not.toBeChecked()
 
     // THE assertion: the typed name must survive the re-render.
     expect(screen.getByDisplayValue('Seasonal Promo')).toBeInTheDocument()

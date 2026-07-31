@@ -243,43 +243,33 @@ pub async fn create_test_transaction(
 
 /// Create a test entitlement mapping.
 ///
+/// Distribution-rules model: grant config lives in `points_distribution_rules`,
+/// so the mapping row carries no grant columns (mirrors the bare-row
+/// `setup_test_entitlement_mapping`). The Points-v1 scenario callers either
+/// recharge points explicitly via `points_service` (test_01) or drive grants
+/// through the admin API / inline mapping INSERTs (test_24/test_62); none relies
+/// on a mapping-owned rule being seeded here, so no rule is created.
+/// `points_per_period` is retained in the signature for call-site stability.
+///
 /// Returns the mapping ID.
 pub async fn create_test_entitlement_mapping(
     pool: &PgPool,
     realm_id: &str,
     entitlement_name: &str,
-    points_per_period: i64,
+    _points_per_period: i64,
 ) -> Uuid {
     let mapping_id = Uuid::now_v7();
     let external_product_id = format!("prod_test_{}", entitlement_name);
 
-    // Credit Buckets model: a subscription grant routes to the
-    // bucket bound on the entitlement mapping. Bind the realm's legacy test
-    // bucket so the lazy subscription-bucket resolution in the webhook handler
-    // succeeds (case "mapping present + bucket").
-    let bucket_id =
-        crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(pool, realm_id).await;
-    let quota_windows = serde_json::json!([
-        {
-            "windowSeconds": 2_592_000,
-            "limit": points_per_period,
-            "key": "period"
-        }
-    ]);
-
     sqlx::query(
         "INSERT INTO provider_entitlement_mappings
-            (id, realm_id, payment_provider, external_product_id, entitlement_key,
-             points_per_period, grant_on_subscribe, enabled, bucket_id, quota_windows, created_at, updated_at)
-         VALUES ($1, $2, 'creem', $3, $4, $5, true, true, $6, $7, NOW(), NOW())",
+            (id, realm_id, payment_provider, external_product_id, entitlement_key, enabled)
+         VALUES ($1, $2, 'creem', $3, $4, true)",
     )
     .bind(mapping_id)
     .bind(realm_id)
     .bind(&external_product_id)
     .bind(mapping_id.to_string())
-    .bind(points_per_period)
-    .bind(bucket_id)
-    .bind(quota_windows)
     .execute(pool)
     .await
     .expect("Failed to create entitlement mapping");
@@ -289,37 +279,32 @@ pub async fn create_test_entitlement_mapping(
 
 /// Configure a test entitlement mapping points policy.
 ///
-/// Updates the existing provider_entitlement_mappings entry with points config
+/// In the distribution-rules model the grant policy lives on
+/// `points_distribution_rules`, not on `provider_entitlement_mappings`; the
+/// removed mapping columns (`points_per_period` / `validity_days` /
+/// `quota_windows`) no longer exist. The Points-v1 callers either recharge
+/// explicitly or assert the admin API response, so they do not depend on a
+/// rule being configured here. The function is retained (signature unchanged)
+/// for call-site stability and now only refreshes `updated_at`.
 ///
 /// Returns the mapping ID.
 pub async fn configure_test_entitlement_points(
     pool: &PgPool,
     realm_id: &str,
     mapping_id: Uuid,
-    points_per_period: i64,
-    validity_days: i64,
+    _points_per_period: i64,
+    _validity_days: i64,
 ) -> Uuid {
-    let quota_windows = serde_json::json!([
-        {
-            "windowSeconds": 2_592_000,
-            "limit": points_per_period,
-            "key": "period"
-        }
-    ]);
-
     sqlx::query(
         "UPDATE provider_entitlement_mappings
-         SET validity_days = $1, points_per_period = $2, quota_windows = $3, updated_at = NOW()
-         WHERE id = $4 AND realm_id = $5",
+         SET updated_at = NOW()
+         WHERE id = $1 AND realm_id = $2",
     )
-    .bind(validity_days)
-    .bind(points_per_period)
-    .bind(quota_windows)
     .bind(mapping_id)
     .bind(realm_id)
     .execute(pool)
     .await
-    .expect("Failed to update entitlement points policy");
+    .expect("Failed to touch entitlement mapping");
 
     mapping_id
 }
@@ -355,18 +340,16 @@ pub async fn create_test_subscription(
     .await
     .expect("Failed to create client app for subscription");
 
-    // subscription.bucket_id is NOT NULL (eager binding); bind the realm's
-    // default test bucket so the direct-SQL insert satisfies the constraint.
-    let bucket_id =
-        crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(pool, realm_id).await;
-
+    // `subscription.bucket_id` was removed by the distribution-rules refactor
+    // (grant routing is configured via distribution rules), so no bucket is
+    // bound here. `billing_type` is NOT NULL (0011_pay_model).
     sqlx::query(
         "INSERT INTO subscription
             (id, realm_id, user_id, external_subscription_id, external_product_id, payment_provider,
              status, entitlement_key, current_period_start, current_period_end,
-             cancel_at_period_end, client_app_id, created_at, updated_at, bucket_id, billing_type)
+             cancel_at_period_end, client_app_id, created_at, updated_at, billing_type)
          VALUES ($1, $2, $3, $4, $5, 'creem', 'active', $6, NOW(), NOW() + INTERVAL '30 days',
-                 false, $7, NOW(), NOW(), $8, 'recurring')",
+                 false, $7, NOW(), NOW(), 'recurring')",
     )
     .bind(subscription_id)
     .bind(realm_id)
@@ -375,7 +358,6 @@ pub async fn create_test_subscription(
     .bind("test_product_id")
     .bind(mapping_id.to_string())
     .bind(client_app_id)
-    .bind(bucket_id)
     .execute(pool)
     .await
     .expect("Failed to create subscription");

@@ -25,18 +25,14 @@ import { queryKeys } from '@/data/query-options'
  * clear / `Some(n)` ⟺ set).
  *
  * This hook's ONLY consumer is the non-renewing `serviceDurationDays` onBlur
- * entitlement-mappings editor's other fields (entitlementKey/enabled/
- * pointsPerPeriod/validityDays/grantOnSubscribe) are persisted via the batch
- * path (`useBatchUpdateEntitlementMappings`) and are intentionally NOT sent on
- * this single-row PUT (two-path isolation contract — each path only carries
- * the dimension it edits).
+ * entitlement-mappings editor's other fields (including `pointRules`) are
+ * persisted via the batch path (`useBatchUpdateEntitlementMappings`) and are
+ * intentionally NOT sent on this single-row PUT (two-path isolation contract
+ * — each path only carries the dimension it edits).
  */
 interface EntitlementMappingUpdateFormData {
   entitlementKey?: string
   enabled?: boolean
-  pointsPerPeriod?: number | null
-  validityDays?: number | null
-  grantOnSubscribe?: boolean
   /**
    * caller supplies a positive integer (maps to the backend `Some(n)` ⟺ set
    * state). Non-renewing mappings cannot clear this (DB CHECK), so the clear
@@ -129,9 +125,6 @@ export function useUpdateEntitlementMapping(realmId: string, mappingId: string) 
       const body: UpdateEntitlementMappingRequest = {
         entitlementKey: values.entitlementKey,
         enabled: values.enabled,
-        pointsPerPeriod: values.pointsPerPeriod ?? undefined,
-        validityDays: values.validityDays ?? undefined,
-        grantOnSubscribe: values.grantOnSubscribe,
         // serviceDurationDays: only forward a concrete positive integer
         // (backend `Some(n)` ⟺ set). A non-renewing mapping cannot clear it
         // (DB CHECK), so we never emit the `Some(null)` clear state from the

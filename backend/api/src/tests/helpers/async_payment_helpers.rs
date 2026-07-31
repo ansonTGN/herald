@@ -144,27 +144,45 @@ pub async fn create_pending_payment_attempt(
     user_id: Uuid,
     mapping_id: Uuid,
 ) -> Uuid {
-    let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
-        &ctx.app_state.pool,
-        realm_id,
-    )
-    .await;
     let attempt_id = Uuid::now_v7();
     sqlx::query(
         "INSERT INTO payment_attempts
             (id, realm_id, user_id, payment_provider, target_type, target_id,
-             bucket_id, amount, currency, status, expires_at, created_at, updated_at)
+             amount, currency, status, expires_at, created_at, updated_at)
          VALUES ($1, $2, $3, 'stripe', 'entitlement_mapping', $4,
-             $5, 1000, 'usd', 'Pending', NOW() + INTERVAL '1 hour', NOW(), NOW())",
+             1000, 'usd', 'Pending', NOW() + INTERVAL '1 hour', NOW(), NOW())",
     )
     .bind(attempt_id)
     .bind(realm_id)
     .bind(user_id)
     .bind(mapping_id)
-    .bind(bucket_id)
     .execute(&ctx.app_state.pool)
     .await
     .expect("Failed to create pending payment attempt");
+    // Mirror production `create_payment_attempt`: snapshot the mapping's
+    // enabled rules for the billing-type trigger so first fulfillment and the
+    // async-revocation bucket resolution (`captured_bucket_ids`) replay them.
+    // Derive the trigger from the mapping's billing_type exactly as
+    // `trigger_for_billing_type` does (one_time -> topup, recurring /
+    // non_renewing -> subscription_initial).
+    let billing_type: Option<String> =
+        sqlx::query_scalar("SELECT billing_type FROM provider_entitlement_mappings WHERE id = $1")
+            .bind(mapping_id)
+            .fetch_optional(&ctx.app_state.pool)
+            .await
+            .expect("Failed to read mapping billing_type");
+    let trigger = match billing_type.as_deref() {
+        Some("one_time") => "topup",
+        _ => "subscription_initial",
+    };
+    crate::tests::helpers::points_helpers::snapshot_attempt_rules_for_mapping(
+        &ctx.app_state.pool,
+        attempt_id,
+        realm_id,
+        mapping_id,
+        trigger,
+    )
+    .await;
     attempt_id
 }
 

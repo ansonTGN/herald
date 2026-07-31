@@ -110,6 +110,13 @@ mod tests {
 
     /// Create a pending payment attempt targeting the given mapping.
     /// Returns the attempt ID.
+    ///
+    /// This bypasses production `create_payment_attempt`, which writes the
+    /// `payment_attempt_point_rules` snapshot that fulfillment reads to route
+    /// the grant. Every caller pairs this with a one_time mapping (`topup`
+    /// trigger), so capture that mapping's enabled `topup` rule into the
+    /// snapshot here — otherwise the subsequent webhook fulfillment grants 0
+    /// points.
     async fn create_pending_payment_attempt(
         ctx: &SchemaTestContext,
         realm_id: &str,
@@ -117,28 +124,29 @@ mod tests {
         mapping_id: Uuid,
     ) -> Uuid {
         let attempt_id = Uuid::now_v7();
-        // Credit Buckets model: bucket_id is NOT NULL — scope the attempt to the
-        // realm's legacy test bucket so the fulfillment handler routes to it.
-        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
-            &ctx.app_state.pool,
-            realm_id,
-        )
-        .await;
         sqlx::query(
             "INSERT INTO payment_attempts
                 (id, realm_id, user_id, payment_provider, target_type, target_id,
-                 bucket_id, amount, currency, status, expires_at, created_at, updated_at)
+                 amount, currency, status, expires_at, created_at, updated_at)
              VALUES ($1, $2, $3, 'stripe', 'entitlement_mapping', $4,
-                 $5, 1000, 'usd', 'Pending', NOW() + INTERVAL '1 hour', NOW(), NOW())",
+                 1000, 'usd', 'Pending', NOW() + INTERVAL '1 hour', NOW(), NOW())",
         )
         .bind(attempt_id)
         .bind(realm_id)
         .bind(user_id)
         .bind(mapping_id)
-        .bind(bucket_id)
         .execute(&ctx.app_state.pool)
         .await
         .expect("Failed to create pending payment attempt");
+
+        crate::tests::helpers::points_helpers::snapshot_attempt_rules_for_mapping(
+            &ctx.app_state.pool,
+            attempt_id,
+            realm_id,
+            mapping_id,
+            "topup",
+        )
+        .await;
 
         attempt_id
     }

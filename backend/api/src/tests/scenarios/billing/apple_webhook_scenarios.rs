@@ -40,7 +40,6 @@ mod tests {
     use crate::tests::helpers::iap_mocks::{
         insert_apple_realm_config, make_apple_jws, make_apple_notification_body,
     };
-    use crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm;
     use crate::tests::schema_test_context::SchemaTestContext;
     use axum::{
         body::{Body, to_bytes},
@@ -79,19 +78,21 @@ mod tests {
         service_duration_days: Option<i64>,
     ) -> Uuid {
         let mapping_id = Uuid::now_v7();
-        let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, realm_id).await;
+        // `provider_entitlement_mappings.bucket_id` was removed by the
+        // distribution-rules refactor. These tests assert webhook verification
+        // + role revocation, not points grants, so no distribution rule is
+        // seeded here.
         sqlx::query(
             "INSERT INTO provider_entitlement_mappings
                 (id, realm_id, payment_provider, external_product_id, entitlement_key,
-                 billing_type, service_duration_days, enabled, bucket_id, created_at, updated_at)
-             VALUES ($1, $2, 'apple', $3, 'pro', $4, $5, true, $6, NOW(), NOW())",
+                 billing_type, service_duration_days, enabled, created_at, updated_at)
+             VALUES ($1, $2, 'apple', $3, 'pro', $4, $5, true, NOW(), NOW())",
         )
         .bind(mapping_id)
         .bind(realm_id)
         .bind(product_id)
         .bind(billing_type)
         .bind(service_duration_days)
-        .bind(bucket_id)
         .execute(&ctx.app_state.pool)
         .await
         .expect("insert apple mapping");

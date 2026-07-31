@@ -6,14 +6,19 @@ use crate::billing::policies::BillingPolicy;
 use crate::billing::ports::BillingRepository;
 use crate::common::entities::app_errors::CoreError;
 use crate::common::policies::ensure_policy;
+use crate::points::{DistributionRuleOwner, RuleUpsert, validate_rule_for_owner};
 
 ///
 /// The generic `POST /api/bill/{realmId}/entitlement-mappings` endpoint accepts
 /// this shape for any provider (IAP, Stripe, Creem). Required identity fields
-/// (`payment_provider`, `external_product_id`, `entitlement_key`, `bucket_id`,
+/// (`payment_provider`, `external_product_id`, `entitlement_key`,
 /// `billing_type`) are non-optional; everything else defaults. The
 /// `uq_pem_realm_provider_product_price` unique constraint is enforced by the
 /// repository and surfaces as a 409 conflict at the HTTP layer.
+///
+/// Points distribution is configured via `point_rules` (an upsert set owned by
+/// the new mapping); an empty array is a valid "no points grant" mapping
+/// (role-only / pure payment record).
 #[derive(Debug, Clone)]
 pub struct CreateEntitlementMappingInput {
     pub payment_provider: String,
@@ -21,18 +26,15 @@ pub struct CreateEntitlementMappingInput {
     /// Stripe Price ID for Stripe; `None` for IAP / Creem (price-less).
     pub external_price_id: Option<String>,
     pub entitlement_key: String,
-    pub bucket_id: uuid::Uuid,
     pub billing_type: crate::billing::entities::BillingType,
     /// Required when `billing_type == Recurring`.
     pub billing_period: Option<String>,
     /// Non-renewing service-period length (days). Required (`>= 1`) when
     pub service_duration_days: Option<i64>,
-    /// Credit-strategy field (requires `points.manage`).
-    pub points_per_period: Option<i64>,
-    /// Credit-strategy field.
-    pub grant_on_subscribe: Option<bool>,
-    /// One-time validity window (days).
-    pub validity_days: Option<i64>,
+    /// Initial points distribution rules owned by the new mapping (upsert set;
+    /// `None` and empty are both valid — no points grant). Each rule is
+    /// validated against the mapping's `billing_type` before persistence.
+    pub point_rules: Vec<RuleUpsert>,
     /// Roles auto-granted on payment success.
     pub granted_role_ids: Vec<uuid::Uuid>,
     pub enabled: bool,
@@ -170,36 +172,42 @@ where
         // Only non_renewing carries a service duration; other types store None
         // regardless of the input (the field is ignored for them). Resolve
         // before moving `input.billing_type` into the struct below.
-        let service_duration_days = match input.billing_type {
+        let billing_type = input.billing_type;
+        let service_duration_days = match billing_type {
             crate::billing::entities::BillingType::NonRenewing => input.service_duration_days,
             _ => None,
         };
+        // Validate each rule against the mapping's billing type before
+        // persistence. Invalid combinations surface as a stable 400 from the
+        // domain validator; the repository upsert is not reached.
+        for rule in &input.point_rules {
+            let resolved = rule.clone().into_rule_for_owner(
+                realm_id,
+                DistributionRuleOwner::EntitlementMapping(uuid::Uuid::nil()),
+            );
+            validate_rule_for_owner(&resolved, Some(billing_type.clone()))?;
+        }
         let mapping = EntitlementMapping {
             id: uuid::Uuid::now_v7(),
             realm_id: realm_id.to_string(),
             payment_provider: input.payment_provider,
             external_product_id: input.external_product_id,
             external_price_id: input.external_price_id,
-            bucket_id: input.bucket_id,
             entitlement_key: input.entitlement_key,
-            billing_type: Some(input.billing_type),
+            billing_type: Some(billing_type),
             billing_period: input.billing_period,
             service_duration_days,
-            points_per_period: input.points_per_period,
-            grant_period_type: None,
-            validity_days: input.validity_days,
-            grant_on_subscribe: input.grant_on_subscribe.unwrap_or(false),
-            max_periods: None,
             enabled: input.enabled,
             provider_product_info: None,
-            quota_windows: None,
             granted_role_ids: input.granted_role_ids,
             synced_at: None,
             created_at: now,
             updated_at: now,
         };
 
-        self.repository.create_entitlement_mapping(mapping).await
+        self.repository
+            .create_entitlement_mapping_with_rules(mapping, input.point_rules)
+            .await
     }
 
     pub async fn find_mapping_by_provider_product(

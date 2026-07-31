@@ -127,21 +127,15 @@ mod tests {
         provider: &str,
     ) -> Uuid {
         let pa_id = Uuid::now_v7();
-        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
-            &ctx.app_state.pool,
-            realm_id,
-        )
-        .await;
         sqlx::query(
-            "INSERT INTO payment_attempts (id, realm_id, user_id, payment_provider, target_type, target_id, bucket_id, amount, currency, status, expires_at)
-             VALUES ($1, $2, $3, $4, 'entitlement_mapping', $5, $6, 5000, 'USD', 'Succeeded', NOW() + interval '1 hour')"
+            "INSERT INTO payment_attempts (id, realm_id, user_id, payment_provider, target_type, target_id, amount, currency, status, expires_at)
+             VALUES ($1, $2, $3, $4, 'entitlement_mapping', $5, 5000, 'USD', 'Succeeded', NOW() + interval '1 hour')"
         )
         .bind(pa_id)
         .bind(realm_id)
         .bind(user_id)
         .bind(provider)
         .bind(Uuid::now_v7())
-        .bind(bucket_id)
         .execute(&ctx.app_state.pool)
         .await
         .unwrap();
@@ -156,16 +150,9 @@ mod tests {
         provider: &str,
     ) -> Uuid {
         let sub_id = Uuid::now_v7();
-        // subscription.bucket_id is NOT NULL (eager binding); bind the realm's
-        // legacy test bucket so the direct-SQL insert satisfies the constraint.
-        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
-            &ctx.app_state.pool,
-            realm_id,
-        )
-        .await;
         sqlx::query(
-            "INSERT INTO subscription (id, realm_id, external_subscription_id, external_product_id, payment_provider, status, entitlement_key, user_id, created_at, updated_at, bucket_id, billing_type)
-             VALUES ($1, $2, $3, $4, $5, 'active', 'pro', $6, NOW(), NOW(), $7, 'recurring')"
+            "INSERT INTO subscription (id, realm_id, external_subscription_id, external_product_id, payment_provider, status, entitlement_key, user_id, created_at, updated_at, billing_type)
+             VALUES ($1, $2, $3, $4, $5, 'active', 'pro', $6, NOW(), NOW(), 'recurring')"
         )
         .bind(sub_id)
         .bind(realm_id)
@@ -173,7 +160,6 @@ mod tests {
         .bind(format!("prod_ext_{}", sub_id))
         .bind(provider)
         .bind(user_id)
-        .bind(bucket_id)
         .execute(&ctx.app_state.pool)
         .await
         .unwrap();
@@ -528,23 +514,15 @@ mod tests {
         .unwrap();
 
         let sub_id = Uuid::now_v7();
-        // subscription.bucket_id is NOT NULL (eager binding); bind the realm's
-        // legacy test bucket so the direct-SQL insert satisfies the constraint.
-        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
-            &ctx.app_state.pool,
-            &realm_id,
-        )
-        .await;
         sqlx::query(
-            "INSERT INTO subscription (id, realm_id, external_subscription_id, external_product_id, payment_provider, status, entitlement_key, user_id, created_at, updated_at, bucket_id, billing_type)
-             VALUES ($1, $2, $3, $4, 'stripe', 'active', 'pro', $5, NOW(), NOW(), $6, 'recurring')",
+            "INSERT INTO subscription (id, realm_id, external_subscription_id, external_product_id, payment_provider, status, entitlement_key, user_id, created_at, updated_at, billing_type)
+             VALUES ($1, $2, $3, $4, 'stripe', 'active', 'pro', $5, NOW(), NOW(), 'recurring')",
         )
         .bind(sub_id)
         .bind(&realm_id)
         .bind(format!("sub_ext_{}", sub_id))
         .bind(format!("prod_ext_{}", sub_id))
         .bind(deleted_owner_id)
-        .bind(bucket_id)
         .execute(&ctx.app_state.pool)
         .await
         .unwrap();

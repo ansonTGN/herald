@@ -120,8 +120,8 @@ pub(crate) async fn ensure_test_bucket_for_realm(pool: &sqlx::PgPool, realm_id: 
     sqlx::query(
         r#"INSERT INTO credit_buckets
              (id, realm_id, bucket_key, name, display_order, enabled,
-              receives_registration_credits, created_at, updated_at)
-           VALUES ($1, $2, $3, 'Legacy Test Bucket', 0, true, false, NOW(), NOW())
+              created_at, updated_at)
+           VALUES ($1, $2, $3, 'Legacy Test Bucket', 0, true, NOW(), NOW())
            ON CONFLICT (realm_id, bucket_key) DO NOTHING"#,
     )
     .bind(Uuid::now_v7())
@@ -141,15 +141,22 @@ pub(crate) async fn ensure_test_bucket_for_realm(pool: &sqlx::PgPool, realm_id: 
 }
 
 /// Create a test entitlement mapping at **price granularity** via direct SQL
-/// insertion (`provider_entitlement_mappings` moved from
-/// product to price key).
+/// insertion (`provider_entitlement_mappings` moved from product to price key).
 ///
-/// Binds `external_price_id`, `points_per_period`, `grant_on_subscribe`,
-/// `enabled`, AND the NOT-NULL `bucket_id` (the legacy
-/// `setup_test_entitlement_mapping*` helpers omit `bucket_id` and
-/// `external_price_id`, so they cannot seed a row the price-aware webhook
-/// resolver would actually hit). The bucket is the realm's registration-pool
-/// bucket (caller must have run `ensure_registration_pool_bucket` first).
+/// Binds `external_price_id` and `enabled`. Grant configuration (target bucket,
+/// points policy) is NOT set here: since the distribution-rules refactor that
+/// lives on `points_distribution_rule` rows owned by the mapping, not on the
+/// mapping itself. The resolver / checkout / batch-lock callers only need a
+/// mapping row to disambiguate by `(provider, product, price)` — they do not
+/// exercise grant semantics — so a bare mapping row is the correct seed
+/// (Rule 2: don't invent rules that aren't needed).
+///
+/// `points_per_period`, `grant_on_subscribe` and `bucket_id` are accepted for
+/// call-site stability but are VESTIGIAL: the columns they used to populate
+/// were removed from `provider_entitlement_mappings` when grant config moved to
+/// distribution rules. They are intentionally ignored (bound to `_` below) so
+/// existing callers compile unchanged; do not pass values expecting them to
+/// take effect.
 ///
 /// Returns the mapping ID.
 #[allow(clippy::too_many_arguments)]
@@ -165,24 +172,24 @@ pub async fn setup_test_price_mapping(
     enabled: bool,
     bucket_id: Uuid,
 ) -> Uuid {
+    // Vestigial grant-config inputs; columns removed by the distribution-rules
+    // refactor. Bound to `_` to fail loud if accidentally re-referenced.
+    let _ = (points_per_period, grant_on_subscribe, bucket_id);
+
     let mapping_id = Uuid::now_v7();
 
     sqlx::query(
         "INSERT INTO provider_entitlement_mappings
             (id, realm_id, payment_provider, external_product_id, external_price_id,
-             bucket_id, entitlement_key, points_per_period,
-             grant_on_subscribe, enabled, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())",
+             entitlement_key, enabled, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())",
     )
     .bind(mapping_id)
     .bind(realm_id)
     .bind(payment_provider)
     .bind(external_product_id)
     .bind(external_price_id)
-    .bind(bucket_id)
     .bind(entitlement_key)
-    .bind(points_per_period)
-    .bind(grant_on_subscribe)
     .bind(enabled)
     .execute(&ctx.app_state.pool)
     .await
@@ -193,6 +200,8 @@ pub async fn setup_test_price_mapping(
 
 /// Create a test subscription with entitlement_key via direct SQL insertion.
 /// Uses the new schema (entitlement_key, external_price_id, provider_metadata).
+/// `subscription.bucket_id` was removed by the distribution-rules refactor, so
+/// no bucket is bound here (grant routing is configured via distribution rules).
 /// Returns the subscription ID.
 pub async fn create_test_subscription_with_entitlement(
     ctx: &mut TestContext,
@@ -215,19 +224,15 @@ pub async fn create_test_subscription_with_entitlement(
     .await
     .expect("Failed to create subscription owner");
 
-    // subscription.bucket_id is NOT NULL (eager binding); bind the realm's
-    // legacy test bucket so the direct-SQL insert satisfies the constraint.
-    let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, realm_id).await;
-
     sqlx::query(
         "INSERT INTO subscription
             (id, realm_id, user_id, client_app_id, status, entitlement_key, external_price_id,
              external_subscription_id, external_product_id, payment_provider,
              current_period_start, current_period_end,
-             cancel_at_period_end, created_at, updated_at, bucket_id, billing_type)
+             cancel_at_period_end, created_at, updated_at, billing_type)
          VALUES ($1, $2, $3, $4, 'active', $5, $6,
                  $7, $8, 'creem', NOW(), NOW() + INTERVAL '30 days',
-                 false, NOW(), NOW(), $9, 'recurring')",
+                 false, NOW(), NOW(), 'recurring')",
     )
     .bind(subscription_id)
     .bind(realm_id)
@@ -237,7 +242,6 @@ pub async fn create_test_subscription_with_entitlement(
     .bind(external_price_id)
     .bind(&external_subscription_id)
     .bind(format!("prod_{}", subscription_id))
-    .bind(bucket_id)
     .execute(&ctx.app_state.pool)
     .await
     .expect("Failed to create test subscription with entitlement");
@@ -245,22 +249,23 @@ pub async fn create_test_subscription_with_entitlement(
     subscription_id
 }
 
-/// Ensure the realm has a **registration-pool** credit bucket and return its id.
+/// Ensure the realm has a dedicated credit bucket (key `registration-pool`) and
+/// return its id.
 ///
-/// Distinct from `ensure_test_bucket_for_realm` (which sets
-/// `receives_registration_credits = false`): the provider-product sync service
-/// resolves draft mappings' `bucket_id` (NOT NULL) through
-/// `RegistrationPoolResolver::resolve_registration_pool_bucket`, which selects
-/// the single bucket flagged `receives_registration_credits = true`. The
-/// template schema seeds no such bucket, so any sync that creates a new draft
-/// mapping would otherwise fail with `BadRequest`. This helper is the test-side
-/// equivalent of an operator configuring the realm's registration pool.
+/// Historically this flagged the bucket with `receives_registration_credits` so
+/// the (now-removed) `RegistrationPoolResolver` could bind draft mappings'
+/// `bucket_id` to it. That model is gone: `provider_entitlement_mappings.
+/// bucket_id` is nullable for drafts, and registration grant routing is
+/// configured via `RealmRegistration` distribution rules. The helper now just
+/// materializes a stable realm bucket that callers reuse to bind price mappings
+/// and subscriptions (whose `subscription.bucket_id` is NOT NULL). The name is
+/// kept for call-site stability; it no longer implies a registration-pool flag.
 pub async fn ensure_registration_pool_bucket(ctx: &mut TestContext, realm_id: &str) -> Uuid {
     sqlx::query(
         r#"INSERT INTO credit_buckets
              (id, realm_id, bucket_key, name, display_order, enabled,
-              receives_registration_credits, created_at, updated_at)
-           VALUES ($1, $2, $3, 'Registration Pool', 0, true, true, NOW(), NOW())
+              created_at, updated_at)
+           VALUES ($1, $2, $3, 'Registration Pool', 0, true, NOW(), NOW())
            ON CONFLICT (realm_id, bucket_key) DO NOTHING"#,
     )
     .bind(Uuid::now_v7())
@@ -307,11 +312,15 @@ pub fn build_admin_identity(ctx: &TestContext, user_id: Uuid) -> Identity {
 /// Unlike `create_test_subscription_with_entitlement` (which synthesizes its
 /// own `external_product_id` and uses `client_app_id`), this helper binds the
 /// subscription to the exact product/price the batch active-subscription lock
-/// (`batch_update_mappings` step 3) counts against, and uses a NULL
-/// `client_app_id` to avoid the `uq_subscription_client_app` unique constraint
-/// (so multiple protected mappings can coexist in one realm). The mapping's
-/// `bucket_id` is reused so the NOT-NULL `subscription.bucket_id` is satisfied
-/// without inventing a second bucket.
+/// (`batch_update_mappings` step 3 — counts by `(realm, provider, product,
+/// external_price_id)`) counts against, and uses a NULL `client_app_id` to
+/// avoid the `uq_subscription_client_app` unique constraint (so multiple
+/// protected mappings can coexist in one realm).
+///
+/// `bucket_id` is VESTIGIAL: `subscription.bucket_id` was removed by the
+/// distribution-rules refactor (a subscription no longer carries a bucket; grant
+/// routing is configured via distribution rules). It is accepted for call-site
+/// stability and intentionally ignored.
 ///
 /// Returns the subscription ID.
 #[allow(clippy::too_many_arguments)]
@@ -324,6 +333,10 @@ pub async fn create_active_subscription_for_price_mapping(
     entitlement_key: &str,
     bucket_id: Uuid,
 ) -> Uuid {
+    // Vestigial: subscription.bucket_id was removed; grant routing is on
+    // distribution rules now.
+    let _ = bucket_id;
+
     let subscription_id = Uuid::now_v7();
     let external_subscription_id = format!("sub_protected_{}", subscription_id);
     let user_id = Uuid::now_v7();
@@ -345,9 +358,9 @@ pub async fn create_active_subscription_for_price_mapping(
             (id, realm_id, user_id, client_app_id, status, entitlement_key, external_price_id, \
              external_subscription_id, external_product_id, payment_provider, \
              current_period_start, current_period_end, cancel_at_period_end, \
-             created_at, updated_at, bucket_id, billing_type) \
+             created_at, updated_at, billing_type) \
          VALUES ($1, $2, $3, NULL, 'active', $4, $5, $6, $7, $8, \
-                 NOW(), NOW() + INTERVAL '30 days', false, NOW(), NOW(), $9, 'recurring')",
+                 NOW(), NOW() + INTERVAL '30 days', false, NOW(), NOW(), 'recurring')",
     )
     .bind(subscription_id)
     .bind(realm_id)
@@ -357,7 +370,6 @@ pub async fn create_active_subscription_for_price_mapping(
     .bind(&external_subscription_id)
     .bind(external_product_id)
     .bind(payment_provider)
-    .bind(bucket_id)
     .execute(&ctx.app_state.pool)
     .await
     .expect("Failed to create active subscription bound to price mapping");

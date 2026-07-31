@@ -7,6 +7,7 @@ use crate::billing::{
     FeatureFacts, PaymentEvent, Subscription, SubscriptionHistoryEvent, SubscriptionHistoryQuery,
 };
 use crate::common::entities::app_errors::CoreError;
+use crate::points::{PointsDistributionRule, RuleUpsert};
 
 /// Repository for billing operations
 pub trait BillingRepository: Send + Sync {
@@ -252,4 +253,64 @@ pub trait BillingRepository: Send + Sync {
         &self,
         input: BatchUpdateMappingsInput,
     ) -> impl Future<Output = Result<BatchUpdateResult, BatchMappingError>> + Send;
+
+    // ===== Distribution Rules (multi-wallet grant rules) =====
+
+    /// Create a mapping and its initial rule set in a single transaction.
+    ///
+    /// The mapping row is inserted first, then each rule in `rules` is upserted
+    /// under `EntitlementMapping(new_mapping_id)`. Rules absent from `rules`
+    /// are irrelevant on create (there are no prior rules). Any error rolls
+    /// back both the mapping and the rules (DEC-005 atomic upsert).
+    fn create_entitlement_mapping_with_rules(
+        &self,
+        mapping: EntitlementMapping,
+        rules: Vec<RuleUpsert>,
+    ) -> impl Future<Output = Result<EntitlementMapping, CoreError>> + Send;
+
+    /// Atomically upsert a mapping's base fields together with its rule set
+    /// (DEC-005). The mapping base fields are written, then the rule set is
+    /// applied as an upsert under `EntitlementMapping(mapping.id)`:
+    /// - rules in `rules` with `id = None` are created;
+    /// - rules with `id = Some(existing)` are updated (must already belong to
+    ///   this mapping — otherwise `distribution_rule_conflict`);
+    /// - rules NOT present in `rules` are left untouched (DEC-007: referenced
+    ///   rules are never hard-deleted; disabling requires explicit
+    ///   `enabled = false`).
+    ///
+    /// All writes commit in one transaction; any error rolls back the whole
+    /// set so no partial rule state is left.
+    fn upsert_mapping_with_rules(
+        &self,
+        realm_id: &str,
+        mapping: EntitlementMapping,
+        rules: Vec<RuleUpsert>,
+    ) -> impl Future<Output = Result<EntitlementMapping, CoreError>> + Send;
+
+    /// Load the rules owned by a mapping (all rules, enabled and disabled),
+    /// ordered by `(display_order, id)` for stable display.
+    /// Returns an empty vec for a mapping with no rules.
+    fn find_mapping_rules(
+        &self,
+        realm_id: &str,
+        mapping_id: Uuid,
+    ) -> impl Future<Output = Result<Vec<PointsDistributionRule>, CoreError>> + Send;
+
+    /// Atomically upsert the Realm's registration rule set (DEC-005). Same
+    /// upsert/disable semantics as [`Self::upsert_mapping_with_rules`] but for
+    /// the `RealmRegistration` owner. Returns the full current rule set ordered
+    /// by `(display_order, id)`.
+    fn upsert_registration_rules(
+        &self,
+        realm_id: &str,
+        rules: Vec<RuleUpsert>,
+    ) -> impl Future<Output = Result<Vec<PointsDistributionRule>, CoreError>> + Send;
+
+    /// Load the Realm's registration rules (all rules, enabled and disabled),
+    /// ordered by `(display_order, id)` for stable display. Returns an empty
+    /// vec when no registration rules are configured.
+    fn find_registration_rules(
+        &self,
+        realm_id: &str,
+    ) -> impl Future<Output = Result<Vec<PointsDistributionRule>, CoreError>> + Send;
 }

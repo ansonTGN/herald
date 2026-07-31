@@ -36,9 +36,6 @@ pub struct CreditBucketOpts {
     pub enabled: Option<bool>,
     /// Display order. Defaults to `0`.
     pub display_order: Option<i32>,
-    /// `receives_registration_credits`. Defaults to `false`. At most one Bucket
-    /// per realm may have this set to `true` (partial unique index).
-    pub receives_registration_credits: Option<bool>,
 }
 
 /// Insert a `credit_buckets` row and return its id.
@@ -59,13 +56,12 @@ pub async fn create_test_credit_bucket(
         .unwrap_or_else(|| format!("Test Bucket {}", bucket_id));
     let enabled = opts.enabled.unwrap_or(true);
     let display_order = opts.display_order.unwrap_or(0);
-    let receives_registration_credits = opts.receives_registration_credits.unwrap_or(false);
 
     sqlx::query(
         r#"INSERT INTO credit_buckets
              (id, realm_id, bucket_key, name, display_order, enabled,
-              receives_registration_credits, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())"#,
+              created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())"#,
     )
     .bind(bucket_id)
     .bind(realm_id)
@@ -73,7 +69,6 @@ pub async fn create_test_credit_bucket(
     .bind(&name)
     .bind(display_order)
     .bind(enabled)
-    .bind(receives_registration_credits)
     .execute(pool)
     .await
     .expect("Failed to insert credit_buckets row");
@@ -420,95 +415,6 @@ pub async fn count_ledger_outside_bucket(
 }
 
 // =============================================================================
-// Explicit bucketId grant + registration pool resolution helpers
-// =============================================================================
-//
-// Direct-DB and HTTP helpers for non-purchase grant bucket target
-// (`receives_registration_credits` + partial unique index
-// `uq_credit_buckets_registration_pool`): every grant carries an
-// explicit bucketId; no implicit resolution.
-//
-// These intentionally rely on the already-landed helpers above and the existing
-// `points_grant_helpers` (admin + ext HTTP builders). They add only the small
-// registration-pool-specific DB touches + the grant HTTP request builders that
-// take an explicit `bucket_id` (the legacy `points_grant_helpers` builders do NOT
-// accept a bucketId, which is exactly what scenarios 1/3 must exercise as the
-// rejected case, and scenarios 2 must exercise with a valid target).
-//
-// =============================================================================
-
-/// Mark an existing `credit_buckets` row as the Realm's registration-pool Bucket
-/// by writing `receives_registration_credits = true`.
-///
-/// Per the partial unique index
-/// `uq_credit_buckets_registration_pool ON credit_buckets(realm_id)
-///  WHERE receives_registration_credits = true` enforces "at most one per Realm"
-/// at the DB layer; a second marker in the same Realm will raise a unique
-/// violation (the production write path surfaces this as 409
-/// `registration_pool_conflict`). This raw helper intentionally bypasses the
-/// handler/repository so the fail-safe `None` case and the DB-level uniqueness
-/// can both be exercised directly.
-pub async fn mark_bucket_as_registration_pool(pool: &PgPool, bucket_id: Uuid) {
-    sqlx::query(
-        "UPDATE credit_buckets
-            SET receives_registration_credits = true, updated_at = NOW()
-          WHERE id = $1",
-    )
-    .bind(bucket_id)
-    .execute(pool)
-    .await
-    .expect("Failed to mark bucket as registration pool");
-}
-
-/// Read `credit_buckets.receives_registration_credits` for a row.
-pub async fn read_receives_registration_credits(pool: &PgPool, bucket_id: Uuid) -> bool {
-    sqlx::query_scalar::<_, bool>(
-        "SELECT receives_registration_credits FROM credit_buckets WHERE id = $1",
-    )
-    .bind(bucket_id)
-    .fetch_one(pool)
-    .await
-    .expect("Failed to read receives_registration_credits")
-}
-
-/// Resolve the Realm's registration-pool Bucket id directly from the DB
-/// (mirrors `RegistrationPoolResolver::resolve_registration_pool_bucket` in
-/// `PostgresBillingRepository`). Returns `None` when no Bucket in the
-/// Realm is marked.
-pub async fn find_registration_pool_for_realm(pool: &PgPool, realm_id: &str) -> Option<Uuid> {
-    sqlx::query_scalar::<_, Option<Uuid>>(
-        "SELECT id FROM credit_buckets
-          WHERE realm_id = $1 AND receives_registration_credits = true
-          LIMIT 1",
-    )
-    .bind(realm_id)
-    .fetch_optional(pool)
-    .await
-    .expect("Failed to resolve registration pool bucket")
-    .flatten()
-}
-
-/// Attempt to mark a Bucket as the Realm's registration pool directly at the DB
-/// layer, returning whether the partial unique index rejected it. Used by the
-/// "second registration pool in the same Realm" scenario to assert the
-/// uniqueness is enforced even when bypassing the handler (the handler surfaces
-/// this as 409 `registration_pool_conflict`).
-pub async fn try_mark_registration_pool_raw(
-    pool: &PgPool,
-    bucket_id: Uuid,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "UPDATE credit_buckets
-            SET receives_registration_credits = true, updated_at = NOW()
-          WHERE id = $1",
-    )
-    .bind(bucket_id)
-    .execute(pool)
-    .await
-    .map(|_| ())
-}
-
-// =============================================================================
 // HTTP request builders — explicit-bucketId grant endpoints (admin + ext)
 // =============================================================================
 //
@@ -678,19 +584,30 @@ pub async fn grant_points_ext_with_bucket_via_api(
 //
 // =============================================================================
 
-/// Seed an in-progress `subscription` row referencing `bucket_id` so the
-/// `delete_credit_bucket` "active subscriptions" intercept fires.
+/// Seed an in-progress `subscription` row.
+///
+/// Historically this bound the subscription to `bucket_id` so the
+/// `delete_credit_bucket` "active subscriptions" intercept would fire. That
+/// intercept is currently a no-op (production hardcodes
+/// `active_subscriptions = 0`) and `subscription.bucket_id` was removed by the
+/// distribution-rules refactor, so the `bucket_id` argument is now VESTIGIAL
+/// (accepted for call-site stability, intentionally ignored). The helper still
+/// mints an `active` subscription row, which remains useful for seeds that need
+/// a subscription to exist regardless of bucket linkage.
 ///
 /// `subscription.client_app_id` carries a UNIQUE constraint, so each call mints
 /// a fresh client app row (callers should not assume the client app exists
-/// beforehand). The subscription uses `status = 'active'` (one of the in-flight
-/// statuses counted by `delete_credit_bucket`).
+/// beforehand). The subscription uses `status = 'active'`.
 pub async fn seed_active_subscription_on_bucket(
     pool: &PgPool,
     realm_id: &str,
     bucket_id: Uuid,
 ) -> Uuid {
     use sqlx::Row;
+
+    // Vestigial: subscription.bucket_id was removed by the distribution-rules
+    // refactor; grant routing is on distribution rules now.
+    let _ = bucket_id;
 
     // Mint a unique client_app to satisfy `uq_subscription_client_app`.
     let client_app_id = Uuid::now_v7();
@@ -721,9 +638,9 @@ pub async fn seed_active_subscription_on_bucket(
     let row = sqlx::query(
         r#"INSERT INTO subscription
              (id, realm_id, user_id, external_subscription_id, external_product_id,
-              payment_provider, status, entitlement_key, client_app_id, bucket_id,
+              payment_provider, status, entitlement_key, client_app_id,
               created_at, updated_at, billing_type)
-           VALUES ($1, $2, $3, $4, 'prod-seed', 'creem', 'active', '', $5, $6, NOW(), NOW(), 'recurring')
+           VALUES ($1, $2, $3, $4, 'prod-seed', 'creem', 'active', '', $5, NOW(), NOW(), 'recurring')
            RETURNING id"#,
     )
     .bind(subscription_id)
@@ -731,7 +648,6 @@ pub async fn seed_active_subscription_on_bucket(
     .bind(user_id)
     .bind(format!("ext-sub-{}", subscription_id))
     .bind(client_app_id)
-    .bind(bucket_id)
     .fetch_one(pool)
     .await
     .expect("insert subscription row");

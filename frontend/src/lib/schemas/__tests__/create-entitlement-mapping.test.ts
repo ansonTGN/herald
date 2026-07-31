@@ -15,12 +15,9 @@ function makeValidForm(overrides: Record<string, unknown> = {}) {
     externalProductId: 'com.example.app.premium',
     externalPriceId: null,
     entitlementKey: 'premium',
-    bucketId: 'bucket-1',
     billingType: 'recurring',
     billingPeriod: 'monthly',
-    pointsPerPeriod: null,
-    grantOnSubscribe: false,
-    validityDays: null,
+    pointRules: [],
     serviceDurationDays: null,
     grantedRoleIds: [],
     enabled: true,
@@ -249,7 +246,7 @@ describe('createEntitlementMappingSchema', () => {
     }
   })
 
-  it.each(['paymentProvider', 'externalProductId', 'entitlementKey', 'bucketId'])(
+  it.each(['paymentProvider', 'externalProductId', 'entitlementKey'])(
     'rejects an empty required field: %s',
     (field) => {
       const result = createEntitlementMappingSchema.safeParse(makeValidForm({ [field]: '' }))

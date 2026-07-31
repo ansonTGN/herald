@@ -817,3 +817,131 @@ async fn points_view_only_user_sees_only_own_wallets(ctx: &mut TestContext) {
         body2
     );
 }
+
+/// User Story: US-MWGR-004
+/// Source: `.ai/user-stories/billing/multi-wallet-grant-rules.md`
+/// Covers: Mapping/Realm rule references, disabled and empty reference states,
+/// and non-leakage from both the user response and its OpenAPI schema.
+#[test_context(TestContext)]
+#[tokio::test]
+async fn test_multi_wallet_grant_rule_bucket_references_and_user_non_leak(ctx: &mut TestContext) {
+    let realm_id = ctx._realm_id.clone();
+    let bucket = crate::tests::scenarios::points::multi_wallet_grant_rule_scenarios::seed_bucket(
+        ctx, &realm_id, true,
+    )
+    .await;
+    let mapping = crate::tests::scenarios::points::multi_wallet_grant_rule_scenarios::seed_mapping(
+        ctx, &realm_id, "one_time",
+    )
+    .await;
+    let mapping_rule =
+        crate::tests::scenarios::points::multi_wallet_grant_rule_scenarios::seed_rule(
+            ctx,
+            &realm_id,
+            Some(mapping),
+            bucket,
+            &["topup"],
+            "fixed",
+            Some(10),
+            false,
+            0,
+        )
+        .await;
+    let registration_rule =
+        crate::tests::scenarios::points::multi_wallet_grant_rule_scenarios::seed_rule(
+            ctx,
+            &realm_id,
+            None,
+            bucket,
+            &["registration"],
+            "fixed",
+            Some(5),
+            true,
+            1,
+        )
+        .await;
+
+    let token = crate::tests::helpers::billing_helpers::setup_billing_admin_session(
+        ctx,
+        "multi-wallet-bucket-reference@test.com",
+    )
+    .await;
+    let (status, body) = crate::tests::helpers::credit_bucket_helpers::auth_admin_request_via_api(
+        ctx,
+        "GET",
+        &format!("/api/realms/{realm_id}/billing/credit-buckets/{bucket}"),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let refs = body
+        .as_ref()
+        .and_then(|b| b.get("ruleReferences"))
+        .and_then(Value::as_array)
+        .expect("management detail carries ruleReferences");
+    assert_eq!(refs.len(), 2);
+    assert!(refs.iter().any(|r| {
+        r["ruleId"] == mapping_rule.to_string()
+            && r["ownerType"] == "entitlement_mapping"
+            && r["enabled"] == false
+    }));
+    assert!(refs.iter().any(|r| {
+        r["ruleId"] == registration_rule.to_string()
+            && r["ownerType"] == "realm_registration"
+            && r["enabled"] == true
+    }));
+
+    let empty_bucket =
+        crate::tests::scenarios::points::multi_wallet_grant_rule_scenarios::seed_bucket(
+            ctx, &realm_id, true,
+        )
+        .await;
+    let (status, empty) = crate::tests::helpers::credit_bucket_helpers::auth_admin_request_via_api(
+        ctx,
+        "GET",
+        &format!("/api/realms/{realm_id}/billing/credit-buckets/{empty_bucket}"),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        empty.as_ref().unwrap()["ruleReferences"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+
+    let (user_token, user_id) =
+        create_admin_session_with_user(ctx, "multi-wallet-reference-user@test.com", 1800).await;
+    grant_points_view_role(ctx, &user_id).await;
+    admin_grant_to_bucket(
+        ctx,
+        &realm_id,
+        Uuid::parse_str(&user_id).expect("user id"),
+        bucket,
+        7,
+        None,
+    )
+    .await;
+    let (status, user_wallets) =
+        auth_user_get_via_api(ctx, "/api/user/wallets", "", &user_token).await;
+    assert_eq!(status, StatusCode::OK);
+    let user_items = items_array(&user_wallets).expect("user wallet response carries items");
+    let user_bucket = find_row_by_bucket(user_items, &bucket.to_string())
+        .expect("user wallet response contains granted bucket");
+    assert!(
+        user_bucket.get("ruleReferences").is_none(),
+        "ordinary user response must not leak ruleReferences"
+    );
+
+    let spec: Value =
+        serde_json::to_value(crate::application::http::server::build_openapi_spec()).unwrap();
+    let wallet_schema = &spec["components"]["schemas"]["WalletByBucket"]["properties"];
+    assert!(
+        wallet_schema.get("ruleReferences").is_none(),
+        "ordinary wallet schema must not leak ruleReferences"
+    );
+}

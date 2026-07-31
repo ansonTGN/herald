@@ -1,18 +1,19 @@
 // Credit Bucket domain entities
 //
-// Per design `.ai/design/credit-bucket.md`: the Credit Bucket is the
-// unit of points-pool isolation. This module defines the domain DTOs returned by the
-// infra-layer bucket directory CRUD and consumed by api-billing handlers.
-// There is intentionally NO `is_default` field (no
-// default bucket concept). The registration-pool flag `receives_registration_credits`
-// is the only system-grant routing signal and is enforced unique-per-realm by the
-// partial unique index `uq_credit_buckets_registration_pool`.
+// The Credit Bucket is the unit of points-pool isolation. This module defines
+// the domain DTOs returned by the infra-layer bucket directory CRUD and
+// consumed by api-billing handlers. There is intentionally NO `is_default`
+// field; registration routing is
+// now expressed by `realm_registration` distribution rules, and a bucket is
+// referenced by zero or more rules (surfaced on the management views as
+// `rule_references`).
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
 
 use crate::common::entities::app_errors::CoreError;
+use crate::points::DistributionRuleReference;
 
 /// Credit Bucket catalog row.
 ///
@@ -27,17 +28,13 @@ pub struct CreditBucket {
     pub name: String,
     pub description: Option<String>,
     pub display_order: i32,
-    /// Whether this bucket is the Realm's single registration/free-periodic grant
-    /// receiver (partial unique index `uq_credit_buckets_registration_pool`).
-    pub receives_registration_credits: bool,
     pub enabled: bool,
 }
 
 /// Input for creating a Credit Bucket.
 ///
 /// The coverage set (`client_app_ids`) MUST be non-empty (handler enforces 400 on
-/// empty). `entitlement_mapping_ids` is optional: when present, the
-/// listed mappings are re-attached to this bucket (their `bucket_id` is set).
+/// empty).
 #[derive(Debug, Clone)]
 pub struct CreateCreditBucketInput {
     pub realm_id: String,
@@ -45,19 +42,16 @@ pub struct CreateCreditBucketInput {
     pub name: String,
     pub description: Option<String>,
     pub display_order: i32,
-    pub receives_registration_credits: bool,
     pub enabled: bool,
     /// Coverage set — at least one entry required.
     pub client_app_ids: Vec<Uuid>,
-    /// Optional mappings to attach (set their `bucket_id` to this bucket).
-    pub entitlement_mapping_ids: Vec<Uuid>,
 }
 
 /// Input for updating a Credit Bucket.
 ///
-/// All provided fields replace the stored state (coverage set and attached mappings
-/// are fully replaced, not merged — "coverage-set changes do not
-/// retroactively reclaim balances" still holds: only future routing is affected).
+/// All provided fields replace the stored state (coverage set is fully
+/// replaced, not merged — "coverage-set changes do not retroactively reclaim
+/// balances" still holds: only future routing is affected).
 #[derive(Debug, Clone)]
 pub struct UpdateCreditBucketInput {
     pub realm_id: String,
@@ -65,21 +59,21 @@ pub struct UpdateCreditBucketInput {
     pub name: String,
     pub description: Option<String>,
     pub display_order: i32,
-    pub receives_registration_credits: bool,
     pub enabled: bool,
     /// Replacement coverage set — at least one entry required.
     pub client_app_ids: Vec<Uuid>,
-    /// Replacement attached-mapping set (may be empty).
-    pub entitlement_mapping_ids: Vec<Uuid>,
 }
 
-/// Detail view: bucket plus explicit client app ids plus attached mapping ids.
+/// Detail view: bucket plus explicit client app ids plus the rules referencing
+/// it. `rule_references` aggregates both `entitlement_mapping` and
+/// `realm_registration` owners; an empty vec means no rule currently targets
+/// this bucket.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreditBucketDetail {
     #[serde(flatten)]
     pub bucket: CreditBucket,
     pub client_app_ids: Vec<Uuid>,
-    pub entitlement_mapping_ids: Vec<Uuid>,
+    pub rule_references: Vec<DistributionRuleReference>,
 }
 
 /// List-item view with aggregate counts.
@@ -88,7 +82,7 @@ pub struct CreditBucketListItem {
     #[serde(flatten)]
     pub bucket: CreditBucket,
     pub covered_client_app_count: i64,
-    pub entitlement_mapping_count: i64,
+    pub rule_reference_count: i64,
 }
 
 /// Per-credit-type balance totals for a single bucket (overview / wallets).
@@ -147,14 +141,6 @@ pub enum CreditBucketError {
     #[error("bucket_key_duplicate: bucketKey already exists in realm {realm_id}")]
     BucketKeyDuplicate { realm_id: String },
 
-    /// `receives_registration_credits = true` collides with another bucket in the
-    /// same realm (partial unique index `uq_credit_buckets_registration_pool`).
-    /// HTTP 409 `registration_pool_conflict`.
-    #[error(
-        "registration pool conflict: another bucket in realm {realm_id} already receives registration credits"
-    )]
-    RegistrationPoolConflict { realm_id: String },
-
     /// Delete refused: bucket is in use by in-flight subscriptions or wallets with
     /// remaining balance. HTTP 409 `bucket_in_use` with structured body.
     #[error(
@@ -164,20 +150,6 @@ pub enum CreditBucketError {
         bucket_id: Uuid,
         active_subscriptions: i64,
         holders_with_balance: i64,
-    },
-
-    /// Update refused: the PUT's `entitlement_mapping_ids` would remove one or
-    /// more mappings currently attached to this bucket. `provider_entitlement_mappings.
-    /// bucket_id` is NOT NULL (commit `aa6cc2da`) and there is no default bucket,
-    /// so a detached mapping has no legal home — removal is rejected.
-    /// To move a mapping out, assign it to another bucket via that bucket's PUT.
-    /// HTTP 400 `bucket_orphan_mapping`.
-    #[error(
-        "bucket_orphan_mapping: removing mappings {orphan_mapping_ids:?} from bucket {bucket_id} would leave them unassigned (bucket_id is NOT NULL)"
-    )]
-    BucketOrphanMapping {
-        bucket_id: Uuid,
-        orphan_mapping_ids: Vec<Uuid>,
     },
 
     /// Transparent passthrough for non-structured errors (not-found, DB errors).
@@ -195,12 +167,6 @@ impl From<CreditBucketError> for CoreError {
             CreditBucketError::BucketKeyDuplicate { realm_id: _ } => {
                 CoreError::BadRequest(err.to_string())
             }
-            // BucketOrphanMapping is a 400 (bad request), not a 409 conflict —
-            // must precede the `other` catch-all which maps to Conflict.
-            CreditBucketError::BucketOrphanMapping {
-                bucket_id: _,
-                orphan_mapping_ids: _,
-            } => CoreError::BadRequest(err.to_string()),
             // Preserve the structured message; handlers that need the structured
             // body should match on CreditBucketError directly before converting.
             other => CoreError::Conflict(other.to_string()),
@@ -288,17 +254,10 @@ mod tests {
         assert_eq!(back, original);
     }
 
-    /// Structured variants must NOT collapse to `CoreError::NotFound` — they are
-    /// conflicts (HTTP 409) so handlers can map them to `registration_pool_conflict`
-    /// / `bucket_in_use` bodies.
+    /// The structured conflict variant must NOT collapse to `CoreError::NotFound`
+    /// — `BucketInUse` is a 409 so handlers can map it to a `bucket_in_use` body.
     #[test]
     fn structured_bucket_errors_map_to_conflict_status() {
-        let conflict = CreditBucketError::RegistrationPoolConflict {
-            realm_id: "r1".into(),
-        };
-        let core: CoreError = conflict.into();
-        assert!(matches!(core, CoreError::Conflict(_)));
-
         let in_use = CreditBucketError::BucketInUse {
             bucket_id: Uuid::nil(),
             active_subscriptions: 1,
@@ -306,5 +265,17 @@ mod tests {
         };
         let core: CoreError = in_use.into();
         assert!(matches!(core, CoreError::Conflict(_)));
+    }
+
+    /// `BucketKeyDuplicate` must map to a 400 (bad request), not a 409 — it is a
+    /// validation-style conflict on the requested `bucket_key`, surfaced as
+    /// `bucket_key_duplicate`.
+    #[test]
+    fn bucket_key_duplicate_maps_to_bad_request() {
+        let dup = CreditBucketError::BucketKeyDuplicate {
+            realm_id: "r1".into(),
+        };
+        let core: CoreError = dup.into();
+        assert!(matches!(core, CoreError::BadRequest(_)));
     }
 }

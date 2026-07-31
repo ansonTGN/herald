@@ -42,16 +42,15 @@ async fn seed_subscription_row_77(
     realm_id: &str,
     entitlement_key: &str,
 ) -> Uuid {
-    let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, realm_id).await;
     let subscription_id = Uuid::now_v7();
     sqlx::query(
         "INSERT INTO subscription
             (id, realm_id, user_id, status, entitlement_key,
              external_subscription_id, external_product_id, payment_provider,
              current_period_start, current_period_end, cancel_at_period_end,
-             bucket_id, created_at, updated_at, billing_type)
+             created_at, updated_at, billing_type)
          VALUES ($1, $2, $3, 'active', $4, $5, $6, 'creem',
-                 NOW(), NOW() + INTERVAL '30 days', false, $7, NOW(), NOW(), 'recurring')",
+                 NOW(), NOW() + INTERVAL '30 days', false, NOW(), NOW(), 'recurring')",
     )
     .bind(subscription_id)
     .bind(realm_id)
@@ -59,7 +58,6 @@ async fn seed_subscription_row_77(
     .bind(entitlement_key)
     .bind(format!("sub_be_t04_77_{}", subscription_id))
     .bind(format!("prod_be_t04_{}", entitlement_key))
-    .bind(bucket_id)
     .execute(&ctx.app_state.pool)
     .await
     .expect("Failed to seed subscription row for idempotency test");
@@ -579,11 +577,49 @@ async fn test_event_level_idempotency_preserved(ctx: &mut SchemaTestContext) {
     setup_test_plan_config(ctx, &realm_id, plan_id).await;
     create_points_wallet(ctx, user_id, &realm_id).await;
 
+    // Distribution-rules model: `setup_test_plan_config` seeds bare mapping
+    // rows (no grant config), and production `handle_subscription_paid` grants
+    // ONLY on the renewal branch — `is_renewal=true` fires a SubscriptionRenewal
+    // event via CurrentOwnerRules; the initial branch returns no grants (first-
+    // period fulfillment is owned by the Payment Attempt flow). So a renewal
+    // event must (a) carry is_renewal=true and (b) have a `subscription_renewal`
+    // quota rule on the mapping the webhook resolver lands on (the generic
+    // `prod_test_monthly` row). Mirrors the inline seed in
+    // `webhook_grant_idempotency_scenarios.rs` and test_40's
+    // `seed_renewal_rule_for_plan_webhook`.
+    let mapping_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM provider_entitlement_mappings
+         WHERE realm_id = $1 AND external_product_id = 'prod_test_monthly'
+           AND entitlement_key = $2",
+    )
+    .bind(&realm_id)
+    .bind(plan_id.to_string())
+    .fetch_one(&ctx.app_state.pool)
+    .await
+    .expect("generic prod_test_monthly mapping must exist for the plan");
+    let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, &realm_id).await;
+    sqlx::query(
+        "INSERT INTO points_distribution_rules
+            (id, realm_id, owner_type, entitlement_mapping_id, bucket_id,
+             trigger_sources, grant_mode, validity_days, quota_windows,
+             enabled, display_order)
+         VALUES ($1, $2, 'entitlement_mapping', $3, $4, $5, 'quota', 0, $6, true, 0)",
+    )
+    .bind(Uuid::now_v7())
+    .bind(&realm_id)
+    .bind(mapping_id)
+    .bind(bucket_id)
+    .bind(&["subscription_renewal"][..])
+    .bind(serde_json::json!([{"windowSeconds": 2_592_000, "limit": 1000, "key": "period"}]))
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("seed subscription_renewal quota rule for event-level idempotency test");
+
     let event = build_subscription_paid_event(
         event_id.clone(),
         user_id,
         plan_id,
-        false, // initial subscription
+        true, // renewal — production grants only on the renewal branch
         &realm_id,
     );
 

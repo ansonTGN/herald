@@ -270,10 +270,19 @@ mod tests {
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(json["entitlementKey"], "detail-plan");
-        assert_eq!(json["pointsPerPeriod"], 500);
-        assert_eq!(json["grantOnSubscribe"], true);
         assert_eq!(json["enabled"], true);
         assert_eq!(json["paymentProvider"], "stripe");
+        // Distribution-rules model: the subscribe grant surfaces as a fixed
+        // `subscription_initial` rule under `pointRules`, not as mapping-level
+        // fields. The rule must be present so a regression that drops it fails
+        // here.
+        let rules = json["pointRules"]
+            .as_array()
+            .expect("pointRules must be an array");
+        assert_eq!(rules.len(), 1, "expected the seeded subscribe-grant rule");
+        assert_eq!(rules[0]["grantMode"], "fixed");
+        assert_eq!(rules[0]["pointsAmount"], 500);
+        assert_eq!(rules[0]["triggerSources"][0], "subscription_initial");
     }
 
     /// User Story: US-EM-001
@@ -382,7 +391,7 @@ mod tests {
     }
 
     /// User Story: US-EM-004
-    /// Covers: Setting points_per_period, grant_on_subscribe, validity_days
+    /// Covers: PATCH upserts a distribution rule (fixed grant) on the mapping
     #[test_context(EntitlementTestContext)]
     #[tokio::test]
     async fn test_update_entitlement_mapping_set_points_policy(ctx: &mut EntitlementTestContext) {
@@ -390,14 +399,38 @@ mod tests {
         let token = setup_billing_admin_session(ctx, "em-setpolicy@test.com").await;
         let realm_id = ctx._realm_id.clone();
 
-        let mapping_id =
-            setup_test_entitlement_mapping(ctx, &realm_id, "creem", "prod_policy_1", "policy-plan")
-                .await;
+        // Distribution-rules model: the grant policy is a distribution rule owned
+        // by the mapping. Seed a recurring mapping + bucket so a
+        // `subscription_initial` fixed rule can be upserted through PATCH (the
+        // handler validates the rule against the mapping's billing_type).
+        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+            &ctx.app_state.pool,
+            &realm_id,
+        )
+        .await;
+        let mapping_id = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO provider_entitlement_mappings
+                (id, realm_id, payment_provider, external_product_id, entitlement_key,
+                 billing_type, enabled)
+             VALUES ($1, $2, 'creem', 'prod_policy_1', 'policy-plan', 'recurring', true)",
+        )
+        .bind(mapping_id)
+        .bind(&realm_id)
+        .execute(&ctx.app_state.pool)
+        .await
+        .expect("seed recurring mapping");
 
         let payload = json!({
-            "pointsPerPeriod": 1000,
-            "grantOnSubscribe": true,
-            "validityDays": 30
+            "pointRules": [{
+                "bucketId": bucket_id,
+                "triggerSources": ["subscription_initial"],
+                "grantMode": "fixed",
+                "pointsAmount": 1000,
+                "validityDays": 30,
+                "enabled": true,
+                "displayOrder": 0
+            }]
         });
 
         let response = app
@@ -415,9 +448,14 @@ mod tests {
 
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(json["pointsPerPeriod"], 1000);
-        assert_eq!(json["grantOnSubscribe"], true);
-        assert_eq!(json["validityDays"], 30);
+        let rules = json["pointRules"]
+            .as_array()
+            .expect("pointRules must be an array");
+        assert_eq!(rules.len(), 1, "the upserted rule must be returned");
+        assert_eq!(rules[0]["grantMode"], "fixed");
+        assert_eq!(rules[0]["pointsAmount"], 1000);
+        assert_eq!(rules[0]["validityDays"], 30);
+        assert_eq!(rules[0]["triggerSources"][0], "subscription_initial");
     }
 
     /// User Story: US-EM-004
@@ -729,6 +767,528 @@ mod tests {
             status == StatusCode::BAD_REQUEST || status == StatusCode::INTERNAL_SERVER_ERROR,
             "Expected 400 or 500 for no provider configured, got {}",
             status
+        );
+    }
+
+    /// User Story: US-MWGR-001, US-MWGR-004
+    /// Source: `.ai/user-stories/billing/multi-wallet-grant-rules.md`
+    /// Covers: Mapping rule collection CRUD/batch semantics, validation,
+    /// tenant isolation, and the billing/points permission overlay.
+    #[test_context(EntitlementTestContext)]
+    #[tokio::test]
+    async fn test_multi_wallet_grant_rule_mapping_crud_and_permission_matrix(
+        ctx: &mut EntitlementTestContext,
+    ) {
+        let app = ctx.create_unified_test_router();
+        let admin_token = setup_billing_admin_session(ctx, "multi-wallet-mapping@test.com").await;
+        let realm_id = ctx._realm_id.clone();
+        let bucket =
+            crate::tests::scenarios::points::multi_wallet_grant_rule_scenarios::seed_bucket(
+                ctx, &realm_id, true,
+            )
+            .await;
+
+        let (_, billing_view_token) =
+            crate::tests::helpers::client_helpers::create_test_user_with_permissions(
+                ctx,
+                "multi-wallet-mapping-view@test.com",
+                &[("billing", "view")],
+            )
+            .await;
+        let (_, billing_manage_token) =
+            crate::tests::helpers::client_helpers::create_test_user_with_permissions(
+                ctx,
+                "multi-wallet-mapping-manage@test.com",
+                &[("billing", "view"), ("billing", "manage")],
+            )
+            .await;
+
+        let empty_payload = json!({
+            "paymentProvider": "stripe",
+            "externalProductId": format!("prod_empty_{}", Uuid::now_v7()),
+            "entitlementKey": format!("multi-wallet-empty-{}", Uuid::now_v7()),
+            "billingType": "one_time",
+            "pointRules": [],
+            "grantedRoleIds": [],
+            "enabled": true
+        });
+        let response = app
+            .clone()
+            .oneshot(auth_request(
+                "POST",
+                format!("/api/bill/{realm_id}/entitlement-mappings"),
+                &billing_manage_token,
+                Some(Body::from(empty_payload.to_string())),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status(),
+            StatusCode::CREATED,
+            "billing.manage alone may create an explicitly empty rule set"
+        );
+        let empty_created: serde_json::Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        assert_eq!(empty_created["pointRules"], json!([]));
+
+        let forbidden_payload = json!({
+            "paymentProvider": "stripe",
+            "externalProductId": format!("prod_forbidden_{}", Uuid::now_v7()),
+            "entitlementKey": format!("multi-wallet-forbidden-{}", Uuid::now_v7()),
+            "billingType": "one_time",
+            "pointRules": [{
+                "bucketId": bucket, "triggerSources": ["topup"],
+                "grantMode": "fixed", "pointsAmount": 1, "validityDays": 0,
+                "enabled": true, "displayOrder": 0
+            }],
+            "grantedRoleIds": [],
+            "enabled": true
+        });
+        let response = app
+            .clone()
+            .oneshot(auth_request(
+                "POST",
+                format!("/api/bill/{realm_id}/entitlement-mappings"),
+                &billing_manage_token,
+                Some(Body::from(forbidden_payload.to_string())),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status(),
+            StatusCode::FORBIDDEN,
+            "rule writes require points.manage in addition to billing.manage"
+        );
+
+        let external_product_id = format!("prod_{}", Uuid::now_v7());
+        let payload = json!({
+            "paymentProvider": "stripe",
+            "externalProductId": external_product_id.clone(),
+            "entitlementKey": format!("multi-wallet-{}", Uuid::now_v7()),
+            "billingType": "one_time",
+            "pointRules": [{
+                "bucketId": bucket, "triggerSources": ["topup"],
+                "grantMode": "fixed", "pointsAmount": 100, "validityDays": 0,
+                "enabled": true, "displayOrder": 0
+            }],
+            "grantedRoleIds": [], "enabled": true
+        });
+        let response = app
+            .clone()
+            .oneshot(auth_request(
+                "POST",
+                format!("/api/bill/{realm_id}/entitlement-mappings"),
+                &admin_token,
+                Some(Body::from(payload.to_string())),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+        let created: serde_json::Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        let mapping_id = created["id"].as_str().expect("created mapping id");
+        let rule_id = created["pointRules"][0]["id"]
+            .as_str()
+            .expect("created rule id");
+        assert_eq!(created["pointRules"].as_array().unwrap().len(), 1);
+
+        let response = app
+            .clone()
+            .oneshot(auth_request(
+                "GET",
+                format!("/api/bill/{realm_id}/entitlement-mappings/{mapping_id}"),
+                &billing_view_token,
+                None,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status(),
+            StatusCode::OK,
+            "billing.view can read the rule collection"
+        );
+        let detail: serde_json::Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        assert_eq!(detail["pointRules"][0]["id"], rule_id);
+
+        let patch = json!({"pointRules": [{
+            "id": rule_id, "bucketId": bucket, "triggerSources": ["topup"],
+            "grantMode": "fixed", "pointsAmount": 100, "validityDays": 0,
+            "enabled": false, "displayOrder": 0
+        }]});
+        let response = app
+            .clone()
+            .oneshot(auth_request(
+                "PATCH",
+                format!("/api/bill/{realm_id}/entitlement-mappings/{mapping_id}"),
+                &admin_token,
+                Some(Body::from(patch.to_string())),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let patched: serde_json::Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        assert_eq!(patched["pointRules"][0]["enabled"], false);
+
+        let batch = json!({
+            "paymentProvider": "stripe",
+            "externalProductId": external_product_id,
+            "updates": [{
+                "mappingId": mapping_id,
+                "pointRules": [{
+                    "id": rule_id, "bucketId": bucket, "triggerSources": ["topup"],
+                    "grantMode": "fixed", "pointsAmount": 125, "validityDays": 0,
+                    "enabled": true, "displayOrder": 0
+                }]
+            }]
+        });
+        let response = app
+            .clone()
+            .oneshot(auth_request(
+                "PUT",
+                format!("/api/bill/{realm_id}/entitlement-mappings/batch"),
+                &admin_token,
+                Some(Body::from(batch.to_string())),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+        let batch_result: serde_json::Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        assert_eq!(batch_result["saved"], 1);
+        assert!(
+            batch_result["prices"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|price| {
+                    price["id"] == mapping_id
+                        && price["pointRules"][0]["pointsAmount"] == 125
+                        && price["pointRules"][0]["enabled"] == true
+                })
+        );
+
+        let invalid_trigger = json!({"pointRules": [{
+            "bucketId": bucket, "triggerSources": ["subscription_renewal"],
+            "grantMode": "fixed", "pointsAmount": 1, "validityDays": 0,
+            "enabled": true, "displayOrder": 1
+        }]});
+        let response = app
+            .clone()
+            .oneshot(auth_request(
+                "PATCH",
+                format!("/api/bill/{realm_id}/entitlement-mappings/{mapping_id}"),
+                &admin_token,
+                Some(Body::from(invalid_trigger.to_string())),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        let invalid_policy = json!({"pointRules": [{
+            "bucketId": bucket, "triggerSources": ["topup"],
+            "grantMode": "fixed",
+            "quotaWindows": [{"windowSeconds": 3600, "limit": 1}],
+            "enabled": true, "displayOrder": 1
+        }]});
+        let response = app
+            .clone()
+            .oneshot(auth_request(
+                "PATCH",
+                format!("/api/bill/{realm_id}/entitlement-mappings/{mapping_id}"),
+                &admin_token,
+                Some(Body::from(invalid_policy.to_string())),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        let foreign_realm_id = format!("foreign-{}", Uuid::now_v7());
+        sqlx::query("INSERT INTO realm (id, name) VALUES ($1, $2)")
+            .bind(&foreign_realm_id)
+            .bind(format!("Foreign {foreign_realm_id}"))
+            .execute(&ctx.app_state.pool)
+            .await
+            .expect("seed foreign realm");
+        let foreign_bucket =
+            crate::tests::scenarios::points::multi_wallet_grant_rule_scenarios::seed_bucket(
+                ctx,
+                &foreign_realm_id,
+                true,
+            )
+            .await;
+        let cross_realm_bucket = json!({"pointRules": [{
+            "bucketId": foreign_bucket, "triggerSources": ["topup"],
+            "grantMode": "fixed", "pointsAmount": 1, "validityDays": 0,
+            "enabled": true, "displayOrder": 2
+        }]});
+        let response = app
+            .clone()
+            .oneshot(auth_request(
+                "PATCH",
+                format!("/api/bill/{realm_id}/entitlement-mappings/{mapping_id}"),
+                &admin_token,
+                Some(Body::from(cross_realm_bucket.to_string())),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status(),
+            StatusCode::CONFLICT,
+            "a Mapping cannot target a Bucket from another Realm"
+        );
+
+        let response = app
+            .clone()
+            .oneshot(auth_request(
+                "GET",
+                format!("/api/bill/{foreign_realm_id}/entitlement-mappings"),
+                &admin_token,
+                None,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status(),
+            StatusCode::FORBIDDEN,
+            "billing.view is scoped to the authenticated Realm"
+        );
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("PATCH")
+                    .uri(format!(
+                        "/api/bill/{realm_id}/entitlement-mappings/{mapping_id}"
+                    ))
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(patch.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    // =========================================================================
+    // DEC-005 atomic upsert — repository-level rollback regression
+    // =========================================================================
+    //
+    // `create_entitlement_mapping_with_rules` and `upsert_mapping_with_rules`
+    // must write the mapping base row and the rule set in ONE transaction so a
+    // rule-write error rolls the base write back. The trigger here is a rule
+    // that targets a foreign-realm bucket: `upsert_rules_in_tx` rejects it with
+    // `distribution_rule_conflict` AFTER the base-row write, so a non-atomic
+    // implementation leaves a committed base row (create) or committed field
+    // changes (upsert). The repository is called directly to isolate the
+    // atomicity contract from the HTTP/validation layers.
+
+    /// DEC-005: when the rule write of `create_entitlement_mapping_with_rules`
+    /// fails, the just-inserted mapping base row must NOT survive. Passes on the
+    /// atomic code; FAILS on the prior non-atomic code (base INSERT on
+    /// `&self.db` committed before the rule conflict was raised).
+    #[test_context(EntitlementTestContext)]
+    #[tokio::test]
+    async fn test_create_mapping_with_rules_rolls_back_base_row_on_rule_conflict(
+        ctx: &mut EntitlementTestContext,
+    ) {
+        use herald_core::domain::billing::BillingRepository;
+        use herald_core::domain::billing::{BillingType, EntitlementMapping};
+        use herald_core::domain::common::entities::app_errors::CoreError;
+        use herald_core::domain::points::{DistributionPolicy, DistributionTrigger, RuleUpsert};
+
+        let realm_id = ctx._realm_id.clone();
+
+        // Foreign realm + bucket: a rule targeting this bucket is rejected by
+        // upsert_rules_in_tx (bucket realm != mapping realm) AFTER the base-row
+        // INSERT, which is the mid-transaction failure we need.
+        let foreign_realm_id = format!("foreign-{}", Uuid::now_v7());
+        sqlx::query("INSERT INTO realm (id, name) VALUES ($1, $2)")
+            .bind(&foreign_realm_id)
+            .bind(format!("Foreign {foreign_realm_id}"))
+            .execute(&ctx.app_state.pool)
+            .await
+            .expect("seed foreign realm");
+        let foreign_bucket =
+            crate::tests::scenarios::points::multi_wallet_grant_rule_scenarios::seed_bucket(
+                ctx,
+                &foreign_realm_id,
+                true,
+            )
+            .await;
+
+        let mapping_id = Uuid::now_v7();
+        let now = chrono::Utc::now();
+        let mapping = EntitlementMapping {
+            id: mapping_id,
+            realm_id: realm_id.clone(),
+            payment_provider: "stripe".to_string(),
+            external_product_id: format!("atomic-create-{mapping_id}"),
+            external_price_id: None,
+            entitlement_key: format!("atomic-create-key-{mapping_id}"),
+            billing_type: Some(BillingType::OneTime),
+            billing_period: None,
+            service_duration_days: None,
+            enabled: true,
+            provider_product_info: None,
+            granted_role_ids: vec![],
+            synced_at: None,
+            created_at: now,
+            updated_at: now,
+        };
+        let rules = vec![RuleUpsert {
+            id: None,
+            bucket_id: foreign_bucket,
+            trigger_sources: vec![DistributionTrigger::Topup],
+            policy: DistributionPolicy::Fixed {
+                amount: 100,
+                validity_days: 0,
+                grant_period_type: None,
+            },
+            enabled: true,
+            display_order: 0,
+        }];
+
+        let err = ctx
+            .app_state
+            .billing_repository
+            .create_entitlement_mapping_with_rules(mapping, rules)
+            .await
+            .expect_err("cross-realm rule must be rejected");
+        assert!(
+            matches!(err, CoreError::Conflict(_)),
+            "expected distribution_rule_conflict, got {err:?}"
+        );
+
+        // The base mapping row MUST roll back — no row may survive the aborted
+        // transaction. On the non-atomic code the INSERT already committed.
+        let surviving: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM provider_entitlement_mappings WHERE id = $1")
+                .bind(mapping_id)
+                .fetch_one(&ctx.app_state.pool)
+                .await
+                .expect("count surviving mappings");
+        assert_eq!(
+            surviving, 0,
+            "DEC-005: mapping base row must roll back when rule write fails"
+        );
+    }
+
+    /// DEC-005: when the rule write of `upsert_mapping_with_rules` fails, the
+    /// base-field UPDATE must roll back, leaving the existing row's fields
+    /// unchanged. Passes on the atomic code; FAILS on the prior non-atomic code
+    /// (base UPDATE on `&self.db` committed before the rule conflict).
+    #[test_context(EntitlementTestContext)]
+    #[tokio::test]
+    async fn test_upsert_mapping_with_rules_rolls_back_base_fields_on_rule_conflict(
+        ctx: &mut EntitlementTestContext,
+    ) {
+        use herald_core::domain::billing::BillingRepository;
+        use herald_core::domain::billing::{BillingType, EntitlementMapping};
+        use herald_core::domain::common::entities::app_errors::CoreError;
+        use herald_core::domain::points::{DistributionPolicy, DistributionTrigger, RuleUpsert};
+
+        let realm_id = ctx._realm_id.clone();
+
+        // Seed an existing mapping with known base fields (enabled=false,
+        // entitlement_key='original-key') to verify they survive the rollback.
+        // Column list mirrors multi_wallet_grant_rule_scenarios::seed_mapping.
+        let mapping_id = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO provider_entitlement_mappings \
+                (id, realm_id, payment_provider, external_product_id, entitlement_key, \
+                 billing_type, enabled) \
+             VALUES ($1, $2, 'stripe', $3, 'original-key', 'one_time', false)",
+        )
+        .bind(mapping_id)
+        .bind(&realm_id)
+        .bind(format!("atomic-upsert-{mapping_id}"))
+        .execute(&ctx.app_state.pool)
+        .await
+        .expect("seed existing mapping");
+
+        // Foreign realm + bucket to force a mid-transaction rule conflict.
+        let foreign_realm_id = format!("foreign-{}", Uuid::now_v7());
+        sqlx::query("INSERT INTO realm (id, name) VALUES ($1, $2)")
+            .bind(&foreign_realm_id)
+            .bind(format!("Foreign {foreign_realm_id}"))
+            .execute(&ctx.app_state.pool)
+            .await
+            .expect("seed foreign realm");
+        let foreign_bucket =
+            crate::tests::scenarios::points::multi_wallet_grant_rule_scenarios::seed_bucket(
+                ctx,
+                &foreign_realm_id,
+                true,
+            )
+            .await;
+
+        // Attempt to flip enabled->true and change entitlement_key, paired with a
+        // rule set that errors mid-transaction.
+        let now = chrono::Utc::now();
+        let updated_mapping = EntitlementMapping {
+            id: mapping_id,
+            realm_id: realm_id.clone(),
+            payment_provider: "stripe".to_string(),
+            external_product_id: format!("atomic-upsert-{mapping_id}"),
+            external_price_id: None,
+            entitlement_key: "changed-key".to_string(),
+            billing_type: Some(BillingType::OneTime),
+            billing_period: None,
+            service_duration_days: None,
+            enabled: true,
+            provider_product_info: None,
+            granted_role_ids: vec![],
+            synced_at: None,
+            created_at: now,
+            updated_at: now,
+        };
+        let rules = vec![RuleUpsert {
+            id: None,
+            bucket_id: foreign_bucket,
+            trigger_sources: vec![DistributionTrigger::Topup],
+            policy: DistributionPolicy::Fixed {
+                amount: 100,
+                validity_days: 0,
+                grant_period_type: None,
+            },
+            enabled: true,
+            display_order: 0,
+        }];
+
+        let err = ctx
+            .app_state
+            .billing_repository
+            .upsert_mapping_with_rules(&realm_id, updated_mapping, rules)
+            .await
+            .expect_err("cross-realm rule must be rejected");
+        assert!(
+            matches!(err, CoreError::Conflict(_)),
+            "expected distribution_rule_conflict, got {err:?}"
+        );
+
+        // The base-field UPDATE MUST roll back — enabled and entitlement_key stay
+        // at their original values. On the non-atomic code they were overwritten.
+        let row: (bool, String) = sqlx::query_as(
+            "SELECT enabled, entitlement_key FROM provider_entitlement_mappings WHERE id = $1",
+        )
+        .bind(mapping_id)
+        .fetch_one(&ctx.app_state.pool)
+        .await
+        .expect("read mapping back");
+        assert!(
+            !row.0,
+            "DEC-005: enabled must be unchanged after rolled-back upsert"
+        );
+        assert_eq!(
+            row.1, "original-key",
+            "DEC-005: entitlement_key must be unchanged after rolled-back upsert"
         );
     }
 }

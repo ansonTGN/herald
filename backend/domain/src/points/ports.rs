@@ -6,13 +6,12 @@ use crate::common::entities::app_errors::CoreError;
 use crate::points::dtos::RevokePointsOutput;
 use crate::points::entities::CreditSourceType;
 use crate::points::entities::{
-    ConsumptionAllocationView, CreditLedgerStatus, CreditType, Paginated,
-    PointsConsumptionAllocation, PointsCreditLedger, PointsQuotaEntitlement,
-    PointsRevocationRecord, PointsTransaction, PointsWallet, RevocationType, TransactionType,
+    ConsumptionAllocationView, CreditLedgerStatus, CreditType, Paginated, PointsCreditLedger,
+    PointsQuotaEntitlement, PointsRevocationRecord, PointsTransaction, PointsWallet,
+    RevocationType, TransactionType,
 };
 use crate::points::{
-    CreateRealmConfigInput, PointsGrantRecord, PointsGrantSchedule, RealmDefaultConfig,
-    UpdateRealmConfigInput, UserPointsConfig,
+    DistributionEvent, DistributionGrantResult, DistributionRuleSelection, PointsGrantSchedule,
 };
 
 /// Row-level locator for pre-grant reclaim.
@@ -145,22 +144,6 @@ impl WalletDelta {
     }
 }
 
-/// User config update type
-#[derive(Debug, Clone)]
-pub enum UserConfigUpdate {
-    /// Disable daily grant (used when free user upgrades to paid)
-    DisableDailyGrant {
-        next_grant_time: Option<chrono::DateTime<chrono::Utc>>,
-    },
-}
-
-/// Grant schedule update type
-#[derive(Debug, Clone)]
-pub enum GrantScheduleUpdate {
-    /// Disable grant schedule
-    Disable,
-}
-
 /// Repository for points operations
 #[cfg_attr(test, mockall::automock)]
 pub trait PointsRepository: Send + Sync {
@@ -283,33 +266,6 @@ pub trait PointsRepository: Send + Sync {
         source_id: &str,
     ) -> impl Future<Output = Result<Option<PointsCreditLedger>, CoreError>> + Send;
 
-    /// Update ledger (consumption or revocation)
-    fn update_ledger(
-        &self,
-        ledger_id: Uuid,
-        updates: LedgerUpdate,
-    ) -> impl Future<Output = Result<PointsCreditLedger, CoreError>> + Send;
-
-    /// Find active ledgers by credit type (ordered by created_at ASC for FIFO)
-    fn find_active_ledgers_by_credit_type(
-        &self,
-        realm_id: &str,
-        user_id: Uuid,
-        credit_type: CreditType,
-    ) -> impl Future<Output = Result<Vec<PointsCreditLedger>, CoreError>> + Send;
-
-    /// Create a consumption allocation record
-    fn create_consumption_allocation(
-        &self,
-        allocation: PointsConsumptionAllocation,
-    ) -> impl Future<Output = Result<PointsConsumptionAllocation, CoreError>> + Send;
-
-    /// Find consumption allocations by transaction ID
-    fn find_consumption_allocations_by_transaction(
-        &self,
-        transaction_id: Uuid,
-    ) -> impl Future<Output = Result<Vec<PointsConsumptionAllocation>, CoreError>> + Send;
-
     /// Find consumption allocations for ALL transactions sharing a consume
     /// `correlation_id`. Used by the SDK consume response
     /// to surface the ledger-level truth source of a multi-bucket consume without
@@ -328,12 +284,6 @@ pub trait PointsRepository: Send + Sync {
         record: PointsRevocationRecord,
     ) -> impl Future<Output = Result<PointsRevocationRecord, CoreError>> + Send;
 
-    /// Find revocation record by idempotency key (for deduplication)
-    fn find_revocation_by_idempotency_key(
-        &self,
-        idempotency_key: &str,
-    ) -> impl Future<Output = Result<Option<PointsRevocationRecord>, CoreError>> + Send;
-
     /// Find expired ledgers for cleanup
     fn find_expired_ledgers(
         &self,
@@ -341,179 +291,12 @@ pub trait PointsRepository: Send + Sync {
         limit: usize,
     ) -> impl Future<Output = Result<Vec<PointsCreditLedger>, CoreError>> + Send;
 
-    /// Find realm default config by realm_id
-    fn find_realm_config(
-        &self,
-        realm_id: &str,
-    ) -> impl Future<Output = Result<Option<RealmDefaultConfig>, CoreError>> + Send;
-
-    /// Create realm default config
-    fn create_realm_config(
-        &self,
-        config: CreateRealmConfigInput,
-    ) -> impl Future<Output = Result<RealmDefaultConfig, CoreError>> + Send;
-
-    /// Update realm default config
-    fn update_realm_config(
-        &self,
-        realm_id: &str,
-        input: UpdateRealmConfigInput,
-    ) -> impl Future<Output = Result<RealmDefaultConfig, CoreError>> + Send;
-
-    /// Find user points config by user_id
-    fn find_user_config(
-        &self,
-        user_id: Uuid,
-    ) -> impl Future<Output = Result<Option<UserPointsConfig>, CoreError>> + Send;
-
-    /// Create user points config
-    fn create_user_config(
-        &self,
-        config: UserPointsConfig,
-    ) -> impl Future<Output = Result<UserPointsConfig, CoreError>> + Send;
-
-    /// Update user points config
-    fn update_user_config(
-        &self,
-        user_id: Uuid,
-        next_grant_time: Option<chrono::DateTime<chrono::Utc>>,
-        granted_periods: i64,
-        grant_schedule_id: Option<Uuid>,
-    ) -> impl Future<Output = Result<UserPointsConfig, CoreError>> + Send;
-
-    /// List user configs by realm (for statistics)
-    fn list_user_configs_by_realm(
-        &self,
-        realm_id: &str,
-        pagination: &Pagination,
-    ) -> impl Future<Output = Result<Paginated<UserPointsConfig>, CoreError>> + Send;
-
-    /// Find user points config by user_id (alias for find_user_config)
-    fn find_user_points_config(
-        &self,
-        user_id: Uuid,
-    ) -> impl Future<Output = Result<Option<UserPointsConfig>, CoreError>> + Send {
-        self.find_user_config(user_id)
-    }
-
-    /// Find user points config by realm_id and user_id (for free user upgrade)
-    fn find_user_config_by_realm(
-        &self,
-        realm_id: &str,
-        user_id: Uuid,
-    ) -> impl Future<Output = Result<Option<UserPointsConfig>, CoreError>> + Send;
-
-    /// Find grant schedule by ID
-    fn find_grant_schedule(
-        &self,
-        schedule_id: Uuid,
-    ) -> impl Future<Output = Result<Option<PointsGrantSchedule>, CoreError>> + Send;
-
     /// Find active grant schedules due for granting
     fn find_due_grant_schedules(
         &self,
         before: chrono::DateTime<chrono::Utc>,
         limit: u64,
     ) -> impl Future<Output = Result<Vec<PointsGrantSchedule>, CoreError>> + Send;
-
-    /// Find grant schedules by user_id
-    fn find_grant_schedules_by_user(
-        &self,
-        user_id: Uuid,
-    ) -> impl Future<Output = Result<Vec<PointsGrantSchedule>, CoreError>> + Send;
-
-    /// Update user points config
-    fn update_user_points_config(
-        &self,
-        config_id: Uuid,
-        update: UserConfigUpdate,
-    ) -> impl Future<Output = Result<UserPointsConfig, CoreError>> + Send;
-
-    /// Find grant schedules by realm_id and user_id
-    fn find_grant_schedules_by_user_realm(
-        &self,
-        realm_id: &str,
-        user_id: Uuid,
-    ) -> impl Future<Output = Result<Vec<PointsGrantSchedule>, CoreError>> + Send;
-
-    /// Apply update to grant schedule (for disabling, etc)
-    fn apply_grant_schedule_update(
-        &self,
-        schedule_id: Uuid,
-        update: GrantScheduleUpdate,
-    ) -> impl Future<Output = Result<PointsGrantSchedule, CoreError>> + Send;
-
-    /// Find grant schedule by subscription_id
-    fn find_grant_schedule_by_subscription(
-        &self,
-        subscription_id: Uuid,
-    ) -> impl Future<Output = Result<Option<PointsGrantSchedule>, CoreError>> + Send;
-
-    /// Create grant schedule
-    fn create_grant_schedule(
-        &self,
-        schedule: PointsGrantSchedule,
-    ) -> impl Future<Output = Result<PointsGrantSchedule, CoreError>> + Send;
-
-    /// Update grant schedule (increment periods, update next_grant_time)
-    fn update_grant_schedule(
-        &self,
-        schedule_id: Uuid,
-        next_grant_time: chrono::DateTime<chrono::Utc>,
-        granted_periods: i64,
-        is_active: bool,
-    ) -> impl Future<Output = Result<PointsGrantSchedule, CoreError>> + Send;
-
-    /// Deactivate grant schedule
-    fn deactivate_grant_schedule(
-        &self,
-        schedule_id: Uuid,
-    ) -> impl Future<Output = Result<(), CoreError>> + Send;
-
-    /// Check if a grant record exists for a schedule and period (idempotency)
-    fn find_grant_record(
-        &self,
-        schedule_id: Uuid,
-        period_number: i64,
-    ) -> impl Future<Output = Result<Option<PointsGrantRecord>, CoreError>> + Send;
-
-    /// Create grant record
-    fn create_grant_record(
-        &self,
-        record: PointsGrantRecord,
-    ) -> impl Future<Output = Result<PointsGrantRecord, CoreError>> + Send;
-
-    /// List grant records by schedule
-    fn list_grant_records_by_schedule(
-        &self,
-        schedule_id: Uuid,
-        pagination: &Pagination,
-    ) -> impl Future<Output = Result<Paginated<PointsGrantRecord>, CoreError>> + Send;
-
-    /// List grant records by user
-    fn list_grant_records_by_user(
-        &self,
-        user_id: Uuid,
-        pagination: &Pagination,
-    ) -> impl Future<Output = Result<Paginated<PointsGrantRecord>, CoreError>> + Send;
-
-    /// Find active ledgers sorted by expiration (for FIFO consumption)
-    /// Returns ledgers with status = 'active' AND remaining_amount > 0
-    /// Sorted by expires_at ASC (NULL last, meaning permanent credits last)
-    fn find_active_ledgers_by_expiration(
-        &self,
-        realm_id: &str,
-        user_id: Uuid,
-    ) -> impl Future<Output = Result<Vec<PointsCreditLedger>, CoreError>> + Send;
-
-    /// Count paid users in realm (for upgrade rate calculation)
-    /// Returns count of users with active subscriptions in the realm
-    fn count_paid_users_in_realm(
-        &self,
-        realm_id: &str,
-        start_date: Option<chrono::DateTime<chrono::Utc>>,
-        end_date: Option<chrono::DateTime<chrono::Utc>>,
-    ) -> impl Future<Output = Result<u64, CoreError>> + Send;
 
     fn consume_points_atomic(
         &self,
@@ -563,21 +346,6 @@ pub trait PointsRepository: Send + Sync {
         idempotency_key: Option<String>,
     ) -> impl Future<Output = Result<RevokePointsOutput, CoreError>> + Send;
 
-    /// Revoke all active subscription credit ledgers for one entitlement.
-    /// This is intentionally separate from source_id revocation because it is a
-    /// subscription-domain operation and may revoke multiple ledgers.
-    fn revoke_subscription_credits_by_entitlement_atomic(
-        &self,
-        realm_id: &str,
-        user_id: Uuid,
-        bucket_id: Uuid,
-        entitlement_key: &str,
-        revocation_type: RevocationType,
-        reason: String,
-        reference_id: Option<String>,
-        idempotency_key: Option<String>,
-    ) -> impl Future<Output = Result<RevokePointsOutput, CoreError>> + Send;
-
     fn revoke_topup_proportional_atomic(
         &self,
         realm_id: &str,
@@ -588,15 +356,15 @@ pub trait PointsRepository: Send + Sync {
         refund_id: &str,
     ) -> impl Future<Output = Result<RevokePointsOutput, CoreError>> + Send;
 
-    fn refund_points_atomic(
+    fn revoke_topup_source_proportional_atomic(
         &self,
         realm_id: &str,
         user_id: Uuid,
-        bucket_id: Uuid,
-        refund_reference: String,
+        source_id: &str,
         refund_amount: i64,
-        reason: String,
-    ) -> impl Future<Output = Result<PointsTransaction, CoreError>> + Send;
+        original_payment_amount: i64,
+        refund_id: &str,
+    ) -> impl Future<Output = Result<RevokePointsOutput, CoreError>> + Send;
 
     fn grant_points_atomic(
         &self,
@@ -794,4 +562,57 @@ pub trait PointsRepository: Send + Sync {
         now: chrono::DateTime<chrono::Utc>,
         batch_size: usize,
     ) -> impl Future<Output = Result<usize, CoreError>> + Send;
+
+    /// Execute a multi-rule distribution event atomically and idempotently.
+    ///
+    /// First execution is all-or-nothing: fixed points, quota entitlements and
+    /// the first-period schedule of every matched rule, plus the
+    /// `points_distribution_events` completion record, all commit in one
+    /// transaction; any failure rolls the whole thing back. A completed event —
+    /// including a zero-rule event — is finalized with `result_count` and
+    /// `completed_at`.
+    ///
+    /// Replay: when the `(realm, user, trigger, event_key)` row already exists
+    /// as `completed`, the executor locks it, reconstructs the FIRST-run result
+    /// set by querying ledger / quota entitlement / schedule rows by
+    /// `distribution_event_id`, folds the schedule first-ledger out, validates
+    /// the logical count equals `result_count` (fail-loud on corruption) and
+    /// returns the reconstructed results WITHOUT reading the current
+    /// rule / bucket config. Concurrent callers are serialized by the unique
+    /// constraint.
+    ///
+    /// Attribution: every result row this executor creates carries BOTH
+    /// `distribution_event_id` and `distribution_rule_id` (non-null). Direct
+    /// writes (admin/sdk grant, demo/test-only internal quota) bypass this
+    /// executor and keep both NULL.
+    fn execute_distribution_event_atomic(
+        &self,
+        event: DistributionEvent,
+        selection: DistributionRuleSelection,
+    ) -> impl Future<Output = Result<Vec<DistributionGrantResult>, CoreError>> + Send;
+
+    /// Revoke every rule-attributed fixed/quota result produced for a business
+    /// source, across all target buckets. The original event/rule attribution
+    /// is the only locator; current rule configuration is never consulted.
+    fn revoke_distribution_source_atomic(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        source_id: &str,
+        revocation_type: RevocationType,
+        reason: String,
+        idempotency_key: String,
+    ) -> impl Future<Output = Result<RevokePointsOutput, CoreError>> + Send;
+
+    /// Subscription upgrade transaction: revoke all prior results for the
+    /// subscription source, then execute the new Mapping's upgrade rules.
+    /// Either both halves commit or neither does.
+    fn replace_distribution_source_atomic(
+        &self,
+        source_id: &str,
+        revocation_type: RevocationType,
+        reason: String,
+        event: DistributionEvent,
+        selection: DistributionRuleSelection,
+    ) -> impl Future<Output = Result<Vec<DistributionGrantResult>, CoreError>> + Send;
 }

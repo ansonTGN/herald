@@ -1,420 +1,197 @@
+import { useMemo, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { useAppForm, AppForm } from '@/components/ui/tanstack-form'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Info, Loader2 } from 'lucide-react'
+import { AccessDenied } from '@/components/shared'
 import {
-  queryKeys,
+  PointDistributionRuleEditor,
+  type PointRuleTriggerOption,
+} from '@/components/billing/point-distribution-rule-editor'
+import { pointRuleTriggerLabel } from '@/components/billing/provider-product-info'
+import {
+  creditBucketsListQueryOptions,
   pointsDefaultConfigQueryOptions,
+  queryKeys,
   updatePointsDefaultConfigMutation,
 } from '@/data/query-options'
-import {
-  pointsDefaultConfigSchema,
-  type PointsDefaultConfigFormData,
-} from '@/lib/schemas/points-forms'
-import { MultiWindowQuotaEditor } from '@/components/billing/MultiWindowQuotaEditor'
 import { useAuth } from '@/hooks/use-auth'
 import { PERMISSION } from '@/lib/constants/auth-constants'
-import { AccessDenied } from '@/components/shared'
-import { m } from '@/paraglide/messages'
+import type { RegistrationRuleWrite } from '@/lib/api-generated'
+import {
+  pointDistributionRulesSchema,
+  toPointDistributionRuleFormData,
+  type PointDistributionRuleFormData,
+} from '@/lib/schemas/billing-forms'
 import { useOptionalRouteParams, useResolvedRealmId } from '@/lib/realm-routing'
 import { getErrorMessage } from '@/lib/error-utils'
+import { m } from '@/paraglide/messages'
 
 export const Route = createFileRoute('/$realmId/manage/points/default-config')({
   component: RealmConfigPage,
 })
 
-// Exported directly (not via Route.component) so tests can mount the page without
-// the TanStack Router autoCodeSplitting Lazy wrapper, which never resolves
-// outside a real Router context. Sibling pages (e.g. EntitlementMappingsPage)
-// are already directly importable; this mirrors that pattern.
+function toWriteRule(rule: PointDistributionRuleFormData): RegistrationRuleWrite {
+  return {
+    id: rule.id,
+    bucketId: rule.bucketId,
+    triggerSources: rule.triggerSources,
+    grantMode: rule.grantMode,
+    pointsAmount: rule.grantMode === 'fixed' ? rule.pointsAmount : null,
+    validityDays: rule.grantMode === 'fixed' ? rule.validityDays : null,
+    grantPeriodType: rule.grantPeriodType,
+    // `toPointDistributionRuleFormData` already normalized windows to
+    // `{ windowSeconds, limit }` on the read side, so forward verbatim here.
+    quotaWindows: rule.grantMode === 'quota' ? rule.quotaWindows : null,
+    enabled: rule.enabled,
+    displayOrder: rule.displayOrder,
+  }
+}
+
 export function RealmConfigPage() {
   const fallbackRealmId = useResolvedRealmId()
   const routeParams = useOptionalRouteParams<{ realmId?: string }>(Route)
   const realmId = routeParams.realmId ?? fallbackRealmId
-  const queryClient = useQueryClient()
   const auth = useAuth()
+  const queryClient = useQueryClient()
+  const canView = auth.permissions?.includes(PERMISSION.POINTS_VIEW) ?? false
+  const canManage = auth.permissions?.includes(PERMISSION.POINTS_MANAGE) ?? false
 
-  // Permission checks (defense-in-depth mirroring settings.tsx; backend
-  // realm_configs.rs + design §3.3/§4.5 gate these endpoints on
-  // settings.view/settings.manage, NOT points.*).
-  const canViewConfig = auth.permissions?.includes(PERMISSION.SETTINGS_VIEW) ?? false
-  const canManageConfig = auth.permissions?.includes(PERMISSION.SETTINGS_MANAGE) ?? false
+  const { data, isLoading, error } = useQuery({
+    ...pointsDefaultConfigQueryOptions(realmId),
+    enabled: canView,
+  })
+  const { data: buckets = [] } = useQuery({
+    ...creditBucketsListQueryOptions(realmId),
+    enabled: canView,
+  })
 
-  const periodTypeLabels = {
-    once: m['points.default_config_period_once'](),
-    daily: m['points.default_config_period_daily'](),
-    weekly: m['points.default_config_period_weekly'](),
-    monthly: m['points.default_config_period_monthly'](),
+  const initialRules = useMemo(
+    () => (data?.rules ?? []).map(toPointDistributionRuleFormData),
+    [data]
+  )
+  const [editedRules, setEditedRules] = useState<PointDistributionRuleFormData[] | null>(null)
+  const rules = editedRules ?? initialRules
+  const registrationRules = rules.filter((rule) => rule.triggerSources.includes('registration'))
+  const freePeriodicRules = rules.filter((rule) =>
+    rule.triggerSources.includes('free_periodic_grant')
+  )
+
+  // Built per render so trigger labels honor the active locale.
+  const registrationTriggers: PointRuleTriggerOption[] = [
+    { value: 'registration', label: pointRuleTriggerLabel('registration') },
+  ]
+  const freePeriodicTriggers: PointRuleTriggerOption[] = [
+    { value: 'free_periodic_grant', label: pointRuleTriggerLabel('free_periodic_grant') },
+  ]
+
+  const replaceGroup = (
+    trigger: 'registration' | 'free_periodic_grant',
+    next: PointDistributionRuleFormData[]
+  ) => {
+    setEditedRules([
+      ...rules.filter((rule) => !rule.triggerSources.includes(trigger)),
+      ...next.map((rule, index) => ({
+        ...rule,
+        triggerSources: [trigger],
+        displayOrder: index,
+      })),
+    ])
   }
 
-  const {
-    data: config,
-    isLoading,
-    error,
-  } = useQuery({ ...pointsDefaultConfigQueryOptions(realmId), enabled: canViewConfig })
-
-  // Treat 404 (no config yet) as non-error: use defaults
-  const isNotFound = error && /404|not found/i.test((error as Error).message || '')
-  // The query layer maps a 403 to `new Error('Insufficient permissions')`; the
-  // raw status is not carried on the Error instance, so match the known text.
-  const isForbidden = error && /Insufficient permissions/i.test((error as Error).message || '')
-  const effectiveConfig = config ?? null
-
-  const updateMutation = useMutation({
-    mutationFn: (data: PointsDefaultConfigFormData) => {
-      const isOneTime = data.freePeriodicGrantPeriodType === 'once'
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const parsed = pointDistributionRulesSchema.safeParse(rules)
+      if (!parsed.success) {
+        throw new Error(
+          parsed.error.issues[0]?.message ?? m['points.default_config_invalid_rule']()
+        )
+      }
       return updatePointsDefaultConfigMutation(realmId, {
-        registrationBonusPoints: data.registrationBonusPoints,
-        freePeriodicPointsAmount: data.freePeriodicPointsAmount,
-        freePeriodicGrantPeriodType: data.freePeriodicGrantPeriodType,
-        // In the window-quota model, recurring free-periodic validity is not
-        // configurable: quota entitlements stay active until revoked. The
-        // backend still requires a positive compatibility value for non-once.
-        freePeriodicValidityDays: isOneTime ? data.freePeriodicValidityDays : 1,
-        freePeriodicQuotaWindows: isOneTime ? [] : data.freePeriodicQuotaWindows,
+        rules: parsed.data.map(toWriteRule),
       })
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.pointsDefaultConfig(realmId) })
-      toast.success(m['points.default_config_saved']())
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.pointsDefaultConfig(realmId) })
+      setEditedRules(null)
+      toast.success(m['points.default_config_rules_saved']())
     },
-    onError: (error: unknown) => {
-      console.error('Failed to update realm config:', error)
-      toast.error(getErrorMessage(error) || m['points.default_config_save_failed']())
-    },
-  })
-
-  const form = useAppForm({
-    schema: pointsDefaultConfigSchema,
-    defaultValues: effectiveConfig
-      ? {
-          ...effectiveConfig,
-          freePeriodicGrantPeriodType: effectiveConfig.freePeriodicGrantPeriodType as
-            | 'once'
-            | 'daily'
-            | 'weekly'
-            | 'monthly',
-          freePeriodicQuotaWindows: effectiveConfig.freePeriodicQuotaWindows ?? [],
-        }
-      : {
-          registrationBonusPoints: 1000,
-          freePeriodicPointsAmount: 50,
-          freePeriodicGrantPeriodType: 'daily',
-          freePeriodicValidityDays: 1,
-          freePeriodicQuotaWindows: [],
-        },
-    onSubmit: async ({ value }) => {
-      // Defense-in-depth: the Save button is also disabled when the user lacks
-      // SETTINGS_MANAGE, but guard here too in case submit is triggered anyway.
-      if (!canManageConfig) return
-      // The mutation's `onError` surfaces the failure toast and logs the error.
-      // Swallow the rejected promise so it doesn't propagate as an unhandled
-      // rejection (per vitest config, rejections are expected to be handled in
-      // components). Sibling forms share this latent leak; see FE-T06 handoff.
-      await updateMutation.mutateAsync(value).catch(() => {})
+    onError: (mutationError) => {
+      toast.error(getErrorMessage(mutationError))
     },
   })
 
-  if (!canViewConfig) {
-    return <AccessDenied message={m['error.access_denied']()} />
-  }
-
+  if (!canView) return <AccessDenied />
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center p-8">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
+      <p className="text-sm text-muted-foreground">{m['points.default_config_loading_rules']()}</p>
     )
   }
-
-  if (error && isForbidden) {
-    return <AccessDenied message={m['error.access_denied']()} />
-  }
-
-  if (error && !isNotFound) {
-    return (
-      <Alert variant="destructive">
-        <AlertDescription>
-          {m['points.default_config_load_failed']({ message: (error as Error).message })}
-        </AlertDescription>
-      </Alert>
-    )
-  }
+  if (error) return <p className="text-sm text-destructive">{getErrorMessage(error)}</p>
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold">{m['points.default_config_page_title']()}</h1>
+      <div>
+        <h1 className="text-2xl font-semibold">{m['points.default_config_rules_page_title']()}</h1>
+        <p className="text-sm text-muted-foreground">
+          {m['points.default_config_rules_page_description']()}
+        </p>
+      </div>
 
-      <Alert>
-        <Info className="h-4 w-4" />
-        <AlertDescription>{m['points.default_config_info']()}</AlertDescription>
-      </Alert>
-
-      <Card data-testid="points-default-config-form" aria-labelledby="points-default-config-title">
+      <Card>
         <CardHeader>
-          <CardTitle id="points-default-config-title">
-            {m['points.default_config_card_title']()}
-          </CardTitle>
-          <CardDescription>{m['points.default_config_card_description']()}</CardDescription>
+          <CardTitle>{m['points.default_config_registration_card_title']()}</CardTitle>
+          <CardDescription>
+            {m['points.default_config_registration_card_description']()}
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <AppForm>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault()
-                form.handleSubmit()
-              }}
-              className="space-y-6"
-              aria-label="Points default config form"
-            >
-              <form.Field name="registrationBonusPoints">
-                {(field) => (
-                  <div className="space-y-2">
-                    <Label htmlFor={field.name} id={`${field.name}-label`}>
-                      {m['points.default_config_registration_bonus_label']()}
-                    </Label>
-                    <Input
-                      id={field.name}
-                      type="number"
-                      min="0"
-                      step="1"
-                      value={field.state.value}
-                      onChange={(e) => field.handleChange(parseInt(e.target.value) || 0)}
-                      placeholder="1000"
-                      data-testid="registration-bonus-points-input"
-                      aria-labelledby={`${field.name}-label`}
-                      aria-describedby={`${field.name}-description ${field.state.meta.errors.length > 0 ? `${field.name}-error` : ''}`}
-                      aria-invalid={field.state.meta.errors.length > 0}
-                      aria-required="true"
-                      disabled={!canManageConfig || updateMutation.isPending}
-                    />
-                    <p id={`${field.name}-description`} className="text-xs text-muted-foreground">
-                      {m['points.default_config_registration_bonus_help']()}
-                    </p>
-                    {field.state.meta.errors.length > 0 && (
-                      <p
-                        id={`${field.name}-error`}
-                        className="text-sm text-destructive"
-                        data-testid="registration-bonus-points-error"
-                        role="alert"
-                      >
-                        {(field.state.meta.errors[0] as { message?: string })?.message ||
-                          String(field.state.meta.errors[0])}
-                      </p>
-                    )}
-                  </div>
-                )}
-              </form.Field>
-
-              <form.Field name="freePeriodicGrantPeriodType">
-                {(field) => (
-                  <div className="space-y-2">
-                    <Label htmlFor={field.name} id={`${field.name}-label`}>
-                      {m['points.default_config_grant_period_type_label']()}
-                    </Label>
-                    <Select
-                      value={field.state.value}
-                      onValueChange={(value) =>
-                        field.handleChange(value as 'once' | 'daily' | 'weekly' | 'monthly')
-                      }
-                      disabled={!canManageConfig || updateMutation.isPending}
-                    >
-                      <SelectTrigger
-                        id={field.name}
-                        data-testid="grant-period-type-select"
-                        aria-labelledby={`${field.name}-label`}
-                        aria-describedby={`${field.name}-description ${field.state.meta.errors.length > 0 ? `${field.name}-error` : ''}`}
-                        aria-invalid={field.state.meta.errors.length > 0}
-                        aria-required="true"
-                      >
-                        <SelectValue
-                          placeholder={m['points.default_config_grant_period_type_placeholder']()}
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {Object.entries(periodTypeLabels).map(([value, label]) => (
-                          <SelectItem key={value} value={value}>
-                            {label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <p id={`${field.name}-description`} className="text-xs text-muted-foreground">
-                      {m['points.default_config_grant_period_help']()}
-                    </p>
-                    {field.state.meta.errors.length > 0 && (
-                      <p
-                        id={`${field.name}-error`}
-                        className="text-sm text-destructive"
-                        data-testid="grant-period-type-error"
-                        role="alert"
-                      >
-                        {(field.state.meta.errors[0] as { message?: string })?.message ||
-                          String(field.state.meta.errors[0])}
-                      </p>
-                    )}
-                  </div>
-                )}
-              </form.Field>
-
-              <form.Field name="freePeriodicPointsAmount">
-                {(field) => (
-                  <div className="space-y-2">
-                    <Label htmlFor={field.name} id={`${field.name}-label`}>
-                      {m['points.default_config_periodic_amount_label']()}
-                    </Label>
-                    <Input
-                      id={field.name}
-                      type="number"
-                      min="0"
-                      step="1"
-                      value={field.state.value}
-                      onChange={(e) => field.handleChange(parseInt(e.target.value) || 0)}
-                      placeholder="50"
-                      data-testid="free-periodic-points-amount-input"
-                      aria-labelledby={`${field.name}-label`}
-                      aria-describedby={`${field.name}-description ${field.state.meta.errors.length > 0 ? `${field.name}-error` : ''}`}
-                      aria-invalid={field.state.meta.errors.length > 0}
-                      aria-required="true"
-                      disabled={!canManageConfig || updateMutation.isPending}
-                    />
-                    <p id={`${field.name}-description`} className="text-xs text-muted-foreground">
-                      {m['points.default_config_periodic_amount_help']()}
-                    </p>
-                    {field.state.meta.errors.length > 0 && (
-                      <p
-                        id={`${field.name}-error`}
-                        className="text-sm text-destructive"
-                        data-testid="free-periodic-points-amount-error"
-                        role="alert"
-                      >
-                        {(field.state.meta.errors[0] as { message?: string })?.message ||
-                          String(field.state.meta.errors[0])}
-                      </p>
-                    )}
-                  </div>
-                )}
-              </form.Field>
-
-              <form.Subscribe
-                selector={(state) => state.values.freePeriodicGrantPeriodType === 'once'}
-              >
-                {(isOneTime) =>
-                  isOneTime ? (
-                    <form.Field name="freePeriodicValidityDays">
-                      {(field) => (
-                        <div className="space-y-2">
-                          <Label htmlFor={field.name} id={`${field.name}-label`}>
-                            {m['points.default_config_validity_days_label']()}
-                          </Label>
-                          <Input
-                            id={field.name}
-                            type="number"
-                            min="0"
-                            step="1"
-                            value={field.state.value}
-                            onChange={(e) => field.handleChange(parseInt(e.target.value) || 0)}
-                            placeholder="0"
-                            data-testid="free-periodic-validity-days-input"
-                            aria-labelledby={`${field.name}-label`}
-                            aria-describedby={`${field.name}-description ${field.state.meta.errors.length > 0 ? `${field.name}-error` : ''}`}
-                            aria-invalid={field.state.meta.errors.length > 0}
-                            aria-required="true"
-                            disabled={!canManageConfig || updateMutation.isPending}
-                          />
-                          <p
-                            id={`${field.name}-description`}
-                            className="text-xs text-muted-foreground"
-                          >
-                            {m['points.default_config_validity_days_help']()}
-                          </p>
-                          {field.state.meta.errors.length > 0 && (
-                            <p
-                              id={`${field.name}-error`}
-                              className="text-sm text-destructive"
-                              data-testid="free-periodic-validity-days-error"
-                              role="alert"
-                            >
-                              {(field.state.meta.errors[0] as { message?: string })?.message ||
-                                String(field.state.meta.errors[0])}
-                            </p>
-                          )}
-                        </div>
-                      )}
-                    </form.Field>
-                  ) : (
-                    <form.Field name="freePeriodicQuotaWindows">
-                      {(field) => (
-                        <div className="space-y-2">
-                          <Label
-                            id={`${field.name}-label`}
-                            className="text-xs font-medium text-muted-foreground"
-                          >
-                            {m['points.quota_editor_title']()}
-                          </Label>
-                          <MultiWindowQuotaEditor
-                            value={field.state.value ?? []}
-                            onChange={(next) => field.handleChange(next)}
-                            disabled={!canManageConfig || updateMutation.isPending}
-                            context="realm-default"
-                            testIdPrefix="realm-default-window"
-                          />
-                        </div>
-                      )}
-                    </form.Field>
-                  )
-                }
-              </form.Subscribe>
-
-              {/* Action Buttons */}
-              <div className="flex justify-end pt-4">
-                <form.Subscribe
-                  selector={(state) => ({
-                    canSubmit: state.canSubmit,
-                    isSubmitting: state.isSubmitting,
-                  })}
-                >
-                  {(state) => (
-                    <Button
-                      type="submit"
-                      disabled={
-                        !canManageConfig ||
-                        !state.canSubmit ||
-                        state.isSubmitting ||
-                        updateMutation.isPending
-                      }
-                      data-testid="save-config-button"
-                      aria-label={
-                        state.isSubmitting || updateMutation.isPending
-                          ? m['points.default_config_saving_button']()
-                          : m['points.default_config_save_button']()
-                      }
-                      aria-busy={state.isSubmitting || updateMutation.isPending}
-                    >
-                      {state.isSubmitting || updateMutation.isPending
-                        ? m['points.default_config_saving_button']()
-                        : m['points.default_config_save_button']()}
-                    </Button>
-                  )}
-                </form.Subscribe>
-              </div>
-            </form>
-          </AppForm>
+          <PointDistributionRuleEditor
+            value={registrationRules}
+            onChange={(next) => replaceGroup('registration', next)}
+            buckets={buckets}
+            triggers={registrationTriggers}
+            allowQuota={false}
+            disabled={!canManage || mutation.isPending}
+          />
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{m['points.default_config_free_periodic_card_title']()}</CardTitle>
+          <CardDescription>
+            {m['points.default_config_free_periodic_card_description']()}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <PointDistributionRuleEditor
+            value={freePeriodicRules}
+            onChange={(next) => replaceGroup('free_periodic_grant', next)}
+            buckets={buckets}
+            triggers={freePeriodicTriggers}
+            allowQuota
+            allowPeriod
+            disabled={!canManage || mutation.isPending}
+          />
+        </CardContent>
+      </Card>
+
+      {canManage && (
+        <div className="flex justify-end">
+          <Button
+            type="button"
+            onClick={() => mutation.mutate()}
+            disabled={mutation.isPending}
+            data-testid="registration-rules-save"
+          >
+            {mutation.isPending
+              ? m['shared.saving']()
+              : m['points.default_config_save_rules_button']()}
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

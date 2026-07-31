@@ -14,14 +14,14 @@ use crate::common::entities::app_errors::CoreError;
 use crate::common::policies::{RealmPolicy, ensure_policy};
 use crate::rbac_init::RealmInitializationService;
 use crate::realm::{
-    CreateRealmRequest, ListRealmsFilters, PaginatedRealmsResponse, Realm,
-    RealmPointsConfigInitializer, RealmRepository, RealmService, RealmSummary, UpdateRealmRequest,
+    CreateRealmRequest, ListRealmsFilters, PaginatedRealmsResponse, Realm, RealmRepository,
+    RealmService, RealmSummary, UpdateRealmRequest,
 };
 use crate::realm_config::{ConfigType, RealmConfigRepository, UpsertRealmConfigRequest};
 use crate::user::ports::{UserRepository, UserService};
 use crate::user::value_objects::CreateUserRequest;
 
-pub struct RealmServiceImpl<R, P, RB, C, UR, RR, U, UR2, RCR, RPCI, AE>
+pub struct RealmServiceImpl<R, P, RB, C, UR, RR, U, UR2, RCR, AE>
 where
     R: RealmRepository,
     P: RealmPolicy,
@@ -32,7 +32,6 @@ where
     U: UserRepository,
     UR2: UserService,
     RCR: RealmConfigRepository,
-    RPCI: RealmPointsConfigInitializer,
     AE: AuditEventRepository + 'static,
 {
     pub(crate) realm_repository: Arc<R>,
@@ -44,12 +43,10 @@ where
     pub(crate) user_repository: Arc<U>,
     pub(crate) user_service: Arc<UR2>,
     pub(crate) realm_config_repository: Arc<RCR>,
-    pub(crate) realm_points_config_initializer: Arc<RPCI>,
     pub(crate) audit_event_repository: Arc<AE>,
 }
 
-impl<R, P, RB, C, UR, RR, U, UR2, RCR, RPCI, AE>
-    RealmServiceImpl<R, P, RB, C, UR, RR, U, UR2, RCR, RPCI, AE>
+impl<R, P, RB, C, UR, RR, U, UR2, RCR, AE> RealmServiceImpl<R, P, RB, C, UR, RR, U, UR2, RCR, AE>
 where
     R: RealmRepository,
     P: RealmPolicy,
@@ -60,7 +57,6 @@ where
     U: UserRepository,
     UR2: UserService,
     RCR: RealmConfigRepository,
-    RPCI: RealmPointsConfigInitializer,
     AE: AuditEventRepository + 'static,
 {
     pub fn new(
@@ -73,7 +69,6 @@ where
         user_repository: Arc<U>,
         user_service: Arc<UR2>,
         realm_config_repository: Arc<RCR>,
-        realm_points_config_initializer: Arc<RPCI>,
         audit_event_repository: Arc<AE>,
     ) -> Self {
         Self {
@@ -86,7 +81,6 @@ where
             user_repository,
             user_service,
             realm_config_repository,
-            realm_points_config_initializer,
             audit_event_repository,
         }
     }
@@ -98,8 +92,8 @@ where
     }
 }
 
-impl<R, P, RB, C, UR, RR, U, UR2, RCR, RPCI, AE> RealmService
-    for RealmServiceImpl<R, P, RB, C, UR, RR, U, UR2, RCR, RPCI, AE>
+impl<R, P, RB, C, UR, RR, U, UR2, RCR, AE> RealmService
+    for RealmServiceImpl<R, P, RB, C, UR, RR, U, UR2, RCR, AE>
 where
     R: RealmRepository,
     P: RealmPolicy,
@@ -110,7 +104,6 @@ where
     U: UserRepository,
     UR2: UserService,
     RCR: RealmConfigRepository,
-    RPCI: RealmPointsConfigInitializer,
     AE: AuditEventRepository + 'static,
 {
     async fn create_realm(
@@ -163,31 +156,6 @@ where
                 // TODO: Realm deletion is not supported - partial realm data may remain
                 return Err(CoreError::InternalServerError(format!(
                     "Failed to initialize default registration config for realm {}: {}",
-                    realm.id, e
-                )));
-            }
-        }
-
-        match self
-            .realm_points_config_initializer
-            .create_default_realm_points_config(&realm.id)
-            .await
-        {
-            Ok(_) => {
-                tracing::info!(
-                    realm_id = %realm.id,
-                    "Default points config initialized successfully"
-                );
-            }
-            Err(e) => {
-                tracing::error!(
-                    realm_id = %realm.id,
-                    error = %e,
-                    "Failed to initialize default points config, rolling back realm"
-                );
-                // TODO: Realm deletion is not supported - partial realm data may remain
-                return Err(CoreError::InternalServerError(format!(
-                    "Failed to initialize default points config for realm {}: {}",
                     realm.id, e
                 )));
             }
@@ -657,8 +625,8 @@ where
     }
 }
 
-impl<R, P, RB, C, UR, RR, U, UR2, RCR, RPCI, AE> std::fmt::Debug
-    for RealmServiceImpl<R, P, RB, C, UR, RR, U, UR2, RCR, RPCI, AE>
+impl<R, P, RB, C, UR, RR, U, UR2, RCR, AE> std::fmt::Debug
+    for RealmServiceImpl<R, P, RB, C, UR, RR, U, UR2, RCR, AE>
 where
     R: RealmRepository,
     P: RealmPolicy,
@@ -669,7 +637,6 @@ where
     U: UserRepository,
     UR2: UserService,
     RCR: RealmConfigRepository,
-    RPCI: RealmPointsConfigInitializer,
     AE: AuditEventRepository + 'static,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
