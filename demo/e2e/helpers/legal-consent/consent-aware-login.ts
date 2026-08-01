@@ -29,7 +29,7 @@ export async function loginAsAdminWithConsent(
     console.log('[ConsentAwareLogin] Login-time re-consent view detected; agreeing...')
     const agreeButton = page.locator(SELECTORS.legalConsent.loginAgreeAndContinueButton)
     await Promise.all([
-      page.waitForURL(`**/${realmId}/manage**`, { timeout: 15000 }),
+      page.waitForURL(`**/manage**`, { timeout: 15000 }),
       agreeButton.click(),
     ])
     console.log('[ConsentAwareLogin] Re-consent accepted; navigation completed')
@@ -46,7 +46,7 @@ export async function loginAsAdminWithConsent(
     } catch {
       // Fallback: force-navigate to the realm-prefixed dashboard if the SPA
       // redirect did not land on /manage in time.
-      await page.goto(`${BASE_URL}/${realmId}/manage`, { waitUntil: 'domcontentloaded' })
+      await page.goto(`${BASE_URL}/manage`, { waitUntil: 'domcontentloaded' })
     }
   }
 }

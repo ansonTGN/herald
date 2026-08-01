@@ -22,7 +22,7 @@ import { test, expect, cleanupTestData } from './fixtures/demo-page.fixtures'
 import { DeviceVerificationPage } from './pages/device-page'
 import { seedDeviceCodeClientApp, deviceAuthorize, deviceTokenPoll } from './helpers/device-api'
 import { verifyTestEnvironment } from './helpers/environment-setup'
-import { DEMO_ADMIN } from './helpers/auth'
+import { DEMO_ADMIN, createBearerApiContext } from './helpers/auth'
 
 test.describe('[Device Code] Device Code Flow Demo Tests', () => {
   let testStartTime: number
@@ -53,7 +53,8 @@ test.describe('[Device Code] Device Code Flow Demo Tests', () => {
     })
 
     await test.step('And: 准备启用了 Device Code Grant 的 Client App', async () => {
-      const result = await seedDeviceCodeClientApp(page.request, realmId)
+      const adminApiContext = await createBearerApiContext(loginPage.getAccessToken())
+      const result = await seedDeviceCodeClientApp(adminApiContext, realmId)
       clientId = result.clientId
       console.log(`✓ Seeded device code client app (clientId=${clientId})`)
     })
@@ -122,7 +123,8 @@ test.describe('[Device Code] Device Code Flow Demo Tests', () => {
     })
 
     await test.step('And: 准备启用了 Device Code Grant 的 Client App', async () => {
-      const result = await seedDeviceCodeClientApp(page.request, realmId)
+      const adminApiContext = await createBearerApiContext(loginPage.getAccessToken())
+      const result = await seedDeviceCodeClientApp(adminApiContext, realmId)
       clientId = result.clientId
       console.log(`✓ Seeded device code client app (clientId=${clientId})`)
     })

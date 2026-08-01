@@ -54,7 +54,7 @@ export async function navigateToInvoiceAdminPage(
   page: Page,
   realmId: string,
 ): Promise<void> {
-  await page.goto(`/${realmId}/manage/billing/invoices`)
+  await page.goto(`/manage/billing/invoices`)
   await expect(page.getByTestId('invoice-admin-page')).toBeVisible({ timeout: 10000 })
 }
 
@@ -128,7 +128,7 @@ export async function createInvoice(
 
   await page.getByTestId('invoice-form-submit-button').click()
 
-  await page.waitForURL(`**/${realmId}/manage/billing/invoices`, { timeout: 10000 })
+  await page.waitForURL(`**/manage/billing/invoices`, { timeout: 10000 })
   await expect(page.getByTestId('invoice-admin-page')).toBeVisible({ timeout: 10000 })
 
   // New invoices are always in draft status, so filtering by status avoids matching
@@ -224,7 +224,7 @@ export async function editInvoice(
 
   await page.getByTestId('invoice-form-submit-button').click()
 
-  await page.waitForURL(`**/${realmId}/manage/billing/invoices`, { timeout: 10000 })
+  await page.waitForURL(`**/manage/billing/invoices`, { timeout: 10000 })
   await expect(page.getByTestId('invoice-admin-page')).toBeVisible({ timeout: 10000 })
 }
 

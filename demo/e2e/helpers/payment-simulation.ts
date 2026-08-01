@@ -12,6 +12,15 @@ const API_TIMEOUT = 10000
 const POLL_TIMEOUT = 5000
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
 
+export interface SimulatedPointGrant {
+  ruleId: string
+  bucketId: string
+  resultId: string
+  pointsType: string
+  points?: number | null
+  description: string
+}
+
 function getInternalApiKey(): string {
   const apiKey = process.env.INTERNAL_API_KEY?.trim()
   if (!apiKey) {
@@ -33,6 +42,7 @@ async function updatePaymentStatus(
   status?: string
   transactionId?: string
   points?: number
+  pointGrants?: SimulatedPointGrant[]
   error?: string
 }> {
   try {
@@ -100,6 +110,7 @@ export async function fulfillPayment(
   status?: string
   transactionId?: string
   points?: number
+  pointGrants?: SimulatedPointGrant[]
   error?: string
 }> {
   const result = await updatePaymentStatus(request, realmId, attemptId, 'fulfill')
@@ -108,12 +119,13 @@ export async function fulfillPayment(
     return { success: false, error: result.error }
   }
 
-  if (result.transactionId || result.points) {
+  if (result.transactionId || result.points || result.pointGrants) {
     return {
       success: true,
       status: result.status,
       transactionId: result.transactionId,
       points: result.points,
+      pointGrants: result.pointGrants,
     }
   }
 
@@ -136,6 +148,7 @@ export async function fulfillPayment(
         status: data.status,
         transactionId: data.fulfillment?.transactionId,
         points: data.fulfillment?.points,
+        pointGrants: data.fulfillment?.pointGrants,
       }
     }
 

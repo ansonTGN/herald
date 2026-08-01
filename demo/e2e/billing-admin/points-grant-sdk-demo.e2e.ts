@@ -18,7 +18,9 @@
  */
 
 import { test, expect } from '../fixtures/demo-page.fixtures'
-import { DEMO_ADMIN, loginAsAdmin } from '../helpers/auth'
+import type { APIRequestContext } from '@playwright/test'
+import { createBearerApiContext, DEMO_ADMIN } from '../helpers/auth'
+import { LoginPage } from '../pages/login-page'
 import { verifyTestEnvironment } from '../helpers/environment-setup'
 import {
   grantPointsViaExtApi,
@@ -57,10 +59,16 @@ test.describe('[SDK Ext API] Grant Points Demo Tests (US-TP-017)', () => {
 
     const context = await browser.newContext()
     const page = await context.newPage()
+    let apiContext: APIRequestContext | undefined
 
     try {
-      // Login as admin to create API keys via UI
-      await loginAsAdmin(page, { realmId: DEMO_ADMIN.realmId })
+      const loginPage = new LoginPage(page)
+      await loginPage.loginAsAdmin(
+        DEMO_ADMIN.email,
+        DEMO_ADMIN.password,
+        DEMO_ADMIN.realmId,
+      )
+      apiContext = await createBearerApiContext(loginPage.getAccessToken())
 
       // Create primary API key (nominally with points.manage permission)
       // NOTE: createTestApiKeyWithPermission's permission param is a placeholder;
@@ -70,6 +78,9 @@ test.describe('[SDK Ext API] Grant Points Demo Tests (US-TP-017)', () => {
         page,
         'points.manage',
         setupStartTime,
+        DEMO_ADMIN.realmId,
+        '',
+        apiContext,
       )
 
       // Create secondary API key (with a different nominal permission, NOT points.manage)
@@ -77,6 +88,9 @@ test.describe('[SDK Ext API] Grant Points Demo Tests (US-TP-017)', () => {
         page,
         'clients.view',
         setupStartTime + 1,
+        DEMO_ADMIN.realmId,
+        '',
+        apiContext,
       )
 
       // Look up admin user UUID via admin API (not ext API, which requires specific permissions).
@@ -85,7 +99,7 @@ test.describe('[SDK Ext API] Grant Points Demo Tests (US-TP-017)', () => {
         process.env.BASE_URL?.replace(/:\d+/, ':8080') ||
         'http://localhost:8080'
 
-      const usersResponse = await context.request.get(
+      const usersResponse = await apiContext.get(
         `${backendUrl}/api/users/admin?search=${encodeURIComponent(DEMO_ADMIN.email)}`,
       )
       if (usersResponse.ok()) {
@@ -115,7 +129,7 @@ test.describe('[SDK Ext API] Grant Points Demo Tests (US-TP-017)', () => {
       // target for every happy-path grant. Failures fall back to '' and rely
       // on the same warn-and-continue pattern as `adminUserUuid`.
       try {
-        const buckets = await listBucketsViaApi(page, DEMO_ADMIN.realmId)
+        const buckets = await listBucketsViaApi(page, DEMO_ADMIN.realmId, apiContext)
         const primary = buckets.find(
           (b) => b.bucketKey === CREDIT_BUCKET_KEYS.PRIMARY_POOL,
         )
@@ -136,6 +150,7 @@ test.describe('[SDK Ext API] Grant Points Demo Tests (US-TP-017)', () => {
         )
       }
     } finally {
+      await apiContext?.dispose()
       await context.close()
     }
   })
@@ -152,10 +167,16 @@ test.describe('[SDK Ext API] Grant Points Demo Tests (US-TP-017)', () => {
 
     const context = await browser.newContext()
     const page = await context.newPage()
+    let apiContext: APIRequestContext | undefined
 
     try {
-      // Login to get session cookies for API calls
-      await loginAsAdmin(page, { realmId: DEMO_ADMIN.realmId })
+      const loginPage = new LoginPage(page)
+      await loginPage.loginAsAdmin(
+        DEMO_ADMIN.email,
+        DEMO_ADMIN.password,
+        DEMO_ADMIN.realmId,
+      )
+      apiContext = await createBearerApiContext(loginPage.getAccessToken())
 
       const backendUrl =
         process.env.API_BASE_URL ||
@@ -170,7 +191,7 @@ test.describe('[SDK Ext API] Grant Points Demo Tests (US-TP-017)', () => {
       for (const appName of appNames) {
         try {
           // List client apps to find the one to delete
-          const listRes = await page.context().request.get(`${backendUrl}/api/client/admin`)
+          const listRes = await apiContext.get(`${backendUrl}/api/client/admin`)
           if (!listRes.ok()) continue
           const listBody = await listRes.json()
           const items = listBody.items ?? []
@@ -178,7 +199,7 @@ test.describe('[SDK Ext API] Grant Points Demo Tests (US-TP-017)', () => {
           if (!app?.id) continue
 
           // Delete the client app
-          await page.context().request.delete(`${backendUrl}/api/client/admin/${app.id}`)
+          await apiContext.delete(`${backendUrl}/api/client/admin/${app.id}`)
         } catch (error) {
           console.warn(`[Cleanup] Failed to delete client app "${appName}":`, error)
         }
@@ -186,6 +207,7 @@ test.describe('[SDK Ext API] Grant Points Demo Tests (US-TP-017)', () => {
     } catch (error) {
       console.warn('[Cleanup] Failed to delete test client apps:', error)
     } finally {
+      await apiContext?.dispose()
       await context.close()
     }
   })

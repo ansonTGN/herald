@@ -107,7 +107,7 @@ def ensure_demo_seed_data(logger: "Logger | None" = None) -> bool:
         _ensure_points_realm(admin_opener, logger)
         _ensure_current_legal_consent(POINTS_REALM_ID, POINTS_REALM_ADMIN_EMAIL, logger)
 
-        # Ensure credit buckets BEFORE any points/mapping/payment seed (bucket_id is NOT NULL).
+        # Ensure credit buckets before points and distribution-rule seed data.
         _ensure_credit_buckets(logger)
 
         realm_admin_opener = _login(
@@ -132,14 +132,12 @@ def ensure_demo_seed_data(logger: "Logger | None" = None) -> bool:
         # recurring entitlement mapping (`realm001-product-subscription`) that
         # US-PW-001 expects to exist before the demo test opens the page.
         _ensure_realm001_subscription_data(user_id, logger)
+        _ensure_multi_wallet_grant_demo_data(logger)
 
         # Ensure payment provider credentials (realm_config only). This function
         # does NOT seed entitlement mappings; the realm-001 recurring mapping is
         # handled by `_ensure_realm001_subscription_data` above.
         _ensure_payment_provider_config(logger)
-
-        _info(logger, "Ensuring admin realm default points config...")
-        _ensure_admin_realm_points_config(logger)
 
         _info(logger, "Ensuring admin realm audit seed data...")
         _ensure_admin_realm_audit_events(logger)
@@ -861,7 +859,6 @@ def _ensure_realm001_subscription_data(user_id: str, logger: "Logger | None") ->
     Uses the post-entitlement-migration schema: no products/subscription_plan tables.
     The subscription table now uses entitlement_key instead of plan_id/tier/billing_period.
     """
-    bucket_id = _default_bucket_id(POINTS_REALM_ID)
     sql = f"""
 DO $$
 DECLARE
@@ -886,7 +883,7 @@ BEGIN
     -- subscription mapping; NULLS NOT DISTINCT lets a NULL external_price_id
     -- still match on re-seed.
     INSERT INTO provider_entitlement_mappings (
-        id, realm_id, payment_provider, external_product_id, external_price_id, bucket_id,
+        id, realm_id, payment_provider, external_product_id, external_price_id,
         entitlement_key, billing_type, enabled
     ) VALUES (
         uuidv7(),
@@ -894,14 +891,12 @@ BEGIN
         'stripe',
         'realm001-product-subscription',
         NULL,
-        '{bucket_id}',
         'professional',
         'recurring',
         TRUE
     )
     ON CONFLICT (realm_id, payment_provider, external_product_id, external_price_id) DO UPDATE
-        SET bucket_id = EXCLUDED.bucket_id,
-            entitlement_key = EXCLUDED.entitlement_key,
+        SET entitlement_key = EXCLUDED.entitlement_key,
             billing_type = EXCLUDED.billing_type,
             enabled = TRUE;
 
@@ -910,7 +905,7 @@ BEGIN
     INSERT INTO subscription (
         id, realm_id, user_id, external_subscription_id, external_product_id,
         payment_provider, status, entitlement_key,
-        current_period_start, current_period_end, client_app_id, bucket_id,
+        current_period_start, current_period_end, client_app_id,
         billing_type
     ) VALUES (
         uuidv7(),
@@ -924,7 +919,6 @@ BEGIN
         v_test_timestamp - INTERVAL '30 days',
         v_test_timestamp + INTERVAL '30 days',
         v_client_app_id,
-        '{bucket_id}'::uuid,
         'recurring'
     )
     RETURNING id INTO v_subscription_id;
@@ -974,6 +968,144 @@ END $$;
 """
     _sql_exec(sql)
     _info(logger, "[OK] Subscription data ready for realm-001")
+
+
+def _ensure_multi_wallet_grant_demo_data(logger: "Logger | None") -> None:
+    """Seed the mapping and rule sets exercised by the multi-wallet Demo."""
+    primary_id = _bucket_id(POINTS_REALM_ID, CREDIT_BUCKET_KEY_PRIMARY)
+    secondary_id = _bucket_id(POINTS_REALM_ID, CREDIT_BUCKET_KEY_SECONDARY)
+    sql = f"""
+DO $$
+DECLARE
+    v_mapping_id UUID;
+BEGIN
+    INSERT INTO provider_entitlement_mappings (
+        id, realm_id, payment_provider, external_product_id, external_price_id,
+        entitlement_key, billing_type, enabled, provider_product_info, synced_at
+    ) VALUES (
+        '0198f21a-1111-7000-8000-000000000001'::uuid,
+        '{POINTS_REALM_ID}',
+        'stripe',
+        'demo-multi-wallet-topup',
+        NULL,
+        'multi-wallet-topup',
+        'one_time',
+        TRUE,
+        '{{
+          "name": "Multi-wallet credit pack",
+          "description": "One purchase grants independent balances to two accounts",
+          "price": 1000,
+          "currency": "usd",
+          "billing_type": "one_time",
+          "product_metadata": {{}},
+          "price_metadata": {{}}
+        }}'::jsonb,
+        NOW()
+    )
+    ON CONFLICT (realm_id, payment_provider, external_product_id, external_price_id)
+    DO UPDATE SET
+        entitlement_key = EXCLUDED.entitlement_key,
+        billing_type = EXCLUDED.billing_type,
+        enabled = TRUE,
+        provider_product_info = EXCLUDED.provider_product_info,
+        synced_at = NOW()
+    RETURNING id INTO v_mapping_id;
+
+    INSERT INTO points_distribution_rules (
+        id, realm_id, owner_type, entitlement_mapping_id, bucket_id,
+        trigger_sources, grant_mode, points_amount, validity_days,
+        enabled, display_order
+    ) VALUES
+    (
+        '0198f21a-1111-7000-8000-000000000011'::uuid,
+        '{POINTS_REALM_ID}',
+        'entitlement_mapping',
+        v_mapping_id,
+        '{primary_id}'::uuid,
+        ARRAY['topup']::text[],
+        'fixed',
+        120,
+        0,
+        TRUE,
+        0
+    ),
+    (
+        '0198f21a-1111-7000-8000-000000000012'::uuid,
+        '{POINTS_REALM_ID}',
+        'entitlement_mapping',
+        v_mapping_id,
+        '{secondary_id}'::uuid,
+        ARRAY['topup']::text[],
+        'fixed',
+        80,
+        30,
+        TRUE,
+        1
+    )
+    ON CONFLICT (id) DO UPDATE SET
+        realm_id = EXCLUDED.realm_id,
+        owner_type = EXCLUDED.owner_type,
+        entitlement_mapping_id = EXCLUDED.entitlement_mapping_id,
+        bucket_id = EXCLUDED.bucket_id,
+        trigger_sources = EXCLUDED.trigger_sources,
+        grant_mode = EXCLUDED.grant_mode,
+        points_amount = EXCLUDED.points_amount,
+        validity_days = EXCLUDED.validity_days,
+        quota_windows = NULL,
+        grant_period_type = NULL,
+        enabled = TRUE,
+        display_order = EXCLUDED.display_order,
+        updated_at = NOW();
+
+    INSERT INTO points_distribution_rules (
+        id, realm_id, owner_type, entitlement_mapping_id, bucket_id,
+        trigger_sources, grant_mode, points_amount, validity_days,
+        enabled, display_order
+    ) VALUES
+    (
+        '0198f21a-1111-7000-8000-000000000021'::uuid,
+        '{POINTS_REALM_ID}',
+        'realm_registration',
+        NULL,
+        '{primary_id}'::uuid,
+        ARRAY['registration']::text[],
+        'fixed',
+        40,
+        0,
+        TRUE,
+        0
+    ),
+    (
+        '0198f21a-1111-7000-8000-000000000022'::uuid,
+        '{POINTS_REALM_ID}',
+        'realm_registration',
+        NULL,
+        '{secondary_id}'::uuid,
+        ARRAY['registration']::text[],
+        'fixed',
+        25,
+        0,
+        TRUE,
+        1
+    )
+    ON CONFLICT (id) DO UPDATE SET
+        realm_id = EXCLUDED.realm_id,
+        owner_type = EXCLUDED.owner_type,
+        entitlement_mapping_id = NULL,
+        bucket_id = EXCLUDED.bucket_id,
+        trigger_sources = EXCLUDED.trigger_sources,
+        grant_mode = EXCLUDED.grant_mode,
+        points_amount = EXCLUDED.points_amount,
+        validity_days = EXCLUDED.validity_days,
+        quota_windows = NULL,
+        grant_period_type = NULL,
+        enabled = TRUE,
+        display_order = EXCLUDED.display_order,
+        updated_at = NOW();
+END $$;
+"""
+    _sql_exec(sql)
+    _info(logger, "[OK] Multi-wallet mapping and registration rules ready")
 
 
 def _load_demo_env() -> dict[str, str]:
@@ -1042,21 +1174,6 @@ def _ensure_payment_provider_config(logger: "Logger | None") -> None:
     """
     _sql_exec(sql)
     _info(logger, "[OK] Payment provider config demo data ready")
-
-
-def _ensure_admin_realm_points_config(logger: "Logger | None") -> None:
-    """Ensure realm_default_configs row exists for admin realm with correct seed values."""
-    _info(logger, "Ensuring admin realm default points config...")
-    sql = f"""
-    INSERT INTO realm_default_configs (realm_id, registration_bonus_points, free_periodic_points_amount, free_periodic_grant_period_type, free_periodic_validity_days)
-    VALUES ('{ADMIN_REALM}', 1000, 50, 'daily', 1)
-    ON CONFLICT (realm_id) DO UPDATE SET
-        registration_bonus_points = EXCLUDED.registration_bonus_points,
-        free_periodic_points_amount = EXCLUDED.free_periodic_points_amount,
-        free_periodic_grant_period_type = EXCLUDED.free_periodic_grant_period_type,
-        free_periodic_validity_days = EXCLUDED.free_periodic_validity_days;
-    """
-    _sql_exec(sql)
 
 
 def _ensure_admin_realm_audit_events(logger: "Logger | None") -> None:
@@ -1145,7 +1262,6 @@ def _ensure_subscription_history_demo_data(admin_opener: urllib.request.OpenerDi
 
     # Post-entitlement-migration: no products/subscription_plan tables.
     # The subscription table uses entitlement_key instead of plan_id/tier/billing_period.
-    bucket_id = _default_bucket_id(ADMIN_REALM)
     sql = f"""
 DO $$
 DECLARE
@@ -1167,7 +1283,7 @@ BEGIN
     -- Single-price subscription row; NULL external_price_id matches on re-seed
     -- via NULLS NOT DISTINCT.
     INSERT INTO provider_entitlement_mappings (
-        id, realm_id, payment_provider, external_product_id, external_price_id, bucket_id,
+        id, realm_id, payment_provider, external_product_id, external_price_id,
         entitlement_key, billing_type, enabled
     ) VALUES (
         uuidv7(),
@@ -1175,14 +1291,12 @@ BEGIN
         'stripe',
         'test-product-subscription',
         NULL,
-        '{bucket_id}',
         'professional',
         'recurring',
         TRUE
     )
     ON CONFLICT (realm_id, payment_provider, external_product_id, external_price_id) DO UPDATE
-        SET bucket_id = EXCLUDED.bucket_id,
-            entitlement_key = EXCLUDED.entitlement_key,
+        SET entitlement_key = EXCLUDED.entitlement_key,
             billing_type = EXCLUDED.billing_type,
             enabled = TRUE;
 
@@ -1191,7 +1305,7 @@ BEGIN
     INSERT INTO subscription (
         id, realm_id, user_id, external_subscription_id, external_product_id,
         payment_provider, status, entitlement_key,
-        current_period_start, current_period_end, client_app_id, bucket_id,
+        current_period_start, current_period_end, client_app_id,
         billing_type
     ) VALUES (
         uuidv7(),
@@ -1205,7 +1319,6 @@ BEGIN
         v_test_timestamp - INTERVAL '30 days',
         v_test_timestamp + INTERVAL '30 days',
         v_client_app_id,
-        '{bucket_id}'::uuid,
         'recurring'
     )
     RETURNING id INTO v_subscription_id;
@@ -1353,27 +1466,21 @@ def _error(logger: "Logger | None", message: str) -> None:
 # Keep both in sync: a key change here must be reflected there (and vice versa)
 # so authoring items reference stable constants, not magic strings.
 #
-# Per-realm directory (exactly one registration pool per realm, enforced by
-# `uq_credit_buckets_registration_pool`):
-#   - PRIMARY_POOL: receives_registration_credits=true; all seeded points
-#     wallet/ledger/txn rows, assigned one-time mappings, and the seeded
-#     subscription reference this bucket. Registration / free-periodic grants
-#     target this bucket.
-#   - SECONDARY_POOL: enabled, NOT a registration pool; covers POINTS_CLIENT_APP_ID
-#     so cross-bucket demos can exercise cross-bucket assertions. Holds no seeded
-#     balance by default.
+# Per-realm directory:
+#   - PRIMARY_POOL: holds the existing seeded points rows.
+#   - SECONDARY_POOL: covers POINTS_CLIENT_APP_ID so cross-bucket demos can
+#     exercise independent balances. Registration routing is rule-owned.
 CREDIT_BUCKET_KEY_PRIMARY = "primary-pool"
 CREDIT_BUCKET_KEY_SECONDARY = "promo-pool"
 CREDIT_BUCKET_NAME_PRIMARY = "Primary Pool"
 CREDIT_BUCKET_NAME_SECONDARY = "Promo Pool"
-CREDIT_BUCKET_DESC_PRIMARY = "Demo primary credit pool (registration receiver)"
+CREDIT_BUCKET_DESC_PRIMARY = "Demo primary credit pool"
 CREDIT_BUCKET_DESC_SECONDARY = "Demo secondary credit pool (cross-bucket coverage)"
 
 # Legacy single-bucket key from earlier seed revisions. Pre-bucket-directory
 # seeds created one row with bucket_key='default'; this set tracks those keys
 # so `_ensure_credit_buckets` can migrate dependent rows off them and drop the
-# leftover bucket (prevents a 2nd registration pool from violating the partial
-# unique index `uq_credit_buckets_registration_pool`).
+# leftover bucket.
 _LEGACY_DEFAULT_BUCKET_KEYS = ("default",)
 
 
@@ -1381,10 +1488,8 @@ def _ensure_credit_buckets(logger: "Logger | None") -> None:
     """Ensure the Credit Bucket directory exists for admin and realm-001.
 
     Per realm creates exactly two enabled buckets:
-      - `primary-pool` (receives_registration_credits=true) — the single
-        registration pool per realm. All seeded points/mapping/payment rows
-        reference this bucket via `bucket_id`.
-      - `promo-pool` (receives_registration_credits=false) — a secondary pool
+      - `primary-pool` — holds the existing seeded points rows.
+      - `promo-pool` — a secondary pool
         covering POINTS_CLIENT_APP_ID so cross-bucket demos have a
         covered-but-empty pool to exercise.
 
@@ -1397,13 +1502,9 @@ def _ensure_credit_buckets(logger: "Logger | None") -> None:
     Bucket ids are resolved at consumption time via `_bucket_id(realm_id, key)`,
     not hardcoded UUIDs.
 
-    LOUD NOTE — migration from legacy `default` bucket: prior seed revisions
-    created a single `bucket_key='default'` row. Re-seeding an existing demo
-    DB would otherwise leave that row alongside the new `primary-pool`, both
-    flagged as registration pool, violating `uq_credit_buckets_registration_pool`.
-    This function therefore (a) migrates any dependent rows off legacy buckets
-    onto the primary pool, (b) deletes the legacy bucket rows, THEN (c) inserts
-    the directory. On a fresh DB the migration is a no-op.
+    Prior seed revisions created a single `bucket_key='default'` row. This
+    function migrates dependent points rows onto `primary-pool`, removes the
+    legacy row, and then establishes the two-account directory.
     """
     _info(logger, "Ensuring Credit Bucket directory for admin and realm-001...")
     _migrate_legacy_default_buckets(logger)
@@ -1425,10 +1526,8 @@ def _migrate_legacy_default_buckets(logger: "Logger | None") -> None:
          bucket to the primary pool.
       4. Removes the legacy bucket's coverage rows and finally the bucket row.
 
-    The registration pool partial unique index (`uq_credit_buckets_registration_pool`)
-    is what makes the delete-before-reinsert ordering matter: if we left the
-    legacy `default` row (registration pool) in place alongside the new
-    `primary-pool` (also registration pool), the index would reject the insert.
+    The delete happens before the directory upsert so the obsolete row cannot
+    remain visible alongside the rule-owned account directory.
     """
     for realm_id in (POINTS_REALM_ID, ADMIN_REALM):
         for legacy_key in _LEGACY_DEFAULT_BUCKET_KEYS:
@@ -1457,7 +1556,7 @@ def _migrate_legacy_default_buckets(logger: "Logger | None") -> None:
                     f"""
                     INSERT INTO credit_buckets (
                         id, realm_id, bucket_key, name, description,
-                        display_order, receives_registration_credits, enabled, created_at, updated_at
+                        display_order, enabled, created_at, updated_at
                     ) VALUES (
                         uuidv7(),
                         '{realm_id}',
@@ -1465,7 +1564,6 @@ def _migrate_legacy_default_buckets(logger: "Logger | None") -> None:
                         '{CREDIT_BUCKET_NAME_PRIMARY}',
                         '{CREDIT_BUCKET_DESC_PRIMARY}',
                         0,
-                        TRUE,
                         TRUE,
                         NOW(),
                         NOW()
@@ -1482,9 +1580,8 @@ def _migrate_legacy_default_buckets(logger: "Logger | None") -> None:
                         f"Could not establish primary pool placeholder in realm {realm_id}"
                     )
 
-            # Re-point every bucket_id-bearing dependent table. All of these
-            # columns are NOT NULL on the points side and nullable on the
-            # routing side; UPDATE is safe either way.
+            # Re-point bucket-owned points rows. Mapping, payment-attempt, and
+            # subscription routing now comes from distribution rules/snapshots.
             _sql_exec(
                 f"""
                 UPDATE points_wallets SET bucket_id = '{primary_id}'::uuid
@@ -1494,19 +1591,6 @@ def _migrate_legacy_default_buckets(logger: "Logger | None") -> None:
                 UPDATE points_transactions SET bucket_id = '{primary_id}'::uuid
                   WHERE bucket_id = '{legacy_id}'::uuid;
                 UPDATE points_consumption_allocations SET bucket_id = '{primary_id}'::uuid
-                  WHERE bucket_id = '{legacy_id}'::uuid;
-                UPDATE provider_entitlement_mappings SET bucket_id = '{primary_id}'::uuid
-                  WHERE bucket_id = '{legacy_id}'::uuid;
-                UPDATE payment_attempts SET bucket_id = '{primary_id}'::uuid
-                  WHERE bucket_id = '{legacy_id}'::uuid;
-                """
-            )
-
-            # subscription.bucket_id is nullable; only repoint where the legacy
-            # bucket was the recorded pool to keep lifecycle routing consistent.
-            _sql_exec(
-                f"""
-                UPDATE subscription SET bucket_id = '{primary_id}'::uuid
                   WHERE bucket_id = '{legacy_id}'::uuid;
                 """
             )
@@ -1526,17 +1610,14 @@ def _migrate_legacy_default_buckets(logger: "Logger | None") -> None:
 def _ensure_realm_bucket_directory(realm_id: str, logger: "Logger | None") -> None:
     """Create/refresh the per-realm Credit Bucket directory.
 
-    Idempotent upsert of `primary-pool` (registration receiver) and `promo-pool`
-    (secondary). Both are enabled. Only `primary-pool` carries
-    `receives_registration_credits = true`; the partial unique index
-    `uq_credit_buckets_registration_pool` enforces the per-realm-single invariant.
+    Idempotent upsert of enabled `primary-pool` and `promo-pool` accounts.
     """
     _info(logger, f"Upserting Credit Bucket directory for realm {realm_id}...")
     _sql_exec(
         f"""
         INSERT INTO credit_buckets (
             id, realm_id, bucket_key, name, description,
-            display_order, receives_registration_credits, enabled, created_at, updated_at
+            display_order, enabled, created_at, updated_at
         ) VALUES
         (
             uuidv7(),
@@ -1545,7 +1626,6 @@ def _ensure_realm_bucket_directory(realm_id: str, logger: "Logger | None") -> No
             '{CREDIT_BUCKET_NAME_PRIMARY}',
             '{CREDIT_BUCKET_DESC_PRIMARY}',
             0,
-            TRUE,
             TRUE,
             NOW(),
             NOW()
@@ -1557,7 +1637,6 @@ def _ensure_realm_bucket_directory(realm_id: str, logger: "Logger | None") -> No
             '{CREDIT_BUCKET_NAME_SECONDARY}',
             '{CREDIT_BUCKET_DESC_SECONDARY}',
             1,
-            FALSE,
             TRUE,
             NOW(),
             NOW()
@@ -1566,7 +1645,6 @@ def _ensure_realm_bucket_directory(realm_id: str, logger: "Logger | None") -> No
             SET name = EXCLUDED.name,
                 description = EXCLUDED.description,
                 display_order = EXCLUDED.display_order,
-                receives_registration_credits = EXCLUDED.receives_registration_credits,
                 enabled = EXCLUDED.enabled,
                 updated_at = NOW();
         """
@@ -1623,13 +1701,13 @@ def _bucket_id(realm_id: str, bucket_key: str) -> str:
 
 
 def _default_bucket_id(realm_id: str) -> str:
-    """Return the primary registration-pool bucket id for a realm.
+    """Return the seeded primary bucket id for a realm.
 
     Kept as a thin alias over `_bucket_id(realm_id, CREDIT_BUCKET_KEY_PRIMARY)`
     so existing seed call sites (`_seed_points_data`,
     `_ensure_subscription_history_demo_data`, etc.) keep compiling after the
     directory rename `default` -> `primary-pool`. The name is retained for
-    minimal blast radius; the bucket it resolves is the registration pool.
+    minimal blast radius.
     """
     return _bucket_id(realm_id, CREDIT_BUCKET_KEY_PRIMARY)
 

@@ -42,7 +42,7 @@ export async function navigateToSubscriptionDetailHistory(
   page: import('playwright').Page,
   realmId: string
 ): Promise<void> {
-  await page.goto(`http://localhost:3000/${realmId}/user/subscription-history`)
+  await page.goto(`http://localhost:3000/user/subscription-history`)
   await page.waitForLoadState('networkidle')
   await waitForTimelineToLoad(page)
 }
@@ -54,7 +54,7 @@ export async function navigateToUserProfile(
   page: import('playwright').Page,
   realmId: string
 ): Promise<void> {
-  await page.goto(`http://localhost:3000/${realmId}/user/profile`)
+  await page.goto(`http://localhost:3000/user/profile`)
   await page.waitForLoadState('domcontentloaded')
   // Wait for profile content to render (networkidle may never resolve due to React Query retries on 404)
   await page.getByText('Profile Information').waitFor({ state: 'visible', timeout: 10000 }).catch(() => {

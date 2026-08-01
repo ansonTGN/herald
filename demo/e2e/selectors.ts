@@ -283,9 +283,12 @@ export const SELECTORS = {
     descriptionInput: '[data-testid="client-app-description-input"]',
     redirectUrisInput: '[data-testid="redirect-uris-input-field"]',
     enabledSwitch: '[data-testid="client-app-enabled-switch"]',
-    sessionTtlInput: '[data-testid="session-ttl-input"]',
+    // Security-tab TTL field was renamed sessionTtlSeconds → browserRefreshAbsoluteTtlSeconds
+    // (commit f3b8d48a browser bearer-token model). The frontend input testid is
+    // `browser-refresh-ttl-input` with preset buttons `browser-refresh-ttl-preset-{label}`.
+    sessionTtlInput: '[data-testid="browser-refresh-ttl-input"]',
     sessionTtlPreset: (label: string) =>
-      `[data-testid="session-ttl-preset-${label}"]`,
+      `[data-testid="browser-refresh-ttl-preset-${label}"]`,
     sessionRenewalTtlInput: '[data-testid="session-renewal-ttl-input"]',
     deviceCodeGrantSwitch: '[data-testid="device-code-grant-switch"]',
     regenerateSecretSwitch: '[data-testid="regenerate-secret-switch"]',
@@ -808,6 +811,25 @@ export const SELECTORS = {
     saveConfigButton: '[data-testid="save-config-button"]',
   },
 
+  pointRule: {
+    list: '[data-testid="point-rule-list"]',
+    row: (ruleId: string) => `[data-testid="point-rule-${ruleId}"]`,
+    firstRow: '[data-testid^="point-rule-"]',
+    addButton: '[data-testid="point-rule-add"]',
+    bucketSelect: '[data-testid="point-rule-bucket"]',
+    modeSelect: '[data-testid="point-rule-mode"]',
+    trigger: (trigger: string) => `[data-testid="point-rule-trigger-${trigger}"]`,
+    amountInput: (ruleId: string) => `[data-testid="point-rule-amount-${ruleId}"]`,
+    validityInput: (ruleId: string) => `[data-testid="point-rule-validity-${ruleId}"]`,
+    periodSelect: (ruleId: string) => `[data-testid="point-rule-period-${ruleId}"]`,
+    enabledSwitch: (ruleId: string) => `[data-testid="point-rule-enabled-${ruleId}"]`,
+    registrationRulesSave: '[data-testid="registration-rules-save"]',
+  },
+
+  purchasePointRule: {
+    row: (ruleId: string) => `[data-testid="purchase-point-rule-${ruleId}"]`,
+  },
+
   /**
    * Device Verification Page Selectors
    */
@@ -842,8 +864,6 @@ export const SELECTORS = {
     emptyNewButton: '[data-testid="credit-bucket-empty-new-button"]',
     listItem: (bucketId: string) =>
       `[data-testid="credit-bucket-list-item-${bucketId}"]`,
-    listItemRegistrationBadge: (bucketId: string) =>
-      `[data-testid="credit-bucket-list-item-${bucketId}-registration-badge"]`,
     listItemDisabledBadge: (bucketId: string) =>
       `[data-testid="credit-bucket-list-item-${bucketId}-disabled-badge"]`,
     emptyState: '[data-testid="credit-buckets-empty-state"]',
@@ -853,9 +873,9 @@ export const SELECTORS = {
     editorBucketKey: '[data-testid="credit-bucket-editor-bucket-key"]',
     editorDescription: '[data-testid="credit-bucket-editor-description"]',
     editorEnabled: '[data-testid="credit-bucket-editor-enabled"]',
-    editorRegistration: '[data-testid="credit-bucket-editor-registration"]',
-    editorRegistrationConflict:
-      '[data-testid="credit-bucket-editor-registration-conflict"]',
+    // Read-only distribution-rule references block (rendered only in edit mode).
+    // Maps `credit-bucket-editor.tsx` `data-testid="credit-bucket-rule-references"`.
+    editorRuleReferences: '[data-testid="credit-bucket-rule-references"]',
     editorSubmit: '[data-testid="credit-bucket-editor-submit"]',
     deleteButton: '[data-testid="credit-bucket-delete-button"]',
     deleteConfirmDialog: '[data-testid="delete-bucket-confirm-dialog"]',
@@ -887,11 +907,6 @@ export const SELECTORS = {
     coverageMultiselectError: '[data-testid="bucket-coverage-multiselect-error"]',
     coverageMultiselectItem: (clientAppId: string) =>
       `[data-testid="bucket-coverage-multiselect-item-${clientAppId}"]`,
-    mappingsMultiselect: '[data-testid="bucket-mappings-multiselect"]',
-    mappingsMultiselectSearch: '[data-testid="bucket-mappings-multiselect-search"]',
-    mappingsMultiselectError: '[data-testid="bucket-mappings-multiselect-error"]',
-    mappingsMultiselectItem: (mappingId: string) =>
-      `[data-testid="bucket-mappings-multiselect-item-${mappingId}"]`,
   },
 
   /**
@@ -1235,25 +1250,17 @@ export const SELECTORS = {
 
     // --- Create-mapping dialog (create-entitlement-mapping-dialog.tsx) -------
     // The dialog is opened from the entitlement-mappings page via
-    // `create-mapping-button`. Several fields are conditionally rendered
-    // (billing-period only when recurring; validity-days / points-per-period /
-    // grant-on-subscribe only when canManagePoints + the matching billing
-    // type).
+    // `create-mapping-button`. Billing period is conditionally rendered for a
+    // recurring mapping; points fields use the shared pointRule selectors.
     createMappingDialog: '[data-testid="create-entitlement-mapping-dialog"]',
     createMappingButton: '[data-testid="create-mapping-button"]',
     createMappingProviderSelect: '[data-testid="create-mapping-provider-select"]',
-    createMappingBucketSelect: '[data-testid="create-mapping-bucket-select"]',
     createMappingBillingTypeSelect: '[data-testid="create-mapping-billing-type-select"]',
     createMappingBillingPeriodSelect: '[data-testid="create-mapping-billing-period-select"]',
     createMappingExternalProductIdInput:
       '[data-testid="create-mapping-external-product-id-input"]',
     createMappingExternalPriceIdInput: '[data-testid="create-mapping-external-price-id-input"]',
     createMappingEntitlementKeyInput: '[data-testid="create-mapping-entitlement-key-input"]',
-    createMappingValidityDaysInput: '[data-testid="create-mapping-validity-days-input"]',
-    createMappingPointsPerPeriodInput:
-      '[data-testid="create-mapping-points-per-period-input"]',
-    createMappingGrantOnSubscribeToggle:
-      '[data-testid="create-mapping-grant-on-subscribe-toggle"]',
     createMappingGrantedRoles: '[data-testid="create-mapping-granted-roles"]',
     createMappingSubmitError: '[data-testid="create-mapping-submit-error"]',
     createMappingSubmitButton: '[data-testid="create-mapping-submit-button"]',

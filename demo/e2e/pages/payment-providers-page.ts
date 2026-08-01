@@ -74,7 +74,7 @@ export class PaymentProvidersPage extends BasePage {
    * page shell to mount.
    */
   async goto(realmId: string = 'admin'): Promise<void> {
-    await super.goto(`/${realmId}/manage/billing/payment-providers`)
+    await super.goto(`/manage/billing/payment-providers`)
     await expect(this.container).toBeVisible()
   }
 

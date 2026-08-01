@@ -2,34 +2,51 @@
 //   - (grant/fulfillment Bucket routing)
 //   - (subscription lifecycle reclamation)
 //   - 履约 / 订阅生命周期
-//   - in-flight attempt is NOT rerouted when the mapping's
-//     bucket_id is changed after purchase.
-//   - routing source = `payment_attempt.bucket_id` snapshot
-//     (taken at purchase creation); first fulfillment freezes
-//     `subscription.bucket_id` from that snapshot; missing snapshot/subscription
-//     bucket fails loud.
+//   - in-flight attempt is NOT rerouted when the mapping's distribution rule is
+//     re-pointed after purchase.
+//   - routing source = the captured `payment_attempt_point_rules` snapshot
+//     (rule_id + bucket_id pairs frozen at purchase creation); fulfillment
+//     (`execute_captured_payment_rules`) replays that snapshot, ignoring the
+//     mapping's CURRENT rules.
+//   - subscription lifecycle routing (renewal/upgrade/cancel/refund) is now
+//     scoped by the rule-attributed ledger/quota rows joined through
+//     `points_distribution_events.source_id = subscription_id` (and for the
+//     refund path, by the explicit `bucket_id` parameter).
+//
+// Refactor context (commit ad57549f "unify points routing into multi-wallet
+// distribution rules"): the removed columns `payment_attempts.bucket_id`,
+// `subscription.bucket_id`, and the mapping's `points_per_period` /
+// `grant_on_subscribe` / `bucket_id` are replaced by:
+//   - a BARE `provider_entitlement_mappings` row (no points columns), and
+//   - one or more `points_distribution_rules` rows owned by that mapping
+//     (owner_type='entitlement_mapping', entitlement_mapping_id, bucket_id,
+//     trigger_sources, grant_mode='fixed' → a `points_credit_ledger` row with
+//     credit_type='subscription_credit' for the matching subscription trigger).
+//   - `payment_attempt_point_rules` snapshots the matched rule refs at attempt
+//     creation; fulfillment replays that snapshot (`CapturedPaymentRules`).
+//
 // All tests exercise the real production services via `ctx.app_state`:
-//   - `purchase_service.create_payment_attempt` (HTTP path, scenario 1 only)
 //   - `fulfillment_service.fulfill_subscription_purchase(&attempt, …)`
 //   - `subscription_service.handle_subscription_paid / upgrade / cancel /
 //     downgrade`
 //   - `points_service.revoke_points_by_credit_type` (refund path, routed via
-//     `subscription.bucket_id`)
-// Per authoring rules: tests target the intended design contract. Where the
-// landed production signature/behavior differs from the item's assumptions,
-// the gap is recorded inline (`RUNTIME GAP`) and the test is written against
-// the intended contract — the runner will triage runtime failures.
-// Authoritative runtime gaps surfaced by these tests:
-//   1. (none expected at compile time — all targets below use stable,
-//      already-landed production APIs.)
+//     the explicit bucket_id argument).
+//
+// grant_mode choice: the assertions here read `points_credit_ledger`
+// (credit_type='subscription_credit') via `count_ledger_in_bucket` /
+// `sum_ledger_granted_in_bucket`. The executor writes a ledger row ONLY for
+// `grant_mode='fixed'` (`DistributionPolicy::Fixed` → `write_rule_ledger_in_tx`,
+// `credit_type` from `credit_pair_for_trigger`). `grant_mode='quota'` writes a
+// `points_quota_entitlement` row instead and would NOT be observed by the
+// ledger helpers, so every rule seeded below uses `grant_mode='fixed'`.
 
 #![allow(clippy::too_many_arguments)]
 
 use crate::tests::helpers::credit_bucket_helpers::{
     CreditBucketOpts, count_ledger_in_bucket, count_ledger_outside_bucket,
-    create_test_credit_bucket, read_subscription_bucket, read_wallet_total_balance,
-    sum_ledger_granted_in_bucket,
+    create_test_credit_bucket, read_wallet_total_balance, sum_ledger_granted_in_bucket,
 };
+use crate::tests::helpers::points_helpers::snapshot_attempt_rules_for_mapping;
 use crate::tests::scenarios::points::fixtures::{
     create_test_client_app, create_test_user, create_test_user_with_auth,
 };
@@ -66,11 +83,29 @@ async fn mapping_for_key(
         .unwrap_or_else(|| panic!("mapping for key '{key}' should be Some"))
 }
 
-// Local SQL helpers — direct row construction for fulfillment scenarios
+// Local SQL helpers — direct row construction for fulfillment scenarios.
+//
+// Every helper below targets the post-refactor schema: BARE
+// `provider_entitlement_mappings` (no points columns), points routing via
+// `points_distribution_rules`, and the frozen `payment_attempt_point_rules`
+// snapshot consumed by `execute_captured_payment_rules`.
 
-/// Create a `subscription`-billing entitlement mapping attached to a Bucket,
-/// with `grant_on_subscribe = true`, a positive `points_per_period`, and
-/// `billing_type = 'recurring'`. Returns the mapping_id.
+/// Seed a BARE `provider_entitlement_mappings` row (`billing_type='recurring'`,
+/// `billing_period='monthly'`, NO points columns — those were removed by the
+/// distribution-rules refactor) plus the matching `points_distribution_rules`
+/// needed by both fulfillment and the lifecycle events:
+///   - a `subscription_initial` fixed rule (so first fulfillment
+///     `execute_captured_payment_rules` snapshots a rule that grants
+///     `subscription_credit` to `bucket_id`), and
+///   - a `subscription_renewal` fixed rule (so
+///     `handle_subscription_paid(is_renewal=true)` — which reads CURRENT owner
+///     rules with the renewal trigger — grants the renewal period into the same
+///     bucket).
+///
+/// Both rules carry `points_amount = points_per_period` and use
+/// `grant_mode='fixed'` so the grant lands in `points_credit_ledger` with
+/// `credit_type='subscription_credit'` (matching the ledger helpers). Returns
+/// the mapping_id.
 async fn create_subscription_mapping_in_bucket(
     pool: &PgPool,
     realm_id: &str,
@@ -82,54 +117,138 @@ async fn create_subscription_mapping_in_bucket(
     sqlx::query(
         "INSERT INTO provider_entitlement_mappings
             (id, realm_id, payment_provider, external_product_id, entitlement_key,
-             billing_type, billing_period, points_per_period, grant_on_subscribe, enabled,
-             bucket_id, created_at, updated_at)
-         VALUES ($1, $2, 'stripe', $3, $4, 'recurring', 'monthly', $5, true, true, $6, NOW(), NOW())",
+             billing_type, billing_period, enabled, created_at, updated_at)
+         VALUES ($1, $2, 'stripe', $3, $4, 'recurring', 'monthly', true, NOW(), NOW())",
     )
     .bind(mapping_id)
     .bind(realm_id)
     .bind(format!("prod_{}", mapping_id))
     .bind(entitlement_key)
-    .bind(points_per_period)
-    .bind(bucket_id)
     .execute(pool)
     .await
     .expect("Failed to insert subscription entitlement mapping");
+
+    // subscription_initial fixed rule — captured by the payment attempt snapshot
+    // and replayed by first fulfillment.
+    let initial_rule_id = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO points_distribution_rules
+            (id, realm_id, owner_type, entitlement_mapping_id, bucket_id,
+             trigger_sources, grant_mode, points_amount, validity_days,
+             enabled, display_order)
+         VALUES ($1, $2, 'entitlement_mapping', $3, $4, $5, 'fixed', $6, 0, true, 0)",
+    )
+    .bind(initial_rule_id)
+    .bind(realm_id)
+    .bind(mapping_id)
+    .bind(bucket_id)
+    .bind(&["subscription_initial"][..])
+    .bind(points_per_period)
+    .execute(pool)
+    .await
+    .expect("Failed to seed subscription_initial distribution rule");
+
+    // subscription_renewal fixed rule — read by handle_subscription_paid renewal
+    // (CurrentOwnerRules selection). Same bucket + amount so renewal grants land
+    // in the same pool the snapshot pointed at.
+    let renewal_rule_id = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO points_distribution_rules
+            (id, realm_id, owner_type, entitlement_mapping_id, bucket_id,
+             trigger_sources, grant_mode, points_amount, validity_days,
+             enabled, display_order)
+         VALUES ($1, $2, 'entitlement_mapping', $3, $4, $5, 'fixed', $6, 0, true, 1)",
+    )
+    .bind(renewal_rule_id)
+    .bind(realm_id)
+    .bind(mapping_id)
+    .bind(bucket_id)
+    .bind(&["subscription_renewal"][..])
+    .bind(points_per_period)
+    .execute(pool)
+    .await
+    .expect("Failed to seed subscription_renewal distribution rule");
+
     mapping_id
 }
 
-/// Insert a `payment_attempts` row directly with a specific `bucket_id`
-/// snapshot, `target_type = 'entitlement_mapping'` (the only value allowed by
-/// migration 20260609_points_package_one_time.sql `chk_target_type`), and
-/// `status = 'Succeeded'` (so fulfillment can proceed without another status
-/// transition). Returns the attempt_id; use [`load_attempt`] to materialize the
-/// `PaymentAttempt` for the fulfillment service.
+/// Seed a `subscription_upgrade` fixed rule on an existing mapping (used by the
+/// upgrade scenario: `handle_subscription_upgrade` selects CURRENT owner rules
+/// with the upgrade trigger after revoking the old source's results). Same
+/// grant_mode/bucket convention as the initial/renewal rules.
+async fn add_subscription_upgrade_rule(
+    pool: &PgPool,
+    realm_id: &str,
+    mapping_id: Uuid,
+    bucket_id: Uuid,
+    points_amount: i64,
+) {
+    let rule_id = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO points_distribution_rules
+            (id, realm_id, owner_type, entitlement_mapping_id, bucket_id,
+             trigger_sources, grant_mode, points_amount, validity_days,
+             enabled, display_order)
+         VALUES ($1, $2, 'entitlement_mapping', $3, $4, $5, 'fixed', $6, 0, true, 0)",
+    )
+    .bind(rule_id)
+    .bind(realm_id)
+    .bind(mapping_id)
+    .bind(bucket_id)
+    .bind(&["subscription_upgrade"][..])
+    .bind(points_amount)
+    .execute(pool)
+    .await
+    .expect("Failed to seed subscription_upgrade distribution rule");
+}
+
+/// Insert a BARE `payment_attempts` row (no `bucket_id` column — removed by the
+/// refactor) with `target_type = 'entitlement_mapping'` (the only value allowed
+/// by the migration `chk_target_type`) and `status = 'Succeeded'` (so
+/// fulfillment can proceed without another status transition), then snapshot
+/// the mapping's matching rules into `payment_attempt_point_rules` exactly as
+/// production `create_payment_attempt` does. Returns the attempt_id; use
+/// [`load_attempt`] to materialize the `PaymentAttempt` for the fulfillment
+/// service.
 async fn insert_attempt_with_bucket_snapshot(
     pool: &PgPool,
     realm_id: &str,
     user_id: Uuid,
     mapping_id: Uuid,
-    bucket_id: Option<Uuid>,
+    _bucket_id: Option<Uuid>,
 ) -> Uuid {
     let attempt_id = Uuid::now_v7();
     sqlx::query(
         "INSERT INTO payment_attempts
             (id, realm_id, user_id, payment_provider, target_type, target_id,
-             bucket_id, amount, currency, status, provider_reference,
+             amount, currency, status, provider_reference,
              expires_at, created_at, updated_at)
          VALUES ($1, $2, $3, 'stripe', 'entitlement_mapping', $4,
-                 $5, 999, 'USD', 'Succeeded', $6,
+                 999, 'USD', 'Succeeded', $5,
                  NOW() + INTERVAL '2 hours', NOW(), NOW())",
     )
     .bind(attempt_id)
     .bind(realm_id)
     .bind(user_id)
     .bind(mapping_id)
-    .bind(bucket_id)
     .bind(format!("pi_test_{}", attempt_id))
     .execute(pool)
     .await
     .expect("Failed to insert payment_attempts row");
+
+    // Snapshot the mapping's subscription_initial rule into
+    // payment_attempt_point_rules (production `create_payment_attempt` writes
+    // this atomically; raw-SQL test setup must replicate it or fulfillment
+    // resolves zero captured rules and grants nothing).
+    snapshot_attempt_rules_for_mapping(
+        pool,
+        attempt_id,
+        realm_id,
+        mapping_id,
+        "subscription_initial",
+    )
+    .await;
+
     attempt_id
 }
 
@@ -142,28 +261,62 @@ async fn load_attempt(ctx: &TestContext, attempt_id: Uuid) -> PaymentAttempt {
         .expect("payment attempt not found after insert")
 }
 
-/// Create a `subscription` row directly with `bucket_id = bucket` (non-null,
-/// per the eager-binding contract), bypassing fulfillment (used by lifecycle
-/// scenarios that start from an already-existing subscription).
+/// Resolve the routing bucket a subscription's credits actually landed in.
+///
+/// `subscription.bucket_id` was removed by the distribution-rules refactor, so
+/// there is no single column to read. The faithful new-model equivalent is the
+/// `bucket_id` of the rule-attributed `points_credit_ledger` row whose
+/// `distribution_event` belongs to this subscription. Production keys the
+/// subscription-period event as `subscription:{subscription_id}:period:{...}`
+/// (and the cancel/refund revoke matches it via `event_key LIKE
+/// 'subscription:{subscription_id}:%'`), so this helper matches the same prefix
+/// to find the granted ledger's bucket. Returns the most-recent such bucket,
+/// panicking if no attributed grant exists (in these scenarios a subscription
+/// with no grant is always a test-setup bug, not a runtime state).
+async fn read_subscription_routing_bucket(pool: &PgPool, subscription_id: Uuid) -> Uuid {
+    sqlx::query_scalar::<_, Uuid>(
+        "SELECT l.bucket_id
+           FROM points_credit_ledger l
+           JOIN points_distribution_events e ON e.id = l.distribution_event_id
+          WHERE e.event_key LIKE $1
+            AND l.distribution_rule_id IS NOT NULL
+          ORDER BY l.created_at DESC
+          LIMIT 1",
+    )
+    .bind(format!("subscription:{}:%", subscription_id))
+    .fetch_optional(pool)
+    .await
+    .expect("Failed to read subscription routing bucket")
+    .expect("subscription has no attributed grant — test-setup bug")
+}
+
+/// Create a `subscription` row directly (NO `bucket_id` / `billing_type`
+/// columns — both were removed from `subscription` by the refactor; the
+/// subscription's routing bucket now lives on its distribution rules). Bypasses
+/// fulfillment (used by lifecycle scenarios that start from an already-existing
+/// subscription). `bucket_id` is accepted for call-site stability and is
+/// intentionally ignored — the test seeds the routing rule separately via
+/// [`create_subscription_mapping_in_bucket`] before this call.
 async fn insert_subscription_in_bucket(
     pool: &PgPool,
     realm_id: &str,
     user_id: Uuid,
     client_app_id: Uuid,
     entitlement_key: &str,
-    bucket_id: Uuid,
+    _bucket_id: Uuid,
 ) -> Uuid {
     let subscription_id = Uuid::now_v7();
     sqlx::query(
         "INSERT INTO subscription
             (id, realm_id, user_id, client_app_id, status, entitlement_key,
-             external_price_id, external_subscription_id, external_product_id,
-             payment_provider, current_period_start, current_period_end,
-             cancel_at_period_end, bucket_id, created_at, updated_at)
+             external_subscription_id, external_product_id,
+             payment_provider, billing_type,
+             current_period_start, current_period_end,
+             cancel_at_period_end, created_at, updated_at)
          VALUES ($1, $2, $3, $4, 'active', $5,
-                 'price_test', $6, $7, 'stripe',
+                 $6, $7, 'stripe', 'recurring',
                  NOW(), NOW() + INTERVAL '30 days',
-                 false, $8, NOW(), NOW())",
+                 false, NOW(), NOW())",
     )
     .bind(subscription_id)
     .bind(realm_id)
@@ -172,7 +325,6 @@ async fn insert_subscription_in_bucket(
     .bind(entitlement_key)
     .bind(format!("sub_test_{}", subscription_id))
     .bind(format!("prod_{}", entitlement_key))
-    .bind(bucket_id)
     .execute(pool)
     .await
     .expect("Failed to insert subscription row");
@@ -180,21 +332,24 @@ async fn insert_subscription_in_bucket(
 }
 
 // Scenario 1 (REMOVED): mapping with bucket_id=NULL rejects purchase creation
-// `provider_entitlement_mappings.bucket_id` is NOT NULL in the base schema
-// (`20260607_product_reduce.sql`). A bucket-less mapping can therefore no longer exist,
-// so the purchase-time runtime check — CoreError::EntitlementMappingNotAttachedToBucket
+// `provider_entitlement_mappings.bucket_id` was removed by the distribution-rules
+// refactor; points routing now lives on `points_distribution_rules`. A
+// bucket-less mapping can therefore no longer be expressed as a column value,
+// and the purchase-time runtime check — CoreError::EntitlementMappingNotAttachedToBucket
 // — was removed from `resolve_target`. The invariant this
 // scenario guarded ("a mapping without a credit bucket cannot be purchased") is
-// now enforced structurally at the schema layer instead of at request time.
+// now enforced structurally: no `points_distribution_rules` row ⟹ fulfillment
+// resolves zero captured rules and grants nothing (scenario 10 below).
 
 // Scenario 2: fulfillment grants to the attempt-snapshot Bucket
 
 /// User Story: US-CB-004 (purchase Bucket plan), US-PA-003 (payment success
 /// fulfillment).
 /// Covers:
-///   - `fulfill_subscription_purchase` reads `attempt.bucket_id` snapshot (NOT
-///     live `mapping.bucket_id`) and grants initial subscription credits to
-///     that Bucket's pool.
+///   - `fulfill_subscription_purchase` → `execute_captured_payment_rules`
+///     replays the `payment_attempt_point_rules` snapshot (rule_id + bucket_id
+///     captured at attempt creation), NOT the live mapping rule, and grants
+///     initial subscription credits to that snapshot Bucket's pool.
 ///   - DB check: the new `points_credit_ledger.bucket_id` equals the snapshot
 ///     Bucket, and no ledger row leaks to any other Bucket.
 #[test_context(TestContext)]
@@ -249,7 +404,7 @@ async fn fulfillment_grants_to_attempt_snapshot_bucket(ctx: &mut TestContext) {
         sum_ledger_granted_in_bucket(pool, user_id, bucket_a, "subscription_credit").await;
     assert_eq!(
         balance_a, 1_000,
-        "granted amount == mapping.points_per_period"
+        "granted amount == captured rule points_amount"
     );
 
     let leak_count = count_ledger_outside_bucket(pool, user_id, bucket_a).await;
@@ -260,24 +415,26 @@ async fn fulfillment_grants_to_attempt_snapshot_bucket(ctx: &mut TestContext) {
         .ok()
         .and_then(|r| r.subscription_id)
         .expect("fulfillment returned a subscription_id");
-    let frozen_bucket = read_subscription_bucket(pool, subscription_id).await;
+    let routing_bucket = read_subscription_routing_bucket(pool, subscription_id).await;
     assert_eq!(
-        frozen_bucket, bucket_a,
-        "subscription.bucket_id frozen to the attempt snapshot bucket"
+        routing_bucket, bucket_a,
+        "subscription's first grant routed to the captured snapshot bucket"
     );
 }
 
-// Scenario 3: first fulfillment freezes subscription.bucket_id
+// Scenario 3: first fulfillment freezes the subscription's routing bucket
 
 /// User Story: US-CB-008 (subscription lifecycle by Bucket).
 /// Covers:
-///   - After the first `fulfill_subscription_purchase`, `subscription.bucket_id`
-///     is non-NULL and equals the attempt snapshot. This is the freeze event
+///   - After the first `fulfill_subscription_purchase`, the captured rule's
+///     `bucket_id` is the subscription's routing target — the grant attributed
+///     to `subscription_id` lands in that bucket. This is the freeze event
 ///     that makes the subscription's lifecycle resolve deterministically to
-///     one pool.
-///   - Subsequent subscription lifecycle events (renewal/upgrade/cancel) read
-///     this frozen value as their routing source — so a NULL here is a
-///     data-integrity breach, not a valid state.
+///     one pool (subsequent renewals read CURRENT owner rules, but the rule's
+///     bucket is stable; cancel/refund scope via `source_id` resolves the same
+///     pool).
+///   - `subscription.bucket_id` no longer exists (removed by the refactor); the
+///     equivalent new-model read is the granted ledger row's bucket.
 #[test_context(TestContext)]
 #[tokio::test]
 async fn fulfillment_freezes_subscription_bucket_on_first_renewal(ctx: &mut TestContext) {
@@ -314,30 +471,31 @@ async fn fulfillment_freezes_subscription_bucket_on_first_renewal(ctx: &mut Test
 
     let subscription_id = result.subscription_id.expect("subscription_id present");
 
-    // NULL by schema (eager binding), so the only meaningful assertion is the
-    // value identity; the previous `is_some()` check is now tautological and
-    // was removed.
-    let frozen = read_subscription_bucket(pool, subscription_id).await;
+    // The captured rule's bucket_id is the subscription's routing target. The
+    // first grant attributed to subscription_id must land in that bucket.
+    let frozen = read_subscription_routing_bucket(pool, subscription_id).await;
     assert_eq!(
         frozen, bucket,
-        "subscription.bucket_id frozen to the attempt snapshot bucket"
+        "subscription's first grant routed to the captured snapshot bucket"
     );
     assert_eq!(
         result.point_grants[0].bucket_id, frozen,
-        "captured rule target == frozen subscription bucket"
+        "captured rule target == frozen subscription routing bucket"
     );
 }
 
-// Scenario 4: regression — mapping bucket change after purchase does not
+// Scenario 4: regression — mapping rule re-point after purchase does not
 // reroute an in-flight attempt
 
 /// User Story: US-CB-003 (coverage-set / mapping changes affect only future
 /// purchases); 覆盖集变更不回溯.
 /// Covers:
-///   - Purchase attempt is created with snapshot Bucket A.
-///   - Mapping is then re-pointed to Bucket B.
-///   - Fulfilling the in-flight attempt STILL grants to Bucket A (reads the
-///     snapshot, NOT the live mapping).
+///   - Purchase attempt is created with its rules snapshotted to Bucket A.
+///   - The mapping's distribution rule is then re-pointed to Bucket B (a new
+///     rule row targeting B; the original A rule is disabled).
+///   - Fulfilling the in-flight attempt STILL grants to Bucket A — the captured
+///     `payment_attempt_point_rules` snapshot (rule_id + bucket_id frozen at
+///     creation) is replayed, NOT the live mapping rules.
 ///   - No credit leaks to Bucket B from this in-flight attempt.
 #[test_context(TestContext)]
 #[tokio::test]
@@ -372,7 +530,7 @@ async fn mapping_bucket_change_after_purchase_does_not_reroute_inflight_attempt(
     .await;
 
     let entitlement_key = format!("cb-t02-a7-{}", Uuid::now_v7());
-    // Mapping starts attached to Bucket A.
+    // Mapping starts with its subscription_initial rule targeting Bucket A.
     let mapping_id =
         create_subscription_mapping_in_bucket(pool, &realm_id, &entitlement_key, bucket_a, 800)
             .await;
@@ -380,26 +538,55 @@ async fn mapping_bucket_change_after_purchase_does_not_reroute_inflight_attempt(
     let attempt_id =
         insert_attempt_with_bucket_snapshot(pool, &realm_id, user_id, mapping_id, Some(bucket_a))
             .await;
+
+    // Re-point the mapping's points routing to Bucket B AFTER the attempt was
+    // captured: disable the original A rules and add a new initial rule
+    // targeting B. Production achieves the same effect (a different bucket on
+    // the active rule); the snapshot taken above must remain frozen on A.
     sqlx::query(
-        "UPDATE provider_entitlement_mappings SET bucket_id = $1, updated_at = NOW() WHERE id = $2",
+        "UPDATE points_distribution_rules
+         SET enabled = false, updated_at = NOW()
+         WHERE entitlement_mapping_id = $1 AND realm_id = $2",
     )
-    .bind(bucket_b)
     .bind(mapping_id)
+    .bind(&realm_id)
     .execute(pool)
     .await
-    .expect("re-point mapping bucket");
+    .expect("disable original A rules");
+    let repoint_rule_id = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO points_distribution_rules
+            (id, realm_id, owner_type, entitlement_mapping_id, bucket_id,
+             trigger_sources, grant_mode, points_amount, validity_days,
+             enabled, display_order)
+         VALUES ($1, $2, 'entitlement_mapping', $3, $4, $5, 'fixed', $6, 0, true, 5)",
+    )
+    .bind(repoint_rule_id)
+    .bind(&realm_id)
+    .bind(mapping_id)
+    .bind(bucket_b)
+    .bind(&["subscription_initial"][..])
+    .bind(800)
+    .execute(pool)
+    .await
+    .expect("seed re-pointed initial rule targeting B");
 
-    // Sanity: live mapping now points to B.
-    let live_mapping_bucket: Option<Uuid> =
-        sqlx::query_scalar("SELECT bucket_id FROM provider_entitlement_mappings WHERE id = $1")
-            .bind(mapping_id)
-            .fetch_one(pool)
-            .await
-            .expect("read mapping bucket");
+    // Sanity: the live initial rule now targets B.
+    let live_initial_bucket: Option<Uuid> = sqlx::query_scalar(
+        "SELECT bucket_id FROM points_distribution_rules
+          WHERE entitlement_mapping_id = $1 AND realm_id = $2
+            AND 'subscription_initial' = ANY(trigger_sources) AND enabled = true
+          ORDER BY display_order, id LIMIT 1",
+    )
+    .bind(mapping_id)
+    .bind(&realm_id)
+    .fetch_one(pool)
+    .await
+    .expect("read live initial rule bucket");
     assert_eq!(
-        live_mapping_bucket,
+        live_initial_bucket,
         Some(bucket_b),
-        "live mapping now points to B"
+        "live mapping initial rule now targets B"
     );
 
     // Reload the attempt so we read what fulfillment will see.
@@ -429,14 +616,15 @@ async fn mapping_bucket_change_after_purchase_does_not_reroute_inflight_attempt(
     assert_eq!(balance_a, 800, "granted amount to snapshot bucket A");
 }
 
-// Scenario 5: renewal grant lands in subscription.bucket_id pool
+// Scenario 5: renewal grant lands in the subscription's routing bucket pool
 
 /// User Story: US-CB-008 (subscription lifecycle by Bucket), US-PU subscription
 /// renewal.
 /// Covers:
-///   - `handle_subscription_paid` (renewal path) grants to `subscription.bucket_id`.
-///     The grant ledger row's `bucket_id` matches the
-///     subscription's bound Bucket; no leak.
+///   - `handle_subscription_paid(is_renewal=true)` selects the mapping's CURRENT
+///     `subscription_renewal` rules (`CurrentOwnerRules`) and grants to the
+///     rule's bucket. The grant ledger row's `bucket_id` matches the
+///     subscription's bound bucket; no leak.
 #[test_context(TestContext)]
 #[tokio::test]
 async fn subscription_paid_renews_to_same_bucket_pool(ctx: &mut TestContext) {
@@ -457,8 +645,8 @@ async fn subscription_paid_renews_to_same_bucket_pool(ctx: &mut TestContext) {
     )
     .await;
     let entitlement_key = format!("cb-t02-renew-{}", Uuid::now_v7());
-    // Mapping in the same bucket (so handle_subscription_paid can resolve
-    // points policy by entitlement_key and route to subscription.bucket_id).
+    // Mapping owns a subscription_renewal rule targeting this bucket (seeded by
+    // create_subscription_mapping_in_bucket); the renewal path reads it.
     let _mapping_id =
         create_subscription_mapping_in_bucket(pool, &realm_id, &entitlement_key, bucket, 750).await;
 
@@ -471,10 +659,6 @@ async fn subscription_paid_renews_to_same_bucket_pool(ctx: &mut TestContext) {
         bucket,
     )
     .await;
-    assert_eq!(
-        read_subscription_bucket(pool, subscription_id).await,
-        bucket
-    );
 
     let period_end = chrono::Utc::now() + chrono::Duration::days(30);
     let period_start = period_end - chrono::Duration::days(30);
@@ -506,7 +690,7 @@ async fn subscription_paid_renews_to_same_bucket_pool(ctx: &mut TestContext) {
     let balance = sum_ledger_granted_in_bucket(pool, user_id, bucket, "subscription_credit").await;
     assert_eq!(
         balance, 750,
-        "renewal grant amount == mapping.points_per_period"
+        "renewal grant amount == renewal rule points_amount"
     );
 
     let leak = count_ledger_outside_bucket(pool, user_id, bucket).await;
@@ -520,10 +704,11 @@ async fn subscription_paid_renews_to_same_bucket_pool(ctx: &mut TestContext) {
 
 /// User Story: US-CB-008 (subscription lifecycle by Bucket), US-PU upgrade.
 /// Covers:
-///   - `handle_subscription_upgrade` revokes the old plan's subscription credits
-///     and grants the new plan's credits, both routed to `subscription.bucket_id`.
-///     No cross-pool leak: the revoke and the grant share one
-///     Bucket.
+///   - `handle_subscription_upgrade` → `replace_distribution_source_atomic`
+///     revokes the old plan's rule-attributed subscription credits (matched via
+///     `points_distribution_events.source_id = subscription_id`) and grants the
+///     new plan's credits via the new mapping's `subscription_upgrade` rule,
+///     both routed to the same Bucket. No cross-pool leak.
 #[test_context(TestContext)]
 #[tokio::test]
 async fn subscription_upgrade_revokes_old_and_grants_new_within_same_bucket(ctx: &mut TestContext) {
@@ -549,15 +734,22 @@ async fn subscription_upgrade_revokes_old_and_grants_new_within_same_bucket(ctx:
     // Both mappings live in the same Bucket (upgrade is a same-pool swap).
     let _old_mapping =
         create_subscription_mapping_in_bucket(pool, &realm_id, &old_key, bucket, 400).await;
-    let _new_mapping =
+    // The new mapping owns the renewal + initial rules (same bucket) AND a
+    // subscription_upgrade rule the upgrade path selects (`new_mapping.id` is
+    // the rule owner for the upgrade event).
+    let new_mapping_id =
         create_subscription_mapping_in_bucket(pool, &realm_id, &new_key, bucket, 1_200).await;
+    add_subscription_upgrade_rule(pool, &realm_id, new_mapping_id, bucket, 1_200).await;
 
     let subscription_id =
         insert_subscription_in_bucket(pool, &realm_id, user_id, client_app_id, &old_key, bucket)
             .await;
 
-    // Seed the user with old-plan subscription credits in the SAME bucket so
-    // the upgrade revoke has something to revoke.
+    // Seed the user with old-plan subscription credits attributed to THIS
+    // subscription (so the upgrade revoke finds something). The renewal path
+    // (is_renewal=true) selects the mapping's subscription_renewal rule and
+    // writes a ledger row attributed to subscription_id via the
+    // `subscription:{subscription_id}:period:{...}` event key.
     let period_end = chrono::Utc::now() + chrono::Duration::days(30);
     let period_start = period_end - chrono::Duration::days(30);
     let seed_event = format!("evt_upg_seed_{}", Uuid::now_v7());
@@ -569,7 +761,7 @@ async fn subscription_upgrade_revokes_old_and_grants_new_within_same_bucket(ctx:
             subscription_id,
             &realm_id,
             &old_mapping_seed,
-            false,
+            true, // is_renewal — grants the old-plan period into the bucket
             period_start,
             period_end,
             seed_event,
@@ -615,9 +807,11 @@ async fn subscription_upgrade_revokes_old_and_grants_new_within_same_bucket(ctx:
 
 /// User Story: US-CB-008, US-PU cancel.
 /// Covers:
-///   - `handle_subscription_cancel` (ImmediateCancel) revokes subscription
-///     credits routed to `subscription.bucket_id` only; an unrelated Bucket's
-///     balance is untouched (no cross-pool revoke).
+///   - `handle_subscription_cancel` (ImmediateCancel) →
+///     `revoke_distribution_source_atomic` revokes only the subscription's
+///     rule-attributed credits (matched via
+///     `points_distribution_events.source_id = subscription_id`); an unrelated
+///     Bucket's balance is untouched (no cross-pool revoke).
 #[test_context(TestContext)]
 #[tokio::test]
 async fn subscription_cancel_revokes_only_subscription_bucket_pool(ctx: &mut TestContext) {
@@ -663,9 +857,9 @@ async fn subscription_cancel_revokes_only_subscription_bucket_pool(ctx: &mut Tes
     )
     .await;
 
-    // Seed subscription credits in the subscription bucket AND unrelated
-    // granted credits in another bucket. The cancel must only touch the
-    // subscription bucket pool.
+    // Seed subscription credits in the subscription bucket (attributed to THIS
+    // subscription via the renewal event key) AND unrelated granted credits in
+    // another bucket. The cancel must only touch the subscription bucket pool.
     let period_end = chrono::Utc::now() + chrono::Duration::days(30);
     let period_start = period_end - chrono::Duration::days(30);
     let seed_event = format!("evt_cancel_seed_{}", Uuid::now_v7());
@@ -677,7 +871,7 @@ async fn subscription_cancel_revokes_only_subscription_bucket_pool(ctx: &mut Tes
             subscription_id,
             &realm_id,
             &mapping_cancel_seed,
-            false,
+            true, // is_renewal — grants a period into bucket_sub, attributed to subscription_id
             period_start,
             period_end,
             seed_event,
@@ -742,8 +936,11 @@ async fn subscription_cancel_revokes_only_subscription_bucket_pool(ctx: &mut Tes
 
 /// User Story: US-CB-008, US-PU refund.
 /// Covers:
-///   - Refund (revoke by credit type) routed to `subscription.bucket_id` only;
-///     "退款同上" maps to revoke routed to the subscription bucket.
+///   - Refund (revoke by credit type) routed to the subscription's routing
+///     bucket only ("退款同上"); the bucket is passed explicitly to
+///     `revoke_points_by_credit_type` (it was previously derived from the
+///     removed `subscription.bucket_id`; under the refactor the caller resolves
+///     it from the grant's bucket).
 ///   - An unrelated Bucket's balance is NOT touched (no cross-pool leak).
 #[test_context(TestContext)]
 #[tokio::test]
@@ -790,7 +987,9 @@ async fn subscription_refund_revokes_only_subscription_bucket_pool(ctx: &mut Tes
     )
     .await;
 
-    // Seed: subscription credits in bucket_sub + GrantedCredit in bucket_other.
+    // Seed: subscription credits in bucket_sub (renewal path) + GrantedCredit in
+    // bucket_other. Both attributed to their respective buckets so the
+    // bucket-scoped refund revoke only touches bucket_sub.
     let period_end = chrono::Utc::now() + chrono::Duration::days(30);
     let period_start = period_end - chrono::Duration::days(30);
     let seed_event = format!("evt_refund_seed_{}", Uuid::now_v7());
@@ -802,7 +1001,7 @@ async fn subscription_refund_revokes_only_subscription_bucket_pool(ctx: &mut Tes
             subscription_id,
             &realm_id,
             &mapping_refund_seed,
-            false,
+            true, // is_renewal — grants a subscription_credit period into bucket_sub
             period_start,
             period_end,
             seed_event,
@@ -832,7 +1031,7 @@ async fn subscription_refund_revokes_only_subscription_bucket_pool(ctx: &mut Tes
         .revoke_points_by_credit_type(
             &realm_id,
             user_id,
-            bucket_sub, // subscription.bucket_id — the refund routing source
+            bucket_sub, // the subscription's routing bucket — the refund routing source
             CreditType::SubscriptionCredit,
             RevocationType::RefundRevoke,
             "Subscription refund".to_string(),
@@ -862,9 +1061,10 @@ async fn subscription_refund_revokes_only_subscription_bucket_pool(ctx: &mut Tes
 /// User Story: US-CB-008, US-PU downgrade.
 /// Covers:
 ///   - `handle_subscription_downgrade` does NOT revoke any current-cycle
-///     balance; it only validates the entitlement keys and
-///     records the intent. The next-cycle grant_schedule (routed via the same
-///     `subscription.bucket_id`) uses the new entitlement.
+///     balance; it only persists the intent (the new mapping's rules apply at
+///     the next renewal, read via `CurrentOwnerRules`). The next-cycle renewal
+///     (routed via the new mapping's `subscription_renewal` rule) uses the new
+///     entitlement amount but the same routing bucket.
 ///   - The current-cycle balance is unchanged immediately after the downgrade.
 #[test_context(TestContext)]
 #[tokio::test]
@@ -897,7 +1097,8 @@ async fn subscription_downgrade_preserves_current_cycle(ctx: &mut TestContext) {
         insert_subscription_in_bucket(pool, &realm_id, user_id, client_app_id, &old_key, bucket)
             .await;
 
-    // Seed current-cycle credits at the old-plan amount.
+    // Seed current-cycle credits at the old-plan amount (renewal path, attributed
+    // to the subscription).
     let period_end = chrono::Utc::now() + chrono::Duration::days(30);
     let period_start = period_end - chrono::Duration::days(30);
     let seed_event = format!("evt_dg_seed_{}", Uuid::now_v7());
@@ -909,7 +1110,7 @@ async fn subscription_downgrade_preserves_current_cycle(ctx: &mut TestContext) {
             subscription_id,
             &realm_id,
             &old_mapping_dg_seed,
-            false,
+            true, // is_renewal — grants the current-cycle period into bucket
             period_start,
             period_end,
             seed_event,
@@ -950,11 +1151,13 @@ async fn subscription_downgrade_preserves_current_cycle(ctx: &mut TestContext) {
         "downgrade did not leak outside the subscription bucket"
     );
 
-    // grant_schedule will route to subscription.bucket_id). --
+    // The subscription's routing bucket is unchanged (the next-cycle renewal
+    // rule still targets this bucket); the grant attributed to the
+    // subscription confirms the bucket.
     assert_eq!(
-        read_subscription_bucket(pool, subscription_id).await,
+        read_subscription_routing_bucket(pool, subscription_id).await,
         bucket,
-        "subscription stays bound to the same bucket for next-cycle routing"
+        "subscription stays routed to the same bucket for next-cycle grant"
     );
 }
 
@@ -1028,10 +1231,17 @@ async fn subscription_with_unresolved_bucket_fails_loud(ctx: &mut TestContext) {
         bucket,
     )
     .await;
-    assert_eq!(
-        read_subscription_bucket(pool, subscription_id).await,
-        bucket,
-        "precondition: subscription is bound to the bucket (eager binding)"
+    let subscription_exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM subscription WHERE id = $1 AND realm_id = $2)",
+    )
+    .bind(subscription_id)
+    .bind(&realm_id)
+    .fetch_one(pool)
+    .await
+    .expect("check subscription exists");
+    assert!(
+        subscription_exists,
+        "precondition: subscription row exists (routing bucket now lives on its distribution rules, not a column)"
     );
 
     // The domain method now requires a resolved mapping; with no mapping row

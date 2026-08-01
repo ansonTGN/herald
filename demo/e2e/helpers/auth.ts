@@ -4,7 +4,7 @@
  * 为 E2E 演示测试提供登录、登出等认证相关功能
  */
 
-import { Page, expect, type Response } from '@playwright/test'
+import { Page, expect, request, type APIRequestContext, type Response } from '@playwright/test'
 import { SELECTORS } from '../selectors'
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
@@ -56,6 +56,18 @@ export const DEMO_USERS = {
     password: 'password123',
     realmId: 'admin',
   },
+}
+
+export async function createBearerApiContext(accessToken: string): Promise<APIRequestContext> {
+  if (!accessToken) {
+    throw new Error('Cannot create an authenticated API context without an access token')
+  }
+
+  return request.newContext({
+    extraHTTPHeaders: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
 }
 
 // ============================================================================
@@ -159,9 +171,13 @@ export async function loginAsAdmin(
     }
   }
 
-  // 检查是否已在目标 realm 的 dashboard
+  // 检查是否已在目标 realm 的 dashboard (admin console).
+  // Post route-refactor (commit 03eeb456): the admin console moved to the
+  // top-level /manage path (NO realm prefix). Recognize both the new top-level
+  // /manage and the legacy realm-scoped /{realmId}/manage here.
   const currentUrl = page.url()
   const isOnTargetRealmDashboard = currentUrl.includes(`/${realmId}/manage`)
+    || /\/manage(\/|$)/.test(new URL(currentUrl).pathname)
 
   if (!shouldRelogin && isOnTargetRealmDashboard) {
     console.log(`[Auth] 用户已登录到 realm ${realmId}，跳过登录步骤`)
@@ -176,8 +192,14 @@ export async function loginAsAdmin(
   // 导航到登录页
   await page.goto(`${BASE_URL}/${realmId}/auth/login`, { waitUntil: 'domcontentloaded' })
 
-  // 再次检查是否已自动跳转到 dashboard
-  if (page.url().includes(`/${realmId}/manage`) || page.url() === `/${realmId}`) {
+  // 再次检查是否已自动跳转到一个已认证的落地页。
+  // 重构后已认证用户访问 auth 页会跳转到顶层 /manage 或 /user。
+  const postGotoUrl = page.url()
+  const postGotoPath = (() => { try { return new URL(postGotoUrl).pathname } catch { return postGotoUrl } })()
+  if (postGotoUrl.includes(`/${realmId}/manage`)
+      || postGotoPath.startsWith('/manage')
+      || postGotoPath.startsWith('/user')
+      || postGotoUrl === `${BASE_URL}/${realmId}`) {
     console.log(`[Auth] 用户已登录到 realm ${realmId}，跳过登录步骤`)
     return
   }
@@ -398,9 +420,27 @@ async function verifyPostLoginNavigation(
 
   console.log(`[Auth] Verifying navigation to ${expectedRoute}...`)
 
-  // First, wait for URL to match expected pattern
+  // First, wait for URL to match an authenticated landing page.
+  //
+  // Post route-refactor (commit 03eeb456), the expectedRoute for login flows is
+  // 'dashboard', but realm-scoped `/${realmId}/dashboard` no longer exists.
+  // Admin/regular login now lands on the top-level session-scoped routes
+  // /manage or /user/profile (NO realm prefix). Match those directly so this
+  // resolves immediately instead of always falling through to the 10s-timeout
+  // recovery branch below. The legacy realm-scoped /${realmId}/${expectedRoute}
+  // glob is kept as a secondary pattern for backward-compat.
   try {
-    await page.waitForURL(`**/${realmId}/${expectedRoute}**`, { timeout })
+    await page.waitForURL(
+      (url) => {
+        const path = url.pathname
+        return path.startsWith('/manage')
+          || path.startsWith('/user/profile')
+          || path.startsWith('/user')
+          || path === `/${realmId}`
+          || path.startsWith(`/${realmId}/${expectedRoute}`)
+      },
+      { timeout }
+    )
   } catch {
     const currentUrl = page.url()
     console.log(`[Auth] Current URL after timeout: ${currentUrl}`)

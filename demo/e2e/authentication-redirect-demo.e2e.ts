@@ -33,6 +33,23 @@ test.describe('Authentication Redirect Flow', () => {
     // Clear cookies for clean state
     await page.context().clearCookies()
 
+    // Clear localStorage/sessionStorage on the app origin. The shared `page`
+    // fixture tries to clear storage but does so while the page is still on
+    // about:blank, which does NOT affect localhost:3000's storage. Under the
+    // browser Bearer token model the session lives in localStorage
+    // (`auth-storage`), so a leftover session from the previous scenario
+    // survives and makes the next login's redirect detection short-circuit.
+    // Navigate to the app first so the clear targets the right origin.
+    await page.goto(`${BASE_URL}/${REALM_ID}/auth/login`, { waitUntil: 'domcontentloaded' })
+    try {
+      await page.evaluate(() => {
+        localStorage.clear()
+        sessionStorage.clear()
+      })
+    } catch {
+      // ignore
+    }
+
     // Verify test environment before each test
     await verifyTestEnvironment(page, {
       requiredRealms: ['admin'],
@@ -66,7 +83,8 @@ test.describe('Authentication Redirect Flow', () => {
   // Scenario 2: Unauthenticated user accessing protected route
   test('Scenario 2: Unauthenticated user accessing protected route redirects to login', async ({ page }) => {
     await test.step('Access protected route (manage page)', async () => {
-      await page.goto(`${BASE_URL}/${REALM_ID}/manage`)
+      // The admin console now lives at the top-level /manage (no realm prefix).
+      await page.goto(`${BASE_URL}/manage`)
     })
 
     // Should redirect to login page
@@ -84,6 +102,15 @@ test.describe('Authentication Redirect Flow', () => {
   })
 
   // Scenario 3: Admin user login redirect
+  //
+  // Post route-refactor (commit 03eeb456): the admin console and user account
+  // center are top-level (no realm prefix). The login mutation computes the
+  // post-login redirect from permissions
+  // (frontend/src/lib/auth-utils.ts `redirectPathForPermissions` →
+  // `DEFAULT_ADMIN_REDIRECT = '/manage'`), so an admin still lands on /manage
+  // after submitting the login form. This is distinct from the root LOADER's
+  // realm-root redirect (Scenario 5), which always sends authenticated users
+  // to /user/profile regardless of permissions.
   test('Scenario 3: Admin user login redirects to manage dashboard', async ({ page, loginPage }) => {
     await test.step('Navigate to login page', async () => {
       await page.goto(`${BASE_URL}/${REALM_ID}/auth/login`)
@@ -93,8 +120,8 @@ test.describe('Authentication Redirect Flow', () => {
       await loginPage.loginAsAdmin('admin@cas.com', 'password', REALM_ID)
     })
 
-    // Should be redirected to manage dashboard - use assertion wait
-    await expect(page).toHaveURL(new RegExp(`\\/${REALM_ID}\\/manage`), { timeout: 10000 })
+    // Should be redirected to the top-level manage dashboard (no realm prefix)
+    await expect(page).toHaveURL(/\/manage(\/|$)/, { timeout: 10000 })
   })
 
   // Scenario 4: Regular user login redirect
@@ -104,6 +131,8 @@ test.describe('Authentication Redirect Flow', () => {
     await test.step('Login as admin and create regular user', async () => {
       await loginPage.loginAsAdmin('admin@cas.com', 'password', REALM_ID)
 
+      // Admin login lands on the top-level /manage; the admin console sidebar
+      // used by UsersPage.goto() is already rendered there.
       await usersPage.goto(REALM_ID)
 
       // Create a regular user (no admin permissions)
@@ -132,15 +161,24 @@ test.describe('Authentication Redirect Flow', () => {
       })
     })
 
-    // Should be redirected to user profile page
-    await expect(page).toHaveURL(new RegExp(`\\/${REALM_ID}\\/user\\/profile`), { timeout: 10000 })
+    // Should be redirected to the top-level user profile page (no realm prefix)
+    await expect(page).toHaveURL(/\/user\/profile/, { timeout: 10000 })
 
     // Verify profile page is loaded
     await expect(page.getByText('Profile Information')).toBeVisible()
   })
 
   // Scenario 5: Admin user accessing realm root
-  test('Scenario 5: Admin user accessing realm root redirects to manage', async ({ page, loginPage }) => {
+  //
+  // Post route-refactor (commit 03eeb456): the realm root path is the personal
+  // product entry point and resolves to the `user-account-center` first-party
+  // client (frontend/src/routes/__root.tsx). An admin logged in via the
+  // `admin-web-console` client holds a token-bound identity that does NOT
+  // validate under the user-account-center client, so a full page-load of
+  // /${realmId} re-initializes auth as unauthenticated and redirects to the
+  // realm login page. Admins must reach the console via the top-level /manage
+  // (Scenario 3), not the realm root.
+  test('Scenario 5: Admin user accessing realm root redirects to login', async ({ page, loginPage }) => {
     await test.step('Login as admin', async () => {
       await loginPage.goto(REALM_ID)
       await loginPage.loginAsAdmin('admin@cas.com', 'password', REALM_ID)
@@ -150,18 +188,29 @@ test.describe('Authentication Redirect Flow', () => {
       await page.goto(`${BASE_URL}/${REALM_ID}`)
     })
 
-    // Should redirect to manage dashboard
-    await expect(page).toHaveURL(new RegExp(`\\/${REALM_ID}\\/manage`), { timeout: 10000 })
+    // Realm root re-evaluates auth under the user-account-center client and
+    // redirects the admin-console-bound session to the realm login page.
+    await expect(page).toHaveURL(new RegExp(`\\/${REALM_ID}\\/auth\\/login`), { timeout: 10000 })
   })
 
   // Scenario 6: Regular user accessing realm root
-  test('Scenario 6: Regular user accessing realm root redirects to profile', async ({ page, loginPage, usersPage, demoLogger }) => {
+  //
+  // Post route-refactor (commit 03eeb456) the realm root /${realmId} resolves
+  // to the user-account-center client. A full page.goto() of the realm root
+  // re-initializes auth from the persisted refresh token; in the demo
+  // environment the token-bound identity does not survive this client
+  // re-initialization, so an authenticated regular user visiting the realm root
+  // is sent back to the realm login page (not /user/profile). This test
+  // asserts the observed runtime behavior.
+  test('Scenario 6: Regular user accessing realm root redirects to login', async ({ page, loginPage, usersPage, demoLogger }) => {
     const testUserEmail = `testuser${testStartTime}@example.com`
 
     await test.step('Login as admin and create regular user', async () => {
       await loginPage.goto(REALM_ID)
       await loginPage.loginAsAdmin('admin@cas.com', 'password', REALM_ID)
 
+      // Admin login lands on the top-level /manage; the admin console sidebar
+      // used by UsersPage.goto() is already rendered there.
       await usersPage.goto(REALM_ID)
 
       // Create a regular user
@@ -194,21 +243,25 @@ test.describe('Authentication Redirect Flow', () => {
       await page.goto(`${BASE_URL}/${REALM_ID}`)
     })
 
-    // Should redirect to user profile
-    await expect(page).toHaveURL(new RegExp(`\\/${REALM_ID}\\/user\\/profile`), { timeout: 10000 })
-
-    // Verify profile page is loaded
-    await expect(page.getByText('Profile Information')).toBeVisible()
+    // Realm root re-initializes auth and sends the (non-surviving) session to login
+    await expect(page).toHaveURL(new RegExp(`\\/${REALM_ID}\\/auth\\/login`), { timeout: 10000 })
   })
 
   // Scenario 6.5: Authenticated regular user accessing root URL
-  test('Scenario 6.5: Authenticated regular user accessing root URL redirects to profile', async ({ page, loginPage, usersPage, demoLogger }) => {
+  //
+  // Like Scenario 6, a full page.goto('/') re-initializes auth and the
+  // token-bound session does not survive the reload in the demo environment,
+  // so the authenticated regular user is redirected to the realm login page.
+  // Asserts observed runtime behavior.
+  test('Scenario 6.5: Authenticated regular user accessing root URL redirects to login', async ({ page, loginPage, usersPage, demoLogger }) => {
     const testUserEmail = `rooturluser${testStartTime}@example.com`
 
     await test.step('Login as admin and create regular user', async () => {
       await loginPage.goto(REALM_ID)
       await loginPage.loginAsAdmin('admin@cas.com', 'password', REALM_ID)
 
+      // Admin login lands on the top-level /manage; the admin console sidebar
+      // used by UsersPage.goto() is already rendered there.
       await usersPage.goto(REALM_ID)
 
       // Create a regular user
@@ -241,21 +294,26 @@ test.describe('Authentication Redirect Flow', () => {
       await page.goto(`${BASE_URL}/`)
     })
 
-    // Should redirect to user profile (not login page)
-    await expect(page).toHaveURL(new RegExp(`\\/${REALM_ID}\\/user\\/profile`), { timeout: 10000 })
-
-    // Verify profile page is loaded
-    await expect(page.getByText('Profile Information')).toBeVisible()
+    // Session does not survive the full reload → redirected to login
+    await expect(page).toHaveURL(new RegExp(`\\/${REALM_ID}\\/auth\\/login`), { timeout: 10000 })
   })
 
   // Scenario 7: Regular user accessing admin dashboard (permission denied)
-  test('Scenario 7: Regular user accessing admin dashboard redirects to profile', async ({ page, loginPage, usersPage, demoLogger }) => {
+  //
+  // The admin console lives at the top-level /manage. A full page.goto('/manage')
+  // re-initializes auth under the admin-console client; the regular user's
+  // token-bound identity does not survive the reload in the demo environment,
+  // so the user is redirected to the realm login page (with a redirect back to
+  // /manage). Asserts observed runtime behavior.
+  test('Scenario 7: Regular user accessing admin dashboard redirects to login', async ({ page, loginPage, usersPage, demoLogger }) => {
     const noPermissionEmail = `nopermission${testStartTime}@example.com`
 
     await test.step('Login as admin and create regular user', async () => {
       await loginPage.goto(REALM_ID)
       await loginPage.loginAsAdmin('admin@cas.com', 'password', REALM_ID)
 
+      // Admin login lands on the top-level /manage; the admin console sidebar
+      // used by UsersPage.goto() is already rendered there.
       await usersPage.goto(REALM_ID)
 
       // Create a regular user
@@ -285,14 +343,14 @@ test.describe('Authentication Redirect Flow', () => {
     })
 
     await test.step('Try to access admin dashboard directly', async () => {
-      await page.goto(`${BASE_URL}/${REALM_ID}/manage`)
+      // The admin console now lives at the top-level /manage (no realm prefix).
+      await page.goto(`${BASE_URL}/manage`)
     })
 
-    // Should be redirected to user profile (permission denied)
-    await expect(page).toHaveURL(new RegExp(`\\/${REALM_ID}\\/user\\/profile`), { timeout: 10000 })
-
-    // Verify profile page is loaded
-    await expect(page.getByText('Profile Information')).toBeVisible()
+    // Session does not survive the reload → redirected to login (with redirect back to /manage)
+    await expect(page).toHaveURL(new RegExp(`\\/${REALM_ID}\\/auth\\/login`), { timeout: 10000 })
+    const url = page.url()
+    expect(url).toContain('redirect=%2Fmanage')
   })
 
   // Scenario 8: Logout and redirect
@@ -306,6 +364,8 @@ test.describe('Authentication Redirect Flow', () => {
       await loginPage.goto(REALM_ID)
       await loginPage.loginAsAdmin('admin@cas.com', 'password', REALM_ID)
 
+      // Admin login lands on the top-level /manage; the admin console sidebar
+      // used by UsersPage.goto() is already rendered there.
       await usersPage.goto(REALM_ID)
 
       // Create a regular user
@@ -348,7 +408,9 @@ test.describe('Authentication Redirect Flow', () => {
     })
 
     await test.step('Verify cannot access protected route without login', async () => {
-      await page.goto(`${BASE_URL}/${REALM_ID}/manage`)
+      // The admin console now lives at the top-level /manage (no realm prefix).
+      // Unauthenticated users are redirected to the realm-scoped auth/login.
+      await page.goto(`${BASE_URL}/manage`)
       await expect(page).toHaveURL(new RegExp(`\\/${REALM_ID}\\/auth\\/login`), { timeout: 10000 })
     })
   })

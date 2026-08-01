@@ -33,7 +33,7 @@ import {
   deviceTokenPoll,
 } from './helpers/device-api'
 import { verifyTestEnvironment } from './helpers/environment-setup'
-import { DEMO_ADMIN } from './helpers/auth'
+import { createBearerApiContext, DEMO_ADMIN } from './helpers/auth'
 
 const DEVICE_CODE_GRANT_SWITCH = '[data-testid="device-code-grant-switch"]'
 
@@ -129,8 +129,10 @@ test.describe('[Device Code] Error Scenarios & Admin Config Toggle', () => {
       console.log('Admin logged in')
     })
 
+    const apiContext = await createBearerApiContext(loginPage.getAccessToken())
+    try {
     await test.step('And: Seed Client App with Device Code Grant enabled', async () => {
-      const result = await seedDeviceCodeClientApp(page.request, realmId)
+      const result = await seedDeviceCodeClientApp(apiContext, realmId)
       clientId = result.clientId
       console.log(`Seeded device code client app (clientId=${clientId})`)
     })
@@ -180,6 +182,9 @@ test.describe('[Device Code] Error Scenarios & Admin Config Toggle', () => {
         throw new Error('Expected access_denied error but got a token response')
       }
     })
+    } finally {
+      await apiContext.dispose()
+    }
   })
 
   // ===========================================================================
@@ -195,6 +200,8 @@ test.describe('[Device Code] Error Scenarios & Admin Config Toggle', () => {
       console.log('Admin logged in')
     })
 
+    const apiContext = await createBearerApiContext(loginPage.getAccessToken())
+    try {
     const clientAppsPage = new ClientAppsPage(page, demoLogger)
 
     // -------------------------------------------------------------------------
@@ -241,8 +248,7 @@ test.describe('[Device Code] Error Scenarios & Admin Config Toggle', () => {
     })
 
     await test.step('Then: Get created Client App client_id', async () => {
-      // Use page.request to list client apps and find the one by name
-      const response = await page.request.get(`${process.env.BASE_URL || 'http://localhost:3000'}/api/client/${realmId}`)
+      const response = await apiContext.get(`${process.env.BASE_URL || 'http://localhost:3000'}/api/client/${realmId}`)
       expect(response.ok()).toBe(true)
       const appsPayload = await response.json()
       const apps = Array.isArray(appsPayload) ? appsPayload : appsPayload.items
@@ -338,7 +344,7 @@ test.describe('[Device Code] Error Scenarios & Admin Config Toggle', () => {
     })
 
     await test.step('Then: Get default Client App client_id', async () => {
-      const response = await page.request.get(`${process.env.BASE_URL || 'http://localhost:3000'}/api/client/${realmId}`)
+      const response = await apiContext.get(`${process.env.BASE_URL || 'http://localhost:3000'}/api/client/${realmId}`)
       expect(response.ok()).toBe(true)
       const appsPayload = await response.json()
       const apps = Array.isArray(appsPayload) ? appsPayload : appsPayload.items
@@ -359,5 +365,8 @@ test.describe('[Device Code] Error Scenarios & Admin Config Toggle', () => {
         console.log(`deviceAuthorize correctly failed for default app: ${message}`)
       }
     })
+    } finally {
+      await apiContext.dispose()
+    }
   })
 })

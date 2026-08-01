@@ -21,16 +21,18 @@ vi.mock('@tanstack/react-router', () => ({
 // bucket names come from the wallets response (NOT the admin-only credit-buckets
 // directory, which 403s for regular users — see Bug B).
 vi.mock('@/data/query-options', () => ({
-  walletsByBucketQueryOptions: vi.fn(),
-  pointsTransactionsQueryOptions: vi.fn(),
-  featureAvailabilityQueryOptions: vi.fn(),
+  userPointsWalletsQueryOptions: {
+    queryKey: ['user-points-wallets'],
+    queryFn: async () => walletsResponse,
+  },
+  userPointsTransactionsQueryOptions: vi.fn(),
+  userFeatureAvailabilityQueryOptions: {
+    queryKey: ['user-feature-availability'],
+    queryFn: async () => ({ user: { pointsVisible: false } }),
+  },
 }))
 
-import {
-  walletsByBucketQueryOptions,
-  pointsTransactionsQueryOptions,
-  featureAvailabilityQueryOptions,
-} from '@/data/query-options'
+import { userPointsTransactionsQueryOptions } from '@/data/query-options'
 
 function createTestQueryClient() {
   return new QueryClient({
@@ -95,17 +97,9 @@ const txnWithBucket: PointsTransactionResponse = {
 const transactionsResponse = { transactions: [txnWithBucket] }
 
 function mockQueryOptions() {
-  vi.mocked(walletsByBucketQueryOptions).mockReturnValue({
-    queryKey: ['wallets', REALM_ID],
-    queryFn: async () => walletsResponse,
-  } as never)
-  vi.mocked(pointsTransactionsQueryOptions).mockReturnValue({
+  vi.mocked(userPointsTransactionsQueryOptions).mockReturnValue({
     queryKey: ['txns', REALM_ID],
     queryFn: async () => transactionsResponse,
-  } as never)
-  vi.mocked(featureAvailabilityQueryOptions).mockReturnValue({
-    queryKey: ['feature-availability', REALM_ID],
-    queryFn: async () => ({ user: { pointsVisible: false } }),
   } as never)
 }
 
@@ -162,12 +156,11 @@ describe('UserPointsPage inline purchase block', () => {
   })
 
   it('GIVEN pointsVisible=true WHEN rendering THEN shows the inline purchase CTA', async () => {
-    vi.mocked(featureAvailabilityQueryOptions).mockReturnValue({
-      queryKey: ['feature-availability', REALM_ID],
-      queryFn: async () => ({ user: { pointsVisible: true } }),
-    } as never)
-
-    renderPage()
+    const queryClient = createTestQueryClient()
+    queryClient.setQueryData(['user-feature-availability'], {
+      user: { pointsVisible: true },
+    })
+    renderPage({ queryClient })
 
     await waitFor(() =>
       expect(screen.getByTestId('points-purchase-inline-block')).toBeInTheDocument()

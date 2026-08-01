@@ -170,12 +170,17 @@ fn build_creem_subscription_paid_event(
 //   old Stripe API versions put `current_period_start` / `current_period_end`
 //   at the subscription TOP LEVEL. The normalizer must resolve them to a
 //   unique `(period_start, period_end)` and DRIVE `handle_subscription_paid`
-//   (Some ⟹ grant). The current-period grant is immediately available
-//   (`effective_at = period_start <= now`).
+//   (Some ⟹ grant).
 //
-// Why this test exists: this is the legacy-API compatibility path. If
-// `normalize_stripe_period` regressed to "item-level only", every
-// pre-2025-03-31.basil subscription would silently lose its grant.
+// Design note (distribution-rules refactor): `customer.subscription.created`
+// now routes to `handle_subscription_paid(is_renewal=false)`, which grants NO
+// points — initial fulfillment is owned by the captured PaymentAttempt flow.
+// The only grant-bearing subscription path is the renewal route. This test
+// therefore drives the renewal via `invoice.payment_succeeded` (whose line
+// `period.{start,end}` is the resolvable period) and verifies the
+// current-period grant. The top-level/item-level *resolution* of
+// `normalize_stripe_period` itself is pinned by the unit tests in
+// `stripe_webhook_handlers.rs`.
 #[test_context(SchemaTestContext)]
 #[tokio::test]
 async fn test_stripe_subscription_top_level_period_normalized(ctx: &mut SchemaTestContext) {
@@ -186,6 +191,7 @@ async fn test_stripe_subscription_top_level_period_normalized(ctx: &mut SchemaTe
     let external_product_id = format!("prod_{}", entitlement_key);
     let event_id = generate_test_event_id();
     let webhook_secret = "test_stripe_wh_secret";
+    let stripe_subscription_id = format!("sub_top_{}", event_id);
 
     // Stripe provider config so the webhook signature verifies.
     crate::tests::helpers::billing_helpers::setup_stripe_config(
@@ -196,8 +202,8 @@ async fn test_stripe_subscription_top_level_period_normalized(ctx: &mut SchemaTe
     )
     .await;
 
-    // Entitlement mapping so the grant resolves points_per_period.
-    setup_test_entitlement_mapping_for_webhook(
+    // Entitlement mapping so the renewal grant resolves points_per_period.
+    let mapping_id = setup_test_entitlement_mapping_for_webhook(
         ctx,
         &realm_id,
         "stripe",
@@ -208,31 +214,28 @@ async fn test_stripe_subscription_top_level_period_normalized(ctx: &mut SchemaTe
         true,
     )
     .await;
+    // The renewal grant reads CURRENT distribution rules; seed a
+    // subscription_renewal rule (the bare mapping seeder creates none).
+    crate::tests::helpers::points_helpers::seed_subscription_renewal_rule(
+        &ctx.app_state.pool,
+        &realm_id,
+        mapping_id,
+        1000,
+    )
+    .await;
 
-    // Build the subscription object with ONLY top-level current_period_*.
-    // (No item-level period fields — the items[] entries carry only the
-    // product pointer for entitlement lookup.)
+    // Drive a renewal grant via invoice.payment_succeeded; the subscription
+    // line carries its `period` (the resolvable period).
     let now = chrono::Utc::now();
     let period_start = now - chrono::Duration::seconds(10);
     let period_end = now + chrono::Duration::days(30);
-    let subscription_object = serde_json::json!({
-        "status": "active",
-        "current_period_start": period_start.timestamp(),
-        "current_period_end": period_end.timestamp(),
-        "items": {
-            "data": [{
-                "price": { "product": external_product_id }
-            }]
-        }
-    });
-
-    let event = build_stripe_subscription_created_event(
+    let event = super::test_84_stripe_invoice_period_normalization::build_stripe_invoice_payment_succeeded_event(
         &event_id,
         &realm_id,
         user_id,
         &entitlement_key,
-        &external_product_id,
-        subscription_object,
+        &stripe_subscription_id,
+        Some((period_start.timestamp(), period_end.timestamp())),
     );
 
     // When: Stripe webhook fires.
@@ -240,13 +243,13 @@ async fn test_stripe_subscription_top_level_period_normalized(ctx: &mut SchemaTe
     let response = send_stripe_webhook_with_signature(&app, &realm_id, event, webhook_secret).await;
     assert_webhook_success(&response);
 
-    // Then: a subscription_credit quota entitlement WAS written — the top-level
-    // period resolved and drove `handle_subscription_paid`.
+    // Then: a subscription_credit quota entitlement WAS written — the line
+    // period resolved and drove the renewal grant.
     let entitlements =
         get_user_quota_entitlements(ctx, user_id, CreditType::SubscriptionCredit).await;
     assert!(
         !entitlements.is_empty(),
-        "Stripe top-level current_period_* must normalize to Some and drive a grant; \
+        "Stripe period must normalize to Some and drive a renewal grant; \
          got 0 subscription_credit quota entitlements"
     );
 
@@ -273,9 +276,11 @@ async fn test_stripe_subscription_top_level_period_normalized(ctx: &mut SchemaTe
 // A single-item subscription must resolve its period unambiguously from
 // `items.data[0]` and drive the grant.
 //
-// Why this test exists: this is the post-basil API compatibility path. If
-// the normalizer only read top-level fields, every new-API subscription
-// would fall through to "skip + warn" and lose its grant.
+// Design note (distribution-rules refactor): see the top-level test above —
+// `customer.subscription.created` grants nothing now (initial path), so this
+// drives the renewal grant via `invoice.payment_succeeded`. The item-level
+// *resolution* of `normalize_stripe_period` is pinned by the unit tests in
+// `stripe_webhook_handlers.rs`.
 #[test_context(SchemaTestContext)]
 #[tokio::test]
 async fn test_stripe_subscription_item_level_period_normalized(ctx: &mut SchemaTestContext) {
@@ -286,6 +291,7 @@ async fn test_stripe_subscription_item_level_period_normalized(ctx: &mut SchemaT
     let external_product_id = format!("prod_{}", entitlement_key);
     let event_id = generate_test_event_id();
     let webhook_secret = "test_stripe_wh_secret";
+    let stripe_subscription_id = format!("sub_item_{}", event_id);
 
     crate::tests::helpers::billing_helpers::setup_stripe_config(
         ctx,
@@ -295,7 +301,7 @@ async fn test_stripe_subscription_item_level_period_normalized(ctx: &mut SchemaT
     )
     .await;
 
-    setup_test_entitlement_mapping_for_webhook(
+    let mapping_id = setup_test_entitlement_mapping_for_webhook(
         ctx,
         &realm_id,
         "stripe",
@@ -306,30 +312,26 @@ async fn test_stripe_subscription_item_level_period_normalized(ctx: &mut SchemaT
         true,
     )
     .await;
+    crate::tests::helpers::points_helpers::seed_subscription_renewal_rule(
+        &ctx.app_state.pool,
+        &realm_id,
+        mapping_id,
+        1000,
+    )
+    .await;
 
-    // Item-level period ONLY (no top-level fields) — the post-basil shape.
+    // Drive a renewal grant via invoice.payment_succeeded; the single
+    // subscription line carries its `period`.
     let now = chrono::Utc::now();
     let period_start = now - chrono::Duration::seconds(10);
     let period_end = now + chrono::Duration::days(30);
-    let subscription_object = serde_json::json!({
-        "status": "active",
-        // NOTE: no top-level current_period_* — exercising the basil+ path.
-        "items": {
-            "data": [{
-                "price": { "product": external_product_id },
-                "current_period_start": period_start.timestamp(),
-                "current_period_end": period_end.timestamp()
-            }]
-        }
-    });
-
-    let event = build_stripe_subscription_created_event(
+    let event = super::test_84_stripe_invoice_period_normalization::build_stripe_invoice_payment_succeeded_event(
         &event_id,
         &realm_id,
         user_id,
         &entitlement_key,
-        &external_product_id,
-        subscription_object,
+        &stripe_subscription_id,
+        Some((period_start.timestamp(), period_end.timestamp())),
     );
 
     let app = ctx.create_unified_test_router();
@@ -340,8 +342,8 @@ async fn test_stripe_subscription_item_level_period_normalized(ctx: &mut SchemaT
         get_user_quota_entitlements(ctx, user_id, CreditType::SubscriptionCredit).await;
     assert!(
         !entitlements.is_empty(),
-        "Stripe item-level current_period_* (single item) must normalize to Some and \
-         drive a grant; got 0 subscription_credit quota entitlements"
+        "Stripe single-line period must normalize to Some and drive a renewal grant; \
+         got 0 subscription_credit quota entitlements"
     );
 
     assert_derived_balance(
@@ -572,7 +574,7 @@ async fn test_creem_period_normalized(ctx: &mut SchemaTestContext) {
 
     ctx.with_creem_config(&realm_id, None, None, None).await;
 
-    setup_test_entitlement_mapping_for_webhook(
+    let mapping_id = setup_test_entitlement_mapping_for_webhook(
         ctx,
         &realm_id,
         "creem",
@@ -581,6 +583,15 @@ async fn test_creem_period_normalized(ctx: &mut SchemaTestContext) {
         1000,
         true,
         true,
+    )
+    .await;
+    // Initial activation grants nothing; only the renewal route grants, so
+    // seed a subscription_renewal rule and drive a renewal webhook.
+    crate::tests::helpers::points_helpers::seed_subscription_renewal_rule(
+        &ctx.app_state.pool,
+        &realm_id,
+        mapping_id,
+        1000,
     )
     .await;
 
@@ -596,7 +607,7 @@ async fn test_creem_period_normalized(ctx: &mut SchemaTestContext) {
         &external_product_id,
         Some(&period_start),
         Some(&period_end),
-        false,
+        true, // renewal — the only grant-bearing subscription.paid route
     );
 
     let app = ctx.create_unified_test_router();
@@ -607,7 +618,7 @@ async fn test_creem_period_normalized(ctx: &mut SchemaTestContext) {
         get_user_quota_entitlements(ctx, user_id, CreditType::SubscriptionCredit).await;
     assert!(
         !entitlements.is_empty(),
-        "Creem currentPeriodStart/End must normalize to Some and drive a grant; \
+        "Creem currentPeriodStart/End must normalize to Some and drive a renewal grant; \
          got 0 subscription_credit quota entitlements"
     );
 

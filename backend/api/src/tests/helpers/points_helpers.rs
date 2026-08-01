@@ -93,6 +93,108 @@ pub async fn ensure_test_bucket_for_realm(pool: &sqlx::PgPool, realm_id: &str) -
     bucket_id
 }
 
+/// Seed a `subscription_renewal` quota rule owned by `mapping_id` so a renewal
+/// grant (`handle_subscription_paid(is_renewal=true)` → `CurrentOwnerRules`)
+/// fires. After the distribution-rules refactor, the bare mapping seeders
+/// (`setup_test_entitlement_mapping_for_webhook`, `setup_test_plan_config*`)
+/// create NO distribution rule; the renewal trigger reads CURRENT rules at
+/// grant time, so this rule must exist first. `limit` becomes the single
+/// period window's limit (the analog of the legacy `points_per_period`).
+/// The rule targets the realm's legacy test bucket (`ensure_test_bucket_for_realm`)
+/// so quota-entitlement counters that filter on that bucket observe the grant.
+pub async fn seed_subscription_renewal_rule(
+    pool: &sqlx::PgPool,
+    realm_id: &str,
+    mapping_id: Uuid,
+    limit: i64,
+) {
+    let bucket_id = ensure_test_bucket_for_realm(pool, realm_id).await;
+    let rule_id = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO points_distribution_rules
+            (id, realm_id, owner_type, entitlement_mapping_id, bucket_id,
+             trigger_sources, grant_mode, validity_days, quota_windows,
+             enabled, display_order)
+         VALUES ($1, $2, 'entitlement_mapping', $3, $4, $5, 'quota', 0, $6, true, 0)",
+    )
+    .bind(rule_id)
+    .bind(realm_id)
+    .bind(mapping_id)
+    .bind(bucket_id)
+    .bind(&["subscription_renewal"][..])
+    .bind(serde_json::json!([{"windowSeconds": 2_592_000, "limit": limit, "key": "period"}]))
+    .execute(pool)
+    .await
+    .expect("Failed to seed subscription_renewal quota rule");
+}
+
+/// Seed the realm's `RealmRegistration`-owned rule set: one `registration`
+/// fixed rule (the initial bonus, a one-time ledger grant) and one
+/// `free_periodic_grant` quota rule (the rolling-window periodic grant).
+///
+/// This is the distribution-rules replacement for the legacy
+/// `realm_default_configs` row: a registration event (`handle_user_registration`)
+/// selects BOTH rule families atomically. `registration_bonus` becomes the fixed
+/// rule's `points_amount`; the periodic grant is a quota rule whose single
+/// window has `limit = free_periodic_amount` over `window_seconds`. Set
+/// `free_periodic_amount = 0` (or pass `None`) to seed only the registration
+/// rule (the periodic-disabled case). Both rules target the realm's legacy test
+/// bucket (`ensure_test_bucket_for_realm`).
+pub async fn seed_realm_registration_rules(
+    pool: &sqlx::PgPool,
+    realm_id: &str,
+    registration_bonus: i64,
+    free_periodic_amount: Option<i64>,
+    window_seconds: i64,
+    _validity_days: i64,
+) {
+    let bucket_id = ensure_test_bucket_for_realm(pool, realm_id).await;
+
+    // Registration bonus — fixed rule, one-time grant. Skipped when the bonus
+    // is <= 0 (the fixed-rule CHECK requires points_amount > 0; a realm with no
+    // registration bonus simply has no registration rule).
+    if registration_bonus > 0 {
+        let reg_rule_id = uuid::Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO points_distribution_rules
+                (id, realm_id, owner_type, entitlement_mapping_id, bucket_id,
+                 trigger_sources, grant_mode, points_amount, validity_days,
+                 enabled, display_order)
+             VALUES ($1, $2, 'realm_registration', NULL, $3, $4, 'fixed', $5, 0, true, 0)",
+        )
+        .bind(reg_rule_id)
+        .bind(realm_id)
+        .bind(bucket_id)
+        .bind(&["registration"][..])
+        .bind(registration_bonus)
+        .execute(pool)
+        .await
+        .expect("Failed to seed registration fixed rule");
+    }
+
+    // Free-periodic grant — quota rule over a single window.
+    if let Some(amount) = free_periodic_amount
+        && amount > 0
+    {
+        let free_rule_id = uuid::Uuid::now_v7();
+        sqlx::query(
+                "INSERT INTO points_distribution_rules
+                    (id, realm_id, owner_type, entitlement_mapping_id, bucket_id,
+                     trigger_sources, grant_mode, quota_windows,
+                     enabled, display_order)
+                 VALUES ($1, $2, 'realm_registration', NULL, $3, $4, 'quota', $5, true, 1)",
+            )
+            .bind(free_rule_id)
+            .bind(realm_id)
+            .bind(bucket_id)
+            .bind(&["free_periodic_grant"][..])
+            .bind(serde_json::json!([{"windowSeconds": window_seconds, "limit": amount, "key": "window"}]))
+            .execute(pool)
+            .await
+            .expect("Failed to seed free_periodic_grant quota rule");
+    }
+}
+
 /// Attach a client app to this realm's legacy credit bucket (no-op if the
 /// legacy bucket has not been materialized yet).
 /// Legacy scenario tests create client apps ad-hoc via several helpers; each

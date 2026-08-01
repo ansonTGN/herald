@@ -43,27 +43,15 @@ async fn test_scenario_free_user_registration_grants_initial_bonus(ctx: &mut Tes
     // `points_quota_entitlements` row, not a ledger row).
     println!("[Step 1] Set up realm default config");
 
-    sqlx::query(
-        r#"
-        INSERT INTO realm_default_configs
-            (realm_id, registration_bonus_points, free_periodic_points_amount,
-             free_periodic_validity_days, free_periodic_grant_period_type, free_periodic_quota_windows)
-        VALUES ($1, $2, $3, 1, 'daily', $4::jsonb)
-        ON CONFLICT (realm_id) DO UPDATE SET
-            registration_bonus_points = EXCLUDED.registration_bonus_points,
-            free_periodic_points_amount = EXCLUDED.free_periodic_points_amount,
-            free_periodic_validity_days = EXCLUDED.free_periodic_validity_days,
-            free_periodic_grant_period_type = EXCLUDED.free_periodic_grant_period_type,
-            free_periodic_quota_windows = EXCLUDED.free_periodic_quota_windows
-        "#,
+    crate::tests::helpers::points_helpers::seed_realm_registration_rules(
+        &ctx._app_state.pool,
+        &realm_id,
+        registration_bonus,
+        Some(free_periodic_amount),
+        86400, // daily window
+        1,     // validity_days
     )
-    .bind(&realm_id)
-    .bind(registration_bonus)
-    .bind(free_periodic_amount)
-    .bind(json!([{"windowSeconds": 86400, "limit": free_periodic_amount, "key": "day"}]))
-    .execute(&ctx._app_state.pool)
-    .await
-    .expect("Failed to create realm default config");
+    .await;
 
     // Enable registration for the realm
     sqlx::query(
@@ -264,27 +252,15 @@ async fn test_scenario_free_user_registration_prevents_duplicate_bonuses(ctx: &m
     // Given: A user has already received registration bonus points
     println!("[Step 1] Create user with registration bonus");
 
-    sqlx::query(
-        r#"
-        INSERT INTO realm_default_configs
-            (realm_id, registration_bonus_points, free_periodic_points_amount,
-             free_periodic_validity_days, free_periodic_grant_period_type, free_periodic_quota_windows)
-        VALUES ($1, $2, $3, 1, 'daily', $4::jsonb)
-        ON CONFLICT (realm_id) DO UPDATE SET
-            registration_bonus_points = EXCLUDED.registration_bonus_points,
-            free_periodic_points_amount = EXCLUDED.free_periodic_points_amount,
-            free_periodic_validity_days = EXCLUDED.free_periodic_validity_days,
-            free_periodic_grant_period_type = EXCLUDED.free_periodic_grant_period_type,
-            free_periodic_quota_windows = EXCLUDED.free_periodic_quota_windows
-        "#,
+    crate::tests::helpers::points_helpers::seed_realm_registration_rules(
+        &ctx._app_state.pool,
+        &realm_id,
+        registration_bonus,
+        Some(free_periodic_amount),
+        86400, // daily window
+        1,     // validity_days
     )
-    .bind(&realm_id)
-    .bind(registration_bonus)
-    .bind(free_periodic_amount)
-    .bind(json!([{"windowSeconds": 86400, "limit": free_periodic_amount, "key": "day"}]))
-    .execute(&ctx._app_state.pool)
-    .await
-    .expect("Failed to create realm default config");
+    .await;
 
     // Enable registration for the realm
     sqlx::query(
@@ -435,24 +411,18 @@ async fn test_scenario_free_user_registration_periodic_points_disabled(ctx: &mut
     // Given: realm-1 has config: free_periodic_quota_windows empty (periodic points disabled)
     println!("[Step 1] Set up realm config with periodic points disabled");
 
-    sqlx::query(
-        r#"
-        INSERT INTO realm_default_configs
-            (realm_id, registration_bonus_points, free_periodic_points_amount,
-             free_periodic_validity_days, free_periodic_grant_period_type, free_periodic_quota_windows)
-        VALUES ($1, 1000, 0, 1, 'daily', NULL)
-        ON CONFLICT (realm_id) DO UPDATE SET
-            registration_bonus_points = EXCLUDED.registration_bonus_points,
-            free_periodic_points_amount = EXCLUDED.free_periodic_points_amount,
-            free_periodic_validity_days = EXCLUDED.free_periodic_validity_days,
-            free_periodic_grant_period_type = EXCLUDED.free_periodic_grant_period_type,
-            free_periodic_quota_windows = EXCLUDED.free_periodic_quota_windows
-        "#,
+    // Periodic-disabled: seed ONLY the registration rule (no free_periodic_grant
+    // rule). The registration event then produces a registration_credit ledger
+    // row and zero periodic quota entitlements.
+    crate::tests::helpers::points_helpers::seed_realm_registration_rules(
+        &ctx._app_state.pool,
+        &realm_id,
+        1000,
+        None, // no free_periodic_grant rule
+        86400,
+        1,
     )
-    .bind(&realm_id)
-    .execute(&ctx._app_state.pool)
-    .await
-    .expect("Failed to create realm default config");
+    .await;
 
     // Enable registration for the realm
     sqlx::query(
@@ -533,20 +503,6 @@ async fn test_scenario_free_user_registration_periodic_points_disabled(ctx: &mut
         "No periodic quota entitlement should be granted when free_periodic_quota_windows is empty"
     );
 
-    // And: user_points_configs.free_periodic_points_amount = 0
-    let free_periodic_points_amount: i64 = sqlx::query_scalar(
-        "SELECT free_periodic_points_amount FROM user_points_configs WHERE user_id = $1",
-    )
-    .bind(user_id)
-    .fetch_one(&ctx._app_state.pool)
-    .await
-    .expect("Failed to fetch user_points_config");
-
-    assert_eq!(
-        free_periodic_points_amount, 0,
-        "free_periodic_points_amount should be 0"
-    );
-
     println!("[Step 3] ✓ Registration credit (1000) verified, no periodic quota entitlement");
 }
 
@@ -579,26 +535,15 @@ async fn test_free_periodic_first_period_immediately_available(ctx: &mut TestCon
 
     // Configure a realm where free periodic is enabled and registration bonus
     // is zero, so the only grant is the free-periodic quota entitlement.
-    sqlx::query(
-        r#"
-        INSERT INTO realm_default_configs
-            (realm_id, registration_bonus_points, free_periodic_points_amount,
-             free_periodic_validity_days, free_periodic_grant_period_type, free_periodic_quota_windows)
-        VALUES ($1, 0, $2, 1, 'daily', $3::jsonb)
-        ON CONFLICT (realm_id) DO UPDATE SET
-            registration_bonus_points = EXCLUDED.registration_bonus_points,
-            free_periodic_points_amount = EXCLUDED.free_periodic_points_amount,
-            free_periodic_validity_days = EXCLUDED.free_periodic_validity_days,
-            free_periodic_grant_period_type = EXCLUDED.free_periodic_grant_period_type,
-            free_periodic_quota_windows = EXCLUDED.free_periodic_quota_windows
-        "#,
+    crate::tests::helpers::points_helpers::seed_realm_registration_rules(
+        pool,
+        &realm_id,
+        0, // no registration bonus -> no registration rule
+        Some(points_per_period),
+        86400, // daily window
+        1,
     )
-    .bind(&realm_id)
-    .bind(points_per_period)
-    .bind(json!([{"windowSeconds": 86400, "limit": points_per_period, "key": "day"}]))
-    .execute(pool)
-    .await
-    .expect("Failed to set realm default config");
+    .await;
 
     sqlx::query(
         r#"
@@ -704,27 +649,15 @@ async fn test_registration_credit_and_free_periodic_two_distinct_sources(ctx: &m
 
     // Configure the realm with BOTH a registration bonus AND a non-zero
     // free-periodic quota window.
-    sqlx::query(
-        r#"
-        INSERT INTO realm_default_configs
-            (realm_id, registration_bonus_points, free_periodic_points_amount,
-             free_periodic_validity_days, free_periodic_grant_period_type, free_periodic_quota_windows)
-        VALUES ($1, $2, $3, 1, 'daily', $4::jsonb)
-        ON CONFLICT (realm_id) DO UPDATE SET
-            registration_bonus_points = EXCLUDED.registration_bonus_points,
-            free_periodic_points_amount = EXCLUDED.free_periodic_points_amount,
-            free_periodic_validity_days = EXCLUDED.free_periodic_validity_days,
-            free_periodic_grant_period_type = EXCLUDED.free_periodic_grant_period_type,
-            free_periodic_quota_windows = EXCLUDED.free_periodic_quota_windows
-        "#,
+    crate::tests::helpers::points_helpers::seed_realm_registration_rules(
+        pool,
+        &realm_id,
+        registration_bonus,
+        Some(free_periodic_amount),
+        86400, // daily window
+        1,
     )
-    .bind(&realm_id)
-    .bind(registration_bonus)
-    .bind(free_periodic_amount)
-    .bind(json!([{"windowSeconds": 86400, "limit": free_periodic_amount, "key": "day"}]))
-    .execute(pool)
-    .await
-    .expect("Failed to set realm default config");
+    .await;
 
     sqlx::query(
         r#"
@@ -862,26 +795,15 @@ async fn test_free_periodic_pre_grant_lead_time_effective_at_future(ctx: &mut Te
 
     crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(pool, &realm_id).await;
 
-    sqlx::query(
-        r#"
-        INSERT INTO realm_default_configs
-            (realm_id, registration_bonus_points, free_periodic_points_amount,
-             free_periodic_validity_days, free_periodic_grant_period_type, free_periodic_quota_windows)
-        VALUES ($1, 0, $2, 1, 'monthly', $3::jsonb)
-        ON CONFLICT (realm_id) DO UPDATE SET
-            registration_bonus_points = EXCLUDED.registration_bonus_points,
-            free_periodic_points_amount = EXCLUDED.free_periodic_points_amount,
-            free_periodic_validity_days = EXCLUDED.free_periodic_validity_days,
-            free_periodic_grant_period_type = EXCLUDED.free_periodic_grant_period_type,
-            free_periodic_quota_windows = EXCLUDED.free_periodic_quota_windows
-        "#,
+    crate::tests::helpers::points_helpers::seed_realm_registration_rules(
+        pool,
+        &realm_id,
+        0, // no registration bonus
+        Some(points_per_period),
+        2_592_000, // monthly window
+        1,
     )
-    .bind(&realm_id)
-    .bind(points_per_period)
-    .bind(json!([{"windowSeconds": 2592000, "limit": points_per_period, "key": "month"}]))
-    .execute(pool)
-    .await
-    .expect("Failed to set realm default config");
+    .await;
 
     sqlx::query(
         r#"
@@ -1036,26 +958,15 @@ async fn test_free_periodic_expires_anchored_to_grant_time(ctx: &mut TestContext
 
     crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(pool, &realm_id).await;
 
-    sqlx::query(
-        r#"
-        INSERT INTO realm_default_configs
-            (realm_id, registration_bonus_points, free_periodic_points_amount,
-             free_periodic_validity_days, free_periodic_grant_period_type, free_periodic_quota_windows)
-        VALUES ($1, 0, $2, 1, 'daily', $3::jsonb)
-        ON CONFLICT (realm_id) DO UPDATE SET
-            registration_bonus_points = EXCLUDED.registration_bonus_points,
-            free_periodic_points_amount = EXCLUDED.free_periodic_points_amount,
-            free_periodic_validity_days = EXCLUDED.free_periodic_validity_days,
-            free_periodic_grant_period_type = EXCLUDED.free_periodic_grant_period_type,
-            free_periodic_quota_windows = EXCLUDED.free_periodic_quota_windows
-        "#,
+    crate::tests::helpers::points_helpers::seed_realm_registration_rules(
+        pool,
+        &realm_id,
+        0, // no registration bonus
+        Some(points_per_period),
+        86400, // daily window
+        1,
     )
-    .bind(&realm_id)
-    .bind(points_per_period)
-    .bind(json!([{"windowSeconds": 86400, "limit": points_per_period, "key": "day"}]))
-    .execute(pool)
-    .await
-    .expect("Failed to set realm default config");
+    .await;
 
     sqlx::query(
         r#"
@@ -1133,9 +1044,9 @@ async fn test_free_periodic_expires_anchored_to_grant_time(ctx: &mut TestContext
         Arc::clone(&ctx._app_state.points_service),
     );
     let summary = scheduler
-        .process_due_schedules()
+        .expire_quota_entitlements()
         .await
-        .expect("GrantScheduler::process_due_schedules failed");
+        .expect("GrantScheduler::expire_quota_entitlements failed");
     assert!(
         summary.processed >= 1,
         "expected the scheduler to expire the lapsed entitlement; got summary {:?}",

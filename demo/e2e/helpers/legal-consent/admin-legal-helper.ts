@@ -22,7 +22,7 @@ export class AdminLegalHelper extends BasePage {
    */
   async gotoLegalTab(realmId: string): Promise<void> {
     await loginAsAdminWithConsent(this.page, realmId)
-    await this.page.goto(`${BASE_URL}/${realmId}/manage/settings`, {
+    await this.page.goto(`${BASE_URL}/manage/settings`, {
       waitUntil: 'domcontentloaded',
     })
 

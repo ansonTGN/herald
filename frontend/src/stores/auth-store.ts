@@ -64,6 +64,7 @@ export interface AuthState {
   isAuthenticated: boolean
   isLoading: boolean
   realmId: string | null
+  clientAppId: string | null
 
   // User data
   user: UserProfile | null
@@ -84,7 +85,7 @@ export interface AuthState {
  */
 export interface AuthActions {
   // Status actions
-  setAuthStatus: (authenticated: boolean, realmId?: string) => void
+  setAuthStatus: (authenticated: boolean, realmId?: string, clientAppId?: string) => void
   setIsLoading: (isLoading: boolean) => void
 
   // User data actions
@@ -122,6 +123,7 @@ const initialState: AuthState = {
   isAuthenticated: false,
   isLoading: false,
   realmId: null,
+  clientAppId: null,
   user: null,
   permissions: [],
   roles: [],
@@ -140,8 +142,12 @@ export const useAuthStore = create<AuthState & AuthActions>()(
         ...initialState,
 
         // Status actions
-        setAuthStatus: (authenticated, realmId) =>
-          set({ isAuthenticated: authenticated, realmId: realmId ?? get().realmId }),
+        setAuthStatus: (authenticated, realmId, clientAppId) =>
+          set({
+            isAuthenticated: authenticated,
+            realmId: realmId ?? get().realmId,
+            clientAppId: clientAppId ?? get().clientAppId,
+          }),
 
         setIsLoading: (isLoading) => set({ isLoading }),
 
@@ -162,6 +168,7 @@ export const useAuthStore = create<AuthState & AuthActions>()(
           set({
             isAuthenticated: false,
             isLoading: false,
+            clientAppId: null,
             user: null,
             permissions: [],
             roles: [],
@@ -206,6 +213,7 @@ export const useAuthStore = create<AuthState & AuthActions>()(
           // the in-flight PKCE state so a reload can restore/complete the flow.
           isAuthenticated: state.isAuthenticated,
           realmId: state.realmId,
+          clientAppId: state.clientAppId,
           user: state.user,
           permissions: state.permissions,
           roles: state.roles,

@@ -135,7 +135,7 @@ test.describe('[Realm Admin] Legal Agreement Management Demo Tests', () => {
   }) => {
     await test.step('Login as realm admin and open Settings > Legal', async () => {
       await loginAsAdminWithConsent(page, realmId)
-      await page.goto(`/${realmId}/manage/settings`, { waitUntil: 'domcontentloaded' })
+      await page.goto(`/manage/settings`, { waitUntil: 'domcontentloaded' })
       await page.locator(SELECTORS.legalConsent.legalTab).click()
       await expect(page.locator(SELECTORS.legalConsent.legalAgreementsTab)).toBeVisible({
         timeout: 10000,

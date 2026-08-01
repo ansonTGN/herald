@@ -138,7 +138,7 @@ test.describe('[Regular User] Route Guard Re-consent Demo Tests', () => {
       })
 
       await test.step('Navigate to a core route and expect the re-consent dialog', async () => {
-        await page.goto(`/${realmId}/user/profile`, { waitUntil: 'domcontentloaded' })
+        await page.goto(`/user/profile`, { waitUntil: 'domcontentloaded' })
         await legalConsentHelper.expectReconsentDialogVisible()
       })
 
@@ -147,7 +147,7 @@ test.describe('[Regular User] Route Guard Re-consent Demo Tests', () => {
         await expect(
           page.locator(SELECTORS.legalConsent.reconsentDialogTitle)
         ).toBeHidden({ timeout: 10000 })
-        await expect(page).toHaveURL(new RegExp(`/${realmId}/user/profile/?$`))
+        await expect(page).toHaveURL(new RegExp(`/user/profile/?$`))
         await expect(page.locator('[data-testid="email-display"]')).toContainText(email, {
           timeout: 10000,
         })
@@ -169,7 +169,7 @@ test.describe('[Regular User] Route Guard Re-consent Demo Tests', () => {
       })
 
       await test.step('Navigate to a core route and expect the re-consent dialog', async () => {
-        await page.goto(`/${realmId}/user/profile`, { waitUntil: 'domcontentloaded' })
+        await page.goto(`/user/profile`, { waitUntil: 'domcontentloaded' })
         await legalConsentHelper.expectReconsentDialogVisible()
       })
 

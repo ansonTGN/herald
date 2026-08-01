@@ -33,6 +33,8 @@ import {
   listWallets,
   getWallet,
   listTransactions,
+  listUserTransactions,
+  listUserWallets,
   getRegistrationRules,
   upsertRegistrationRules,
   getPaymentAttemptStatus,
@@ -102,6 +104,7 @@ import type {
   CustomDomainConfigStateResponse,
   UserSessionResponse,
   FeatureAvailabilityResponse as GeneratedFeatureAvailabilityResponse,
+  UserFeatureAvailabilityResponse,
 } from '@/lib/api-generated'
 import type {
   HistoryFilters,
@@ -195,6 +198,9 @@ export const queryKeys = {
     [QUERY_KEYS.POINTS_WALLET, realmId, userId] as const,
   pointsTransactions: (realmId: string, filters: Record<string, unknown>) =>
     [QUERY_KEYS.POINTS_TRANSACTIONS, realmId, filters] as const,
+  userPointsTransactions: (filters: Record<string, unknown>) =>
+    [QUERY_KEYS.USER_POINTS_TRANSACTIONS, filters] as const,
+  userPointsWallets: () => [QUERY_KEYS.USER_POINTS_WALLETS] as const,
   pointsDefaultConfig: (realmId: string) => [QUERY_KEYS.POINTS_DEFAULT_CONFIG, realmId] as const,
   realmConfigs: (realmId: string) => [QUERY_KEYS.REALM_CONFIGS, realmId] as const,
   emailStatus: (realmId: string) => [QUERY_KEYS.EMAIL_STATUS, realmId] as const,
@@ -303,6 +309,17 @@ export async function requireFeature(
   redirectOptions: { to: string; params?: Record<string, string>; search?: Record<string, unknown> }
 ) {
   const features = await queryClient.ensureQueryData(featureAvailabilityQueryOptions(realmId))
+  if (!check(features)) {
+    throw redirect(redirectOptions)
+  }
+}
+
+export async function requireUserFeature(
+  queryClient: QueryClient,
+  check: (features: UserFeatureAvailabilityResponse) => boolean,
+  redirectOptions: { to: string; params?: Record<string, string>; search?: Record<string, unknown> }
+) {
+  const features = await queryClient.ensureQueryData(userFeatureAvailabilityQueryOptions)
   if (!check(features)) {
     throw redirect(redirectOptions)
   }
@@ -867,6 +884,38 @@ export const pointsTransactionsQueryOptions = (
     retry: RETRY_COUNT,
     staleTime: STALE_TIME_2_MIN,
   })
+
+export const userPointsTransactionsQueryOptions = (filters: {
+  clientAppId?: string
+  subscriptionId?: string
+  transactionType?: string
+  bucketId?: string
+  startTime?: string
+  endTime?: string
+  page?: number
+  pageSize?: number
+}) =>
+  queryOptions({
+    queryKey: queryKeys.userPointsTransactions(filters),
+    queryFn: async () => {
+      const data = handleApiResponse(await listUserTransactions({ query: filters }))
+      return {
+        total: data.total,
+        page: data.page,
+        pageSize: data.pageSize,
+        transactions: data.items,
+      }
+    },
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_2_MIN,
+  })
+
+export const userPointsWalletsQueryOptions = queryOptions({
+  queryKey: queryKeys.userPointsWallets(),
+  queryFn: async () => handleApiResponse(await listUserWallets()) as ListWalletsByBucketResponse,
+  retry: RETRY_COUNT,
+  staleTime: STALE_TIME_2_MIN,
+})
 
 // ==================== Points Default Config ====================
 

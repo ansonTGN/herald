@@ -645,13 +645,38 @@ impl PostgresBillingRepository {
             return Err(CoreError::NotFound.into());
         }
 
-        // In-flight subscriptions reference
-        // buckets indirectly via distribution rule results. The delete guard for
-        // in-flight subscriptions will be re-anchored on the rule-result linkage
-        // by the subscription-lifecycle item; until then this guard reports 0 so
-        // the delete proceeds (the residual-balance guard below still protects
-        // against deleting a bucket with live credit).
-        let active_subscriptions: i64 = 0;
+        // In-flight subscriptions reference buckets via their distribution-rule
+        // grant results: a subscription's `subscription_credit` quota
+        // entitlement / ledger rows carry `source_id = subscription_id` and a
+        // `bucket_id`. An active subscription that has granted into this bucket
+        // blocks the delete (independent of the residual-balance guard below, so
+        // a future-effective row that drives derived balance to 0 still leaves
+        // the subscription arm as the blocker).
+        let active_subscriptions: i64 = sqlx::query_scalar(
+            "SELECT COUNT(DISTINCT s.id) FROM subscription s \
+             WHERE s.realm_id = $1 \
+               AND s.status IN ('active', 'trialing') \
+               AND ( \
+                    EXISTS (SELECT 1 FROM points_quota_entitlements q \
+                            WHERE q.source_id = s.id::text \
+                              AND q.bucket_id = $2 \
+                              AND q.credit_type = 'subscription_credit' \
+                              AND q.status = 'active') \
+                    OR EXISTS (SELECT 1 FROM points_credit_ledger l \
+                               WHERE l.source_id = s.id::text \
+                                 AND l.bucket_id = $2 \
+                                 AND l.credit_type = 'subscription_credit' \
+                                 AND l.status = 'active' \
+                                 AND l.remaining_amount > 0) \
+                   )",
+        )
+        .bind(realm_id)
+        .bind(bucket_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| {
+            CoreError::DatabaseError(format!("Failed to count active subscriptions: {}", e))
+        })?;
 
         // Holders with remaining *derived available* balance.
         // The delete guard uses the SAME derived

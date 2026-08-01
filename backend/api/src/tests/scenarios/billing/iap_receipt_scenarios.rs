@@ -534,6 +534,33 @@ mod tests {
         )
         .await;
 
+        // The Google one_time fulfillment routes a consumable points pack to
+        // `consume_product` only when `mapping_rule_value(mapping) > 0`. Seed a
+        // `topup` distribution rule (the new-model home of the legacy
+        // `points_per_period`) so the pack is recognized as consumable and the
+        // mocked `consume_product` path runs instead of `acknowledge_product`.
+        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+            &ctx.app_state.pool,
+            &realm_id,
+        )
+        .await;
+        let rule_id = uuid::Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO points_distribution_rules
+                (id, realm_id, owner_type, entitlement_mapping_id, bucket_id,
+                 trigger_sources, grant_mode, points_amount, validity_days,
+                 enabled, display_order)
+             VALUES ($1, $2, 'entitlement_mapping', $3, $4, $5, 'fixed', 100, 0, true, 0)",
+        )
+        .bind(rule_id)
+        .bind(&realm_id)
+        .bind(mapping_id)
+        .bind(bucket_id)
+        .bind(&["topup"][..])
+        .execute(&ctx.app_state.pool)
+        .await
+        .expect("seed topup rule for consumable one_time pack");
+
         let google_mock = GooglePlayMockServer::start().await;
         google_mock.mount_token_stub().await;
         let purchase_token = "gplay-token-onetime-1";

@@ -18,12 +18,13 @@ import type { UnifiedLogger } from '../helpers/unified-logger'
  * User stories:
  * - US-CB-001: admin CRUD on the directory
  * - US-CB-002: bind client-app coverage set
- * - US-CB-003: assign mappings to a bucket
+ * - US-CB-003: entitlement mappings target a bucket via distribution rules
+ *   (surfaced read-only as `ruleReferences` in the bucket editor)
  *
  * This POM wraps only navigation, list selection, editor open, and overview
- * navigation. Editor field interaction, coverage multiselect, mapping
- * assignment, and delete confirmation live in `helpers/bucket-helpers.ts`
- * (these are shared imperative flows, not page-state concerns).
+ * navigation. Editor field interaction, coverage multiselect, and delete
+ * confirmation live in `helpers/bucket-helpers.ts` (these are shared
+ * imperative flows, not page-state concerns).
  *
  * @see docs/user-stories/billing/credit-bucket.md
  */
@@ -61,7 +62,7 @@ export class CreditBucketDirectoryPage extends BasePage {
    * to be visible before returning.
    */
   async gotoDirectory(realmId: string = 'admin'): Promise<void> {
-    await super.goto(`/${realmId}/manage/billing/credit-buckets`)
+    await super.goto(`/manage/billing/credit-buckets`)
     await this.waitForDirectoryReady()
   }
 
@@ -71,7 +72,7 @@ export class CreditBucketDirectoryPage extends BasePage {
    * Route: `/{realmId}/manage/billing/credit-buckets/overview`.
    */
   async gotoOverview(realmId: string = 'admin'): Promise<void> {
-    await super.goto(`/${realmId}/manage/billing/credit-buckets/overview`)
+    await super.goto(`/manage/billing/credit-buckets/overview`)
     await expect(this.overviewPage).toBeVisible({ timeout: 10000 })
   }
 
@@ -139,15 +140,6 @@ export class CreditBucketDirectoryPage extends BasePage {
    */
   listItem(bucketId: string): Locator {
     return this.page.locator(SELECTORS.creditBucket.listItem(bucketId))
-  }
-
-  /**
-   * Convenience locator for the registration badge on a list item.
-   */
-  registrationBadge(bucketId: string): Locator {
-    return this.page.locator(
-      SELECTORS.creditBucket.listItemRegistrationBadge(bucketId),
-    )
   }
 
   /**

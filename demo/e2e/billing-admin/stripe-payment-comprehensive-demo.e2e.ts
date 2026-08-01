@@ -24,7 +24,7 @@
 import { test, cleanupTestData, expect } from '../fixtures/demo-page.fixtures'
 import { verifyTestEnvironment } from '../helpers/environment-setup'
 import type { UnifiedLogger } from '../helpers/unified-logger'
-import { DEMO_ADMIN } from '../helpers/auth'
+import { createBearerApiContext, DEMO_ADMIN } from '../helpers/auth'
 import { EntitlementMappingsPage } from '../pages/entitlement-mappings-page'
 import { randomUUID } from 'crypto'
 
@@ -230,10 +230,8 @@ test.describe('[Billing Admin] Stripe Payment Comprehensive Demo', () => {
   // ============================================================================
   // Scenario 4: Stripe Checkout Flow (API-level verification)
   //
-  // Checkout contract: POST .../checkout body is
-  // {mappingId, paymentProvider} — NOT entitlementKey. The Stripe checkout
-  // button testid is stripe-checkout-button-${mappingId}. With an unknown
-  // mapping_id the backend resolves the mapping lookup to 404.
+  // Checkout uses the payment-attempt API with an entitlement mapping target.
+  // An unknown target id must resolve to the handler's 404 response.
   // ============================================================================
 
   test.describe('Scenario 4: Stripe Checkout Flow', () => {
@@ -245,46 +243,32 @@ test.describe('[Billing Admin] Stripe Payment Comprehensive Demo', () => {
       })
 
       await test.step('When: 尝试使用不存在的 mapping id 创建 checkout', async () => {
-        // Find or create a client app
-        const clientAppsResp = await page.request.get(`${BASE_URL}/api/client/${DEMO_ADMIN.realmId}`)
-        let clientAppId: string
-        if (clientAppsResp.ok()) {
-          const body = await clientAppsResp.json()
-          const apps = body.items ?? body
-          if (Array.isArray(apps) && apps.length > 0) {
-            clientAppId = apps[0].id
-          } else {
-            const createResp = await page.request.post(`${BASE_URL}/api/client/${DEMO_ADMIN.realmId}`, {
-              data: {
-                clientId: `test-app-${testStartTime}`,
-                name: 'Checkout Test App',
-                redirectUris: ['http://localhost:3000/callback'],
-                enabled: true,
-              },
-            })
-            const created = await createResp.json()
-            clientAppId = created.id
-          }
-        }
-
-        // Checkout contract is {mappingId, paymentProvider}.
-        // An unknown mapping_id resolves to 404 "Entitlement mapping not found".
+        const apiContext = await createBearerApiContext(loginPage.getAccessToken())
         const unknownMappingId = randomUUID()
-        const checkoutResp = await page.request.post(
-          `${BASE_URL}/api/bill/${DEMO_ADMIN.realmId}/client/${clientAppId}/checkout`,
-          {
-            data: {
-              mappingId: unknownMappingId,
-              paymentProvider: 'stripe',
+        try {
+          const checkoutResp = await apiContext.post(
+            `${BASE_URL}/api/bill/${DEMO_ADMIN.realmId}/purchase/payment-attempts`,
+            {
+              data: {
+                targetType: 'entitlement_mapping',
+                targetId: unknownMappingId,
+                paymentProvider: 'stripe',
+              },
             },
-          },
-        )
+          )
 
-        await demoLogger.testCode.log(`Checkout response: ${checkoutResp.status()}`)
+          await demoLogger.testCode.log(`Checkout response: ${checkoutResp.status()}`)
 
-        // With an unknown mapping id, the API should return 404
-        expect(checkoutResp.status()).toBe(404)
-        await demoLogger.testCode.log('Correctly returned 404 for unknown mapping id')
+          expect(checkoutResp.status()).toBe(404)
+          const errorBody = await checkoutResp.json()
+          expect(errorBody).toMatchObject({
+            code: 'not_found',
+            message: 'Create payment attempt not found',
+          })
+          await demoLogger.testCode.log('Correctly returned 404 for unknown mapping id')
+        } finally {
+          await apiContext.dispose()
+        }
       })
     })
   })

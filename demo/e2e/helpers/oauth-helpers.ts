@@ -167,7 +167,6 @@ export async function seedOAuthClientApp(
       description: 'Auto-created client app for OAuth PKCE demo tests',
       redirectUris,
       enabled: true,
-      sessionTtlSeconds: 1800,
       deviceCodeGrantEnabled: false,
     },
   })
@@ -228,6 +227,14 @@ export async function completeOAuthLoginAndGetAuthCode(
   expect(authorizeResult.redirectLocation).toBeTruthy()
 
   await page.context().clearCookies()
+  // Under the Bearer token model auth is persisted in localStorage
+  // (key 'auth-storage'), not cookies. clearCookies() alone leaves the user
+  // logged in, so the authorize redirect skips the login card. Clear web
+  // storage too so the redirect lands on the login page as expected.
+  await page.evaluate(() => {
+    localStorage.clear()
+    sessionStorage.clear()
+  })
   await page.goto(`${baseUrl}${authorizeResult.redirectLocation}`, { waitUntil: 'domcontentloaded' })
   await expect(page.getByTestId('login-card')).toBeVisible({ timeout: 10000 })
 

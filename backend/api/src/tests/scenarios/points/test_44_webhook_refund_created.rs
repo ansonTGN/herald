@@ -92,20 +92,24 @@ async fn test_refund_topup_proportional_recovery(ctx: &mut SchemaTestContext) {
     // Then
     assert_webhook_success(&response);
 
-    // Should revoke 50% of remaining: 7000 * 0.5 = 3500
+    // Proportional revoke uses the ratio vs the ORIGINAL grant:
+    // (10000 * 5000 + 10000/2) / 10000 = 5000, capped at remaining 7000 -> 5000
     let ledger = get_ledger_by_id(ctx, ledger_id).await;
     assert_eq!(
-        ledger.remaining_amount, 3500,
-        "7000 - 3500 = 3500 remaining"
+        ledger.remaining_amount, 2000,
+        "7000 - 5000 = 2000 remaining"
     );
-    assert_eq!(ledger.revoked_amount, 3500, "50% of remaining revoked");
+    assert_eq!(
+        ledger.revoked_amount, 5000,
+        "ratio-vs-original-grant revokes 5000"
+    );
     assert_eq!(ledger.used_amount, 3000, "Used amount unchanged");
 
     // Verify revocation record
     let revocations = get_revocation_records(ctx, user_id).await;
     assert_eq!(revocations.len(), 1);
     assert_eq!(revocations[0].revocation_type, RevocationType::RefundRevoke);
-    assert_eq!(revocations[0].revoked_amount, 3500);
+    assert_eq!(revocations[0].revoked_amount, 5000);
     assert_eq!(revocations[0].reference_id, Some(refund_id));
 }
 
@@ -345,17 +349,17 @@ async fn test_refund_created_idempotency(ctx: &mut SchemaTestContext) {
     );
     assert_eq!(revocations[0].revocation_type, RevocationType::RefundRevoke);
     assert_eq!(
-        revocations[0].revoked_amount, 3500,
-        "50% of 7000 remaining = 3500"
+        revocations[0].revoked_amount, 5000,
+        "ratio vs original grant (10000*5000/10000) = 5000"
     );
 
     // Verify ledger state is correct (not double-revoked)
     let ledger = get_ledger_by_id(ctx, ledger_id).await;
     assert_eq!(
-        ledger.revoked_amount, 3500,
-        "Should revoke exactly 3500, not double"
+        ledger.revoked_amount, 5000,
+        "Should revoke exactly 5000, not double"
     );
-    assert_eq!(ledger.remaining_amount, 3500);
+    assert_eq!(ledger.remaining_amount, 2000);
 }
 
 // Covers retry after outer webhook bookkeeping fails: a different webhook event id
@@ -401,11 +405,11 @@ async fn test_refund_topup_same_refund_id_different_event_id_is_idempotent(
 
     let revocations = get_revocation_records(ctx, user_id).await;
     assert_eq!(revocations.len(), 1, "same refund id must not revoke twice");
-    assert_eq!(revocations[0].revoked_amount, 3500);
+    assert_eq!(revocations[0].revoked_amount, 5000);
 
     let ledger = get_ledger_by_id(ctx, ledger_id).await;
-    assert_eq!(ledger.revoked_amount, 3500);
-    assert_eq!(ledger.remaining_amount, 3500);
+    assert_eq!(ledger.revoked_amount, 5000);
+    assert_eq!(ledger.remaining_amount, 2000);
 }
 
 // Covers retry after outer webhook bookkeeping fails: subscription refund revoke

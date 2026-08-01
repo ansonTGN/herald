@@ -176,8 +176,8 @@ test.describe('[Billing Admin] IAP entitlement mapping 创建 (US-IAP-002)', () 
         bucketName: SEED_BUCKET_NAME,
         billingType: 'recurring',
         billingPeriod: 'monthly',
-        pointsPerPeriod: 100,
-        grantOnSubscribe: true,
+        pointRuleTriggers: ['subscription_initial', 'subscription_renewal'],
+        pointsAmount: 100,
       })
       await demoLogger.testCode.log('Create-mapping dialog filled (recurring apple)')
     })
@@ -224,6 +224,8 @@ test.describe('[Billing Admin] IAP entitlement mapping 创建 (US-IAP-002)', () 
         entitlementKey,
         bucketName: SEED_BUCKET_NAME,
         billingType: 'one_time',
+        pointRuleTriggers: ['topup'],
+        pointsAmount: 1000,
         validityDays: 30,
       })
       await demoLogger.testCode.log('Create-mapping dialog filled (one_time google)')
@@ -270,8 +272,8 @@ test.describe('[Billing Admin] IAP entitlement mapping 创建 (US-IAP-002)', () 
         bucketName: SEED_BUCKET_NAME,
         billingType: 'recurring',
         billingPeriod: 'monthly',
-        pointsPerPeriod: 50,
-        grantOnSubscribe: true,
+        pointRuleTriggers: ['subscription_initial', 'subscription_renewal'],
+        pointsAmount: 50,
       })
       await mappingsPage.submitCreateMapping()
       await mappingsPage.expectCreateMappingDialogClosed()
@@ -288,8 +290,8 @@ test.describe('[Billing Admin] IAP entitlement mapping 创建 (US-IAP-002)', () 
         bucketName: SEED_BUCKET_NAME,
         billingType: 'recurring',
         billingPeriod: 'monthly',
-        pointsPerPeriod: 50,
-        grantOnSubscribe: true,
+        pointRuleTriggers: ['subscription_initial', 'subscription_renewal'],
+        pointsAmount: 50,
       })
       await mappingsPage.submitCreateMapping()
       await demoLogger.testCode.log('Duplicate create submitted')

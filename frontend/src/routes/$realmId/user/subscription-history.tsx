@@ -8,9 +8,9 @@ import { ListPagination, PageHeader } from '@/components/shared'
 import { PurchaseHistoryList } from '@/components/purchase/purchase-history-list'
 import { PurchaseDetailsDialog } from '@/components/purchase/purchase-details-dialog'
 import {
-  featureAvailabilityQueryOptions,
+  userFeatureAvailabilityQueryOptions,
   purchaseHistoryQueryOptions,
-  requireFeature,
+  requireUserFeature,
 } from '@/data/query-options'
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants'
 import type { PurchaseHistoryItem } from '@/lib/api-generated'
@@ -19,7 +19,7 @@ import { realmPath, useResolvedRealmContext } from '@/lib/realm-routing'
 
 export const Route = createFileRoute('/$realmId/user/subscription-history')({
   beforeLoad: ({ context, params }) =>
-    requireFeature(context.queryClient, params.realmId, (f) => f.user.pointsVisible, {
+    requireUserFeature(context.queryClient, (f) => f.user.pointsVisible, {
       to: '/$realmId/user/profile',
       params: { realmId: params.realmId },
     }),
@@ -39,7 +39,7 @@ export function PurchaseRecordsRoute() {
       pageSize: DEFAULT_PAGE_SIZE,
     })
   )
-  const { data: features } = useQuery(featureAvailabilityQueryOptions(realmId))
+  const { data: features } = useQuery(userFeatureAvailabilityQueryOptions)
   const invoicesVisible = features?.user.invoicesVisible === true
   const canPurchasePoints = features?.user.pointsVisible === true
 

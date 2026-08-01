@@ -168,7 +168,7 @@ export class ClientAppsPage extends BasePage {
    */
   async goto(realmId: string = 'admin'): Promise<void> {
     this.currentRealmId = realmId
-    const url = `/${realmId}/manage/client-apps`
+    const url = `/manage/client-apps`
     await this.page.goto(url)
     await this.waitForReady()
   }
@@ -350,16 +350,19 @@ export class ClientAppsPage extends BasePage {
       await this.toggleSwitch(this.enabledSwitch, data.enabled, 'Enabled')
     }
 
-    // Session TTL - use preset button if available, otherwise type value
+    // Session TTL - use preset button if available, otherwise type value.
+    // NOTE: this field is the frontend's `browserRefreshAbsoluteTtlSeconds`
+    // (input testid `browser-refresh-ttl-input`). Presets mirror the frontend
+    // BROWSER_REFRESH_TTL_PRESETS: 1d/7d/14d/30d/60d/90d. Values must satisfy
+    // min 86400 / max 7776000.
     if (data.sessionTtlSeconds !== undefined) {
       const presetMap: Record<number, string> = {
-        1800: '30m',
-        3600: '1h',
-        7200: '2h',
-        14400: '4h',
-        28800: '8h',
-        43200: '12h',
-        86400: '24h',
+        86400: '1d',
+        604800: '7d',
+        1209600: '14d',
+        2592000: '30d',
+        5184000: '60d',
+        7776000: '90d',
       }
       const presetLabel = presetMap[data.sessionTtlSeconds]
       if (presetLabel) {
@@ -374,14 +377,14 @@ export class ClientAppsPage extends BasePage {
       }
     }
 
-    // Session Renewal TTL
+    // Session Renewal TTL — field was removed in the browser bearer-token model
+    // (no `sessionRenewalTtlSeconds` input exists on the security tab anymore).
+    // Keep the parameter for call-site compatibility but no-op; backend rejects
+    // the field anyway (not in CreateClientAppRequest).
     if (data.sessionRenewalTtlSeconds !== undefined) {
-      if (data.sessionRenewalTtlSeconds === null) {
-        await this.sessionRenewalTtlInput.clear()
-      } else {
-        await this.sessionRenewalTtlInput.fill(data.sessionRenewalTtlSeconds.toString())
-      }
-      this.logger?.testCode.log(`Filled Session Renewal TTL: ${data.sessionRenewalTtlSeconds}`)
+      this.logger?.testCode.log(
+        `Session Renewal TTL ignored (field removed from UI): ${data.sessionRenewalTtlSeconds}`,
+      )
     }
 
     if (data.deviceCodeGrantEnabled !== undefined) {

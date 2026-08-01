@@ -66,8 +66,8 @@
  *
  * 6. Fixed URL Paths (P1):
  *    - Updated all paths to use correct user-facing routes
- *    - Subscription history: /${realmId}/user/subscription-history (not /manage/)
- *    - Profile page: /${realmId}/user/profile
+ *    - Subscription history: /user/subscription-history (not /manage/)
+ *    - Profile page: /user/profile
  *    - Removed dependency on admin management pages
  *
  * 7. Enhanced Test Quality:

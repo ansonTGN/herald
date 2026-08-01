@@ -2,19 +2,28 @@
  * Credit Bucket Directory Management Demo Tests (Realm Admin)
  *
  * User Stories:
- * - US-CB-001 场景1: admin create/edit a Credit Bucket; registration pool is
- *   single-per-realm (409 `registration_pool_conflict` when a second is marked).
+ * - US-CB-001 场景1 (a): admin create + edit a Credit Bucket.
+ * - US-CB-001 场景1 (b): a fresh bucket starts with zero distribution-rule
+ *   references, while a seeded bucket already targeted by rules exposes those
+ *   references read-only in its editor (the current "single registration pool"
+ *   contract is expressed through distribution rules, NOT a per-realm flag).
  * - US-CB-001 场景2: disabling a bucket keeps already-held balances intact.
  * - US-CB-002 场景1: a coverage set of ≥1 client app is required (schema
  *   `.min(1)` — fail-loud validation error, no silent submit).
- * - US-CB-003 场景1: assigning ≥1 entitlement mapping to a bucket persists.
+ * - US-CB-003 场景1: an entitlement mapping targets a bucket via a
+ *   distribution rule; that binding is surfaced on the bucket as a read-only
+ *   `ruleReferences` entry and reflected in `ruleReferenceCount`.
+ * - US-CB-001 删除: bucket_in_use 409 blocks an in-use bucket; an empty
+ *   throwaway bucket deletes cleanly.
  *
- * Design truth: `.ai/design/credit-bucket.md` (POST/PUT/DELETE +
- * error codes `bucket_key_duplicate` 400, `registration_pool_conflict` 409,
- * `bucket_in_use` 409, schema, NO `isDefault` control).
+ * Design truth: `backend/api-billing/src/credit_bucket_handlers.rs` —
+ * `BucketResponse` carries `ruleReferenceCount` and `BucketDetailResponse`
+ * carries read-only `ruleReferences`. Error codes: `bucket_key_duplicate` 400,
+ * `bucket_in_use` 409. There is NO `registration_pool_conflict` and NO
+ * `receivesRegistrationCredits` field (removed by multi-wallet-grant-rules).
  *
  * Role: realm-admin (`REALM_ADMINS[realmId]`). Navigation is by route
- * `/${realmId}/manage/billing/credit-buckets` — the sidebar entry testid
+ * `/manage/billing/credit-buckets` — the sidebar entry testid
  * `sidebar-menu-credit-buckets` is i18n-derived and therefore intentionally
  * NOT used (see selectors.ts creditBucket loud note).
  *
@@ -32,16 +41,14 @@
 
 import { test, cleanupTestData, expect } from '../fixtures/demo-page.fixtures'
 import { SELECTORS } from '../selectors'
-import { DEMO_ADMIN, REALM_ADMINS } from '../helpers/auth'
+import { DEMO_ADMIN, REALM_ADMINS, createBearerApiContext } from '../helpers/auth'
 import { verifyTestEnvironment } from '../helpers/environment-setup'
 import { CreditBucketDirectoryPage } from '../pages/credit-bucket-directory-page'
 import {
   createBucketViaUI,
   editBucketViaUI,
   openBucketEditor,
-  setRegistrationPoolViaUI,
   bindCoverageSetViaUI,
-  assignMappingsViaUI,
   requestDeleteBucketViaUI,
   confirmDeleteBucket,
   parseBucketIdFromListItem,
@@ -166,18 +173,30 @@ test.describe('[Realm Admin] Credit Bucket 目录管理 (US-CB-001/002/003)', ()
   })
 
   // ==========================================================================
-  // US-CB-001 场景1 (b): registration pool is single-per-realm (409 conflict)
+  // US-CB-001 场景1 (b): rule references — fresh bucket has none; seeded
+  // registration-receiver bucket exposes its distribution rules read-only.
+  //
+  // The legacy "single registration pool per realm + 409 registration_pool_conflict"
+  // contract was removed by the multi-wallet-grant-rules refactor: there is no
+  // `receivesRegistrationCredits` flag, no registration switch in the editor,
+  // and no `registration_pool_conflict` error. The current way a bucket becomes
+  // the registration/entitlement receiver is by being targeted by ≥1
+  // distribution rule (seeded: `registration` + `topup` rules point at
+  // `primary-pool`). This test verifies that real, current contract:
+  //   1. A brand-new bucket starts with `ruleReferenceCount = 0` and shows the
+  //      editor's empty-rule-references copy.
+  //   2. The seeded `primary-pool` (targeted by rules) has `ruleReferenceCount
+  //      >= 1` and its editor lists those rule references read-only.
   // ==========================================================================
 
-  test('US-CB-001 场景1 (b): 注册池单 per-realm（第二次设置成功，第三次触发 409 registration_pool_conflict）', async ({
+  test('US-CB-001 场景1 (b): 新建 bucket 无规则引用；被规则指向的 seed bucket 在编辑器只读展示规则引用', async ({
     page,
     loginPage,
     demoLogger,
   }) => {
     const directory = new CreditBucketDirectoryPage(page, demoLogger)
     const suffix = `${testStartTime}`
-    const secondKey = `e2e-reg-2-${suffix}`
-    const thirdKey = `e2e-reg-3-${suffix}`
+    const freshKey = `e2e-fresh-${suffix}`
 
     await test.step('Given: realm-admin 已登录并进入目录页', async () => {
       const admin = REALM_ADMINS[REALM_ID] ?? {
@@ -188,71 +207,89 @@ test.describe('[Realm Admin] Credit Bucket 目录管理 (US-CB-001/002/003)', ()
       await directory.gotoDirectory(REALM_ID)
     })
 
-    await test.step('Given: 该 realm 已存在一个注册池（seeded primary-pool）', async () => {
-      // The seed always creates `primary-pool` with receives_registration_credits=true.
-      // List via API to assert the precondition holds (loud if seed drifted).
-      const buckets = await listBucketsViaApi(page, REALM_ID)
-      const registrationPool = buckets.find((b) => b.receivesRegistrationCredits)
-      expect(
-        registrationPool,
-        'seeded registration pool (primary-pool) must exist; seed drift suspected',
-      ).toBeTruthy()
-      demoLogger.testCode.log(
-        `[Test] ✓ 前置：realm 已有注册池 bucketKey=${registrationPool!.bucketKey}`,
-      )
+    let freshBucketId: string
+    await test.step('Given: 新建一个空 bucket（不指向任何规则）', async () => {
+      const coverageId = await discoverFirstCoverageAppId(page, directory)
+      freshBucketId = await createBucketViaUI(page, REALM_ID, {
+        bucketKey: freshKey,
+        name: `E2E Fresh ${suffix}`,
+        clientAppIds: [coverageId],
+      })
+      demoLogger.testCode.log(`[Test] ✓ 空 bucket 已创建，bucketId=${freshBucketId}`)
     })
 
-    let secondBucketId: string
-    await test.step('When: 新建第 2 个 bucket 并标记为注册池（应成功，列表显示 -registration-badge）', async () => {
-      // To mark the 2nd bucket as the registration pool, we must first UNSET the
-      // seeded primary-pool's flag (single-per-realm constraint). Do it via UI
-      // so the test exercises the real admin path.
+    await test.step('Then: 列表项/API 显示 ruleReferenceCount=0（无规则指向）', async () => {
+      const buckets = await listBucketsViaApi(
+        page,
+        REALM_ID,
+        await createBearerApiContext(loginPage.getAccessToken()),
+      )
+      const fresh = buckets.find((b) => b.bucketKey === freshKey)
+      expect(fresh, 'fresh bucket must be listable via API').toBeTruthy()
+      expect(
+        fresh!.ruleReferenceCount,
+        'a brand-new bucket must have zero distribution-rule references',
+      ).toBe(0)
+      // The list item footer renders "{ruleReferenceCount} rule references".
+      const item = page.locator(SELECTORS.creditBucket.listItem(freshBucketId!))
+      await expect(item).toContainText('0 rule references')
+      demoLogger.testCode.log('[Test] ✓ 新 bucket ruleReferenceCount=0')
+    })
+
+    await test.step('Then: 该空 bucket 编辑器只读展示「无规则引用」空文案', async () => {
+      await openBucketEditor(page, freshBucketId!)
+      const refsBlock = page.locator(SELECTORS.creditBucket.editorRuleReferences)
+      await expect(refsBlock).toBeVisible()
+      // The empty copy is a fixed English string in credit-bucket-editor.tsx
+      // (`No rules reference this account.`) — not i18n-derived, so stable.
+      await expect(refsBlock).toContainText('No rules reference this account')
+      demoLogger.testCode.log('[Test] ✓ 空 bucket 编辑器渲染空规则引用文案')
+    })
+
+    await test.step('When: 切换到 seed primary-pool（被注册/topup 规则指向）', async () => {
+      // `primary-pool` is the bucket targeted by the seeded distribution rules
+      // (registration + topup). Resolve its id from the directory list.
       const seededPrimaryId = await parseBucketIdFromListItem(
         page,
         CREDIT_BUCKET_KEYS.PRIMARY_POOL,
       )
-      await setRegistrationPoolViaUI(page, seededPrimaryId, false)
-
-      // Now create a 2nd bucket and mark IT as the registration pool.
-      secondBucketId = await createBucketViaUI(page, REALM_ID, {
-        bucketKey: secondKey,
-        name: `E2E Reg2 ${suffix}`,
-        clientAppIds: [await discoverFirstCoverageAppId(page, directory)],
-        receivesRegistrationCredits: true,
-      })
-      const badge = page.locator(
-        SELECTORS.creditBucket.listItemRegistrationBadge(secondBucketId),
-      )
-      await expect(badge).toBeVisible({ timeout: 10000 })
-      demoLogger.testCode.log(
-        `[Test] ✓ 第 2 个 bucket 成功设为注册池，列表渲染 -registration-badge`,
-      )
+      await openBucketEditor(page, seededPrimaryId)
+      demoLogger.testCode.log(`[Test] ✓ 已打开 seed primary-pool 编辑器`)
     })
 
-    await test.step('When: 在已有注册池的前提下，标记第 3 个 bucket 为注册池', async () => {
-      // Create a 3rd bucket (NOT a registration pool) and then attempt to flip
-      // its registration switch — this must collide with the 2nd bucket.
-      const thirdBucketId = await createBucketViaUI(page, REALM_ID, {
-        bucketKey: thirdKey,
-        name: `E2E Reg3 ${suffix}`,
-        clientAppIds: [await discoverFirstCoverageAppId(page, directory)],
-      })
-      // Attempt to mark it as registration pool while the 2nd bucket still holds
-      // the flag. The helper surfaces the 409 conflict alert visibility.
-      const conflictShown = await setRegistrationPoolViaUI(page, thirdBucketId, true)
-      expect(conflictShown, 'expected registration_pool_conflict 409 alert to render').toBe(true)
-    })
-
-    await test.step('Then: 编辑器渲染稳定的 409 registration_pool_conflict 错误区（非 toast）', async () => {
-      // The conflict alert is a persistent destructive Alert inside the editor,
-      // not an auto-dismissing toast. It must remain visible after the 409.
-      const conflictAlert = page.locator(SELECTORS.creditBucket.editorRegistrationConflict)
-      await expect(conflictAlert).toBeVisible()
-      // Persistent state: still visible after a short wait (not auto-dismissed).
-      await page.waitForTimeout(1500)
-      await expect(conflictAlert).toBeVisible()
+    await test.step('Then: seed bucket API ruleReferenceCount≥1，编辑器只读列出 ≥1 条规则引用', async () => {
+      const buckets = await listBucketsViaApi(
+        page,
+        REALM_ID,
+        await createBearerApiContext(loginPage.getAccessToken()),
+      )
+      const seeded = buckets.find((b) => b.bucketKey === CREDIT_BUCKET_KEYS.PRIMARY_POOL)
+      expect(seeded, 'seeded primary-pool must be listable').toBeTruthy()
+      expect(
+        seeded!.ruleReferenceCount,
+        'seeded primary-pool must be targeted by ≥1 distribution rule',
+      ).toBeGreaterThanOrEqual(1)
       demoLogger.testCode.log(
-        '[Test] ✓ 稳定渲染 registration_pool_conflict 错误区，未依赖 toast',
+        `[Test] ✓ seed primary-pool ruleReferenceCount=${seeded!.ruleReferenceCount}`,
+      )
+
+      // The editor surfaces these references read-only (a `<ul>` of rule id +
+      // owner type + trigger sources). Assert at least one reference row is
+      // rendered — this is the persistent signal that the bucket is a
+      // distribution/receiving target (the modern equivalent of the old
+      // "registration receiver" badge). The rule id is a UUID printed in
+      // `font-mono` inside the list item.
+      const refsBlock = page.locator(SELECTORS.creditBucket.editorRuleReferences)
+      await expect(refsBlock).toBeVisible()
+      const refRows = refsBlock.locator('ul li')
+      await expect(refRows.first()).toBeVisible({ timeout: 5000 })
+      const refCount = await refRows.count()
+      expect(refCount, 'editor must list ≥1 rule reference for primary-pool').toBeGreaterThanOrEqual(1)
+      // The seed registers a `registration`-trigger rule on primary-pool; assert
+      // that trigger source is represented among the rendered rows.
+      await expect(refsBlock).toContainText('registration')
+      demoLogger.testCode.log(
+        `[Test] ✓ seed primary-pool 编辑器只读列出 ${refCount} 条规则引用（含 registration 触发源）`,
       )
     })
   })
@@ -340,7 +377,7 @@ test.describe('[Realm Admin] Credit Bucket 目录管理 (US-CB-001/002/003)', ()
       // rendered the coverage count segment — match a digit other than 0 in
       // the coverage position is brittle, so instead confirm via API that the
       // bucket has coveredClientAppCount >= 1, the authoritative source).
-      const buckets = await listBucketsViaApi(page, REALM_ID)
+      const buckets = await listBucketsViaApi(page, REALM_ID, await createBearerApiContext(loginPage.getAccessToken()))
       const created = buckets.find((b) => b.bucketKey === bucketKey)
       expect(created, 'created bucket must be listable via API').toBeTruthy()
       expect(
@@ -354,18 +391,26 @@ test.describe('[Realm Admin] Credit Bucket 目录管理 (US-CB-001/002/003)', ()
   })
 
   // ==========================================================================
-  // US-CB-003 场景1: assign mapping → bucket (persists across reopen)
+  // US-CB-003 场景1: a purchasable mapping targets a bucket via a distribution
+  // rule; that ownership is surfaced on the bucket as a read-only
+  // `ruleReferences` entry and is stable across editor reopen.
+  //
+  // The legacy "bucket editor has a mappings multiselect + entitlementMappingCount"
+  // contract was removed by the multi-wallet-grant-rules refactor: mapping→bucket
+  // ownership is now expressed as distribution rules (configured on the mapping
+  // side via the point-rule editor), and the bucket editor only READS those
+  // references. The seeded `multi-wallet-topup` mapping targets `primary-pool`
+  // via an entitlement_mapping-owned `topup` rule, so `primary-pool` carries an
+  // `entitlement_mapping`-owned reference — the real, current expression of
+  // "把可购买的套餐归属到积分账户" (US-CB-003 场景1).
   // ==========================================================================
 
-  test('US-CB-003 场景1: 给 Bucket 分配 ≥1 套餐映射并验证持久化', async ({
+  test('US-CB-003 场景1: 被套餐规则指向的 bucket 持久化展示 mapping 规则引用（只读，重新打开仍在）', async ({
     page,
     loginPage,
     demoLogger,
   }) => {
     const directory = new CreditBucketDirectoryPage(page, demoLogger)
-    const suffix = `${testStartTime}`
-    const bucketKey = `e2e-mapping-${suffix}`
-    const bucketName = `E2E Mapping ${suffix}`
 
     await test.step('Given: realm-admin 已登录并进入目录页', async () => {
       const admin = REALM_ADMINS[REALM_ID] ?? {
@@ -376,114 +421,93 @@ test.describe('[Realm Admin] Credit Bucket 目录管理 (US-CB-001/002/003)', ()
       await directory.gotoDirectory(REALM_ID)
     })
 
-    let createdBucketId: string
-    await test.step('When: 新建一个 bucket 作为映射分配目标', async () => {
-      const coverageId = await discoverFirstCoverageAppId(page, directory)
-      createdBucketId = await createBucketViaUI(page, REALM_ID, {
-        bucketKey,
-        name: bucketName,
-        clientAppIds: [coverageId],
-      })
-    })
-
-    let assignedMappingId: string
+    let seededPrimaryId: string
     let countBefore: number
-    await test.step('When: 打开编辑器并分配 ≥1 个套餐映射', async () => {
-      const buckets = await listBucketsViaApi(page, REALM_ID)
-      const created = buckets.find((b) => b.bucketKey === bucketKey)
-      expect(created, 'created bucket must be listable').toBeTruthy()
-      countBefore = created!.entitlementMappingCount
-
-      await openBucketEditor(page, createdBucketId!)
-      // Resolve the first available mapping item rendered by the mappings
-      // multiselect, then toggle it ON in the same open-popover session. The
-      // multiselect search input lives inside a Radix Popover; click the
-      // `bucket-mappings-multiselect` trigger to open it. Reading the item id
-      // and toggling it in one session avoids the close+reopen round-trip
-      // (which was dropping the toggle because the second trigger-click closed
-      // the popover instead of opening it).
-      await page.locator(SELECTORS.creditBucket.mappingsMultiselect).click()
-      const mappingsSearch = page.locator(SELECTORS.creditBucket.mappingsMultiselectSearch)
-      await expect(mappingsSearch).toBeVisible({ timeout: 5000 })
-      await mappingsSearch.click()
-      const firstMappingItem = page.locator(
-        '[data-testid^="bucket-mappings-multiselect-item-"]',
+    await test.step('Given: seed primary-pool 已被套餐映射规则指向（ruleReferenceCount≥1）', async () => {
+      const buckets = await listBucketsViaApi(
+        page,
+        REALM_ID,
+        await createBearerApiContext(loginPage.getAccessToken()),
       )
-      await expect(firstMappingItem.first()).toBeVisible({ timeout: 5000 })
-      const mappingTestid = await firstMappingItem.first().getAttribute('data-testid')
-      assignedMappingId = mappingTestid!.replace('bucket-mappings-multiselect-item-', '')
-      // Click the item to toggle it ON. Radix CommandItem's onSelect fires on
-      // click; the popover stays open (we close it via Escape afterwards).
-      await firstMappingItem.first().click()
-      // Wait for the multiselect trigger to reflect the selection: when
-      // `value.length > 0`, the trigger renders a count Badge with the value
-      // length followed by the selected labels (see BucketMultiselect). Assert
-      // the trigger's text contains "1" (the count) as the visible signal that
-      // the form's `entitlementMappingIds` now holds the toggled mapping.
-      await expect(page.locator(SELECTORS.creditBucket.mappingsMultiselect)).toContainText('1', {
-        timeout: 3000,
-      })
-      await page.keyboard.press('Escape')
-      await expect(mappingsSearch).toBeHidden({ timeout: 2000 })
-
-      // The PUT writes the new mapping→bucket binding transactionally. Wait
-      // for the PUT response (a positive save-completion signal) before any
-      // re-read: the editor stays open on update (it only refetches list/
-      // detail via onSaved), so editor-closed cannot be used as the signal
-      // here (unlike the create flow). Waiting on the conflict-alert's
-      // absence is a WEAK signal — the alert simply has not rendered yet,
-      // so a subsequent list re-read can race ahead of the commit and see
-      // the pre-PUT count (observed flaky 0-vs-1 in DE-D06 re-run).
-      const putResponse = page.waitForResponse(
-        (r) =>
-          r.request().method() === 'PUT' &&
-          r.url().includes(`/billing/credit-buckets/${createdBucketId!}`),
-        { timeout: 15000 },
-      )
-      await page.locator(SELECTORS.creditBucket.editorSubmit).click()
-      const resp = await putResponse
-      expect(resp.ok(), `editor PUT must succeed: ${resp.status()}`).toBe(true)
-      // On a successful save the conflict alert must not render.
-      await expect(page.locator(SELECTORS.creditBucket.editorRegistrationConflict)).toBeHidden({
-        timeout: 5000,
-      })
-    })
-
-    await test.step('Then: API 显示 entitlementMappingCount 增长（持久化）', async () => {
-      const buckets = await listBucketsViaApi(page, REALM_ID)
-      const created = buckets.find((b) => b.bucketKey === bucketKey)
-      expect(created, 'created bucket must still be listable').toBeTruthy()
+      const seeded = buckets.find((b) => b.bucketKey === CREDIT_BUCKET_KEYS.PRIMARY_POOL)
+      expect(seeded, 'seeded primary-pool must be listable').toBeTruthy()
+      countBefore = seeded!.ruleReferenceCount
       expect(
-        created!.entitlementMappingCount,
-        'entitlementMappingCount must increase after assigning a mapping',
-      ).toBeGreaterThan(countBefore!)
+        countBefore,
+        'seeded primary-pool must be targeted by ≥1 distribution rule (mapping ownership)',
+      ).toBeGreaterThanOrEqual(1)
+      seededPrimaryId = await parseBucketIdFromListItem(
+        page,
+        CREDIT_BUCKET_KEYS.PRIMARY_POOL,
+      )
       demoLogger.testCode.log(
-        `[Test] ✓ entitlementMappingCount: ${countBefore} -> ${created!.entitlementMappingCount}`,
+        `[Test] ℹ seed primary-pool ruleReferenceCount=${countBefore}`,
       )
     })
 
-    await test.step('Then: 重新打开编辑器确认映射选择已持久化', async () => {
-      // The editor resets from the bucket detail on open; the assigned mapping
-      // must show as selected (Check icon visible) in the mappings multiselect.
-      await openBucketEditor(page, createdBucketId!)
-      // Open the mappings popover BEFORE interacting with its search input:
-      // the search input lives inside a Radix Popover that is closed until the
-      // multiselect trigger is clicked (mirrors the open-popover pattern used
-      // at the assignment step above; clicking the search while the popover
-      // is closed hangs until the test timeout).
-      await page.locator(SELECTORS.creditBucket.mappingsMultiselect).click()
-      const mappingsSearch = page.locator(SELECTORS.creditBucket.mappingsMultiselectSearch)
-      await expect(mappingsSearch).toBeVisible({ timeout: 5000 })
-      await mappingsSearch.click()
-      const assignedItem = page.locator(
-        SELECTORS.creditBucket.mappingsMultiselectItem(assignedMappingId!),
+    await test.step('Then: 编辑器只读列出该套餐映射的规则引用（entitlement_mapping owner，topup 触发源）', async () => {
+      await openBucketEditor(page, seededPrimaryId!)
+      const refsBlock = page.locator(SELECTORS.creditBucket.editorRuleReferences)
+      await expect(refsBlock).toBeVisible()
+      // The seeded `multi-wallet-topup` mapping owns a `topup` rule targeting
+      // primary-pool; assert that ownership surfaces as an entitlement_mapping
+      // reference with a `topup` trigger source. ownerType is rendered with
+      // underscores replaced by spaces ("entitlement mapping").
+      const refRows = refsBlock.locator('ul li')
+      await expect(refRows.first()).toBeVisible({ timeout: 5000 })
+      await expect(refsBlock).toContainText('entitlement mapping')
+      await expect(refsBlock).toContainText('topup')
+      demoLogger.testCode.log(
+        '[Test] ✓ 编辑器只读展示 entitlement_mapping 规则引用（topup）',
       )
-      await expect(assignedItem).toBeVisible({ timeout: 5000 })
-      // The Check icon inside the selected item has opacity-100 when selected.
-      const checkIcon = assignedItem.locator('svg.lucide-check')
-      await expect(checkIcon).toBeVisible()
-      await expect(checkIcon).toHaveClass(/opacity-100/)
-      demoLogger.testCode.log('[Test] ✓ 重新打开编辑器后映射仍处于已选状态')
+    })
+
+    await test.step('Then: 重新打开编辑器确认规则引用持久化（稳定只读状态，非 toast）', async () => {
+      // Navigate away and back to force a fresh detail refetch, then reopen —
+      // the mapping ownership must persist (it is server-side, derived from the
+      // distribution rule, not transient editor state).
+      await directory.gotoDirectory(REALM_ID)
+      await openBucketEditor(page, seededPrimaryId!)
+      const refsBlock = page.locator(SELECTORS.creditBucket.editorRuleReferences)
+      await expect(refsBlock).toBeVisible()
+      const refRows = refsBlock.locator('ul li')
+      await expect(refRows.first()).toBeVisible({ timeout: 5000 })
+
+      // Re-read via API to confirm the count is unchanged (ownership persisted).
+      const buckets = await listBucketsViaApi(
+        page,
+        REALM_ID,
+        await createBearerApiContext(loginPage.getAccessToken()),
+      )
+      const seeded = buckets.find((b) => b.bucketKey === CREDIT_BUCKET_KEYS.PRIMARY_POOL)
+      expect(seeded, 'seeded primary-pool must still be listable').toBeTruthy()
+      expect(
+        seeded!.ruleReferenceCount,
+        'ruleReferenceCount must be unchanged after editor reopen (ownership persisted)',
+      ).toBe(countBefore)
+      demoLogger.testCode.log(
+        `[Test] ✓ 重新打开编辑器后规则引用仍在，ruleReferenceCount=${seeded!.ruleReferenceCount}`,
+      )
+    })
+
+    await test.step('Then: 一个 bucket 可归属多个套餐/积分包（同一 bucket 被多条不同规则指向时均列出）', async () => {
+      // US-CB-003 acceptance: "一个积分账户可归属多个套餐/积分包". The seed
+      // targets BOTH primary-pool and promo-pool with the multi-wallet-topup
+      // mapping's two topup rules, and primary-pool also receives registration
+      // rules. So primary-pool's editor lists ≥2 reference rows (the topup
+      // mapping rule + at least one registration rule), demonstrating that a
+      // single bucket aggregates multiple entitlement sources.
+      const refsBlock = page.locator(SELECTORS.creditBucket.editorRuleReferences)
+      await expect(refsBlock).toBeVisible()
+      const refRows = refsBlock.locator('ul li')
+      const refCount = await refRows.count()
+      expect(
+        refCount,
+        'primary-pool must aggregate ≥2 rule references (multi-source ownership)',
+      ).toBeGreaterThanOrEqual(2)
+      demoLogger.testCode.log(
+        `[Test] ✓ primary-pool 聚合 ${refCount} 条规则引用（归属多个来源）`,
+      )
     })
   })
 
@@ -508,7 +532,7 @@ test.describe('[Realm Admin] Credit Bucket 目录管理 (US-CB-001/002/003)', ()
       // The admin wallets page groups rows by (userId, bucketId). The seeded
       // `primary-pool` always has holders with non-zero balance. Resolve both
       // ids from the rendered row testid rather than hardcoding UUIDs.
-      await page.goto(`/${REALM_ID}/manage/points/wallets`)
+      await page.goto(`/manage/points/wallets`)
       await expect(page.locator(SELECTORS.pointsAdmin.accountsPage)).toBeVisible({
         timeout: 10000,
       })
@@ -553,7 +577,7 @@ test.describe('[Realm Admin] Credit Bucket 目录管理 (US-CB-001/002/003)', ()
 
     await test.step('When: 禁用该 bucket（editor-enabled 关闭并保存）', async () => {
       // Navigate back to the directory and disable the bucket via the editor.
-      await page.goto(`/${REALM_ID}/manage/billing/credit-buckets`)
+      await page.goto(`/manage/billing/credit-buckets`)
       await expect(page.locator(SELECTORS.creditBucket.directoryPage)).toBeVisible()
       await editBucketViaUI(page, bucketId, { enabled: false })
       demoLogger.testCode.log(`[Test] ✓ bucket ${bucketId} 已禁用`)
@@ -572,7 +596,7 @@ test.describe('[Realm Admin] Credit Bucket 目录管理 (US-CB-001/002/003)', ()
       // must be identical. The `Disabled` Badge is intentionally NOT part of
       // this comparison (it is the expected new UI state, not a balance
       // change).
-      await page.goto(`/${REALM_ID}/manage/points/wallets`)
+      await page.goto(`/manage/points/wallets`)
       await expect(page.locator(SELECTORS.pointsAdmin.accountsPage)).toBeVisible()
       const row = page.locator(SELECTORS.pointsAdmin.walletRowByBucket(userId, bucketId))
       await expect(row).toBeVisible({ timeout: 10000 })
@@ -591,7 +615,7 @@ test.describe('[Realm Admin] Credit Bucket 目录管理 (US-CB-001/002/003)', ()
     })
 
     await test.step('Cleanup: 恢复 bucket 启用状态（避免污染其他 demo）', async () => {
-      await page.goto(`/${REALM_ID}/manage/billing/credit-buckets`)
+      await page.goto(`/manage/billing/credit-buckets`)
       await editBucketViaUI(page, bucketId, { enabled: true })
       demoLogger.testCode.log('[Test] ✓ 已恢复 bucket 启用状态')
     })
@@ -616,7 +640,7 @@ test.describe('[Realm Admin] Credit Bucket 目录管理 (US-CB-001/002/003)', ()
     })
 
     await test.step('When: 选取一个有活跃持有者/订阅的 seed bucket 并请求删除', async () => {
-      await page.goto(`/${REALM_ID}/manage/billing/credit-buckets`)
+      await page.goto(`/manage/billing/credit-buckets`)
       await expect(page.locator(SELECTORS.creditBucket.directoryPage)).toBeVisible()
 
       // The seeded `primary-pool` carries registration + wallet holders + the

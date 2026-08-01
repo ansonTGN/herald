@@ -173,7 +173,7 @@ async function setupTOTPForUser(
   console.log('[Setup] ✓ TOTP 已在 Realm 中启用')
 
   // Navigate to security page
-  await page.goto(`/${realmId}/user/security`)
+  await page.goto(`/user/security`)
   await expect(page.getByText("Security Settings").or(page.getByTestId(SELECTORS.security.pageTitle))).toBeVisible()
 
   // Disable TOTP if already enabled (ensure clean state)

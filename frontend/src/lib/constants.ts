@@ -80,6 +80,8 @@ export const QUERY_KEYS = {
   DASHBOARD_STATS: 'dashboard-stats',
   FEATURE_AVAILABILITY: 'feature-availability',
   USER_FEATURE_AVAILABILITY: 'user-feature-availability',
+  USER_POINTS_TRANSACTIONS: 'user-points-transactions',
+  USER_POINTS_WALLETS: 'user-points-wallets',
   API_KEYS: 'api-keys',
   API_KEY: 'api-key',
   API_KEY_ROLES: 'api-key-roles',

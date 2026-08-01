@@ -117,7 +117,7 @@ export class EntitlementMappingsPage extends BasePage {
    * navigate by route.
    */
   async goto(realmId: string = 'admin'): Promise<void> {
-    await super.goto(`/${realmId}/manage/billing/entitlement-mappings`)
+    await super.goto(`/manage/billing/entitlement-mappings`)
     await this.waitForReady()
   }
 
@@ -238,6 +238,98 @@ export class EntitlementMappingsPage extends BasePage {
 
   async getBillingPeriodValue(priceKey: string): Promise<string> {
     return this.getReadonlyFieldValue(priceKey, 'Period')
+  }
+
+  async getEntitlementKeyValue(priceKey: string): Promise<string> {
+    return this.getReadonlyFieldValue(priceKey, 'Entitlement Key')
+  }
+
+  /**
+   * Configure exactly one enabled fixed point-distribution rule for a price.
+   * Existing fixed rules are reused so repeated demo runs do not accumulate
+   * rules; any other enabled rules are disabled before the chosen rule is saved.
+   */
+  async configureFixedPointRule(priceKey: string, pointsAmount: number): Promise<void> {
+    const editor = this.getPriceEditRow(priceKey).locator(SELECTORS.pointRule.list)
+    await expect(editor).toBeVisible()
+
+    const enabledSwitches = editor.locator('[data-testid^="point-rule-enabled-"]')
+    const amountInputs = editor.locator('[data-testid^="point-rule-amount-"]')
+    let targetAmount = amountInputs.first()
+
+    if ((await amountInputs.count()) === 0) {
+      for (let i = 0; i < (await enabledSwitches.count()); i++) {
+        const enabledSwitch = enabledSwitches.nth(i)
+        if (await enabledSwitch.isChecked()) await this.smartClick(enabledSwitch)
+      }
+      await this.smartClick(editor.locator(SELECTORS.pointRule.addButton))
+      targetAmount = editor.locator('[data-testid^="point-rule-amount-"]').last()
+    }
+
+    const targetRule = targetAmount.locator(
+      'xpath=ancestor::div[starts-with(@data-testid,"point-rule-")][1]',
+    )
+    const targetEnabled = targetRule.locator('[data-testid^="point-rule-enabled-"]')
+    const targetRuleId = await targetRule.getAttribute('data-testid')
+    for (let i = 0; i < (await enabledSwitches.count()); i++) {
+      const enabledSwitch = enabledSwitches.nth(i)
+      const ownerRuleId = await enabledSwitch.evaluate(
+        (node) =>
+          node.parentElement
+            ?.closest('div[data-testid^="point-rule-"]')
+            ?.getAttribute('data-testid') ?? null,
+      )
+      if ((await enabledSwitch.isChecked()) && ownerRuleId !== targetRuleId) {
+        await this.smartClick(enabledSwitch)
+      }
+    }
+    if (!(await targetEnabled.isChecked())) await this.smartClick(targetEnabled)
+
+    const bucketSelect = targetRule.locator(SELECTORS.pointRule.bucketSelect)
+    await this.smartClick(bucketSelect)
+    await this.smartClick(this.page.locator('[role="option"]:not([data-disabled])').first())
+    await this.fillField(targetAmount, String(pointsAmount))
+  }
+
+  /** Read the amount of the enabled fixed rule after save/reload. */
+  async getFixedPointRuleAmount(priceKey: string): Promise<string> {
+    const editor = this.getPriceEditRow(priceKey).locator(SELECTORS.pointRule.list)
+    const amountInputs = editor.locator('[data-testid^="point-rule-amount-"]')
+    for (let i = 0; i < (await amountInputs.count()); i++) {
+      const amount = amountInputs.nth(i)
+      const rule = amount.locator(
+        'xpath=ancestor::div[starts-with(@data-testid,"point-rule-")][1]',
+      )
+      if (await rule.locator('[data-testid^="point-rule-enabled-"]').isChecked()) {
+        return await amount.inputValue()
+      }
+    }
+    throw new Error(`No enabled fixed point rule found for price ${priceKey}`)
+  }
+
+  /** Disable persisted point rules (or remove unsaved ones) through the editor. */
+  async clearPointRules(priceKey: string): Promise<void> {
+    const editor = this.getPriceEditRow(priceKey).locator(SELECTORS.pointRule.list)
+    const enabledSwitches = editor.locator('[data-testid^="point-rule-enabled-"]')
+    for (let i = (await enabledSwitches.count()) - 1; i >= 0; i--) {
+      const enabledSwitch = enabledSwitches.nth(i)
+      if (!(await enabledSwitch.isChecked())) continue
+      const rule = enabledSwitch.locator(
+        'xpath=ancestor::div[starts-with(@data-testid,"point-rule-")][1]',
+      )
+      await this.smartClick(rule.locator('[data-testid^="point-rule-remove-"]'))
+    }
+  }
+
+  /** Count enabled point rules after save/reload. */
+  async getEnabledPointRuleCount(priceKey: string): Promise<number> {
+    const editor = this.getPriceEditRow(priceKey).locator(SELECTORS.pointRule.list)
+    const enabledSwitches = editor.locator('[data-testid^="point-rule-enabled-"]')
+    let enabledCount = 0
+    for (let i = 0; i < (await enabledSwitches.count()); i++) {
+      if (await enabledSwitches.nth(i).isChecked()) enabledCount += 1
+    }
+    return enabledCount
   }
 
   /**
@@ -644,7 +736,9 @@ export class EntitlementMappingsPage extends BasePage {
    * @returns the display name of the bucket actually selected (for caller logs).
    */
   private async selectCreateMappingBucket(bucketName?: string): Promise<string> {
-    await this.smartClick(this.page.locator(SELECTORS.iap.createMappingBucketSelect))
+    await this.smartClick(
+      this.createMappingDialog.locator(SELECTORS.pointRule.bucketSelect),
+    )
     if (bucketName) {
       const named = this.page.getByRole('option', { name: bucketName, exact: true })
       await expect(named).toBeVisible({ timeout: 5000 })
@@ -663,8 +757,8 @@ export class EntitlementMappingsPage extends BasePage {
   /**
    * Fill the create-mapping dialog (US-IAP-002). Opens the dialog via
    * `openCreateMappingDialog()`, drives the Radix selects by visible option
-   * name, fills the text inputs by canonical testid, and toggles grant-on-
-   * subscribe when relevant. Does NOT click submit — the caller drives the
+   * name, fills the text inputs by canonical testid, and configures one points
+   * distribution rule. Does NOT click submit — the caller drives the
    * outcome assertion (success → list row / closed dialog, or duplicate →
    * `create-mapping-submit-error`).
    *
@@ -679,14 +773,9 @@ export class EntitlementMappingsPage extends BasePage {
    * If `bucketName` is omitted, the first bucket option is selected as a
    * documented fallback.
    *
-   * Conditionally-rendered fields:
-   *   - `billingPeriod` is only set when `billingType === 'recurring'`.
-   *   - `validityDays` only renders for one_time + canManagePoints (admin has
-   *     points.manage). Filled when provided.
-   *   - `pointsPerPeriod` only renders for recurring + canManagePoints. Filled
-   *     when provided.
-   *   - `grantOnSubscribe` only renders for recurring + canManagePoints. Toggled
-   *     ON when `true`; left untouched otherwise (default false).
+   * The points editor renders only after billing type is selected. A newly
+   * added rule starts with the billing type's first legal trigger selected;
+   * callers explicitly provide every trigger the scenario needs.
    */
   async fillCreateMappingDialog(values: {
     /** 'apple' → 'App Store', 'google' → 'Google Play'. */
@@ -698,14 +787,16 @@ export class EntitlementMappingsPage extends BasePage {
     billingType: 'recurring' | 'one_time'
     /** 'monthly' → 'Month', 'yearly' → 'Year'. Required for recurring. */
     billingPeriod?: 'monthly' | 'yearly'
-    /** One-time validity days (one_time + canManagePoints only). */
+    /** Trigger sources to enable on the single points distribution rule. */
+    pointRuleTriggers: Array<
+      'topup' | 'subscription_initial' | 'subscription_renewal' | 'subscription_upgrade'
+    >
+    /** Fixed points amount granted by the rule. */
+    pointsAmount: number
+    /** Fixed-rule validity days. */
     validityDays?: number
-    /** Recurring points grant per period (recurring + canManagePoints only). */
-    pointsPerPeriod?: number
     /** Optional Stripe price id. IAP/Creem leave it empty. */
     externalPriceId?: string
-    /** Recurring grant-on-subscribe toggle (recurring + canManagePoints only). */
-    grantOnSubscribe?: boolean
   }): Promise<void> {
     await this.openCreateMappingDialog()
 
@@ -733,8 +824,6 @@ export class EntitlementMappingsPage extends BasePage {
       values.entitlementKey,
     )
 
-    await this.selectCreateMappingBucket(values.bucketName)
-
     const billingTypeOptionName =
       values.billingType === 'recurring' ? 'Recurring' : 'One-time'
     await this.pickCreateMappingSelectOption(
@@ -752,39 +841,30 @@ export class EntitlementMappingsPage extends BasePage {
       )
     }
 
-    if (values.billingType === 'one_time' && values.validityDays !== undefined) {
+    const addRule = this.createMappingDialog.locator(SELECTORS.pointRule.addButton)
+    await expect(addRule).toBeVisible({ timeout: 5000 })
+    await this.smartClick(addRule)
+    await this.selectCreateMappingBucket(values.bucketName)
+
+    for (const trigger of values.pointRuleTriggers) {
+      const checkbox = this.createMappingDialog.locator(
+        SELECTORS.pointRule.trigger(trigger),
+      )
+      await expect(checkbox).toBeVisible({ timeout: 5000 })
+      if ((await checkbox.getAttribute('data-state')) !== 'checked') {
+        await this.smartClick(checkbox)
+      }
+    }
+
+    await this.fillField(
+      this.createMappingDialog.locator(SELECTORS.pointRule.amountInput('new-0')),
+      String(values.pointsAmount),
+    )
+    if (values.validityDays !== undefined) {
       await this.fillField(
-        this.page.locator(SELECTORS.iap.createMappingValidityDaysInput),
+        this.createMappingDialog.locator(SELECTORS.pointRule.validityInput('new-0')),
         String(values.validityDays),
       )
-    }
-
-    if (
-      values.billingType === 'recurring' &&
-      values.pointsPerPeriod !== undefined
-    ) {
-      await this.fillField(
-        this.page.locator(SELECTORS.iap.createMappingPointsPerPeriodInput),
-        String(values.pointsPerPeriod),
-      )
-    }
-
-    // Grant on subscribe — recurring + canManagePoints. Toggle ON when requested.
-    // Radix Switch exposes `data-state`; only click when the target differs from
-    // the current state (default is unchecked/false).
-    if (
-      values.billingType === 'recurring' &&
-      values.grantOnSubscribe === true
-    ) {
-      const toggle = this.page.locator(SELECTORS.iap.createMappingGrantOnSubscribeToggle)
-      await expect(toggle).toBeVisible({ timeout: 5000 })
-      const state = await toggle.getAttribute('data-state')
-      if (state !== 'checked') {
-        await this.smartClick(toggle)
-        await expect(toggle).toHaveAttribute('data-state', 'checked', {
-          timeout: 3000,
-        })
-      }
     }
 
     // Submit is intentionally NOT clicked here — the caller drives the outcome.

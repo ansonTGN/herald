@@ -175,32 +175,17 @@ export async function recordRefundViaDialog(
  * Verify the refund chip is visible for the given invoice in the admin table.
  *
  * Resolves the invoice id from the invoice number and asserts visibility of
- * `invoice-refund-chip-${invoiceId}`. Realm id is derived from the current URL.
+ * `invoice-refund-chip-${invoiceId}`.
  */
 export async function verifyRefundChipInAdminTable(
   page: Page,
+  realmId: string,
   invoiceNumber: string,
 ): Promise<void> {
-  const realmId = extractRealmIdFromUrl(page.url())
   const invoiceId = getInvoiceIdByNumber(realmId, invoiceNumber)
   await expect(page.getByTestId(`invoice-refund-chip-${invoiceId}`)).toBeVisible({
     timeout: 10000,
   })
-}
-
-/**
- * Extract the realm id from a Herald app URL path.
- *
- * Expected pattern: `/{realmId}/...`
- */
-function extractRealmIdFromUrl(url: string): string {
-  try {
-    const pathname = new URL(url).pathname
-    const segments = pathname.split('/').filter(Boolean)
-    return segments[0] ?? ''
-  } catch {
-    return ''
-  }
 }
 
 /**

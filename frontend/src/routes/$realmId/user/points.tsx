@@ -1,13 +1,13 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { UserPointsPage } from '@/components/points/UserPointsPage'
 import { useUser } from '@/stores/auth-store'
-import { requireFeature } from '@/data/query-options'
+import { requireUserFeature } from '@/data/query-options'
 import { transactionBucketSearchSchema } from '@/lib/schemas/points-forms'
 import { realmPath, useCurrentSearch, useResolvedRealmContext } from '@/lib/realm-routing'
 
 export const Route = createFileRoute('/$realmId/user/points')({
   beforeLoad: ({ context, params }) =>
-    requireFeature(context.queryClient, params.realmId, (f) => f.user.pointsVisible, {
+    requireUserFeature(context.queryClient, (f) => f.user.pointsVisible, {
       to: '/$realmId/user/profile',
       params: { realmId: params.realmId },
     }),

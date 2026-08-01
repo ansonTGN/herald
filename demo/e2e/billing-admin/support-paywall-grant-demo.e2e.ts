@@ -40,6 +40,7 @@
 import { expect } from '@playwright/test'
 
 import { verifyTestEnvironment } from '../helpers/environment-setup'
+import { createBearerApiContext } from '../helpers/auth'
 import { EntitlementMappingsPage } from '../pages/entitlement-mappings-page'
 import { RolesPage } from '../pages/roles-page'
 
@@ -72,7 +73,7 @@ const TEST_ROLE_NAME = 'paywall-grant-role-demo'
  * selector for it to appear in the popover.
  */
 async function findRoleIdByName(
-  page: import('@playwright/test').Page,
+  accessToken: string,
   realmId: string,
   roleName: string,
 ): Promise<string | null> {
@@ -80,36 +81,32 @@ async function findRoleIdByName(
     process.env.API_BASE_URL ||
     process.env.BASE_URL?.replace(/:\d+/, ':8080') ||
     'http://localhost:8080'
-  const resp = await page.context().request.get(`${backendUrl}/api/roles/${realmId}/define`)
-  if (!resp.ok()) return null
-  const body = await resp.json()
-  const roles: { id: string; name: string }[] = Array.isArray(body)
-    ? body
-    : body.items ?? []
-  const hit = roles.find((r) => r.name === roleName)
-  return hit ? hit.id : null
+  const apiContext = await createBearerApiContext(accessToken)
+  try {
+    const resp = await apiContext.get(`${backendUrl}/api/roles/${realmId}/define`)
+    if (!resp.ok()) {
+      throw new Error(
+        `Failed to list roles in realm "${realmId}": ${resp.status()} ${await resp.text()}`,
+      )
+    }
+    const body = await resp.json()
+    const roles: { id: string; name: string }[] = Array.isArray(body)
+      ? body
+      : body.items ?? []
+    const hit = roles.find((r) => r.name === roleName)
+    return hit ? hit.id : null
+  } finally {
+    await apiContext.dispose()
+  }
 }
 
-/**
- * Read the points-strategy input value for a price row. The points Field label
- * is i18n-derived and differs by billing type (`billing.field_points_per_period`
- * for recurring, `billing.field_one_time_points` for one_time), but both render
- * the value in an `<input type="number">` that is the ONLY number input in the
- * row. Resolve it by input type, scoped to the price-edit-row.
- *
- * Returns '' if the input is absent (mapping has no points strategy configured).
- */
-async function readPointsInput(
+/** Read the enabled fixed-rule amount, or empty when no point rule is enabled. */
+async function readEnabledFixedPointRuleAmount(
   mappingsPage: EntitlementMappingsPage,
   priceKey: string,
 ): Promise<string> {
-  const input = mappingsPage
-    .getPriceEditRow(priceKey)
-    .locator('input[type="number"]')
-    .first()
-  const exists = (await input.count()) > 0
-  if (!exists) return ''
-  return await input.inputValue().catch(() => '')
+  if ((await mappingsPage.getEnabledPointRuleCount(priceKey)) === 0) return ''
+  return await mappingsPage.getFixedPointRuleAmount(priceKey)
 }
 
 // ============================================================================
@@ -149,6 +146,7 @@ test.describe('[Billing Admin] Support Paywall — role grant config (US-PW-001)
 
   test('US-PW-001 场景1: recurring mapping 可同时配置 role 授予与积分策略（两维度独立叠加）', async ({
     page,
+    loginPage,
     demoLogger,
   }) => {
     // US-PW-001 场景1 — recurring mapping gains a role grant dimension WITHOUT
@@ -174,13 +172,17 @@ test.describe('[Billing Admin] Support Paywall — role grant config (US-PW-001)
     expect(priceKey, 'a price-edit-row must render with a priceKey suffix').toBeTruthy()
 
     // Resolve the role id for our dedicated test role (created in beforeEach).
-    const roleId = await findRoleIdByName(page, TEST_REALM, TEST_ROLE_NAME)
+    const roleId = await findRoleIdByName(
+      loginPage.getAccessToken(),
+      TEST_REALM,
+      TEST_ROLE_NAME,
+    )
     expect(roleId, `${TEST_ROLE_NAME} must exist before configuring the grant`).toBeTruthy()
 
     // ---- Baseline: read the CURRENT points strategy (do NOT clobber it) ----
     // The seeded recurring mapping carries a points_per_period; US-PW-001 场景1
     // requires the points dimension to be untouched when adding a role grant.
-    const pointsBefore = await readPointsInput(mappingsPage, priceKey)
+    const pointsBefore = await readEnabledFixedPointRuleAmount(mappingsPage, priceKey)
 
     // ---- When: configure role grant (points untouched) ----
     await mappingsPage.selectGrantedRoles(priceKey, [roleId as string])
@@ -201,7 +203,7 @@ test.describe('[Billing Admin] Support Paywall — role grant config (US-PW-001)
     })
 
     await test.step('积分策略未被 role 授予改动（正交维度）', async () => {
-      const pointsAfter = await readPointsInput(mappingsPage, priceKey)
+      const pointsAfter = await readEnabledFixedPointRuleAmount(mappingsPage, priceKey)
       // The points dimension is untouched by the role-grant edit: its persisted
       // value must be unchanged after the reload.
       expect(
@@ -213,6 +215,7 @@ test.describe('[Billing Admin] Support Paywall — role grant config (US-PW-001)
 
   test('US-PW-001 场景2+3: role 授予与积分策略正交，清空一方不影响另一方', async ({
     page,
+    loginPage,
     demoLogger,
   }) => {
     // US-PW-001 场景2/3 — orthogonality: clearing the role grant must leave the
@@ -231,13 +234,17 @@ test.describe('[Billing Admin] Support Paywall — role grant config (US-PW-001)
     const rowTestid = (await firstRow.getAttribute('data-testid')) ?? ''
     const priceKey = rowTestid.replace(/^price-edit-row-/, '')
 
-    const roleId = await findRoleIdByName(page, TEST_REALM, TEST_ROLE_NAME)
+    const roleId = await findRoleIdByName(
+      loginPage.getAccessToken(),
+      TEST_REALM,
+      TEST_ROLE_NAME,
+    )
     expect(roleId, `${TEST_ROLE_NAME} must exist`).toBeTruthy()
 
     // Establish a known baseline: set a points value + a role grant, save, then
     // clear the role grant and assert points survived. This exercises the
     // orthogonality invariant directly (场景3: clear one, keep the other).
-    await mappingsPage.fillPriceRow(priceKey, { pointsPerPeriod: 500 })
+    await mappingsPage.configureFixedPointRule(priceKey, 500)
     await mappingsPage.selectGrantedRoles(priceKey, [roleId as string])
     await mappingsPage.saveChanges()
 
@@ -266,7 +273,7 @@ test.describe('[Billing Admin] Support Paywall — role grant config (US-PW-001)
       // Points strategy survived the role clear (orthogonality). The points
       // value was set to 500 above; assert it persisted unchanged — persistent
       // state, NOT a toast.
-      const pointsValue = await readPointsInput(mappingsPage, priceKey)
+      const pointsValue = await mappingsPage.getFixedPointRuleAmount(priceKey)
       expect(
         pointsValue,
         'points strategy must survive the role-grant clear (orthogonal dims)',
@@ -275,9 +282,9 @@ test.describe('[Billing Admin] Support Paywall — role grant config (US-PW-001)
 
     // ---- And conversely: pure-role config (empty points) is a valid save ----
     await test.step('纯 role 授予（积分策略为空）可保存存在', async () => {
-      // Clear points, set role, save — this is 场景2's claim that a "no points,
-      // only role" config is persistable.
-      await mappingsPage.fillPriceRow(priceKey, { pointsPerPeriod: 0 })
+      // Disable persisted point rules, set role, save — this is 场景2's claim
+      // that a "no points, only role" config is persistable.
+      await mappingsPage.clearPointRules(priceKey)
       await mappingsPage.selectGrantedRoles(priceKey, [roleId as string])
       await mappingsPage.saveChanges()
 
@@ -286,6 +293,10 @@ test.describe('[Billing Admin] Support Paywall — role grant config (US-PW-001)
       await mappingsPage.waitForDataLoaded()
       await mappingsPage.selectFirstProduct()
 
+      expect(
+        await mappingsPage.getEnabledPointRuleCount(priceKey),
+        'pure-entitlement mapping must have no enabled point rules',
+      ).toBe(0)
       const granted = await mappingsPage.getGrantedRoles(priceKey)
       expect(
         granted,

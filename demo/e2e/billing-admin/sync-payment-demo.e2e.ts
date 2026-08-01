@@ -15,7 +15,7 @@
 import { test, cleanupTestData, expect } from '../fixtures/demo-page.fixtures'
 import { verifyTestEnvironment } from '../helpers/environment-setup'
 import type { UnifiedLogger } from '../helpers/unified-logger'
-import { DEMO_ADMIN } from '../helpers/auth'
+import { createBearerApiContext, DEMO_ADMIN } from '../helpers/auth'
 import { SELECTORS } from '../selectors'
 import { secrets, hasStripePayment, hasCreemPayment } from '../secrets/env'
 import { seedCreemConfig } from '../secrets/realm-seed'
@@ -65,23 +65,27 @@ test.describe('[Billing Admin] 支付产品同步增强 (US-BL-SYNC-001/002/003/
         const { LoginPage } = await import('../pages/login-page')
         const loginPage = new LoginPage(page)
         await loginPage.loginAsAdmin(DEMO_ADMIN.email, 'password', DEMO_ADMIN.realmId)
+        const apiContext = await createBearerApiContext(loginPage.getAccessToken())
+        try {
+          const metadataProduct = await ensureMetadataProduct(secrets.stripe.secretKey!, {
+            productMetadata: INITIAL_PRODUCT_METADATA,
+            priceMetadata: PRICE_METADATA,
+          })
+          stripeMetadataProductId = metadataProduct.productId
+          stripeMetadataPriceId = metadataProduct.priceId
 
-        const metadataProduct = await ensureMetadataProduct(secrets.stripe.secretKey!, {
-          productMetadata: INITIAL_PRODUCT_METADATA,
-          priceMetadata: PRICE_METADATA,
-        })
-        stripeMetadataProductId = metadataProduct.productId
-        stripeMetadataPriceId = metadataProduct.priceId
-
-        const catalog = await ensureMultiPriceCatalog(page.request, {
-          baseUrl: BASE_URL,
-          realmId: DEMO_ADMIN.realmId,
-          stripeSecretKey: secrets.stripe.secretKey!,
-          stripePublishableKey: secrets.stripe.publishableKey!,
-          stripeWebhookSecret: secrets.stripe.webhookSecret!,
-        })
-        stripePlainProductId = catalog.product.productId
-        stripePlainPriceId = catalog.product.monthlyPriceId
+          const catalog = await ensureMultiPriceCatalog(apiContext, {
+            baseUrl: BASE_URL,
+            realmId: DEMO_ADMIN.realmId,
+            stripeSecretKey: secrets.stripe.secretKey!,
+            stripePublishableKey: secrets.stripe.publishableKey!,
+            stripeWebhookSecret: secrets.stripe.webhookSecret!,
+          })
+          stripePlainProductId = catalog.product.productId
+          stripePlainPriceId = catalog.product.monthlyPriceId
+        } finally {
+          await apiContext.dispose()
+        }
       } catch (error) {
         stripeSetupError = error instanceof Error ? error.message : String(error)
       } finally {
@@ -99,14 +103,19 @@ test.describe('[Billing Admin] 支付产品同步增强 (US-BL-SYNC-001/002/003/
         const { LoginPage } = await import('../pages/login-page')
         const loginPage = new LoginPage(page)
         await loginPage.loginAsAdmin(DEMO_ADMIN.email, 'password', DEMO_ADMIN.realmId)
-        await seedCreemConfig(page.request, DEMO_ADMIN.realmId, {
-          apiKey: secrets.creem.apiKey!,
-          webhookSecret: secrets.creem.webhookSecret!,
-        })
-        await syncProvider(page.request, 'creem')
-        const items = await fetchMappings(page.request, 'creem')
-        creemMapping =
-          items.find((m) => m.externalProductId === secrets.creem.productId) ?? items[0] ?? null
+        const apiContext = await createBearerApiContext(loginPage.getAccessToken())
+        try {
+          await seedCreemConfig(apiContext, DEMO_ADMIN.realmId, {
+            apiKey: secrets.creem.apiKey!,
+            webhookSecret: secrets.creem.webhookSecret!,
+          })
+          await syncProvider(apiContext, 'creem')
+          const items = await fetchMappings(apiContext, 'creem')
+          creemMapping =
+            items.find((m) => m.externalProductId === secrets.creem.productId) ?? items[0] ?? null
+        } finally {
+          await apiContext.dispose()
+        }
       } catch (error) {
         creemSetupError = error instanceof Error ? error.message : String(error)
       } finally {
@@ -139,6 +148,9 @@ test.describe('[Billing Admin] 支付产品同步增强 (US-BL-SYNC-001/002/003/
     test.skip(!hasStripePayment(), 'Stripe credentials required')
     test.skip(!!stripeSetupError, `Stripe setup failed: ${stripeSetupError}`)
     const mappingsPage = await setupAdminMappingsPage(page, loginPage, demoLogger)
+    const apiContext = await createBearerApiContext(loginPage.getAccessToken())
+
+    try {
 
     // US-BL-SYNC-001 S1
     await test.step('Given/When/Then: Stripe 带 metadata 同步后详情展示 product/price metadata', async () => {
@@ -186,7 +198,7 @@ test.describe('[Billing Admin] 支付产品同步增强 (US-BL-SYNC-001/002/003/
         stripeMetadataProductId,
         UPDATED_PRODUCT_METADATA,
       )
-      await syncProvider(page.request, 'stripe')
+      await syncProvider(apiContext, 'stripe')
       await mappingsPage.goto(DEMO_ADMIN.realmId)
       await mappingsPage.waitForDataLoaded()
       await mappingsPage.selectProduct(stripeMetadataProductId)
@@ -195,9 +207,9 @@ test.describe('[Billing Admin] 支付产品同步增强 (US-BL-SYNC-001/002/003/
 
     // US-BL-SYNC-004 S2
     await test.step('When/Then: 直连 batch PUT 传入冲突 billingPeriod 不覆盖同步周期', async () => {
-      const before = await findMappingByPrice(page.request, stripeMetadataPriceId)
+      const before = await findMappingByPrice(apiContext, stripeMetadataPriceId)
       expect(before?.billingPeriod).toBe('month')
-      const resp = await page.request.put(
+      const resp = await apiContext.put(
         `${BASE_URL}/api/bill/${DEMO_ADMIN.realmId}/entitlement-mappings/batch`,
         {
           data: {
@@ -215,13 +227,16 @@ test.describe('[Billing Admin] 支付产品同步增强 (US-BL-SYNC-001/002/003/
         },
       )
       expect([200, 201]).toContain(resp.status())
-      const after = await findMappingByPrice(page.request, stripeMetadataPriceId)
+      const after = await findMappingByPrice(apiContext, stripeMetadataPriceId)
       expect(after?.billingPeriod).toBe('month')
       await mappingsPage.goto(DEMO_ADMIN.realmId)
       await mappingsPage.waitForDataLoaded()
       await mappingsPage.selectProduct(stripeMetadataProductId)
       expect(await mappingsPage.getBillingPeriodValue(stripeMetadataPriceId)).toMatch(/month/i)
     })
+    } finally {
+      await apiContext.dispose()
+    }
   })
 
   test.describe('Creem 同步展示 (US-BL-SYNC-001/003/004)', () => {

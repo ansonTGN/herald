@@ -36,6 +36,7 @@ vi.mock('@/lib/auth-service', () => ({
   performLogout: vi.fn(),
   performPkceTokenExchange: vi.fn(),
   refreshBrowserToken: vi.fn(),
+  switchFirstPartyClient: vi.fn(),
 }))
 
 vi.mock('@/stores/auth-store', () => ({
@@ -47,9 +48,20 @@ vi.mock('@/stores/auth-store', () => ({
 }))
 
 // Import mocked modules after vi.mock declarations
-import { performLogin, fetchAuthData, performPkceTokenExchange } from '@/lib/auth-service'
-import { useAuthStore } from '@/stores/auth-store'
-import { loginFlow, completeLoginAfterTotp, validateOAuthParams } from '@/lib/auth-utils'
+import {
+  performLogin,
+  fetchAuthData,
+  performPkceTokenExchange,
+  refreshBrowserToken,
+  switchFirstPartyClient,
+} from '@/lib/auth-service'
+import { accessTokenHolder, useAuthStore } from '@/stores/auth-store'
+import {
+  initializeAuth,
+  loginFlow,
+  completeLoginAfterTotp,
+  validateOAuthParams,
+} from '@/lib/auth-utils'
 
 // --- Factories ---
 
@@ -612,6 +624,142 @@ describe('loginFlow Herald FirstParty PKCE exchange', () => {
     expect(result.response.redirectTo).toBe(
       'http://localhost/callback?code=ac_attacker&state=state-evil'
     )
+  })
+
+  // After a successful PKCE token exchange, a transient failure in the subsequent
+  // auth-data fetch (e.g. the freshly-issued access token 401-ing on its first
+  // use before backend propagation completes) must NOT wipe the just-persisted
+  // refresh token. If it does, a full-page navigation to a protected route
+  // (e.g. /manage/...) cannot restore the session via `initializeAuth`'s
+  // refresh-first restore and the user is wrongly bounced to login. The token
+  // family was already established by the exchange — tearing it down belongs
+  // only to the pre-exchange failure path (bad credentials, exchange failure).
+  it('does NOT call store.logout when fetchAuthData throws AFTER the PKCE exchange succeeds', async () => {
+    const storeMock = makeStatefulStoreMock({
+      pkceState: {
+        codeVerifier: 'verifier-xyz',
+        clientId: 'admin-web-console',
+        redirectUri: 'http://localhost/callback',
+        state: 'state-abc',
+      },
+    })
+    vi.mocked(useAuthStore.getState).mockReturnValue(
+      storeMock as ReturnType<typeof useAuthStore.getState>
+    )
+
+    vi.mocked(performLogin).mockResolvedValue(
+      makeLoginResponse({
+        redirectTo: 'http://localhost/callback?code=ac_123&state=state-abc',
+      })
+    )
+    vi.mocked(performPkceTokenExchange).mockResolvedValue({
+      accessToken: 'at-new',
+      refreshToken: 'rt-new',
+      tokenType: 'Bearer',
+      expiresIn: 900,
+      refreshExpiresIn: 2592000,
+    })
+    // The post-exchange auth-data fetch fails (the transient 401 surface).
+    vi.mocked(fetchAuthData).mockRejectedValue(new Error('Request failed with status 401'))
+
+    // loginFlow re-throws the error so the caller surfaces it...
+    await expect(
+      loginFlow('realm1', {
+        clientId: 'admin-web-console',
+        username: 'admin@test.com',
+        password: 'password123',
+      })
+    ).rejects.toThrow('401')
+
+    // ...but the Bearer token family established by the exchange MUST survive.
+    // logout() would null the refresh token; assert it was never called.
+    expect(storeMock.logout).not.toHaveBeenCalled()
+    // The refresh token persisted by the successful exchange is still readable.
+    expect(storeMock.getRefreshToken()).toEqual({
+      refreshToken: 'rt-new',
+      clientId: 'admin-web-console',
+    })
+  })
+})
+
+describe('initializeAuth token-family preservation', () => {
+  it('preserves an established refresh token when status initialization fails transiently', async () => {
+    const storeMock = makeStatefulStoreMock({
+      refreshToken: 'rt-established',
+      clientId: 'user-account-center',
+    })
+    vi.mocked(useAuthStore.getState).mockReturnValue(
+      storeMock as ReturnType<typeof useAuthStore.getState>
+    )
+    vi.mocked(accessTokenHolder.get).mockReturnValue('at-established')
+    vi.mocked(fetchAuthData).mockRejectedValue(new Error('transient status failure'))
+
+    const result = await initializeAuth('admin', 'admin-web-console', true)
+
+    expect(result.authenticated).toBe(false)
+    expect(storeMock.reset).not.toHaveBeenCalled()
+    expect(storeMock.logout).not.toHaveBeenCalled()
+    expect(storeMock.setAuthStatus).toHaveBeenCalledWith(false)
+    expect(storeMock.getRefreshToken()).toEqual({
+      refreshToken: 'rt-established',
+      clientId: 'user-account-center',
+    })
+  })
+
+  it('preserves the replacement token family when post-switch hydration fails transiently', async () => {
+    const storeMock = makeStatefulStoreMock({
+      refreshToken: 'rt-user',
+      clientId: 'user-account-center',
+    })
+    vi.mocked(useAuthStore.getState).mockReturnValue(
+      storeMock as ReturnType<typeof useAuthStore.getState>
+    )
+    vi.mocked(accessTokenHolder.get).mockReturnValue('at-user')
+    vi.mocked(fetchAuthData)
+      .mockResolvedValueOnce({
+        ...makeAuthDataResponse(),
+        authStatus: {
+          ...makeAuthDataResponse().authStatus,
+          clientId: 'user-account-center',
+        },
+      })
+      .mockRejectedValueOnce(new Error('transient post-switch status failure'))
+    vi.mocked(switchFirstPartyClient).mockResolvedValue({
+      accessToken: 'at-admin',
+      refreshToken: 'rt-admin',
+      tokenType: 'Bearer',
+      expiresIn: 900,
+      refreshExpiresIn: 2592000,
+      clientId: 'admin-web-console',
+    })
+
+    const result = await initializeAuth('admin', 'admin-web-console', true)
+
+    expect(result.authenticated).toBe(false)
+    expect(storeMock.reset).not.toHaveBeenCalled()
+    expect(storeMock.getRefreshToken()).toEqual({
+      refreshToken: 'rt-admin',
+      clientId: 'admin-web-console',
+    })
+  })
+
+  it('clears the token family when startup refresh is explicitly rejected', async () => {
+    const storeMock = makeStatefulStoreMock({
+      refreshToken: 'rt-revoked',
+      clientId: 'user-account-center',
+    })
+    vi.mocked(useAuthStore.getState).mockReturnValue(
+      storeMock as ReturnType<typeof useAuthStore.getState>
+    )
+    vi.mocked(accessTokenHolder.get).mockReturnValue(null)
+    vi.mocked(refreshBrowserToken).mockRejectedValue(new Error('refresh token revoked'))
+
+    const result = await initializeAuth('admin', 'admin-web-console', true)
+
+    expect(result.authenticated).toBe(false)
+    expect(storeMock.logout).toHaveBeenCalledOnce()
+    expect(storeMock.reset).not.toHaveBeenCalled()
+    expect(storeMock.getRefreshToken()).toEqual({ refreshToken: null, clientId: null })
   })
 })
 

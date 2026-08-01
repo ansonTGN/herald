@@ -782,19 +782,13 @@ async fn update_credit_bucket_attaching_mapping_increases_count_and_removal_reje
 
 /// User Story: US-CB-001 (delete refuses in-flight subscriptions).
 ///
-/// DISABLED — encodes behavior the production code does not currently provide.
-/// `delete_credit_bucket` hardcodes `active_subscriptions: i64 = 0`
-/// (`backend/infra/src/billing/postgres_repository.rs:~652`): the in-flight
-/// subscription guard was un-anchored when `subscription.bucket_id` was removed
-/// and is deferred to a future subscription-lifecycle item (the residual-balance
-/// guard still protects against deleting a bucket with live credit, exercised by
-/// `delete_credit_bucket_rejected_when_holders_with_balance_exist`). The seed
-/// helper can no longer bind a subscription to a bucket either. So the
-/// 409-with-`activeSubscriptions>=1` assertion cannot pass today. Re-enable when
-/// the subscription-lifecycle delete guard is re-anchored on rule-result linkage.
+/// The `delete_credit_bucket` subscription guard is anchored on the
+/// rule-result linkage: an active subscription that has a `subscription_credit`
+/// grant result (`points_quota_entitlements` / `points_credit_ledger` with
+/// `source_id = subscription_id`) in this bucket blocks the delete, independent
+/// of the residual-balance guard (`delete_credit_bucket_rejected_when_holders_with_balance_exist`).
 #[test_context(TestContext)]
 #[tokio::test]
-#[ignore = "obsolete: delete_credit_bucket active-subscription guard is hardcoded to 0 (subscription.bucket_id removed); re-enable when the guard is re-anchored"]
 async fn delete_credit_bucket_rejected_when_active_subscriptions_exist(ctx: &mut TestContext) {
     let realm_id = ctx._realm_id.clone();
     let token = setup_billing_admin_session(ctx, "cb_t04_del_sub@example.com").await;

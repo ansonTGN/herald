@@ -10,9 +10,9 @@ import { TransactionHistoryTable } from './TransactionHistoryTable'
 import { TransactionFilters } from './TransactionFilters'
 import { deriveUserPointsView } from './user-points-view'
 import {
-  walletsByBucketQueryOptions,
-  pointsTransactionsQueryOptions,
-  featureAvailabilityQueryOptions,
+  userPointsWalletsQueryOptions,
+  userPointsTransactionsQueryOptions,
+  userFeatureAvailabilityQueryOptions,
 } from '@/data/query-options'
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants'
 import type { TransactionFilters as TransactionFiltersType } from '@/lib/schemas/points-forms'
@@ -53,18 +53,9 @@ export function UserPointsPage({
   // URL changes (e.g. opening a shared `?bucketId=` link) reflect immediately.
   const [transactionFilters, setTransactionFilters] = useState<TransactionFiltersType>({})
 
-  // Gap #2 fix: `listWallets` is server-side hard-scoped for `points.view`-only
-  // callers, so `data.items` already contains only the current user's rows and
-  // `data.crossBucketTotal` is that user's own cross-bucket total. We still
-  // client-filter by `userId` via `deriveUserPointsView` as a defensive no-op
-  // (harmless, still correct) and recompute the total ourselves.
-  const { data: walletsData, isLoading: walletsLoading } = useQuery(
-    walletsByBucketQueryOptions(realmId)
-  )
+  const { data: walletsData, isLoading: walletsLoading } = useQuery(userPointsWalletsQueryOptions)
 
-  // Feature visibility drives the inline purchase block. Mirrors the
-  // featureAvailabilityQueryOptions usage in profile-sidebar.tsx.
-  const { data: features } = useQuery(featureAvailabilityQueryOptions(realmId))
+  const { data: features } = useQuery(userFeatureAvailabilityQueryOptions)
   const pointsAreaVisible = features?.user?.pointsVisible === true
 
   // Bucket name lookup for the Bucket Select + Bucket column. The admin-only
@@ -93,8 +84,7 @@ export function UserPointsPage({
 
   const requestedPageSize = Math.min(loadedPages * DEFAULT_PAGE_SIZE, MAX_VISIBLE_TRANSACTIONS)
   const { data: transactionsData, isLoading: transactionsLoading } = useQuery(
-    pointsTransactionsQueryOptions(realmId, {
-      userId,
+    userPointsTransactionsQueryOptions({
       page: 1,
       pageSize: requestedPageSize,
       ...effectiveFilters,

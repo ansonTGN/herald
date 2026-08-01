@@ -157,7 +157,7 @@ export class ApiKeysPage extends BasePage {
    */
   async goto(realmId: string = "admin"): Promise<void> {
     this.currentRealmId = realmId;
-    const url = `/${realmId}/manage/api-keys`;
+    const url = `/manage/api-keys`;
     await this.page.goto(url);
     await this.waitForReady();
   }

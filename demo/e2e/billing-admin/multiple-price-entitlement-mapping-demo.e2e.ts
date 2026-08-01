@@ -10,9 +10,10 @@
  *     goto / waitForReady / waitForDataLoaded / selectProduct / selectFirstProduct
  *     / isProductSelected / isListEmpty
  *     / getPriceEditRow / getPriceEnabledToggle / getSharedKeyChip
- *     / fillPriceRow / togglePriceEnabled / saveChanges
+ *     / getEntitlementKeyValue / configureFixedPointRule / getFixedPointRuleAmount
+ *     / togglePriceEnabled / saveChanges
  *     / expectProtectedPriceDialog / getProtectedPriceActiveSubs / cancelProtectedPrice
- *     / expectWebhookUnresolvedBanner / sync
+ *     / sync
  *     + exposed locator fields (mappingDetailPanel, saveMappingButton, …).
  * - seed ids: `demo/e2e/helpers/multi-price-seed-ids.ts`.
  *
@@ -20,35 +21,22 @@
  * `ensureMultiPriceCatalog` (create-or-reuse + provider sync). S1 drives the
  * toolbar sync button which surfaces `sync-result-products` /
  * `sync-result-prices`; the real product is the master-detail fixture S2-S4 +
- * protected-price + webhook-unresolved operate on.
+ * protected-price operates on.
  *
  * Assertion discipline: every assertion lands on persistent state — list/detail
  * panel structure, price-row count, shared-key chip presence, saved row values
- * re-rendered after save, disabled-state, the 409 dialog body, the webhook-
- * unresolved banner. No assertion is toast-only.
+ * re-rendered after save, disabled-state, and the 409 dialog body. No assertion
+ * is toast-only.
  *
- * Protected-price path (LOUD, item step 2): there is no deterministic demo seed
- * for an active subscription anchored to a price mapping. This file therefore
- * drives BOTH paths:
- *   - UI path: toggle a seeded price off and save; the backend 409 surfaces the
- *     Cancel-only `protected-price-confirm-dialog`. If the seeded price happens
- *     to protect an active subscription this path lands on the dialog.
- *   - Direct PUT fallback: a `page.request.put(.../batch, {updates:[{mappingId,
- *     enabled:false}]})` whose body is asserted to be
- *     `{code:"mapping_in_use", activeSubscriptions}` when the price is
- *     protected, OR documented as non-protected when no active subscription
- *     anchors the seeded price. The step records which path produced evidence.
- *
- * NOTE on `page.request` auth: the browser context carries the admin session
- * cookie after loginAsAdmin, so `page.request.*` calls to `/api/bill/...` are
- * authenticated as the admin persona (same mechanism used by the sibling
- * `admin-subscription-history-demo` and the live `us-pa-001-stripe-checkout`).
+ * Setup API calls use a dedicated Bearer-authenticated request context created
+ * from the fresh admin login response.
  */
 
 import { test, cleanupTestData, expect } from '../fixtures/demo-page.fixtures'
 import { verifyTestEnvironment } from '../helpers/environment-setup'
+import type { APIRequestContext } from '@playwright/test'
 import type { UnifiedLogger } from '../helpers/unified-logger'
-import { DEMO_ADMIN } from '../helpers/auth'
+import { createBearerApiContext, DEMO_ADMIN } from '../helpers/auth'
 import {
   MULTI_PRICE_PAYMENT_PROVIDER,
 } from '../helpers/multi-price-seed-ids'
@@ -64,14 +52,10 @@ let STRIPE_MULTI_PRO_PRODUCT_ID = ''
 let STRIPE_PRO_ANNUAL_PRICE_ID = ''
 let STRIPE_PRO_MONTHLY_PRICE_ID = ''
 
-// Design-pinned constants (NOT seed ids): the shared entitlement key and the
-// per-price points strategies are load-bearing invariants of the multi-price
-// feature, independent of the product/price id source.
+// Design-pinned per-price point amounts (NOT seed ids).
 const STRIPE_MULTI_PRO_POINTS_STRATEGY: Record<string, number> = {
   // populated in beforeAll once STRIPE_PRO_*_PRICE_ID are known
 }
-const STRIPE_MULTI_PRO_SHARED_KEY = 'pro-plan'
-
 /**
  * `[Billing Admin] 多价格 Entitlement 映射同步与配置 (US-EM-007)` — the describe
  * title the runner targets via `--grep`.
@@ -96,13 +80,14 @@ test.describe('[Billing Admin] 多价格 Entitlement 映射同步与配置 (US-E
       const loginPage = new LoginPage(page)
       await loginPage.loginAsAdmin(DEMO_ADMIN.email, 'password', DEMO_ADMIN.realmId)
 
-      const catalog = await ensureMultiPriceCatalog(page.request, {
+      const apiContext = await createBearerApiContext(loginPage.getAccessToken())
+      const catalog = await ensureMultiPriceCatalog(apiContext, {
         baseUrl: BASE_URL,
         realmId: DEMO_ADMIN.realmId,
         stripeSecretKey: secrets.stripe.secretKey!,
         stripePublishableKey: secrets.stripe.publishableKey!,
         stripeWebhookSecret: secrets.stripe.webhookSecret!,
-      })
+      }).finally(() => apiContext.dispose())
       STRIPE_MULTI_PRO_PRODUCT_ID = catalog.product.productId
       STRIPE_PRO_MONTHLY_PRICE_ID = catalog.product.monthlyPriceId
       STRIPE_PRO_ANNUAL_PRICE_ID = catalog.product.annualPriceId
@@ -201,9 +186,9 @@ test.describe('[Billing Admin] 多价格 Entitlement 映射同步与配置 (US-E
   })
 
   // ==========================================================================
-  // S2 — Shared entitlement_key + per-price points strategy (1000 / 12000)
-  // US-EM-007 S2. The 12000-vs-1000 distinction under ONE shared key is the
-  // load-bearing invariant the rest of the feature relies on.
+  // S2 — Provider-owned shared entitlement key + per-price point rules.
+  // The current sync contract owns entitlement keys; operators only configure
+  // the independent PointDistributionRuleEditor on each price.
   // ==========================================================================
   test('S2 共享 entitlement_key + 每价格积分策略 (monthly 1000 / annual 12000)', async ({
     page,
@@ -217,57 +202,25 @@ test.describe('[Billing Admin] 多价格 Entitlement 映射同步与配置 (US-E
       await expect(mappingsPage.mappingDetailPanel).toBeVisible()
     })
 
-    await test.step('When: 配置共享 entitlement_key 为 pro-plan', async () => {
-      // A freshly-synced multi-price product carries a DRAFT entitlement_key
-      // derived from the external_product_id (see
-      // provider_product_sync_service draft_entitlement_key), NOT the design-
-      // pinned shared key. The OPERATOR (this test's persona) overwrites the
-      // draft by setting both price rows' key to STRIPE_MULTI_PRO_SHARED_KEY and
-      // saving the batch — the intended flow (mirrors S3's rename-then-save).
-      // Only then does the shared-key-chip-pro-plan render.
-      await mappingsPage.fillPriceRow(STRIPE_PRO_MONTHLY_PRICE_ID, {
-        entitlementKey: STRIPE_MULTI_PRO_SHARED_KEY,
-      })
-      await mappingsPage.fillPriceRow(STRIPE_PRO_ANNUAL_PRICE_ID, {
-        entitlementKey: STRIPE_MULTI_PRO_SHARED_KEY,
-      })
-      const saveResponse = await Promise.all([
-        page.waitForResponse(
-          (resp) =>
-            resp.url().includes('/api/bill/') &&
-            resp.url().includes('/entitlement-mappings/batch') &&
-            resp.request().method() === 'PUT',
-          { timeout: 15000 },
-        ),
-        mappingsPage.saveChanges(),
-      ])
-      expect([200, 201]).toContain(saveResponse[0].status())
-      await demoLogger.testCode.log(
-        `Set both price rows entitlement_key=${STRIPE_MULTI_PRO_SHARED_KEY}; batch PUT ${saveResponse[0].status()}`,
+    let providerOwnedKey = ''
+    await test.step('Then: 两个价格行共享同一个只读 provider-owned key', async () => {
+      providerOwnedKey = await mappingsPage.getEntitlementKeyValue(STRIPE_PRO_MONTHLY_PRICE_ID)
+      expect(providerOwnedKey, 'provider sync must supply a non-empty entitlement key').toBeTruthy()
+      expect(await mappingsPage.getEntitlementKeyValue(STRIPE_PRO_ANNUAL_PRICE_ID)).toBe(
+        providerOwnedKey,
       )
+      await expect(mappingsPage.getSharedKeyChip(providerOwnedKey)).toBeVisible()
     })
 
-    await test.step('Then: 两个价格行均渲染共享 key 的 shared-key-chip', async () => {
-      // The detail panel groups prices by entitlement key and renders one chip
-      // per shared key — persistent structural evidence, not a toast.
-      const sharedChip = mappingsPage.getSharedKeyChip(STRIPE_MULTI_PRO_SHARED_KEY)
-      await expect(sharedChip).toBeVisible()
-      await demoLogger.testCode.log(
-        `Shared key chip rendered for entitlement_key=${STRIPE_MULTI_PRO_SHARED_KEY}`,
+    await test.step('When: 用 PointDistributionRuleEditor 配置月/年规则', async () => {
+      await mappingsPage.configureFixedPointRule(
+        STRIPE_PRO_MONTHLY_PRICE_ID,
+        STRIPE_MULTI_PRO_POINTS_STRATEGY[STRIPE_PRO_MONTHLY_PRICE_ID],
       )
-    })
-
-    await test.step('When: 填入每价格积分策略 (1000 / 12000)', async () => {
-      // Re-asserting the seeded strategy values into the row inputs exercises
-      // the per-price edit path. The values are the load-bearing pair — re-
-      // applying them keeps the row state deterministic even if a prior run
-      // edited the values.
-      await mappingsPage.fillPriceRow(STRIPE_PRO_MONTHLY_PRICE_ID, {
-        pointsPerPeriod: STRIPE_MULTI_PRO_POINTS_STRATEGY[STRIPE_PRO_MONTHLY_PRICE_ID],
-      })
-      await mappingsPage.fillPriceRow(STRIPE_PRO_ANNUAL_PRICE_ID, {
-        pointsPerPeriod: STRIPE_MULTI_PRO_POINTS_STRATEGY[STRIPE_PRO_ANNUAL_PRICE_ID],
-      })
+      await mappingsPage.configureFixedPointRule(
+        STRIPE_PRO_ANNUAL_PRICE_ID,
+        STRIPE_MULTI_PRO_POINTS_STRATEGY[STRIPE_PRO_ANNUAL_PRICE_ID],
+      )
     })
 
     await test.step('When: 保存批次', async () => {
@@ -284,108 +237,61 @@ test.describe('[Billing Admin] 多价格 Entitlement 映射同步与配置 (US-E
       ])
       const resp = saveResponse[0]
       await demoLogger.testCode.log(`Batch PUT responded ${resp.status()}`)
-      // Persistent evidence: the backend returns 201 with {saved, prices} on a
-      // successful batch save. 200 is also accepted — the
-      // server's success status code is its own; what matters for persistence
-      // is that the call succeeded and the panel re-renders with saved values.
       expect([200, 201]).toContain(resp.status())
     })
 
-    await test.step('Then: 保存后的积分策略在详情面板持久呈现', async () => {
-      // Re-assert the persisted per-price strategy in the detail-panel inputs
-      // after save (NOT a toast). The points input is matched by its numeric
-      // type + "Points per period" Field label position, same as fillPriceRow.
-      const monthlyRow = mappingsPage.getPriceEditRow(STRIPE_PRO_MONTHLY_PRICE_ID)
-      const annualRow = mappingsPage.getPriceEditRow(STRIPE_PRO_ANNUAL_PRICE_ID)
-
-      await expect(
-        monthlyRow.locator('div', { hasText: 'Points per period' }).locator('input[type="number"]'),
-      ).toHaveValue(
-        String(STRIPE_MULTI_PRO_POINTS_STRATEGY[STRIPE_PRO_MONTHLY_PRICE_ID]),
+    await test.step('Then: reload 后规则金额与只读共享 key 均持久', async () => {
+      await page.reload()
+      await mappingsPage.waitForReady()
+      await mappingsPage.waitForDataLoaded()
+      await mappingsPage.selectProduct(STRIPE_MULTI_PRO_PRODUCT_ID)
+      expect(await mappingsPage.getFixedPointRuleAmount(STRIPE_PRO_MONTHLY_PRICE_ID)).toBe('1000')
+      expect(await mappingsPage.getFixedPointRuleAmount(STRIPE_PRO_ANNUAL_PRICE_ID)).toBe('12000')
+      expect(await mappingsPage.getEntitlementKeyValue(STRIPE_PRO_MONTHLY_PRICE_ID)).toBe(
+        providerOwnedKey,
       )
-      await expect(
-        annualRow.locator('div', { hasText: 'Points per period' }).locator('input[type="number"]'),
-      ).toHaveValue(String(STRIPE_MULTI_PRO_POINTS_STRATEGY[STRIPE_PRO_ANNUAL_PRICE_ID]))
-
-      // The shared chip must still be present (the shared key was not renamed).
-      await expect(mappingsPage.getSharedKeyChip(STRIPE_MULTI_PRO_SHARED_KEY)).toBeVisible()
-      await demoLogger.testCode.log(
-        'Per-price points strategy persisted: monthly=' +
-          `${STRIPE_MULTI_PRO_POINTS_STRATEGY[STRIPE_PRO_MONTHLY_PRICE_ID]}, annual=` +
-          `${STRIPE_MULTI_PRO_POINTS_STRATEGY[STRIPE_PRO_ANNUAL_PRICE_ID]} under shared key`,
+      expect(await mappingsPage.getEntitlementKeyValue(STRIPE_PRO_ANNUAL_PRICE_ID)).toBe(
+        providerOwnedKey,
       )
+      await expect(mappingsPage.getSharedKeyChip(providerOwnedKey)).toBeVisible()
     })
   })
 
   // ==========================================================================
-  // S3 — Different entitlement per price (two shared-key chips after rename)
-  // US-EM-007 S3. Renaming one price's entitlement_key splits the product into
-  // two key groups; the detail panel renders one chip per group.
+  // S3 — Per-price provider billing periods remain independently observable.
+  // The published rename story is obsolete: synced keys are read-only, and the
+  // public create API has no matching delete operation for isolated cleanup.
   // ==========================================================================
-  test('S3 不同价格配置不同 entitlement_key → 两组 shared-key-chip', async ({
+  test('S3 同产品月付/年付价格保留各自 provider billing period', async ({
     page,
     loginPage,
     demoLogger,
   }) => {
     const mappingsPage = await setupAdminMappingsPage(page, loginPage, demoLogger)
-    const splitKey = `pro-annual-${testStartTime}`
 
     await test.step('Given: 选中多价格产品', async () => {
       await mappingsPage.selectProduct(STRIPE_MULTI_PRO_PRODUCT_ID)
       await expect(mappingsPage.mappingDetailPanel).toBeVisible()
     })
 
-    await test.step('When: 将年付行的 entitlement_key 改为独立值并保存', async () => {
-      await mappingsPage.fillPriceRow(STRIPE_PRO_ANNUAL_PRICE_ID, {
-        entitlementKey: splitKey,
-      })
-      const saveResponse = await Promise.all([
-        page.waitForResponse(
-          (resp) =>
-            resp.url().includes('/api/bill/') &&
-            resp.url().includes('/entitlement-mappings/batch') &&
-            resp.request().method() === 'PUT',
-          { timeout: 15000 },
-        ),
-        mappingsPage.saveChanges(),
-      ])
-      expect([200, 201]).toContain(saveResponse[0].status())
-      await demoLogger.testCode.log(
-        `Renamed annual price entitlement_key to ${splitKey}; batch PUT ${saveResponse[0].status()}`,
+    await test.step('Then: 两个只读 period 不同且 reload 后稳定', async () => {
+      const monthlyPeriod = await mappingsPage.getBillingPeriodValue(STRIPE_PRO_MONTHLY_PRICE_ID)
+      const annualPeriod = await mappingsPage.getBillingPeriodValue(STRIPE_PRO_ANNUAL_PRICE_ID)
+      expect(monthlyPeriod, 'monthly price must expose a provider billing period').toBeTruthy()
+      expect(annualPeriod, 'annual price must expose a provider billing period').toBeTruthy()
+      expect(monthlyPeriod).not.toBe(annualPeriod)
+
+      await page.reload()
+      await mappingsPage.waitForReady()
+      await mappingsPage.waitForDataLoaded()
+      await mappingsPage.selectProduct(STRIPE_MULTI_PRO_PRODUCT_ID)
+      expect(await mappingsPage.getBillingPeriodValue(STRIPE_PRO_MONTHLY_PRICE_ID)).toBe(
+        monthlyPeriod,
       )
-    })
-
-    await test.step('Then: 详情面板同时呈现两组 shared-key-chip', async () => {
-      // Two distinct shared-key chips = two entitlement-key groups under one
-      // product. Persistent structural evidence.
-      await expect(mappingsPage.getSharedKeyChip(STRIPE_MULTI_PRO_SHARED_KEY)).toBeVisible()
-      await expect(mappingsPage.getSharedKeyChip(splitKey)).toBeVisible()
-
-      const chipCount = await mappingsPage.mappingDetailPanel
-        .locator('[data-testid^="shared-key-chip-"]')
-        .count()
-      expect(chipCount, 'product with two distinct keys renders two shared-key chips').toBe(2)
-      await demoLogger.testCode.log(`Two shared-key chips rendered (split key=${splitKey})`)
-    })
-
-    await test.step('Cleanup: 还原共享 key 以保持后续 seed 状态', async () => {
-      // Restore the shared key so subsequent test runs see the seeded shape.
-      await mappingsPage.fillPriceRow(STRIPE_PRO_ANNUAL_PRICE_ID, {
-        entitlementKey: STRIPE_MULTI_PRO_SHARED_KEY,
-      })
-      await Promise.all([
-        page
-          .waitForResponse(
-            (resp) =>
-              resp.url().includes('/api/bill/') &&
-              resp.url().includes('/entitlement-mappings/batch') &&
-              resp.request().method() === 'PUT',
-            { timeout: 15000 },
-          )
-          .catch(() => null),
-        mappingsPage.saveChanges(),
-      ])
-      await demoLogger.testCode.log('Restored shared key after split-key scenario')
+      expect(await mappingsPage.getBillingPeriodValue(STRIPE_PRO_ANNUAL_PRICE_ID)).toBe(
+        annualPeriod,
+      )
+      await demoLogger.testCode.log(`Provider periods persisted: ${monthlyPeriod}/${annualPeriod}`)
     })
   })
 
@@ -399,61 +305,62 @@ test.describe('[Billing Admin] 多价格 Entitlement 映射同步与配置 (US-E
     demoLogger,
   }) => {
     const mappingsPage = await setupAdminMappingsPage(page, loginPage, demoLogger)
+    const apiContext = await createBearerApiContext(loginPage.getAccessToken())
+    try {
+      let singlePriceMappingId: string | null = null
 
-    let singlePriceMappingId: string | null = null
+      await test.step('Given: 通过 API 定位一个单价格产品', async () => {
+        singlePriceMappingId = await findSinglePriceProductId(apiContext, demoLogger)
+        expect(
+          singlePriceMappingId,
+          'seeded catalog must contain at least one single-price product for S4',
+        ).not.toBeNull()
+      })
 
-    await test.step('Given: 通过 API 定位一个单价格产品', async () => {
-      // Query the mappings list and pick a product whose price set has length 1.
-      // The seeded catalog (demo_seed.py) includes several one-time / one-price
-      // rows; we resolve one dynamically rather than hard-coding an id.
-      singlePriceMappingId = await findSinglePriceProductId(page, demoLogger)
-      expect(
-        singlePriceMappingId,
-        'seeded catalog must contain at least one single-price product for S4',
-      ).not.toBeNull()
-    })
+      await test.step('When: 选中该单价格产品', async () => {
+        await mappingsPage.selectProduct(singlePriceMappingId as string)
+        await expect(mappingsPage.mappingDetailPanel).toBeVisible()
+      })
 
-    await test.step('When: 选中该单价格产品', async () => {
-      // selectProduct takes the external product id; the helper resolved one.
-      await mappingsPage.selectProduct(singlePriceMappingId as string)
-      await expect(mappingsPage.mappingDetailPanel).toBeVisible()
-    })
-
-    await test.step('Then: 详情面板恰有一行 price-edit-row', async () => {
-      const rowCount = await mappingsPage.mappingDetailPanel
-        .locator('[data-testid^="price-edit-row-"]')
-        .count()
-      expect(rowCount, 'single-price product renders exactly one price-edit-row').toBe(1)
-      await demoLogger.testCode.log(
-        `Single-price product ${singlePriceMappingId} rendered ${rowCount} price row(s)`,
-      )
-    })
+      await test.step('Then: 详情面板恰有一行 price-edit-row', async () => {
+        const rowCount = await mappingsPage.mappingDetailPanel
+          .locator('[data-testid^="price-edit-row-"]')
+          .count()
+        expect(rowCount, 'single-price product renders exactly one price-edit-row').toBe(1)
+        await demoLogger.testCode.log(
+          `Single-price product ${singlePriceMappingId} rendered ${rowCount} price row(s)`,
+        )
+      })
+    } finally {
+      await apiContext.dispose()
+    }
   })
 
   // ==========================================================================
   // Protected price (US-EM-009 S2 admin surface)
-  // The 409 lock is backend-enforced on save; the client offers only Cancel.
-  // LOUD: deterministic active-subscription seed is unavailable in the demo
-  // environment, so this test drives BOTH the UI path (toggle→save) AND a
-  // direct `page.request.put(.../batch)` whose 409 body is asserted when the
-  // price is protected. Which path produced evidence is logged.
+  // Active-subscription state is not deterministic in this demo environment.
+  // The scenario therefore observes exactly two valid outcomes: 409 with the
+  // protected-price contract, or a successful disable which is persisted and
+  // then restored. Authentication failures are never treated as business state.
   // ==========================================================================
-  test('受保护价格 409 锁：UI/直连 PUT 两种取证路径 (US-EM-009 S2)', async ({
+  test('价格禁用条件观测：有活跃订阅时 409，否则持久禁用并恢复', async ({
     page,
     loginPage,
     demoLogger,
   }) => {
     const mappingsPage = await setupAdminMappingsPage(page, loginPage, demoLogger)
+    const apiContext = await createBearerApiContext(loginPage.getAccessToken())
 
     let protectedMappingId: string | null = null
     let protectedProductExternalId: string | null = null
     let protectedPriceKey: string | null = null
 
+    try {
     await test.step('Given: 解析多价格产品的 mappingId / price key', async () => {
       // Resolve real mapping ids via the GET list (so the direct PUT fallback
       // targets a real row). The seeded multi-price product has two price rows;
       // pick the annual one as the disable candidate.
-      const resolved = await findProtectedPriceCandidate(page, demoLogger, {
+      const resolved = await findProtectedPriceCandidate(apiContext, demoLogger, {
         externalProductId: STRIPE_MULTI_PRO_PRODUCT_ID,
         externalPriceId: STRIPE_PRO_ANNUAL_PRICE_ID,
       })
@@ -466,12 +373,19 @@ test.describe('[Billing Admin] 多价格 Entitlement 映射同步与配置 (US-E
       protectedPriceKey = resolved!.priceKey
     })
 
-    // Path A — UI: toggle off + save. If the price protects an active
-    // subscription, the 409 dialog surfaces (Cancel-only). If not, the save
-    // succeeds and we record that the UI path produced no 409.
-    await test.step('When (Path A UI): 关闭价格 enabled 开关并保存', async () => {
+    await setMappingEnabled(apiContext, {
+      externalProductId: protectedProductExternalId as string,
+      mappingId: protectedMappingId as string,
+      enabled: true,
+    })
+    await page.reload()
+    await mappingsPage.waitForReady()
+    await mappingsPage.waitForDataLoaded()
+
+    await test.step('When: 关闭价格 enabled 开关并保存', async () => {
       await mappingsPage.selectProduct(protectedProductExternalId as string)
       await expect(mappingsPage.mappingDetailPanel).toBeVisible()
+      await expect(mappingsPage.getPriceEnabledToggle(protectedPriceKey as string)).toBeChecked()
       await mappingsPage.togglePriceEnabled(protectedPriceKey as string)
 
       const saveResp = await Promise.all([
@@ -487,10 +401,10 @@ test.describe('[Billing Admin] 多价格 Entitlement 映射同步与配置 (US-E
       const status = saveResp[0].status()
 
       if (status === 409) {
-        await demoLogger.testCode.log(
-          'Path A (UI): batch PUT returned 409 — protected-price dialog expected',
-        )
-        await test.step('Then (Path A 409): 受保护价格对话框仅提供 Cancel', async () => {
+        const body = await saveResp[0].json()
+        expect(body.code, '409 body must identify mapping_in_use').toBe('mapping_in_use')
+        expect(body.activeSubscriptions, '409 must report active subscriptions').toBeGreaterThan(0)
+        await test.step('Then: 409 对话框仅提供 Cancel', async () => {
           await mappingsPage.expectProtectedPriceDialog()
           const activeSubs = await mappingsPage.getProtectedPriceActiveSubs()
           expect(
@@ -507,222 +421,49 @@ test.describe('[Billing Admin] 多价格 Entitlement 映射同步与配置 (US-E
 
           await mappingsPage.cancelProtectedPrice()
           await expect(mappingsPage.protectedPriceConfirmDialog).toBeHidden()
-          await demoLogger.testCode.log(
-            `Path A 409 confirmed: dialog Cancel-only, activeSubs=${activeSubs}`,
-          )
+          await demoLogger.testCode.log(`Protected-price 409 observed; activeSubs=${activeSubs}`)
         })
-      } else {
-        // No active subscription anchors this seeded price → the disable went
-        // through. Path A produced no 409; Path B (direct PUT) is the
-        // authoritative evidence below.
-        await demoLogger.testCode.log(
-          `Path A (UI): batch PUT returned ${status} (not 409) — seeded price has no ` +
-            'active subscription; falling back to Path B direct PUT for 409 contract evidence',
-        )
-        // Re-enable so the row returns to its seeded state.
-        await mappingsPage.togglePriceEnabled(protectedPriceKey as string)
-        await Promise.all([
-          page
-            .waitForResponse(
-              (resp) =>
-                resp.url().includes('/api/bill/') &&
-                resp.url().includes('/entitlement-mappings/batch') &&
-                resp.request().method() === 'PUT',
-              { timeout: 15000 },
-            )
-            .catch(() => null),
-          mappingsPage.saveChanges(),
-        ])
-      }
-    })
-
-    // Path B — Direct PUT fallback: the authoritative contract assertion.
-    // Issues a batch PUT with the protected price's update set to enabled:false.
-    // When the price is protected the body is `{code:"mapping_in_use",
-    // activeSubscriptions}` (≥ 1). When the seeded price has no active
-    // subscription this PUT succeeds (200/201) and we document that no
-    // deterministic active-subscription seed is present in the demo environment
-    // — the 409 contract itself is covered by backend integration tests
-    // (multiple_price_scenarios.rs) and the Path A 409 branch above when it
-    // fires.
-    await test.step('When (Path B direct PUT): 直接 PUT batch 关闭受保护价格', async () => {
-      const resp = await page.request.put(
-        `${BASE_URL}/api/bill/${DEMO_ADMIN.realmId}/entitlement-mappings/batch`,
-        {
-          data: {
-            paymentProvider: MULTI_PRICE_PAYMENT_PROVIDER,
-            externalProductId: protectedProductExternalId,
-            updates: [
-              {
-                mappingId: protectedMappingId,
-                entitlementKey: STRIPE_MULTI_PRO_SHARED_KEY,
-                enabled: false,
-              },
-            ],
-          },
-        },
-      )
-
-      if (resp.status() === 409) {
-        const body = await resp.json()
-        await demoLogger.testCode.log(
-          `Path B direct PUT returned 409: ${JSON.stringify(body)}`,
-        )
-        await test.step('Then (Path B 409): 直连 PUT 返回 mapping_in_use + activeSubscriptions', async () => {
-          expect(
-            body.code,
-            '409 body must carry the structured error code mapping_in_use (BE-D09)',
-          ).toBe('mapping_in_use')
-          expect(
-            body.activeSubscriptions,
-            '409 body must carry activeSubscriptions ≥ 1',
-          ).toBeGreaterThanOrEqual(1)
-          await demoLogger.testCode.log(
-            'PROTECTED-PRICE EVIDENCE: Path B direct PUT 409 (mapping_in_use, ' +
-              `activeSubscriptions=${body.activeSubscriptions})`,
-          )
-        })
-      } else {
-        // The seeded price is not anchored to an active subscription. This is
-        // the expected demo-environment outcome (no deterministic active-sub
-        // seed). Surface it loudly — the 409 contract is asserted in backend
-        // integration tests and in Path A when an active subscription is
-        // present at runtime.
-        await demoLogger.testCode.log(
-          `PROTECTED-PRICE EVIDENCE: Path B direct PUT returned ${resp.status()} ` +
-            '(no active subscription anchors the seeded price in the demo env). ' +
-            '409 mapping_in_use contract is covered by backend integration tests ' +
-            '(multiple_price_scenarios.rs) and the Path A 409 branch when an ' +
-            'active subscription exists at runtime.',
-        )
-        // The PUT succeeded with enabled:false — restore enabled:true so the
-        // seeded row returns to its expected state for downstream tests.
-        await page.request.put(
-          `${BASE_URL}/api/bill/${DEMO_ADMIN.realmId}/entitlement-mappings/batch`,
-          {
-            data: {
-              paymentProvider: MULTI_PRICE_PAYMENT_PROVIDER,
-              externalProductId: protectedProductExternalId,
-              updates: [
-                {
-                  mappingId: protectedMappingId,
-                  entitlementKey: STRIPE_MULTI_PRO_SHARED_KEY,
-                  enabled: true,
-                },
-              ],
-            },
-          },
-        )
-        // Persistent evidence the restore landed: re-open the panel and assert
-        // the toggle reflects enabled. This step's assertion lands on the row
-        // state, not a toast.
-        await expect(
-          mappingsPage.getPriceEnabledToggle(protectedPriceKey as string),
-        ).toBeDefined()
-      }
-    })
-  })
-
-  // ==========================================================================
-  // Webhook-unresolved banner
-  // A mapping with externalProductId set, enabled=true, but billingType=null
-  // AND pointsPerPeriod=null drives the banner (verified in
-  // frontend/src/components/billing/entitlement-mapping-grouping.ts).
-  // The offending row also renders destructive styling (border + required
-  // fields) — we assert the row's stable structural markers, not color alone.
-  // ==========================================================================
-  test('webhook-unresolved 横幅：未配置价格行触发持久告警区', async ({
-    page,
-    loginPage,
-    demoLogger,
-  }) => {
-    const mappingsPage = await setupAdminMappingsPage(page, loginPage, demoLogger)
-
-    await test.step('Given: 通过 batch PUT 插入一个未配置价格行', async () => {
-      // A batch PUT requires an existing mapping row; we rely on the sync
-      // surface to materialize a fresh product, OR — when sync has no test
-      // credentials — fall back to patching a known seeded row. To stay
-      // deterministic we PATCH one of the seeded one-time rows to the
-      // unresolved shape and restore it after the test.
-      const target = await findUnresolvedSeedCandidate(page, demoLogger)
-      expect(
-        target,
-        'must resolve a seed mapping id to drive into the unresolved shape',
-      ).not.toBeNull()
-
-      // Drive the row to the unresolved shape: keep externalProductId + enabled,
-      // clear billingType + pointsPerPeriod. PATCH single-row endpoint preserves
-      // the existing externalProductId; we only null the strategy fields.
-      const patchResp = await page.request.patch(
-        `${BASE_URL}/api/bill/${DEMO_ADMIN.realmId}/entitlement-mappings/${target!.id}`,
-        {
-          data: {
-            entitlementKey: `unresolved-${testStartTime}`,
-            billingType: null,
-            pointsPerPeriod: null,
-            enabled: true,
-          },
-        },
-      )
-      await demoLogger.testCode.log(
-        `PATCH mapping ${target!.id} → unresolved shape: ${patchResp.status()}`,
-      )
-      // Track the original shape for restore.
-      const originalKey = target!.entitlementKey
-      const originalBillingType = target!.billingType ?? null
-      const originalPoints = target!.pointsPerPeriod ?? null
-
-      await test.step('Then: 页面渲染 webhook-price-unresolved-banner', async () => {
-        // Re-navigate so the query cache refetches and the derivation re-runs.
-        await mappingsPage.goto(DEMO_ADMIN.realmId)
+      } else if (status === 200 || status === 201) {
+        await page.reload()
+        await mappingsPage.waitForReady()
         await mappingsPage.waitForDataLoaded()
-        await mappingsPage.expectWebhookUnresolvedBanner()
-        await demoLogger.testCode.log('webhook-price-unresolved-banner is visible')
-        // Select the patched product so the detail panel mounts ITS price rows
-        // (the panel otherwise defaults to the first product group, which may
-        // not be the patched one). Required before asserting row-level styling.
-        await mappingsPage.selectProduct(target!.externalProductId)
-      })
-
-      await test.step('Then: 未配置行渲染破坏性样式 (required Field + border)', async () => {
-        // The offending row carries destructive styling via the `required`
-        // prop on the billingType / pointsPerPeriod Fields AND `border-
-        // destructive` on the inner inputs — structural markers, not color.
-        // We assert via the asterisk-required indicator on the Field label
-        // (the Field component renders a `*` for required fields) plus the
-        // row's `border-destructive` class on its billing-type select trigger.
-        const offendingRow = mappingsPage.mappingDetailPanel.locator(
-          '[data-testid^="price-edit-row-"]',
-        )
-        await expect(offendingRow.first()).toBeVisible()
-        // The billing-type select trigger on the unresolved row carries the
-        // destructive border class — a stable structural marker.
-        await expect(
-          offendingRow
-            .first()
-            .locator('[data-slot="select-trigger"].border-destructive, .border-destructive'),
-        ).toHaveCount(1, { timeout: 5000 })
-        await demoLogger.testCode.log(
-          'Offending row renders destructive border on unresolved required field',
-        )
-      })
-
-      await test.step('Cleanup: 还原 mapping 原始状态', async () => {
-        await page.request.patch(
-          `${BASE_URL}/api/bill/${DEMO_ADMIN.realmId}/entitlement-mappings/${target!.id}`,
-          {
-            data: {
-              entitlementKey: originalKey,
-              billingType: originalBillingType,
-              pointsPerPeriod: originalPoints,
-              enabled: true,
-            },
-          },
-        )
-        await demoLogger.testCode.log(`Restored mapping ${target!.id} after unresolved scenario`)
-      })
+        await mappingsPage.selectProduct(protectedProductExternalId as string)
+        await expect(mappingsPage.getPriceEnabledToggle(protectedPriceKey as string)).not.toBeChecked()
+        await demoLogger.testCode.log(`Unprotected disable persisted with status ${status}`)
+      } else {
+        const body = await saveResp[0].text().catch(() => '<unreadable body>')
+        throw new Error(`Unexpected disable response ${status}: ${body}`)
+      }
     })
+
+    } finally {
+      try {
+        if (await mappingsPage.protectedPriceConfirmDialog.isVisible().catch(() => false)) {
+          await mappingsPage.cancelProtectedPrice()
+        }
+        if (protectedMappingId && protectedProductExternalId && protectedPriceKey) {
+          await setMappingEnabled(apiContext, {
+            externalProductId: protectedProductExternalId,
+            mappingId: protectedMappingId,
+            enabled: true,
+          })
+          await page.reload()
+          await mappingsPage.waitForReady()
+          await mappingsPage.waitForDataLoaded()
+          await mappingsPage.selectProduct(protectedProductExternalId)
+          await expect(mappingsPage.getPriceEnabledToggle(protectedPriceKey)).toBeChecked()
+        }
+      } finally {
+        await apiContext.dispose()
+      }
+    }
   })
+
+  // Webhook-unresolved is a defensive UI state, but current public create
+  // requires billingType and current update DTOs cannot clear it. No truthful,
+  // isolated E2E fixture can therefore be constructed here. The stale scenario
+  // was removed instead of sending unsupported DTO fields. A focused frontend
+  // component regression for this state is still a known coverage gap.
 })
 
 // ============================================================================
@@ -748,27 +489,35 @@ async function setupAdminMappingsPage(
   return mappingsPage
 }
 
-/**
- * Shared GET + parse for the entitlement-mappings list. Returns the validated
- * items array, or null on a non-ok response / non-array body. The three
- * `find*` helpers below iterate this list instead of each re-implementing the
- * fetch + `body.items ?? body` + `Array.isArray` guard.
- */
+interface MappingRecord {
+  id?: string
+  externalProductId?: string
+  externalPriceId?: string
+}
+
+/** Shared authenticated GET. Transport/auth/schema failures are test failures. */
 async function fetchMappingsList(
-  page: import('@playwright/test').Page,
+  apiContext: APIRequestContext,
   demoLogger: UnifiedLogger,
-): Promise<unknown[] | null> {
-  const resp = await page.request.get(
+): Promise<MappingRecord[]> {
+  const resp = await apiContext.get(
     `${BASE_URL}/api/bill/${DEMO_ADMIN.realmId}/entitlement-mappings`,
   )
   if (!resp.ok()) {
-    await demoLogger.testCode.log(`GET entitlement-mappings failed: ${resp.status()}`)
-    return null
+    const body = await resp.text().catch(() => '<unreadable body>')
+    throw new Error(`GET entitlement-mappings failed ${resp.status()}: ${body}`)
   }
-  const body = await resp.json()
-  const items: unknown[] = body.items ?? body
-  if (!Array.isArray(items)) return null
-  return items
+  const body: unknown = await resp.json()
+  const items = Array.isArray(body)
+    ? body
+    : typeof body === 'object' && body !== null && 'items' in body
+      ? (body as { items: unknown }).items
+      : null
+  if (!Array.isArray(items)) {
+    throw new Error('GET entitlement-mappings returned a body without an items array')
+  }
+  await demoLogger.testCode.log(`Fetched ${items.length} entitlement mappings`)
+  return items as MappingRecord[]
 }
 
 /**
@@ -777,11 +526,10 @@ async function fetchMappingsList(
  * master-list row key). Returns null if no single-price product is seeded.
  */
 async function findSinglePriceProductId(
-  page: import('@playwright/test').Page,
+  apiContext: APIRequestContext,
   demoLogger: UnifiedLogger,
 ): Promise<string | null> {
-  const items = await fetchMappingsList(page, demoLogger)
-  if (!items) return null
+  const items = await fetchMappingsList(apiContext, demoLogger)
 
   // Group by externalProductId; find a product with exactly one price.
   const byProduct = new Map<string, number>()
@@ -814,12 +562,11 @@ interface PriceCandidate {
  * mappingId) so the caller's `not.toBeNull()` guard can actually fail.
  */
 async function findProtectedPriceCandidate(
-  page: import('@playwright/test').Page,
+  apiContext: APIRequestContext,
   demoLogger: UnifiedLogger,
   opts: { externalProductId: string; externalPriceId: string },
 ): Promise<PriceCandidate | null> {
-  const items = await fetchMappingsList(page, demoLogger)
-  if (!items) return null
+  const items = await fetchMappingsList(apiContext, demoLogger)
   for (const item of items) {
     const rec = item as {
       id?: string
@@ -847,44 +594,25 @@ async function findProtectedPriceCandidate(
   return null
 }
 
-interface SeedCandidate {
-  id: string
-  externalProductId: string
-  entitlementKey: string
-  billingType: string | null
-  pointsPerPeriod: number | null
-}
-
-/**
- * Locate a seeded mapping row suitable for driving into the webhook-unresolved
- * shape. Prefers a Stripe one-time row (deterministic in the seed); falls back
- * to the first row in the list.
- */
-async function findUnresolvedSeedCandidate(
-  page: import('@playwright/test').Page,
-  demoLogger: UnifiedLogger,
-): Promise<SeedCandidate | null> {
-  const items = await fetchMappingsList(page, demoLogger)
-  if (!items) return null
-  for (const item of items) {
-    const rec = item as {
-      id?: string
-      entitlementKey?: string
-      billingType?: string | null
-      pointsPerPeriod?: number | null
-      externalProductId?: string
-    }
-    if (!rec.id || !rec.externalProductId) continue
-    // Skip the multi-price product (do not perturb the S1-S3 fixture).
-    if (rec.externalProductId === STRIPE_MULTI_PRO_PRODUCT_ID) continue
-    return {
-      id: rec.id,
-      externalProductId: rec.externalProductId,
-      entitlementKey: rec.entitlementKey ?? '',
-      billingType: rec.billingType ?? null,
-      pointsPerPeriod: rec.pointsPerPeriod ?? null,
-    }
+async function setMappingEnabled(
+  apiContext: APIRequestContext,
+  update: { externalProductId: string; mappingId: string; enabled: boolean },
+): Promise<void> {
+  const response = await apiContext.put(
+    `${BASE_URL}/api/bill/${DEMO_ADMIN.realmId}/entitlement-mappings/batch`,
+    {
+      data: {
+        paymentProvider: MULTI_PRICE_PAYMENT_PROVIDER,
+        externalProductId: update.externalProductId,
+        updates: [{ mappingId: update.mappingId, enabled: update.enabled }],
+      },
+    },
+  )
+  if (!response.ok()) {
+    const body = await response.text().catch(() => '<unreadable body>')
+    throw new Error(
+      `Failed to set mapping ${update.mappingId} enabled=${update.enabled}: ` +
+        `${response.status()} ${body}`,
+    )
   }
-  await demoLogger.testCode.log('No seed candidate available for unresolved scenario')
-  return null
 }

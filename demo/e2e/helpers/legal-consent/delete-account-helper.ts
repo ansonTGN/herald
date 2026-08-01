@@ -18,7 +18,7 @@ export class DeleteAccountHelper extends BasePage {
    * Navigate to the user Security page.
    */
   async gotoSecurityPage(realmId: string): Promise<void> {
-    await this.page.goto(`${BASE_URL}/${realmId}/user/security`, {
+    await this.page.goto(`${BASE_URL}/user/security`, {
       waitUntil: 'domcontentloaded',
     })
     await expect(this.page.locator(SELECTORS.security.pageTitle)).toBeVisible({ timeout: 10000 })

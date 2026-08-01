@@ -73,8 +73,10 @@ mod tests {
     ///
     /// Used to exercise the credit-fields-require-points.manage overlay: a
     /// billing-only admin must be allowed to create a non-credit mapping but
-    /// rejected (403) when the body carries `pointsPerPeriod` /
-    /// `grantOnSubscribe` / `validityDays`.
+    /// rejected (403) when the body carries a non-empty `pointRules` array
+    /// (the points config that triggers the points.manage gate; the legacy
+    /// `pointsPerPeriod` / `grantOnSubscribe` / `validityDays` fields were
+    /// removed by the distribution-rules refactor).
     async fn billing_only_session(ctx: &mut MappingCreateContext, email: &str) -> String {
         use herald_core::domain::authorization::principal_types;
 
@@ -269,9 +271,9 @@ mod tests {
     /// Covers: design §4.2.2 (credit fields → 403 without points.manage)
     ///
     /// A user with `billing.manage` but WITHOUT `points.manage` must be
-    /// allowed to create a plain mapping (no credit fields) but rejected
-    /// with 403 when the body carries any of `pointsPerPeriod` /
-    /// `grantOnSubscribe` / `validityDays`.
+    /// allowed to create a plain mapping (no `pointRules`) but rejected
+    /// with 403 when the body carries a non-empty `pointRules` array (the
+    /// points config that triggers the points.manage gate).
     #[test_context(MappingCreateContext)]
     #[tokio::test]
     async fn test_iap_mapping_create_credit_fields_without_points_manage_returns_403(
@@ -301,10 +303,18 @@ mod tests {
             "billing.manage alone must allow a non-credit mapping create"
         );
 
-        // 2. Mapping WITH pointsPerPeriod → 403 (credit field, requires
-        //    points.manage which the billing-only user lacks).
+        // 2. Mapping WITH pointRules → 403 (credit config, requires
+        //    points.manage which the billing-only user lacks). The legacy
+        //    pointsPerPeriod/grantOnSubscribe/validityDays fields were removed;
+        //    points config is now a non-empty `pointRules` array, which is the
+        //    field that triggers the points.manage gate.
         let mut credit_body = apple_create_body(bucket_id, "com.herald.test.credit.monthly");
-        credit_body["pointsPerPeriod"] = json!(100);
+        credit_body["pointRules"] = json!([{
+            "bucketId": bucket_id,
+            "triggerSources": ["subscription_initial"],
+            "grantMode": "fixed",
+            "pointsAmount": 100
+        }]);
         let r_credit = app
             .clone()
             .oneshot(auth_request(
@@ -318,12 +328,17 @@ mod tests {
         assert_eq!(
             r_credit.status(),
             StatusCode::FORBIDDEN,
-            "pointsPerPeriod without points.manage must be 403"
+            "pointRules without points.manage must be 403"
         );
 
-        // 3. Mapping WITH grantOnSubscribe → 403.
+        // 3. Mapping WITH pointRules (quota) → 403.
         let mut grant_body = apple_create_body(bucket_id, "com.herald.test.grant.monthly");
-        grant_body["grantOnSubscribe"] = json!(true);
+        grant_body["pointRules"] = json!([{
+            "bucketId": bucket_id,
+            "triggerSources": ["subscription_renewal"],
+            "grantMode": "quota",
+            "quotaWindows": [{"windowSeconds": 2592000, "limit": 1000, "key": "period"}]
+        }]);
         let r_grant = app
             .clone()
             .oneshot(auth_request(
@@ -337,17 +352,23 @@ mod tests {
         assert_eq!(
             r_grant.status(),
             StatusCode::FORBIDDEN,
-            "grantOnSubscribe without points.manage must be 403"
+            "pointRules without points.manage must be 403"
         );
 
-        // 4. one_time mapping WITH validityDays → 403.
+        // 4. one_time mapping WITH pointRules → 403.
         let validity_body = json!({
             "paymentProvider": "apple",
             "externalProductId": "com.herald.test.validity.onetime",
             "entitlementKey": "credits",
             "bucketId": bucket_id,
             "billingType": "one_time",
-            "validityDays": 30,
+            "pointRules": [{
+                "bucketId": bucket_id,
+                "triggerSources": ["topup"],
+                "grantMode": "fixed",
+                "pointsAmount": 500,
+                "validityDays": 30
+            }],
             "enabled": true,
         });
         let r_validity = app
@@ -362,7 +383,7 @@ mod tests {
         assert_eq!(
             r_validity.status(),
             StatusCode::FORBIDDEN,
-            "validityDays without points.manage must be 403"
+            "pointRules without points.manage must be 403"
         );
     }
 }

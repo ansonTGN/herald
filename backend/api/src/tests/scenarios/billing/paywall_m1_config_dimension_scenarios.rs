@@ -416,10 +416,33 @@ mod tests {
             vec![role_a]
         );
 
-        // Now PUT batch changing a DIFFERENT field and OMITTING grantedRoleIds.
+        // Now PUT batch changing a DIFFERENT field (pointRules) and OMITTING
+        // grantedRoleIds. (`pointsPerPeriod` was removed; points config is now
+        // `pointRules`.) Carry the existing rule's id so the upsert UPDATES the
+        // seeded 100-amount rule rather than creating a second rule.
+        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+            &ctx.app_state.pool,
+            &realm_id,
+        )
+        .await;
+        let existing_rule_id: String = sqlx::query_scalar(
+            "SELECT id::text FROM points_distribution_rules \
+             WHERE entitlement_mapping_id = $1 AND grant_mode = 'fixed' \
+             ORDER BY display_order LIMIT 1",
+        )
+        .bind(mapping_id)
+        .fetch_one(&ctx.app_state.pool)
+        .await
+        .expect("seeded mapping must have one fixed rule to upsert");
         let update_row = json!({
             "mappingId": mapping_id,
-            "pointsPerPeriod": 999,
+            "pointRules": [{
+                "id": existing_rule_id,
+                "bucketId": bucket_id,
+                "triggerSources": ["topup"],
+                "grantMode": "fixed",
+                "pointsAmount": 999
+            }],
         });
         let (status, json) = put_batch_update(
             app.clone(),
@@ -437,10 +460,10 @@ mod tests {
         let db_ids = fetch_mapping_granted_role_ids(ctx, mapping_id).await;
         assert_eq!(db_ids, vec![role_a]);
 
-        // pointsPerPeriod DID change to 999 — proves the other field updated.
+        // The topup rule amount DID change to 999 — proves the other field updated.
         assert_eq!(fetch_mapping_points(ctx, mapping_id).await, Some(999));
-        // Response reflects the new points too.
-        assert_eq!(json["prices"][0]["pointsPerPeriod"], 999);
+        // Response reflects the new points too (pointRules[0].pointsAmount).
+        assert_eq!(json["prices"][0]["pointRules"][0]["pointsAmount"], 999);
     }
 
     // =========================================================================
@@ -749,11 +772,22 @@ mod tests {
                 .is_empty()
         );
 
-        // PUT batch with grantedRoleIds: [] and pointsPerPeriod: 500.
+        // PUT batch with grantedRoleIds: [] and a topup pointRules grant.
+        // (`pointsPerPeriod` was removed; points config is now `pointRules`.)
+        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+            &ctx.app_state.pool,
+            &realm_id,
+        )
+        .await;
         let update_row = json!({
             "mappingId": mapping_id,
             "grantedRoleIds": [],
-            "pointsPerPeriod": 500,
+            "pointRules": [{
+                "bucketId": bucket_id,
+                "triggerSources": ["topup"],
+                "grantMode": "fixed",
+                "pointsAmount": 500
+            }],
         });
         let (status, _json) = put_batch_update(
             app.clone(),

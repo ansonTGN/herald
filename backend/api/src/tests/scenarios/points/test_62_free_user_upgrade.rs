@@ -60,33 +60,16 @@ async fn test_scenario_free_user_upgrade_preserves_registration_credits(ctx: &mu
     // ============================================================================
     println!("[Step 1] Set up realm config and create free user");
 
-    let free_periodic_quota_windows = json!([
-        {
-            "windowSeconds": 86_400,
-            "limit": 50,
-            "key": "daily"
-        }
-    ]);
-
-    sqlx::query(
-        r#"
-        INSERT INTO realm_default_configs
-            (realm_id, registration_bonus_points, free_periodic_points_amount,
-             free_periodic_validity_days, free_periodic_grant_period_type, free_periodic_quota_windows)
-        VALUES ($1, 1000, 50, 1, 'daily', $2)
-        ON CONFLICT (realm_id) DO UPDATE SET
-            registration_bonus_points = EXCLUDED.registration_bonus_points,
-            free_periodic_points_amount = EXCLUDED.free_periodic_points_amount,
-            free_periodic_validity_days = EXCLUDED.free_periodic_validity_days,
-            free_periodic_grant_period_type = EXCLUDED.free_periodic_grant_period_type,
-            free_periodic_quota_windows = EXCLUDED.free_periodic_quota_windows
-        "#
+    // Realm config: 1000 registration bonus + 50 free-periodic daily quota.
+    crate::tests::helpers::points_helpers::seed_realm_registration_rules(
+        &ctx._app_state.pool,
+        &ctx._realm_id,
+        1000,
+        Some(50),
+        86_400, // daily window
+        1,
     )
-    .bind(&ctx._realm_id)
-    .bind(&free_periodic_quota_windows)
-    .execute(&ctx._app_state.pool)
-    .await
-    .expect("Failed to create realm default config");
+    .await;
 
     // Enable registration for the realm
     sqlx::query(
@@ -190,9 +173,10 @@ async fn test_scenario_free_user_upgrade_preserves_registration_credits(ctx: &mu
     // at the same entitlement_key so the webhook resolves.
     //
     // Distribution-rules model: the grant config (1000 subscription quota over a
-    // 30-day window, granted on subscribe) is a quota distribution rule owned by
-    // this mapping with the `subscription_initial` trigger, seeded to preserve
-    // the test's "paid upgrade grants 1000 subscription_credit" intent.
+    // 30-day window) is a quota distribution rule owned by this mapping with the
+    // `subscription_renewal` trigger, seeded to preserve the test's "paid upgrade
+    // grants 1000 subscription_credit" intent. (Initial activation grants nothing
+    // by design — the webhook is driven as a renewal, the grant-bearing route.)
     let generic_mapping_id = uuid::Uuid::now_v7();
     sqlx::query(
         "INSERT INTO provider_entitlement_mappings
@@ -220,11 +204,11 @@ async fn test_scenario_free_user_upgrade_preserves_registration_credits(ctx: &mu
     .bind(&ctx._realm_id)
     .bind(generic_mapping_id)
     .bind(bucket_id)
-    .bind(&["subscription_initial"][..])
+    .bind(&["subscription_renewal"][..])
     .bind(json!([{"windowSeconds": 2_592_000, "limit": 1000, "key": "period"}]))
     .execute(&ctx._app_state.pool)
     .await
-    .expect("Failed to seed generic mapping subscription_initial quota rule");
+    .expect("Failed to seed generic mapping subscription_renewal quota rule");
 
     // Configure Creem webhook for this realm
     ctx.with_creem_config(
@@ -241,7 +225,7 @@ async fn test_scenario_free_user_upgrade_preserves_registration_credits(ctx: &mu
         event_id.clone(),
         user_id,
         mapping_id,
-        false, // initial subscription
+        true, // renewal — the grant-bearing subscription.paid route
         &ctx._realm_id,
     );
 
@@ -270,16 +254,6 @@ async fn test_scenario_free_user_upgrade_preserves_registration_credits(ctx: &mu
         )
         .await
         .expect("Failed to revoke free-periodic quota entitlement");
-
-    // Disable the free-periodic amount in user config to match the legacy
-    // assertion that periodic grants are not active after upgrade.
-    sqlx::query(
-        "UPDATE user_points_configs SET free_periodic_points_amount = 0 WHERE user_id = $1",
-    )
-    .bind(user_id)
-    .execute(&ctx._app_state.pool)
-    .await
-    .expect("Failed to disable periodic grant amount");
 
     println!("[Step 2] ✓ Free-periodic quota entitlement revoked (upgrade path)");
 
@@ -365,33 +339,16 @@ async fn test_scenario_free_user_downgrade_from_paid(ctx: &mut TestContext) {
     // ============================================================================
     println!("[Step 1] Create paid user with subscription");
 
-    let free_periodic_quota_windows = json!([
-        {
-            "windowSeconds": 86_400,
-            "limit": 50,
-            "key": "daily"
-        }
-    ]);
-
-    sqlx::query(
-        r#"
-        INSERT INTO realm_default_configs
-            (realm_id, registration_bonus_points, free_periodic_points_amount,
-             free_periodic_validity_days, free_periodic_grant_period_type, free_periodic_quota_windows)
-        VALUES ($1, 1000, 50, 1, 'daily', $2)
-        ON CONFLICT (realm_id) DO UPDATE SET
-            registration_bonus_points = EXCLUDED.registration_bonus_points,
-            free_periodic_points_amount = EXCLUDED.free_periodic_points_amount,
-            free_periodic_validity_days = EXCLUDED.free_periodic_validity_days,
-            free_periodic_grant_period_type = EXCLUDED.free_periodic_grant_period_type,
-            free_periodic_quota_windows = EXCLUDED.free_periodic_quota_windows
-        "#
+    // Realm config: 1000 registration bonus + 50 free-periodic daily quota.
+    crate::tests::helpers::points_helpers::seed_realm_registration_rules(
+        &ctx._app_state.pool,
+        &ctx._realm_id,
+        1000,
+        Some(50),
+        86_400, // daily window
+        1,
     )
-    .bind(&ctx._realm_id)
-    .bind(&free_periodic_quota_windows)
-    .execute(&ctx._app_state.pool)
-    .await
-    .expect("Failed to create realm default config");
+    .await;
 
     // Enable registration for the realm
     sqlx::query(
@@ -456,7 +413,8 @@ async fn test_scenario_free_user_downgrade_from_paid(ctx: &mut TestContext) {
     //
     // Distribution-rules model: grant config (1000 subscription quota over a
     // 30-day window) is a quota rule owned by this mapping with the
-    // `subscription_initial` trigger, mirroring the upgrade-scenario seeding.
+    // `subscription_renewal` trigger, mirroring the upgrade-scenario seeding
+    // (initial activation grants nothing; the webhook is driven as a renewal).
     let generic_mapping_id = uuid::Uuid::now_v7();
     sqlx::query(
         "INSERT INTO provider_entitlement_mappings
@@ -484,11 +442,11 @@ async fn test_scenario_free_user_downgrade_from_paid(ctx: &mut TestContext) {
     .bind(&ctx._realm_id)
     .bind(generic_mapping_id)
     .bind(bucket_id)
-    .bind(&["subscription_initial"][..])
+    .bind(&["subscription_renewal"][..])
     .bind(json!([{"windowSeconds": 2_592_000, "limit": 1000, "key": "period"}]))
     .execute(&ctx._app_state.pool)
     .await
-    .expect("Failed to seed generic mapping subscription_initial quota rule");
+    .expect("Failed to seed generic mapping subscription_renewal quota rule");
 
     // Configure Creem webhook for this realm
     ctx.with_creem_config(
@@ -506,7 +464,7 @@ async fn test_scenario_free_user_downgrade_from_paid(ctx: &mut TestContext) {
         event_id.clone(),
         user_id,
         mapping_id,
-        false, // initial subscription
+        true, // renewal — the grant-bearing subscription.paid route
         &ctx._realm_id,
     );
 
@@ -533,14 +491,6 @@ async fn test_scenario_free_user_downgrade_from_paid(ctx: &mut TestContext) {
         )
         .await
         .expect("Failed to revoke free-periodic quota entitlement");
-
-    sqlx::query(
-        "UPDATE user_points_configs SET free_periodic_points_amount = 0 WHERE user_id = $1",
-    )
-    .bind(user_id)
-    .execute(&ctx._app_state.pool)
-    .await
-    .expect("Failed to disable periodic grant amount");
 
     // Verify paid user state (window-quota model: sum active subscription limits).
     let subscription_limit =

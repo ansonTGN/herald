@@ -122,6 +122,12 @@ where
             )
             .await?;
 
+        // CHECK(amount > 0) on `payment_attempts` rejects 0. A mapping without
+        // `provider_product_info.price` resolves to amount=0 (see `resolve_target`);
+        // coerce to the sentinel `1` so the row satisfies the constraint without
+        // fabricating a real price. Mirrors `create_iap_payment_attempt`.
+        let amount = if target.amount > 0 { target.amount } else { 1 };
+
         let (attempt, _) = self
             .payment_attempt_service
             .create_payment_attempt(
@@ -137,7 +143,7 @@ where
                             target.target_id
                         ))
                     })?,
-                    amount: target.amount,
+                    amount,
                     currency: target.currency.clone(),
                     provider_reference: None,
                     metadata: input.metadata,
@@ -359,13 +365,14 @@ where
             .billing_repository
             .find_entitlement_mapping_by_id(target_id)
             .await?
-            .filter(|m| m.realm_id == realm_id && m.payment_provider == payment_provider)
-            .ok_or_else(|| {
-                CoreError::Conflict(format!(
-                    "No entitlement mapping found for provider '{payment_provider}' target '{}' in realm '{}'",
-                    target_id, realm_id
-                ))
-            })?;
+            .ok_or(CoreError::NotFound)?;
+
+        if mapping.realm_id != realm_id || mapping.payment_provider != payment_provider {
+            return Err(CoreError::Conflict(format!(
+                "No entitlement mapping found for provider '{payment_provider}' target '{}' in realm '{}'",
+                target_id, realm_id
+            )));
+        }
 
         if !mapping.enabled {
             return Err(CoreError::Conflict(format!(

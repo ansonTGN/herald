@@ -128,7 +128,7 @@ export async function createEntitlementMappingWithQuotaWindows(
   windows: QuotaWindowFixture[],
 ): Promise<void> {
   await loginAsAdmin(page, { realmId, waitNavigation: true })
-  await page.goto(`/${realmId}/manage/billing/entitlement-mappings`)
+  await page.goto(`/manage/billing/entitlement-mappings`)
   await expect(page.locator(SELECTORS.multiPriceMapping.page)).toBeVisible()
 
   const productRow = page.locator(
@@ -163,7 +163,7 @@ export async function setRealmDefaultFreePeriodicQuota(
   windows: QuotaWindowFixture[],
 ): Promise<void> {
   await loginAsAdmin(page, { realmId, waitNavigation: true })
-  await page.goto(`/${realmId}/manage/points/default-config`)
+  await page.goto(`/manage/points/default-config`)
   await expect(page.locator('[data-testid="points-default-config-form"]')).toBeVisible()
 
   const prefix = 'realm-default-window'

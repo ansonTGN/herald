@@ -7,7 +7,7 @@
  * @see ../../../spec/demo/e2e-testing.md#page-object-model-pom-规范
  */
 
-import { Page, Locator, expect } from '@playwright/test'
+import { Page, Locator, expect, type Response } from '@playwright/test'
 import { SELECTORS } from '../selectors'
 import { BasePage } from './base-page'
 import type { UnifiedLogger } from '../helpers/unified-logger'
@@ -51,6 +51,7 @@ export class RolesPage extends BasePage {
   readonly descriptionInput: Locator // Alias for edit mode
 
   private createdRoles: string[] = [] // Track created roles for cleanup
+  private realmId = 'admin'
 
   constructor(page: Page, logger?: UnifiedLogger) {
     super(page)
@@ -103,6 +104,7 @@ export class RolesPage extends BasePage {
    * @param realmId Realm ID (defaults to 'admin' for backward compatibility)
    */
   async goto(realmId: string = 'admin'): Promise<void> {
+    this.realmId = realmId
     // 等待权限加载完成（/api/user/roles 请求）
     // 这确保侧边栏菜单在权限加载后才显示子菜单项
     await this.page.waitForResponse(
@@ -451,11 +453,66 @@ export class RolesPage extends BasePage {
 
     // Use starts-with selector to match buttons with any ID suffix
     const permissionsButton = row.locator('[data-testid^="role-permissions-button-"]').first()
-    await this.smartClick(permissionsButton)
+    const buttonTestId = await permissionsButton.getAttribute('data-testid')
+    const roleId = buttonTestId?.replace(/^role-permissions-button-/, '')
+    if (!roleId) throw new Error(`Could not resolve role id for "${name}"`)
 
-    // Wait for permissions dialog to open
-    const dialog = this.page.locator('[data-testid="role-permissions-dialog"], [role="dialog"]')
-    await expect(dialog).toBeVisible()
+    const allPermissionsPath = `/api/permission/${this.realmId}/define`
+    const rolePermissionsPath =
+      `/api/roles/${this.realmId}/define/${roleId}/permissions`
+    const matchesGet = (response: Response, path: string) =>
+      response.request().method() === 'GET' && new URL(response.url()).pathname === path
+    let allPermissionsRequested = false
+    let rolePermissionsRequested = false
+    const onRequest = (request: import('@playwright/test').Request) => {
+      if (request.method() !== 'GET') return
+      const path = new URL(request.url()).pathname
+      if (path === allPermissionsPath) allPermissionsRequested = true
+      if (path === rolePermissionsPath) rolePermissionsRequested = true
+    }
+    this.page.on('request', onRequest)
+    const allPermissionsResponse = this.page
+      .waitForResponse((response) => matchesGet(response, allPermissionsPath), { timeout: 10000 })
+      .catch(() => null)
+    const rolePermissionsResponse = this.page
+      .waitForResponse((response) => matchesGet(response, rolePermissionsPath), { timeout: 10000 })
+      .catch(() => null)
+
+    let loadedRolePermissions: Response | null = null
+    try {
+      await this.smartClick(permissionsButton)
+
+      const dialog = this.page.locator('[data-testid="role-permissions-dialog"]')
+      await expect(dialog).toBeVisible()
+
+      const pendingResponses: Promise<Response | null>[] = []
+      if (allPermissionsRequested) pendingResponses.push(allPermissionsResponse)
+      if (rolePermissionsRequested) pendingResponses.push(rolePermissionsResponse)
+      const responses = await Promise.all(pendingResponses)
+      for (const response of responses) {
+        if (!response) throw new Error(`Timed out loading permissions for role "${name}"`)
+        if (!response.ok()) {
+          throw new Error(
+            `Failed to load permissions for role "${name}": ${response.status()} ${await response.text()}`,
+          )
+        }
+        if (matchesGet(response, rolePermissionsPath)) loadedRolePermissions = response
+      }
+
+      await expect(dialog.locator('[data-testid="permission-checkbox-list"]')).toBeVisible()
+      if (loadedRolePermissions) {
+        const body = await loadedRolePermissions.json()
+        const raw = Array.isArray(body) ? body : body.data ?? body.items ?? []
+        const assigned: { id?: string }[] = Array.isArray(raw) ? raw : []
+        for (const permission of assigned) {
+          if (permission.id) {
+            await expect(this.getPermissionCheckboxById(permission.id)).toBeChecked()
+          }
+        }
+      }
+    } finally {
+      this.page.off('request', onRequest)
+    }
   }
 
   /**
@@ -512,6 +569,7 @@ export class RolesPage extends BasePage {
    */
   async isPermissionChecked(permissionName: string): Promise<boolean> {
     const checkbox = this.getPermissionCheckboxByName(permissionName)
+    await expect(checkbox).toBeVisible({ timeout: 10000 })
     return await checkbox.isChecked()
   }
 

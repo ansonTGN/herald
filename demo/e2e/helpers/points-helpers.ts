@@ -204,7 +204,7 @@ export async function getTransactionInfo(
 }
 
 export async function navigateToPointsUser(page: Page, realmId: string): Promise<void> {
-  await page.goto(`/${realmId}/user/points`)
+  await page.goto(`/user/points`)
   await expect(page.locator(SELECTORS.pointsUser.page)).toBeVisible()
 }
 
@@ -265,9 +265,9 @@ export async function exportTransactionHistory(page: Page): Promise<void> {
 }
 
 export const POINTS_ROUTES = {
-  DEFAULT_CONFIG: (realmId: string) => `/${realmId}/manage/points/default-config`,
-  FREE_USERS: (realmId: string) => `/${realmId}/manage/points/free-users`,
-  USER_POINTS: (realmId: string) => `/${realmId}/user/points`,
+  DEFAULT_CONFIG: (realmId: string) => `/manage/points/default-config`,
+  FREE_USERS: (realmId: string) => `/manage/points/free-users`,
+  USER_POINTS: (realmId: string) => `/user/points`,
   REGISTER: (realmId: string) => `/${realmId}/auth/register`,
 } as const
 

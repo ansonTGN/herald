@@ -1,9 +1,9 @@
 import { createFileRoute, Outlet } from '@tanstack/react-router'
-import { requireFeature } from '@/data/query-options'
+import { requireUserFeature } from '@/data/query-options'
 
 export const Route = createFileRoute('/$realmId/user/invoices')({
   beforeLoad: ({ context, params }) =>
-    requireFeature(context.queryClient, params.realmId, (f) => f.user.invoicesVisible, {
+    requireUserFeature(context.queryClient, (f) => f.user.invoicesVisible, {
       to: '/$realmId/user/profile',
       params: { realmId: params.realmId },
     }),

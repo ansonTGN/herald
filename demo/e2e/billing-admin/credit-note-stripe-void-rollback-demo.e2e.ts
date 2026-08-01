@@ -32,7 +32,6 @@ import {
 } from './helpers/credit-note-webhook-helpers'
 
 const POSTGRES_CONTAINER = 'cas-demo-postgres'
-const DEMO_ADMIN_STRIPE_WEBHOOK_SECRET = 'whsec_demo_admin_points_package'
 
 /**
  * Query the UUID of a local Stripe credit note by its external Stripe id.
@@ -119,7 +118,6 @@ test.describe('[Billing Admin] Stripe Credit Note Void Rollback Demo Tests', () 
         request,
         DEMO_ADMIN.realmId,
         payload,
-        DEMO_ADMIN_STRIPE_WEBHOOK_SECRET,
       )
       expect(result.status, `credit_note.created webhook failed: ${result.body}`).toBe(200)
     })
@@ -138,7 +136,7 @@ test.describe('[Billing Admin] Stripe Credit Note Void Rollback Demo Tests', () 
     })
 
     await test.step('And: refund chip is visible in the admin table', async () => {
-      await verifyRefundChipInAdminTable(page, invoiceNumber)
+      await verifyRefundChipInAdminTable(page, DEMO_ADMIN.realmId, invoiceNumber)
     })
 
     await test.step('When: deliver credit_note.voided webhook for the same credit note', async () => {
@@ -152,7 +150,6 @@ test.describe('[Billing Admin] Stripe Credit Note Void Rollback Demo Tests', () 
         request,
         DEMO_ADMIN.realmId,
         payload,
-        DEMO_ADMIN_STRIPE_WEBHOOK_SECRET,
       )
       expect(result.status, `credit_note.voided webhook failed: ${result.body}`).toBe(200)
     })

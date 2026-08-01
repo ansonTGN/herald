@@ -2,7 +2,7 @@
  * Credit Bucket — User Balance + Transaction History (US-CB-005/006)
  *
  * Role: regular-user (the seeded demo points user `user@realm-001.com` in
- * realm-001). Navigates to `/${realmId}/user/points`.
+ * realm-001). Navigates to `/user/points`.
  *
  * User Stories (docs/user-stories/billing/credit-bucket.md):
  * - US-CB-005 场景1 — user holds ≥2 bucket wallets → one balance card per

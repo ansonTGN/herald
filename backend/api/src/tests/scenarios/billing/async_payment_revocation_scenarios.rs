@@ -142,38 +142,39 @@ mod tests {
         amount: i64,
         source_id: &str,
     ) {
+        use herald_core::domain::points::entities::{CreditType, QuotaSourceType};
+
+        // `source_id` is the subscription UUID (possibly embedded in a
+        // "...:subscription_id" string). The revoke path matches entitlements by
+        // `source_id = subscription_id`, so seed via the attributed helper that
+        // builds the full rule + distribution_event + entitlement chain with
+        // `source_id = subscription_id` (an unattributed row is silently skipped
+        // by `revoke_distribution_source_atomic`).
+        let subscription_id = source_id
+            .rsplit(':')
+            .next()
+            .filter(|part| Uuid::parse_str(part).is_ok())
+            .map(|s| Uuid::parse_str(s).expect("subscription id"))
+            .expect("create_subscription_credit_with_ledger needs a subscription UUID source_id");
         let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
             &ctx.app_state.pool,
             realm_id,
         )
         .await;
-        let entitlement_source_id = source_id
-            .rsplit(':')
-            .next()
-            .filter(|part| Uuid::parse_str(part).is_ok())
-            .unwrap_or(source_id);
-        let quota_windows = crate::tests::helpers::points_helpers::quota_windows_jsonb(&[(
-            2_592_000, amount, "period",
-        )]);
-
-        sqlx::query(
-            "INSERT INTO points_quota_entitlements
-                (id, user_id, realm_id, bucket_id, credit_type, source_type, source_id,
-                 quota_windows, effective_from, effective_until, status, idempotency_key,
-                 created_at, updated_at)
-             VALUES ($1, $2, $3, $4, 'subscription_credit', 'subscription_initial', $5,
-                     $6, NOW(), NOW() + INTERVAL '30 days', 'active', $7, NOW(), NOW())",
+        let now = chrono::Utc::now();
+        crate::tests::helpers::points_helpers::seed_attributed_subscription_quota(
+            ctx,
+            realm_id,
+            user_id,
+            subscription_id,
+            bucket_id,
+            CreditType::SubscriptionCredit,
+            QuotaSourceType::SubscriptionInitial,
+            &[(2_592_000, amount, "period")],
+            now,
+            Some(now + chrono::Duration::days(30)),
         )
-        .bind(Uuid::now_v7())
-        .bind(user_id)
-        .bind(realm_id)
-        .bind(bucket_id)
-        .bind(entitlement_source_id)
-        .bind(quota_windows)
-        .bind(format!("test-sub-entitlement:{}", entitlement_source_id))
-        .execute(&ctx.app_state.pool)
-        .await
-        .expect("Failed to create subscription quota entitlement");
+        .await;
 
         sqlx::query(
             "UPDATE points_wallets

@@ -809,7 +809,7 @@ test.describe('Realm Management - US-AR-001 to US-AR-005', () => {
       demoLogger.testCode.log('Verifying new realm RBAC configuration')
 
       // Navigate to roles page to verify default roles
-      await page.goto(`/${realmId}/manage/roles`)
+      await page.goto(`/manage/roles`)
 
       // Verify roles page is accessible
       await expect(page.locator(SELECTORS.roles.container)).toBeVisible()

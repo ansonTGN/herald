@@ -95,6 +95,7 @@ import {
 } from '@playwright/test'
 
 import { SELECTORS } from '../selectors'
+import { createBearerApiContext } from '../helpers/auth'
 import { verifyTestEnvironment } from '../helpers/environment-setup'
 import { LoginPage } from '../pages/login-page'
 import { EntitlementMappingsPage } from '../pages/entitlement-mappings-page'
@@ -106,6 +107,10 @@ import {
   type ApiKeyWithPermission,
 } from '../helpers/grant-points-helpers'
 import { fulfillPayment } from '../helpers/payment-simulation'
+import {
+  initiateMultiPriceCheckout,
+  selectPriceCard,
+} from '../helpers/multi-price-purchase.helpers'
 import {
   buildStripeSubscriptionDeletedPayload,
   buildStripeChargeRefundedPayload,
@@ -170,6 +175,7 @@ test.beforeAll(async ({ browser }) => {
   const adminContext = await browser.newContext()
   const adminPage = await adminContext.newPage()
   const adminLogger = new UnifiedLogger(adminPage, 'DE-D02 support-paywall-revoke beforeAll')
+  let apiContext: APIRequestContext | undefined
 
   try {
     // 1. Verify the demo environment.
@@ -181,6 +187,7 @@ test.beforeAll(async ({ browser }) => {
     // 2. Login as the realm-001 admin.
     const loginPage = new LoginPage(adminPage, adminLogger)
     await loginPage.loginAsAdmin(REALM_ADMIN_EMAIL, REALM_ADMIN_PASSWORD, TEST_REALM)
+    apiContext = await createBearerApiContext(loginPage.getAccessToken())
 
     // 3. Ensure the granted role exists and bind the seeded permission to it.
     const rolesPage = new RolesPage(adminPage, adminLogger)
@@ -194,10 +201,14 @@ test.beforeAll(async ({ browser }) => {
     // Bind the builtin `billing.view` permission to the role so the revoke is
     // observable via /api/ext/permission/check (allowed flips false on revoke).
     await rolesPage.clickPermissionsButton(TEST_ROLE_NAME)
-    await rolesPage.setPermission(BOUND_PERMISSION_NAME, true)
-    await rolesPage.savePermissions()
+    if (await rolesPage.isPermissionChecked(BOUND_PERMISSION_NAME)) {
+      await rolesPage.cancelPermissions()
+    } else {
+      await rolesPage.setPermission(BOUND_PERMISSION_NAME, true)
+      await rolesPage.savePermissions()
+    }
 
-    const roleId = await findRoleIdByName(adminPage, TEST_REALM, TEST_ROLE_NAME)
+    const roleId = await findRoleIdByName(apiContext, TEST_REALM, TEST_ROLE_NAME)
     if (!roleId) {
       throw new Error(
         `[DE-D02 beforeAll] could not resolve roleId for ${TEST_ROLE_NAME} after create`,
@@ -229,7 +240,7 @@ test.beforeAll(async ({ browser }) => {
       ? 'one_time'
       : 'recurring'
 
-    const mappingId = await resolveMappingId(adminPage, TEST_REALM, priceKey)
+    const mappingId = await resolveMappingId(apiContext, TEST_REALM, priceKey)
 
     // Grant the role on this mapping and persist.
     await mappingsPage.selectGrantedRoles(priceKey, [roleId])
@@ -238,7 +249,7 @@ test.beforeAll(async ({ browser }) => {
     // 5. Resolve the demo regular user's UUID (needed for the manual-grant PUT
     //    and the admin GET user-roles assertion). Listed via the admin users
     //    endpoint with an email filter.
-    const userId = await resolveUserIdByEmail(adminPage, TEST_REALM, REGULAR_USER_EMAIL)
+    const userId = await resolveUserIdByEmail(apiContext, TEST_REALM, REGULAR_USER_EMAIL)
     if (!userId) {
       throw new Error(
         `[DE-D02 beforeAll] could not resolve userId for ${REGULAR_USER_EMAIL}`,
@@ -247,13 +258,14 @@ test.beforeAll(async ({ browser }) => {
 
     // 6. Mint a third-party RBAC api key bound to the realm's admin-api-client
     //    so /permission/check is unscoped (see DE-D01 rationale).
-    const adminApiAppId = await resolveClientAppId(adminPage, TEST_REALM, ADMIN_API_CLIENT_ID)
+    const adminApiAppId = await resolveClientAppId(apiContext, TEST_REALM, ADMIN_API_CLIENT_ID)
     const apiKey = await createTestApiKeyWithPermission(
       adminPage,
       BOUND_PERMISSION_NAME,
       Date.now(),
       TEST_REALM,
       adminApiAppId,
+      apiContext,
     )
 
     setupCtx = {
@@ -265,6 +277,7 @@ test.beforeAll(async ({ browser }) => {
       userId,
     }
   } finally {
+    await apiContext?.dispose()
     await adminContext.close()
   }
 })
@@ -289,18 +302,19 @@ test.describe('[Billing Admin] Support Paywall — subscription role revoke (US-
 
   test('US-PW-005 场景1: 订阅取消 webhook 撤销支付来源 role（幂等，手工授予保留）', async ({
     page,
+    loginPage,
     request,
     browser,
   }) => {
     expect(setupCtx, 'beforeAll must have configured the grant mapping').not.toBeNull()
-    const { apiKey, roleId, userId } = setupCtx!
+    const { apiKey, roleId, userId, mappingId, priceKey, billingType } = setupCtx!
 
     // ============================================================
     // Sub-flow A — payment-sourced revoke + idempotent redelivery
     // (payment-only arrangement: no manual grant, so allowed flips false)
     // ============================================================
 
-    const sessionToken = await readSessionToken(page)
+    const sessionToken = loginPage.getAccessToken()
 
     let attemptId = ''
     let externalSubId = ''
@@ -348,7 +362,11 @@ test.describe('[Billing Admin] Support Paywall — subscription role revoke (US-
     })
 
     await test.step('When: 购买 recurring+role 订阅，用户被授予支付来源 role', async () => {
-      attemptId = await purchaseFirstMappingInline(page, TEST_REALM)
+      attemptId = await purchaseFirstMappingInline(page, TEST_REALM, {
+        mappingId,
+        priceKey,
+        billingType,
+      })
       expect(attemptId, 'payment attempt must be created').toBeTruthy()
 
       const result = await fulfillPayment(request, TEST_REALM, attemptId)
@@ -376,7 +394,7 @@ test.describe('[Billing Admin] Support Paywall — subscription role revoke (US-
         apiKey: apiKey.apiKey,
         method: 'POST',
         path: '/permission/check',
-        body: { sessionToken, rules: [CHECK_RULE] },
+        body: { accessToken: sessionToken, rules: [CHECK_RULE] },
       })
       expect(status, 'permission/check must respond 200 post-purchase').toBe(200)
       const resp = body as { allowed?: boolean }
@@ -534,13 +552,14 @@ test.describe('[Billing Admin] Support Paywall — subscription role revoke (US-
 
   test('US-PW-005 场景2: 退款 charge.refunded webhook 撤销支付来源 role', async ({
     page,
+    loginPage,
     request,
     browser,
   }) => {
     expect(setupCtx, 'beforeAll must have configured the grant mapping').not.toBeNull()
-    const { apiKey, roleId, userId } = setupCtx!
+    const { apiKey, roleId, userId, mappingId, priceKey, billingType } = setupCtx!
 
-    const sessionToken = await readSessionToken(page)
+    const sessionToken = loginPage.getAccessToken()
 
     let attemptId = ''
     let internalSubId = ''
@@ -574,7 +593,11 @@ test.describe('[Billing Admin] Support Paywall — subscription role revoke (US-
     })
 
     await test.step('When: 购买 recurring+role 订阅并解析内部 subscription UUID', async () => {
-      attemptId = await purchaseFirstMappingInline(page, TEST_REALM)
+      attemptId = await purchaseFirstMappingInline(page, TEST_REALM, {
+        mappingId,
+        priceKey,
+        billingType,
+      })
       expect(attemptId, 'payment attempt must be created').toBeTruthy()
 
       // Fulfill via the internal endpoint AND capture the internal subscription
@@ -601,7 +624,7 @@ test.describe('[Billing Admin] Support Paywall — subscription role revoke (US-
         apiKey: apiKey.apiKey,
         method: 'POST',
         path: '/permission/check',
-        body: { sessionToken, rules: [CHECK_RULE] },
+        body: { accessToken: sessionToken, rules: [CHECK_RULE] },
       })
       expect(status, 'permission/check must respond 200 post-purchase').toBe(200)
       const resp = body as { allowed?: boolean }
@@ -641,10 +664,11 @@ test.describe('[Billing Admin] Support Paywall — subscription role revoke (US-
 
   test('US-PW-005 场景4 对照: 一次性永久权益不被 cancel/refund webhook 撤销', async ({
     page,
+    loginPage,
     request,
   }) => {
     expect(setupCtx, 'beforeAll must have configured the grant mapping').not.toBeNull()
-    const { apiKey, userId, billingType } = setupCtx!
+    const { apiKey, userId, billingType, mappingId, priceKey } = setupCtx!
 
     // 场景4 control: a one_time+role permanent grant is NOT revoked by a
     // cancel/refund webhook. This requires a one_time+role mapping. Per DE-D01,
@@ -671,8 +695,12 @@ test.describe('[Billing Admin] Support Paywall — subscription role revoke (US-
 
     // A one_time+role mapping is configured. Establish the permanent grant,
     // then deliver a cancel webhook and assert the one_time role is NOT revoked.
-    const sessionToken = await readSessionToken(page)
-    const attemptId = await purchaseFirstMappingInline(page, TEST_REALM)
+    const sessionToken = loginPage.getAccessToken()
+    const attemptId = await purchaseFirstMappingInline(page, TEST_REALM, {
+      mappingId,
+      priceKey,
+      billingType,
+    })
     const result = await fulfillPayment(request, TEST_REALM, attemptId)
     expect(result.success, 'one_time purchase must fulfill').toBe(true)
     await expect(page.locator(SELECTORS.purchasePoints.stepComplete)).toBeVisible({
@@ -716,16 +744,6 @@ test.describe('[Billing Admin] Support Paywall — subscription role revoke (US-
 // Local helpers
 // ============================================================================
 
-/** Read the user's session token from the X-Auth cookie. */
-async function readSessionToken(page: Page): Promise<string> {
-  const cookies = await page.context().cookies()
-  const auth = cookies.find((c) => c.name === 'X-Auth')
-  if (!auth || !auth.value) {
-    throw new Error('[DE-D02] X-Auth session cookie missing — user not logged in')
-  }
-  return auth.value
-}
-
 /** Backend base URL for direct API calls (port 8080). */
 function backendBaseUrl(): string {
   return (
@@ -742,7 +760,7 @@ function backendBaseUrl(): string {
  */
 async function pollPermissionAllowed(
   apiKey: string,
-  sessionToken: string,
+  accessToken: string,
   rule: { resource: string; action: string },
   expected: boolean,
   timeoutMs = 8000,
@@ -754,7 +772,7 @@ async function pollPermissionAllowed(
       apiKey,
       method: 'POST',
       path: '/permission/check',
-      body: { sessionToken, rules: [rule] },
+      body: { accessToken, rules: [rule] },
     })
     if (status === 200) {
       lastAllowed = (body as { allowed?: boolean }).allowed
@@ -765,51 +783,60 @@ async function pollPermissionAllowed(
   return lastAllowed ?? false
 }
 
-/**
- * Drive the inline purchase flow for the FIRST purchasable price card (mirrors
- * DE-D01's purchaseFirstMappingInline). Returns the payment attempt id.
- */
-async function purchaseFirstMappingInline(page: Page, realmId: string): Promise<string> {
+/** Drive checkout for the mapping configured by beforeAll. */
+async function purchaseFirstMappingInline(
+  page: Page,
+  realmId: string,
+  mapping: Pick<SetupContext, 'mappingId' | 'priceKey' | 'billingType'>,
+): Promise<string> {
   await page.evaluate(() => localStorage.removeItem('cas-purchase-flow'))
-  await page.goto(`/${realmId}/user/purchase-points`)
+  await page.goto(`/user/purchase-points`)
   await expect(page.locator(SELECTORS.purchasePoints.page)).toBeVisible()
 
-  const cards = page
-    .locator(
-      `${SELECTORS.purchasePriceCard.priceGrid('month')}, ${SELECTORS.purchasePriceCard.creditPacksGrid}`,
-    )
-    .locator('[data-testid^="purchase-price-card-"]')
-  await expect(cards.first()).toBeVisible({ timeout: 10000 })
-
-  const cardCount = await cards.count()
-  let clicked = false
-  for (let i = 0; i < cardCount; i++) {
-    const card = cards.nth(i)
-    const testid = (await card.getAttribute('data-testid')) ?? ''
-    if (testid.endsWith('-reason')) continue
-    const reason = card.locator(`[data-testid="${testid}-reason"]`)
-    if ((await reason.count()) > 0) continue
-    await card.click()
-    clicked = true
-    break
-  }
-  expect(clicked, 'a purchasable price card must exist').toBe(true)
-
-  await expect(page.locator(SELECTORS.purchasePoints.nextButton)).toBeEnabled()
-  await page.locator(SELECTORS.purchasePriceCard.nextButton).click()
-  await expect(page.locator(SELECTORS.purchasePoints.stepPayment)).toBeVisible()
-
-  await page.locator(SELECTORS.paymentMethodSelector.select('stripe')).click()
+  const gridSelector = mapping.billingType === 'one_time'
+    ? SELECTORS.purchasePriceCard.creditPacksGrid
+    : SELECTORS.purchasePriceCard.subscriptionsGrid
+  const card = page
+    .locator(gridSelector)
+    .locator(SELECTORS.purchasePriceCard.priceCard(mapping.priceKey))
   await expect(
-    page.locator(SELECTORS.paymentMethodSelector.selected('stripe')),
-  ).toBeVisible()
+    card,
+    `configured ${mapping.billingType} mapping card ${mapping.priceKey} must be visible`,
+  ).toBeVisible({ timeout: 10000 })
+
+  const disabledReason = card.locator(
+    SELECTORS.purchasePriceCard.priceCardReason(mapping.priceKey),
+  )
+  if (await disabledReason.isVisible().catch(() => false)) {
+    const reason = (await disabledReason.textContent())?.trim() || 'unknown reason'
+    throw new Error(
+      `[DE-D02] configured ${mapping.billingType} mapping ${mapping.mappingId} is not purchasable: ${reason}`,
+    )
+  }
+
+  await selectPriceCard(page, mapping.priceKey)
   await expect(page.locator(SELECTORS.purchasePoints.nextButton)).toBeEnabled()
-  await page.locator(SELECTORS.purchasePriceCard.nextButton).click()
-
-  await expect(page.locator(SELECTORS.purchasePoints.stepProcessing)).toBeVisible({
-    timeout: 10000,
+  const checkoutResponse = await initiateMultiPriceCheckout(page, {
+    mappingId: mapping.mappingId,
+    paymentProvider: 'stripe',
   })
+  if (!checkoutResponse.ok()) {
+    const body = await checkoutResponse.text().catch(() => 'Unable to read response body')
+    let bodyRequestId: string | undefined
+    try {
+      const parsed = JSON.parse(body) as { requestId?: string; request_id?: string }
+      bodyRequestId = parsed.requestId ?? parsed.request_id
+    } catch {
+      // A non-JSON error body is still included verbatim below.
+    }
+    const requestId = checkoutResponse.headers()['x-request-id'] ?? bodyRequestId
+    throw new Error(
+      `[DE-D02] checkout failed: status=${checkoutResponse.status()} requestId=${requestId ?? 'unavailable'} body=${body}`,
+    )
+  }
 
+  await page.goto(`/user/purchase-points`)
+  await expect(page.locator(SELECTORS.purchasePoints.page)).toBeVisible()
   return extractAttemptId(page)
 }
 
@@ -830,14 +857,16 @@ async function extractAttemptId(page: Page): Promise<string> {
 
 /** Resolve a role id by name via the backend role-definitions API. */
 async function findRoleIdByName(
-  page: Page,
+  request: APIRequestContext,
   realmId: string,
   roleName: string,
 ): Promise<string | null> {
-  const resp = await page
-    .context()
-    .request.get(`${backendBaseUrl()}/api/roles/${realmId}/define`)
-  if (!resp.ok()) return null
+  const resp = await request.get(`${backendBaseUrl()}/api/roles/${realmId}/define`)
+  if (!resp.ok()) {
+    throw new Error(
+      `could not list roles in ${realmId}: ${resp.status()} ${await resp.text()}`,
+    )
+  }
   const body = await resp.json()
   const roles: { id: string; name: string }[] = Array.isArray(body) ? body : body.items ?? []
   const hit = roles.find((r) => r.name === roleName)
@@ -846,15 +875,15 @@ async function findRoleIdByName(
 
 /** Resolve the client-app UUID for a given client_id in a realm (mirrors DE-D01). */
 async function resolveClientAppId(
-  page: Page,
+  request: APIRequestContext,
   realmId: string,
   clientId: string,
 ): Promise<string> {
-  const resp = await page
-    .context()
-    .request.get(`${backendBaseUrl()}/api/client/${realmId}`)
+  const resp = await request.get(`${backendBaseUrl()}/api/client/${realmId}`)
   if (!resp.ok()) {
-    throw new Error(`could not list client apps in ${realmId}: ${resp.status()}`)
+    throw new Error(
+      `could not list client apps in ${realmId}: ${resp.status()} ${await resp.text()}`,
+    )
   }
   const body = await resp.json()
   const raw: unknown = Array.isArray(body)
@@ -875,47 +904,63 @@ async function resolveClientAppId(
 
 /** Resolve the mappingId for a priceKey (mirrors DE-D01's resolveMappingId). */
 async function resolveMappingId(
-  page: Page,
+  request: APIRequestContext,
   realmId: string,
   priceKey: string,
 ): Promise<string> {
-  const direct = await page
-    .context()
-    .request.get(
-      `${backendBaseUrl()}/api/bill/${realmId}/entitlement-mappings/${priceKey}`,
-    )
-    .catch(() => null)
-  if (direct && direct.ok()) {
+  const direct = await request.get(
+    `${backendBaseUrl()}/api/bill/${realmId}/entitlement-mappings/${priceKey}`,
+  )
+  if (direct.ok()) {
     return priceKey
   }
-  const list = await page
-    .context()
-    .request.get(`${backendBaseUrl()}/api/bill/${realmId}/entitlement-mappings`)
-  if (list.ok()) {
-    const body = await list.json()
-    const items: {
-      id: string
-      externalPriceId?: string | null
-      external_product_id?: string
-    }[] = Array.isArray(body) ? body : body.items ?? []
-    const hit = items.find(
-      (m) => m.externalPriceId === priceKey || m.external_product_id === priceKey,
+  if (![400, 404].includes(direct.status())) {
+    throw new Error(
+      `could not resolve mapping ${priceKey} in ${realmId}: ${direct.status()} ${await direct.text()}`,
     )
-    if (hit) return hit.id
   }
-  return priceKey
+  const list = await request.get(`${backendBaseUrl()}/api/bill/${realmId}/entitlement-mappings`)
+  if (!list.ok()) {
+    throw new Error(
+      `could not list mappings in ${realmId}: ${list.status()} ${await list.text()}`,
+    )
+  }
+  const body = await list.json()
+  const items: {
+    id: string
+    externalPriceId?: string | null
+    external_price_id?: string | null
+    externalProductId?: string
+    external_product_id?: string
+  }[] = Array.isArray(body) ? body : body.items ?? []
+  const hit = items.find(
+    (m) =>
+      m.id === priceKey ||
+      m.externalPriceId === priceKey ||
+      m.external_price_id === priceKey ||
+      m.externalProductId === priceKey ||
+      m.external_product_id === priceKey,
+  )
+  if (!hit) {
+    throw new Error(`mapping ${priceKey} not found in ${realmId}`)
+  }
+  return hit.id
 }
 
 /** Resolve a user's UUID by email via the admin users list endpoint. */
 async function resolveUserIdByEmail(
-  page: Page,
+  request: APIRequestContext,
   realmId: string,
   email: string,
 ): Promise<string | null> {
-  const resp = await page
-    .context()
-    .request.get(`${backendBaseUrl()}/api/users/${realmId}?email=${encodeURIComponent(email)}`)
-  if (!resp.ok()) return null
+  const resp = await request.get(
+    `${backendBaseUrl()}/api/users/${realmId}?email=${encodeURIComponent(email)}`,
+  )
+  if (!resp.ok()) {
+    throw new Error(
+      `could not list users in ${realmId}: ${resp.status()} ${await resp.text()}`,
+    )
+  }
   const body = await resp.json()
   const raw: unknown = Array.isArray(body)
     ? body

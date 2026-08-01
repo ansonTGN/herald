@@ -64,7 +64,7 @@ test.describe('[Regular User] TOTP 管理演示测试', () => {
         await loginAsUser(page, { realmId, email: testUserEmail, password: testUserPassword, waitNavigation: false })
 
         // 导航到 Security 页面
-        await page.goto(`${BASE_URL}/${realmId}/user/security`)
+        await page.goto(`${BASE_URL}/user/security`)
 
         // 验证页面加载成功 - 等待页面元素出现而非 loadState
         await expect(page.getByTestId('security-page-title')).toBeVisible()
@@ -133,7 +133,7 @@ test.describe('[Regular User] TOTP 管理演示测试', () => {
         const currentUrl = page.url()
         demoLogger.testCode.log(`[Test] Current URL after login: ${currentUrl}`)
 
-        if (currentUrl.includes(`/${realmId}/manage`)) {
+        if (currentUrl.includes(`/manage`)) {
           demoLogger.testCode.log('[Test] ✓ Login successful (no TOTP required)')
         } else if (currentUrl.includes('/login')) {
           demoLogger.testCode.info('[Test] ⚠️ Still on login page (may require TOTP or other issue)')
@@ -159,7 +159,7 @@ test.describe('[Regular User] TOTP 管理演示测试', () => {
         await loginAsUser(page, { realmId, email: testUserEmail, password: testUserPassword, waitNavigation: false })
 
         // 导航到 Security 页面
-        await page.goto(`${BASE_URL}/${realmId}/user/security`)
+        await page.goto(`${BASE_URL}/user/security`)
 
         // 等待页面元素出现
         await expect(page.getByTestId('security-page-title')).toBeVisible()
@@ -191,7 +191,7 @@ test.describe('[Regular User] TOTP 管理演示测试', () => {
         await loginAsUser(page, { realmId, email: testUserEmail, password: testUserPassword, waitNavigation: false })
 
         // 导航到 Security 页面
-        await page.goto(`${BASE_URL}/${realmId}/user/security`)
+        await page.goto(`${BASE_URL}/user/security`)
 
         // 等待页面元素出现
         await expect(page.getByTestId('security-page-title')).toBeVisible()
@@ -223,7 +223,7 @@ test.describe('[Regular User] TOTP 管理演示测试', () => {
         await loginAsUser(page, { realmId, email: testUserEmail, password: testUserPassword, waitNavigation: false })
 
         // 导航到 Security 页面
-        await page.goto(`${BASE_URL}/${realmId}/user/security`)
+        await page.goto(`${BASE_URL}/user/security`)
 
         // 等待页面元素出现
         await expect(page.getByTestId('security-page-title')).toBeVisible()

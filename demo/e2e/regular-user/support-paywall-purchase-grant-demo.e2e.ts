@@ -539,7 +539,7 @@ async function purchaseFirstMappingInline(
   realmId: string,
 ): Promise<string> {
   await page.evaluate(() => localStorage.removeItem('cas-purchase-flow'))
-  await page.goto(`/${realmId}/user/purchase-points`)
+  await page.goto(`/user/purchase-points`)
   await expect(page.locator(SELECTORS.purchasePoints.page)).toBeVisible()
 
   // Union the Subscriptions (month) grid and the Credit packs grid so a

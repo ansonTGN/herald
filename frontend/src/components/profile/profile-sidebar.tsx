@@ -14,7 +14,7 @@ import { useQuery } from '@tanstack/react-query'
 import { usePermissions, useRealmId } from '@/stores/auth-store'
 import { logoutFlow } from '@/lib/auth-utils'
 import { hasAdminPermission } from '@/lib/constants/auth-constants'
-import { featureAvailabilityQueryOptions } from '@/data/query-options'
+import { userFeatureAvailabilityQueryOptions } from '@/data/query-options'
 import { m } from '@/paraglide/messages'
 import { LanguageSwitcher } from '@/components/shared/language-switcher'
 import { realmPath, resolvedRealmFromPath } from '@/lib/realm-routing'
@@ -33,7 +33,7 @@ export function ProfileSidebar() {
   const realmId = realmContext.realmId || storeRealmId || 'admin'
   const permissions = usePermissions()
   const canAccessAdminConsole = hasAdminPermission(permissions)
-  const { data: features } = useQuery(featureAvailabilityQueryOptions(realmId))
+  const { data: features } = useQuery(userFeatureAvailabilityQueryOptions)
   const userFeatures = features?.user
 
   /** Maps profile menu item name to its translated display label. */

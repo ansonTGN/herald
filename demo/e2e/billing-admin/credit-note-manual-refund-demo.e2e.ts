@@ -101,7 +101,7 @@ test.describe('[Billing Admin] Manual Credit Note Refund Demo Tests', () => {
     })
 
     await test.step('Then: refund chip appears in the admin table', async () => {
-      await verifyRefundChipInAdminTable(page, invoiceNumber)
+      await verifyRefundChipInAdminTable(page, DEMO_ADMIN.realmId, invoiceNumber)
     })
 
     await test.step('When: reopen invoice detail dialog', async () => {

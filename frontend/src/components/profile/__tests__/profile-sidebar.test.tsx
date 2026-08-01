@@ -40,7 +40,9 @@ vi.mock('@/lib/auth-utils', () => ({
 }))
 
 vi.mock('@/data/query-options', () => ({
-  featureAvailabilityQueryOptions: () => ({ queryKey: ['feature-availability', 'test-realm'] }),
+  userFeatureAvailabilityQueryOptions: {
+    queryKey: ['user-feature-availability'],
+  },
 }))
 
 describe('ProfileSidebar', () => {

@@ -75,11 +75,11 @@ test.describe('[Realm Admin] API Key Navigation and Edge Cases Demo Tests', () =
     })
 
     await test.step('Then: Verify navigated to API Keys page', async () => {
-      await expect(page).toHaveURL(/\/admin\/manage\/api-keys$/)
+      await expect(page).toHaveURL(/\/manage\/api-keys$/)
       const apiKeyPage = new ApiKeysPage(page, demoLogger)
       await expect(apiKeyPage.heading).toBeVisible()
       await expect(apiKeyPage.heading).toHaveText('API Keys')
-      console.log('Navigated to /admin/manage/api-keys with heading "API Keys"')
+      console.log('Navigated to /manage/api-keys with heading "API Keys"')
     })
   })
 

@@ -101,8 +101,7 @@ export interface MultiPriceCatalog {
  * 3. triggers a provider sync,
  * 4. resolves the two price-level mapping rows by real price id.
  *
- * Caller must have already logged in as the realm admin (the browser context
- * carries the auth cookie, so `request` calls are authenticated).
+ * Caller must pass an API request context authenticated as the realm admin.
  */
 export async function ensureMultiPriceCatalog(
   request: APIRequestContext,

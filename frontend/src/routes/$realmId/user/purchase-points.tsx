@@ -1,7 +1,7 @@
 import { m } from '@/paraglide/messages'
 import { useState, useEffect, useMemo } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useQuery, useMutation, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -9,12 +9,11 @@ import { AlertCircle, ArrowLeft, ArrowRight, Loader2, Check, CheckCircle2 } from
 import { createPaymentAttempt, cancelPaymentAttempt } from '@/lib/api-generated'
 import type { PaymentAttemptStatusResponse, PurchaseOptionView } from '@/lib/api-generated'
 import {
-  clientAppsQueryOptions,
   purchaseOptionsQueryOptions,
   paymentProvidersQueryOptions,
   paymentAttemptStatusQueryOptions,
   queryKeys,
-  requireFeature,
+  requireUserFeature,
 } from '@/data/query-options'
 import { PaymentMethodSelector } from '@/components/purchase/payment-method-selector'
 import { PaymentAttemptStatus } from '@/components/purchase/payment-attempt-status'
@@ -30,7 +29,7 @@ import { getErrorMessage } from '@/lib/error-utils'
 
 export const Route = createFileRoute('/$realmId/user/purchase-points')({
   beforeLoad: ({ context, params }) =>
-    requireFeature(context.queryClient, params.realmId, (f) => f.user.pointsVisible, {
+    requireUserFeature(context.queryClient, (f) => f.user.pointsVisible, {
       to: '/$realmId/user/points',
       params: { realmId: params.realmId },
     }),
@@ -77,13 +76,7 @@ export function PurchasePointsRoute() {
     status?: 'success' | 'cancel'
   }>()
 
-  // clientAppId is not in useAuthStore or the route param; resolve it by listing
-  // the realm's client apps and taking the first (same pattern as the
-  // subscription pages).
-  const { data: clientAppsResponse } = useSuspenseQuery(
-    clientAppsQueryOptions(realmId, { page: 0, pageSize: 10 })
-  )
-  const clientAppId = clientAppsResponse.items[0]?.id ?? ''
+  const clientAppId = useAuthStore((state) => state.clientAppId) ?? ''
 
   if (!clientAppId) {
     return (

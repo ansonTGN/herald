@@ -1,8 +1,8 @@
 /**
  * Realm seed utilities for injecting third-party credentials via API.
  *
- * These functions use `page.request` (APIRequestContext) so they inherit
- * the browser context's auth cookies. Call them AFTER the page is authenticated.
+ * These functions require an authenticated APIRequestContext. Under the browser
+ * Bearer model, callers must provide a context with an Authorization header.
  *
  * Usage:
  *   import { seedOAuthConfig, seedCreemConfig, seedStripeConfig } from '../secrets/realm-seed'

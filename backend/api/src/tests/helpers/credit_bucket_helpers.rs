@@ -586,28 +586,25 @@ pub async fn grant_points_ext_with_bucket_via_api(
 
 /// Seed an in-progress `subscription` row.
 ///
-/// Historically this bound the subscription to `bucket_id` so the
-/// `delete_credit_bucket` "active subscriptions" intercept would fire. That
-/// intercept is currently a no-op (production hardcodes
-/// `active_subscriptions = 0`) and `subscription.bucket_id` was removed by the
-/// distribution-rules refactor, so the `bucket_id` argument is now VESTIGIAL
-/// (accepted for call-site stability, intentionally ignored). The helper still
-/// mints an `active` subscription row, which remains useful for seeds that need
-/// a subscription to exist regardless of bucket linkage.
+/// Bind an `active` subscription to `bucket_id` so the
+/// `delete_credit_bucket` "active subscriptions" intercept fires. After the
+/// distribution-rules refactor `subscription.bucket_id` no longer exists; the
+/// subscription references the bucket via its `subscription_credit` grant
+/// results (`points_quota_entitlements.source_id = subscription_id`,
+/// `bucket_id`). This helper mints the subscription AND an active
+/// `subscription_credit` quota entitlement in `bucket_id` keyed by the
+/// subscription, mirroring what production's renewal/initial grant writes, so
+/// the delete guard (which joins subscription → grant results by `source_id`)
+/// detects the in-use bucket.
 ///
 /// `subscription.client_app_id` carries a UNIQUE constraint, so each call mints
-/// a fresh client app row (callers should not assume the client app exists
-/// beforehand). The subscription uses `status = 'active'`.
+/// a fresh client app row. The subscription uses `status = 'active'`.
 pub async fn seed_active_subscription_on_bucket(
     pool: &PgPool,
     realm_id: &str,
     bucket_id: Uuid,
 ) -> Uuid {
     use sqlx::Row;
-
-    // Vestigial: subscription.bucket_id was removed by the distribution-rules
-    // refactor; grant routing is on distribution rules now.
-    let _ = bucket_id;
 
     // Mint a unique client_app to satisfy `uq_subscription_client_app`.
     let client_app_id = Uuid::now_v7();
@@ -652,6 +649,43 @@ pub async fn seed_active_subscription_on_bucket(
     .await
     .expect("insert subscription row");
     let id: Uuid = row.get("id");
+
+    // Ensure a wallet exists for (user, bucket), then write an active
+    // subscription_credit quota entitlement keyed by the subscription so the
+    // bucket is recognized as in-use by an active subscription.
+    sqlx::query(
+        r#"INSERT INTO points_wallets (id, user_id, realm_id, bucket_id, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, NOW(), NOW())
+           ON CONFLICT DO NOTHING"#,
+    )
+    .bind(Uuid::now_v7())
+    .bind(user_id)
+    .bind(realm_id)
+    .bind(bucket_id)
+    .execute(pool)
+    .await
+    .expect("insert wallet for subscription-bucket seed");
+
+    sqlx::query(
+        r#"INSERT INTO points_quota_entitlements
+             (id, user_id, realm_id, bucket_id, credit_type, source_type, source_id,
+              quota_windows, effective_from, effective_until, status, idempotency_key,
+              distribution_event_id, distribution_rule_id, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, 'subscription_credit', 'subscription_initial', $5,
+                   $6::jsonb, NOW(), NOW() + INTERVAL '30 days', 'active', $7,
+                   NULL, NULL, NOW(), NOW())"#,
+    )
+    .bind(Uuid::now_v7())
+    .bind(user_id)
+    .bind(realm_id)
+    .bind(bucket_id)
+    .bind(subscription_id.to_string())
+    .bind(serde_json::json!([{"windowSeconds": 2592000, "limit": 1000, "key": "period"}]))
+    .bind(format!("seed-sub-{}", subscription_id))
+    .execute(pool)
+    .await
+    .expect("insert subscription_credit quota entitlement for bucket seed");
+
     id
 }
 

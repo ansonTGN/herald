@@ -3,7 +3,10 @@
 // =============================================================================
 //
 // Tests that revoke_topup_proportional_atomic uses integer-only arithmetic.
-// Formula: amount_to_revoke = (remaining * refund + original / 2) / original
+// Formula: amount_to_revoke = (granted * refund + original / 2) / original,
+// then capped at the ledger's remaining balance. (After the distribution-rules
+// refactor the ratio is taken against the ORIGINAL grant amount, not the
+// remaining balance, so multi-grant sources are revoked independently.)
 // Guard: if amount_to_revoke <= 0, skip revocation entirely.
 //
 // User Story: docs/user-stories/points-billing-events.md
@@ -26,7 +29,7 @@ use uuid::Uuid;
 // ============================================================================
 
 // User Story: docs/user-stories/points-billing-events.md
-// Covers: US-PO-06 - Integer arithmetic: (7000*3333 + 5000) / 10000 = 2333
+// Covers: US-PO-06 - Integer arithmetic: (10000*3333 + 5000) / 10000 = 3333
 #[test_context(SchemaTestContext)]
 #[tokio::test]
 async fn test_refund_non_round_ratio(ctx: &mut SchemaTestContext) {
@@ -58,7 +61,8 @@ async fn test_refund_non_round_ratio(ctx: &mut SchemaTestContext) {
     consume_points_from_ledger(ctx, ledger_id, 3000).await;
 
     // When: Refund 3333 of original 10000
-    // Integer formula: (7000 * 3333 + 10000/2) / 10000 = (23331000 + 5000) / 10000 = 2333
+    // Integer formula (ratio vs original grant): (10000 * 3333 + 10000/2) / 10000
+    //   = (33330000 + 5000) / 10000 = 3333, capped at remaining 7000 -> 3333
     let event = build_refund_created_event_with_user(
         event_id,
         refund_id.clone(),
@@ -75,15 +79,15 @@ async fn test_refund_non_round_ratio(ctx: &mut SchemaTestContext) {
     // Then
     assert_webhook_success(&response);
 
-    // Verify ledger: remaining = 7000 - 2333 = 4667, revoked = 2333
+    // Verify ledger: remaining = 7000 - 3333 = 3667, revoked = 3333
     let ledger = get_ledger_by_id(ctx, ledger_id).await;
     assert_eq!(
-        ledger.revoked_amount, 2333,
-        "revoked_amount must be 2333 per integer formula"
+        ledger.revoked_amount, 3333,
+        "revoked_amount must be 3333 per integer formula (ratio vs original grant)"
     );
     assert_eq!(
-        ledger.remaining_amount, 4667,
-        "remaining must be 7000 - 2333 = 4667"
+        ledger.remaining_amount, 3667,
+        "remaining must be 7000 - 3333 = 3667"
     );
     assert_eq!(ledger.used_amount, 3000, "used_amount unchanged");
 
@@ -91,7 +95,7 @@ async fn test_refund_non_round_ratio(ctx: &mut SchemaTestContext) {
     let revocations = get_revocation_records(ctx, user_id).await;
     assert_eq!(revocations.len(), 1, "exactly one revocation record");
     assert_eq!(revocations[0].revocation_type, RevocationType::RefundRevoke);
-    assert_eq!(revocations[0].revoked_amount, 2333);
+    assert_eq!(revocations[0].revoked_amount, 3333);
     assert_eq!(revocations[0].reference_id, Some(refund_id));
 }
 

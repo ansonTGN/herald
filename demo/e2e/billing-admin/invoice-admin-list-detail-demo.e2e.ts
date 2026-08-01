@@ -102,17 +102,21 @@ test.describe('[Billing Admin] Invoice Admin List & Detail Demo Tests', () => {
         // Verify table is present
         await expect(page.getByTestId('invoice-table')).toBeVisible()
 
-        // Verify table column headers: #, Invoice Number, Buyer, Source, Status, Total, Due Date, Created At, Actions
+        // Verify the complete business column set and order.
         const tableHeaders = page.getByTestId('invoice-table').locator('th')
-        await expect(tableHeaders.nth(0)).toHaveText('#')
-        await expect(tableHeaders.nth(1)).toHaveText('Invoice Number')
-        await expect(tableHeaders.nth(2)).toHaveText('Buyer')
-        await expect(tableHeaders.nth(3)).toHaveText('Source')
-        await expect(tableHeaders.nth(4)).toHaveText('Status')
-        await expect(tableHeaders.nth(5)).toHaveText('Total')
-        await expect(tableHeaders.nth(6)).toHaveText('Due Date')
-        await expect(tableHeaders.nth(7)).toHaveText('Created At')
-        await expect(tableHeaders.nth(8)).toHaveText('Actions')
+        await expect(tableHeaders).toHaveText([
+          '#',
+          'Invoice Number',
+          'Buyer',
+          'Source',
+          'Provider',
+          'Status',
+          'Total',
+          'Refunded',
+          'Due Date',
+          'Created At',
+          'Actions',
+        ])
 
         // Verify filter controls
         await expect(page.getByTestId('invoice-status-filter')).toBeVisible()

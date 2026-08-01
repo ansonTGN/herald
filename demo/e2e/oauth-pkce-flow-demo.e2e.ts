@@ -21,7 +21,7 @@ import {
   isLoginApiResponse,
 } from './helpers/oauth-helpers'
 import { verifyTestEnvironment } from './helpers/environment-setup'
-import { DEMO_ADMIN } from './helpers/auth'
+import { DEMO_ADMIN, createBearerApiContext } from './helpers/auth'
 import * as crypto from 'node:crypto'
 
 test.describe('[OAuth PKCE] Happy Path Demo Tests', () => {
@@ -54,7 +54,8 @@ test.describe('[OAuth PKCE] Happy Path Demo Tests', () => {
     })
 
     await test.step('And: OAuth client app is seeded', async () => {
-      const result = await seedOAuthClientApp(page.request, realmId, {
+      const adminApiContext = await createBearerApiContext(loginPage.getAccessToken())
+      const result = await seedOAuthClientApp(adminApiContext, realmId, {
         appName: `PKCE Flow Test ${Date.now()}`,
         redirectUris: [redirectUri],
       })
@@ -88,9 +89,14 @@ test.describe('[OAuth PKCE] Happy Path Demo Tests', () => {
     let authCode: string
 
     await test.step('And: User follows redirect to login page', async () => {
-      // Clear cookies so the browser appears unauthenticated; otherwise the
-      // frontend detects the existing admin session and redirects to dashboard.
+      // Clear cookies + web storage so the browser appears unauthenticated;
+      // otherwise the frontend detects the existing admin session (persisted
+      // in localStorage under the Bearer model) and redirects to dashboard.
       await page.context().clearCookies()
+      await page.evaluate(() => {
+        localStorage.clear()
+        sessionStorage.clear()
+      })
       await page.goto(`${BASE_URL}${redirectLocation}`, { waitUntil: 'domcontentloaded' })
       await expect(page.getByTestId('login-card')).toBeVisible({ timeout: 10000 })
       await expect(page.getByTestId('email-input')).toBeVisible()
@@ -170,11 +176,24 @@ test.describe('[OAuth PKCE] Happy Path Demo Tests', () => {
       expect(page.url()).toMatch(new RegExp(`/${realmId}(/|$|\\?)`))
     })
 
-    await test.step('And: X-Auth cookie is set', async () => {
-      const cookies = await page.context().cookies()
-      const xAuthCookie = cookies.find((c) => c.name === 'X-Auth')
-      expect(xAuthCookie).toBeDefined()
-      expect(xAuthCookie!.value).toBeTruthy()
+    await test.step('And: Bearer token is persisted in localStorage', async () => {
+      // Under the Bearer token model auth is persisted in localStorage under
+      // 'auth-storage' (refresh token + state), not in an X-Auth cookie.
+      // The store hydrates asynchronously after the post-login PKCE exchange,
+      // so poll briefly until the refresh token lands in localStorage.
+      let refreshToken = ''
+      for (let i = 0; i < 20 && !refreshToken; i++) {
+        refreshToken = await page.evaluate(() => {
+          const raw = window.localStorage.getItem('auth-storage')
+          try {
+            return JSON.parse(raw ?? '{}').state?.refreshToken ?? ''
+          } catch {
+            return ''
+          }
+        })
+        if (!refreshToken) await page.waitForTimeout(250)
+      }
+      expect(refreshToken).toBeTruthy()
     })
   })
 

@@ -65,7 +65,7 @@ test.describe("[Unified Purchase] Comprehensive Scenarios", () => {
     await test.step("[P0] User: Login and Purchase via Stripe", async () => {
       await loginPage.loginAsUser(USER_EMAIL, "password", REALM_ID);
 
-      await page.goto(`/${REALM_ID}/user/purchase-points`);
+      await page.goto(`/user/purchase-points`);
       await selectFirstMappingAndProceed(page);
 
       await page.getByTestId("payment-method-select-stripe").click();
@@ -117,7 +117,7 @@ test.describe("[Unified Purchase] Comprehensive Scenarios", () => {
         localStorage.removeItem("cas-purchase-flow");
       });
 
-      await page.goto(`/${REALM_ID}/user/purchase-points`);
+      await page.goto(`/user/purchase-points`);
       await selectFirstMappingAndProceed(page);
       await page.getByTestId("payment-method-select-stripe").click();
       // Wait for payment method selection state to update
@@ -173,7 +173,7 @@ test.describe("[Unified Purchase] Comprehensive Scenarios", () => {
         localStorage.removeItem("cas-purchase-flow");
       });
 
-      await page.goto(`/${REALM_ID}/user/purchase-points`);
+      await page.goto(`/user/purchase-points`);
       await selectFirstMappingAndProceed(page);
       await page.getByTestId("payment-method-select-stripe").click();
       // Wait for payment method selection state to update
@@ -226,7 +226,7 @@ test.describe("[Unified Purchase] Comprehensive Scenarios", () => {
       // Login again using LoginPage
       await loginPage.loginAsUser(USER_EMAIL, "password", REALM_ID);
 
-      await page.goto(`/${REALM_ID}/user/purchase-points`);
+      await page.goto(`/user/purchase-points`);
 
       const previousState = await page.evaluate(() => {
         const state = localStorage.getItem("cas-purchase-flow");
@@ -253,7 +253,7 @@ test.describe("[Unified Purchase] Comprehensive Scenarios", () => {
         localStorage.removeItem("cas-purchase-flow");
       });
 
-      await page.goto(`/${REALM_ID}/user/purchase-points`);
+      await page.goto(`/user/purchase-points`);
       await selectFirstMappingAndProceed(page);
       await page.getByTestId("payment-method-select-stripe").click();
       // Wait for payment method selection state to update
@@ -276,7 +276,7 @@ test.describe("[Unified Purchase] Comprehensive Scenarios", () => {
     await test.step("[P1] User: View Purchase History", async () => {
       // Purchase History is a separate route (not a tab on /user/points).
       // The points page is intentionally non-tabbed (balance + ledger only).
-      await page.goto(`/${REALM_ID}/user/subscription-history`);
+      await page.goto(`/user/subscription-history`);
 
       // Verify purchase history page container is displayed
       await expect(
@@ -295,7 +295,7 @@ test.describe("[Unified Purchase] Comprehensive Scenarios", () => {
 
     await test.step("[P1] User: Filter Purchase History (UI Availability)", async () => {
       // Same route correction as View Purchase History step.
-      await page.goto(`/${REALM_ID}/user/subscription-history`);
+      await page.goto(`/user/subscription-history`);
 
       // Verify the purchase history page is reachable.
       // NOTE: the current frontend component (purchase-history-list.tsx) does not
@@ -319,7 +319,7 @@ test.describe("[Unified Purchase] Comprehensive Scenarios", () => {
         localStorage.removeItem("cas-purchase-flow");
       });
 
-      await page.goto(`/${REALM_ID}/user/purchase-points`);
+      await page.goto(`/user/purchase-points`);
       await selectFirstMappingAndProceed(page);
       await page.getByTestId("payment-method-select-stripe").click();
       // Wait for payment method selection state to update
@@ -346,14 +346,14 @@ test.describe("[Unified Purchase] Comprehensive Scenarios", () => {
         localStorage.removeItem("cas-purchase-flow");
       });
 
-      await page.goto(`/${REALM_ID}/user/points`);
+      await page.goto(`/user/points`);
 
       // Set corrupted localStorage to test error handling
       await page.evaluate(() => {
         localStorage.setItem("cas-purchase-flow", "invalid-json{{{");
       });
 
-      await page.goto(`/${REALM_ID}/user/purchase-points`);
+      await page.goto(`/user/purchase-points`);
 
       // Verify the page handles corrupted state gracefully
       // Frontend should clear invalid state and show fresh page

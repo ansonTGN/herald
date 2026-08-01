@@ -1764,7 +1764,6 @@ mod mixed_consume_tests {
 #[cfg(test)]
 mod reconcile_evolution_tests {
     use super::*;
-    use crate::points::entities::{CreditLedgerStatus, CreditSourceType, PointsCreditLedger};
     use crate::points::grant_schedule::{GrantPeriodType, PointsGrantSchedule};
     use crate::points::policies::AllowAllPointsPolicy;
     use crate::points::ports::MockPointsRepository;
@@ -1798,29 +1797,6 @@ mod reconcile_evolution_tests {
         }
     }
 
-    fn realized_ledger(schedule: &PointsGrantSchedule) -> PointsCreditLedger {
-        PointsCreditLedger {
-            id: Uuid::nil(),
-            user_id: schedule.user_id,
-            realm_id: schedule.realm_id.clone(),
-            bucket_id: schedule.bucket_id,
-            credit_type: CreditType::FreePeriodicCredit,
-            source_type: CreditSourceType::FreePeriodicGrant,
-            source_id: format!("schedule:{}:period:1", schedule.id),
-            granted_amount: schedule.points_per_period,
-            used_amount: 0,
-            revoked_amount: 0,
-            remaining_amount: schedule.points_per_period,
-            expires_at: Some(now() + chrono::Duration::days(schedule.validity_days)),
-            effective_at: Some(schedule.next_grant_time),
-            status: CreditLedgerStatus::Active,
-            distribution_event_id: None,
-            distribution_rule_id: None,
-            created_at: now(),
-            updated_at: now(),
-        }
-    }
-
     #[tokio::test]
     async fn reconcile_returns_ok_no_op_when_no_due_free_schedule() {
         // No due free schedule means the read path is a no-op; subscription
@@ -1832,7 +1808,7 @@ mod reconcile_evolution_tests {
                 realm_id == "realm" && *user_id == Uuid::nil() && *limit == 3
             })
             .returning(|_, _, _, _| Box::pin(async { Ok(Vec::new()) }));
-        repo.expect_pregrant_next_period_atomic().times(0);
+        repo.expect_execute_distribution_event_atomic().times(0);
 
         let svc = PointsService::new(Arc::new(repo), Arc::new(AllowAllPointsPolicy));
         let res = svc
@@ -1846,6 +1822,16 @@ mod reconcile_evolution_tests {
         let mut repo = MockPointsRepository::new();
         let schedule = due_free_schedule();
         let expected_schedule = schedule.clone();
+        // `reconcile_due_for_user` realizes a due schedule by executing ONE
+        // FreePeriodicGrant distribution event bound to the schedule's rule,
+        // using event_key/source_id = event_key_for_free_periodic(...,period 1).
+        let expected_event_key = event_key_for_free_periodic(
+            expected_schedule.user_id,
+            expected_schedule.distribution_rule_id,
+            1,
+        );
+        let expected_effective_from = expected_schedule.next_grant_time;
+        let expected_rule_id = expected_schedule.distribution_rule_id;
         repo.expect_find_due_free_grant_schedules_for_user()
             .times(1)
             .returning(move |_, _, _, _| {
@@ -1854,25 +1840,24 @@ mod reconcile_evolution_tests {
                     async move { Ok(vec![schedule]) }
                 })
             });
-        repo.expect_pregrant_next_period_atomic()
+        repo.expect_execute_distribution_event_atomic()
             .times(1)
-            .withf(
-                move |realm_id, schedule, period_number, effective_at, expires_at| {
-                    realm_id == "realm"
-                        && schedule.id == expected_schedule.id
-                        && *period_number == 1
-                        && *effective_at == Some(expected_schedule.next_grant_time)
-                        && *expires_at
-                            == expected_schedule.grant_period_type.calculate_expiration(
-                                expected_schedule.next_grant_time,
-                                expected_schedule.validity_days,
-                            )
-                },
-            )
-            .returning(|_, schedule, _, _, _| {
-                let ledger = realized_ledger(schedule);
-                Box::pin(async move { Ok(ledger) })
-            });
+            .withf(move |event, selection| {
+                event.realm_id == "realm"
+                    && event.user_id == Uuid::nil()
+                    && matches!(event.owner, DistributionRuleOwner::RealmRegistration)
+                    && matches!(event.trigger, DistributionTrigger::FreePeriodicGrant)
+                    && event.event_key == expected_event_key
+                    && event.source_id == expected_event_key
+                    && event.effective_from == expected_effective_from
+                    && event.effective_until.is_none()
+                    && matches!(
+                        selection,
+                        DistributionRuleSelection::ScheduledRule(rule_id)
+                            if *rule_id == expected_rule_id
+                    )
+            })
+            .returning(|_, _| Box::pin(async move { Ok(Vec::new()) }));
 
         let svc = PointsService::new(Arc::new(repo), Arc::new(AllowAllPointsPolicy));
         let res = svc
@@ -1893,12 +1878,12 @@ mod reconcile_evolution_tests {
                     async move { Ok(vec![schedule]) }
                 })
             });
-        repo.expect_pregrant_next_period_atomic()
+        repo.expect_execute_distribution_event_atomic()
             .times(1)
-            .returning(|_, _, _, _, _| {
+            .returning(|_, _| {
                 Box::pin(async {
                     Err(CoreError::DatabaseError(
-                        "pregrant insert failed".to_string(),
+                        "distribution event execution failed".to_string(),
                     ))
                 })
             });

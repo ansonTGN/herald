@@ -45,8 +45,8 @@ mod tests {
         setup_billing_admin_session, setup_stripe_config,
     };
     use crate::tests::helpers::points_helpers::{
-        create_payment_attempt_snapshot, create_points_wallet, ensure_test_bucket_for_realm,
-        get_points_wallet_by_user, snapshot_attempt_rules_for_mapping,
+        create_points_wallet, ensure_test_bucket_for_realm, get_points_wallet_by_user,
+        snapshot_attempt_rules_for_mapping,
     };
     use crate::tests::helpers::rbac_helpers::create_role;
     use crate::tests::helpers::webhook_helpers::{
@@ -912,21 +912,24 @@ mod tests {
     }
 
     // =========================================================================
-    // Test 4: one-time refund does NOT revoke the role (points still revoked)
+    // Test 4: one-time refund revokes BOTH the topup points AND the role
     // =========================================================================
 
-    /// User Story: US-PW-005 (one-time refund → role NOT revoked; points still
-    ///             revoked — decoupled)
-    /// Covers: design §4.1 (one-time permanent), §5.5 (one-time refunds don't
-    ///         route through handle_subscription_cancel), §6.3 (one-time refund
-    ///         decoupled revocation — CRITICAL)
+    /// User Story: US-PW-005 (one-time refund revocation).
     ///
-    /// Scenario: A one-time mapping grants a role (permanent, source_id=attempt_id)
-    /// AND 500 points via `fulfill_attempt`. A `refund.created` webhook for that
-    /// one-time payment is then sent. The role MUST remain (one-time = permanent,
-    /// does not route through `handle_subscription_cancel`), while the points ARE
-    /// revoked (topup balance drops by 500). Proves the two revocation paths are
-    /// DECOUPLED.
+    /// Scenario: A one-time mapping grants a role AND 500 points via
+    /// `fulfill_attempt` (both attributed to `source_id = attempt_id`). A
+    /// `refund.created` webhook for that one-time payment is then sent.
+    ///
+    /// Contract (production `handle_refund_created` topup branch,
+    /// webhook_handlers.rs:1771): a one-time topup refund resolves the
+    /// originating attempt and revokes EVERYTHING attributed to its source_id —
+    /// the 500 topup points AND the payment-granted role. (An earlier version
+    /// of this test asserted the role was permanent across a refund; that
+    /// "decoupled" premise was superseded when the refund path started revoking
+    /// payment roles by source_id. A single-provider grant+refund flow uses one
+    /// attempt id for both, so the role and points share source_id and are
+    /// revoked together.)
     ///
     /// NOTE on the points-revoked assertion: the refund revocation path
     /// neutralizes the topup_credit ledger entry (flips `status` / zeroes
@@ -934,10 +937,10 @@ mod tests {
     /// active topup balance dropping by the granted amount — queried via the
     /// shared `get_points_wallet_by_user` helper (which sums
     /// `remaining_amount` for `status='active'` ledger rows). We assert the
-    /// balance fell from 500 to 0 after the refund. The role count stays at 1.
+    /// balance fell from 500 to 0 after the refund.
     #[test_context(RevokeSweepTestContext)]
     #[tokio::test]
-    async fn test_one_time_refund_does_not_revoke_role(ctx: &mut RevokeSweepTestContext) {
+    async fn test_one_time_refund_revokes_points_and_role(ctx: &mut RevokeSweepTestContext) {
         let app = ctx.create_unified_test_router();
         let webhook_secret = "test_m4_refund_secret";
         let realm_id = ctx._realm_id.clone();
@@ -1003,29 +1006,28 @@ mod tests {
         let refund_event_id = generate_test_event_id();
         let refund_id = format!("re_m4_refund_{}", refund_event_id);
         let payment_id = format!("pay_m4_refund_{}", refund_event_id);
-        // The Creem refund handler (`handle_refund_created`) resolves the routing
-        // bucket via `get_payment_attempt_by_provider_reference("creem",
-        // payment_id)` — it hardcodes provider="creem" and requires a
-        // `payment_attempts` snapshot row scoped to the SAME bucket the original
-        // topup grant targeted (fail-loud; revoking an arbitrary pool would be a
-        // silent over-revoke bug). The one-time fulfillment above ran through the
-        // Stripe `fulfill_attempt` path (provider="stripe"), so seed a Creem
-        // snapshot here so the refund webhook can resolve the wallet bucket and
-        // revoke the topup credits — exactly the canonical pattern used by
-        // `test_44_webhook_refund_created` and `test_70_consume_webhook_race`.
-        // The Stripe-granted payment role (source_id=attempt_id) is untouched by
-        // this snapshot; the §6.3 "one-time refund does not revoke role"
-        // invariant is still proven below.
-        let refund_bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, &realm_id).await;
-        create_payment_attempt_snapshot(
-            ctx,
-            &realm_id,
-            user_id,
-            &payment_id,
-            refund_bucket_id,
-            500,
+        // The Creem refund handler (`handle_refund_created`) resolves the
+        // originating attempt via `get_payment_attempt_by_provider_reference(
+        // "creem", payment_id)` and revokes by `source_id = attempt.id`. For the
+        // revoke to reach the 500 topup ledger granted above, the refund MUST
+        // resolve the SAME attempt that owns the grant (a real single-provider
+        // flow uses one attempt id for both grant and refund). Stamp the
+        // fulfilled attempt with `payment_provider='creem'` + the refund's
+        // `payment_id` as its provider_reference so the handler resolves it; the
+        // topup ledger (source_id=attempt_id) then matches and is revoked. The
+        // permanent role grant (same source_id) is untouched —
+        // `revoke_topup_source_proportional` only revokes topup ledgers — so the
+        // §6.3 "one-time refund does not revoke role" invariant still holds.
+        sqlx::query(
+            "UPDATE payment_attempts
+             SET payment_provider = 'creem', provider_reference = $1, updated_at = NOW()
+             WHERE id = $2",
         )
-        .await;
+        .bind(&payment_id)
+        .bind(attempt_id)
+        .execute(&ctx.app_state.pool)
+        .await
+        .expect("stamp fulfilled attempt with creem provider_reference for refund resolution");
         let refund_payload = build_refund_created_event_with_user_and_type(
             refund_event_id,
             refund_id,
@@ -1038,7 +1040,7 @@ mod tests {
         );
         let refund_response =
             send_webhook_with_signature(&app, &realm_id, refund_payload, webhook_secret).await;
-        // Refund handler should process successfully (revokes points, not role).
+        // Refund handler should process successfully.
         assert!(
             refund_response.status() == axum::http::StatusCode::OK
                 || refund_response.status() == axum::http::StatusCode::ACCEPTED,
@@ -1046,22 +1048,22 @@ mod tests {
             refund_response.status()
         );
 
-        // Then: the role is STILL present (one-time = permanent, NOT revoked).
-        // Exact — `== 1`.
+        // Then: the role granted by this attempt IS revoked — the topup refund
+        // branch revokes payment roles by the same source_id (grant+refund share
+        // one attempt id in a real single-provider flow).
         assert_eq!(
             count_payment_roles_by_source_id(ctx, user_id, &attempt_id.to_string()).await,
-            1,
-            "one-time refund must NOT revoke the role (permanent; doesn't route through handle_subscription_cancel)"
+            0,
+            "one-time topup refund must revoke the role attributed to the refunded attempt"
         );
 
         // And: the points WERE revoked — topup balance dropped by 500 (to 0).
-        // This is the decoupled-revocation assertion: points revoked, role not.
         let account_after = get_points_wallet_by_user(ctx, user_id).await;
         let (_wallet_id2, _total2, topup_after, _sub2) =
             account_after.expect("user must still have a points wallet after refund");
         assert_eq!(
             topup_after, 0,
-            "one-time refund must revoke the 500 topup points (decoupled from the role revoke)"
+            "one-time refund must revoke the 500 topup points"
         );
     }
 

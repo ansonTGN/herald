@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
   featureAvailabilityQueryOptions,
+  userFeatureAvailabilityQueryOptions,
   subscriptionHistoryQueryOptions,
   globalSubscriptionHistoryQueryOptions,
   getSubscriptionHistory,
@@ -10,6 +11,7 @@ import type { HistoryFilters } from '@/types/billing'
 import { QUERY_KEYS } from '@/lib/constants'
 import {
   getFeatureAvailability,
+  getUserFeatureAvailability,
   getSubscriptionHistory as getSubscriptionHistoryApi,
   listSubscriptionHistory,
 } from '@/lib/api-generated'
@@ -17,6 +19,7 @@ import {
 vi.mock('@/lib/api-generated', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/api-generated')>()),
   getFeatureAvailability: vi.fn(),
+  getUserFeatureAvailability: vi.fn(),
   getSubscriptionHistory: vi.fn(),
   listSubscriptionHistory: vi.fn(),
 }))
@@ -38,6 +41,20 @@ describe('featureAvailabilityQueryOptions', () => {
     expect(getFeatureAvailability).toHaveBeenCalledWith({
       path: { realmId: 'realm-1' },
     })
+  })
+})
+
+describe('userFeatureAvailabilityQueryOptions', () => {
+  it('loads user-facing feature availability without using the admin realm endpoint', async () => {
+    vi.mocked(getUserFeatureAvailability).mockResolvedValue({
+      data: {},
+      error: undefined,
+    } as never)
+
+    await userFeatureAvailabilityQueryOptions.queryFn?.({} as never)
+
+    expect(getUserFeatureAvailability).toHaveBeenCalledOnce()
+    expect(getFeatureAvailability).not.toHaveBeenCalled()
   })
 })
 

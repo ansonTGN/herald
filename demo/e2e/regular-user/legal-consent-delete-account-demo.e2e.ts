@@ -240,7 +240,7 @@ test.describe('[Regular User] Legal Consent Self-delete Account Demo Tests', () 
 
       await test.step('Log in as Realm Admin and open the audit log', async () => {
         await loginAsAdminWithConsent(page, realmId)
-        await page.goto(`${BASE_URL}/${realmId}/manage/audit`, { waitUntil: 'domcontentloaded' })
+        await page.goto(`${BASE_URL}/manage/audit`, { waitUntil: 'domcontentloaded' })
       })
 
       const auditPage = new AuditPage(page)

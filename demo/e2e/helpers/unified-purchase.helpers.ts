@@ -246,7 +246,7 @@ export async function initiatePurchaseFlow(
   opts?: { period?: PurchasePeriod }
 ): Promise<string> {
   await page.evaluate(() => localStorage.removeItem('cas-purchase-flow'))
-  await page.goto(`/${realmId}/user/purchase-points`)
+  await page.goto(`/user/purchase-points`)
   await expect(page.locator(SELECTORS.purchasePoints.page)).toBeVisible()
 
   // Precondition: realm must have at least one purchasable price card in the

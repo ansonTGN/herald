@@ -111,7 +111,7 @@ export class RealmsPage extends BasePage {
    */
   async goto(realmId: string = 'admin'): Promise<void> {
     // Direct navigation to realms page - more reliable than clicking sidebar
-    const url = `/${realmId}/manage/realms`
+    const url = `/manage/realms`
     const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
     console.log(`[RealmsPage.goto] Navigating to ${BASE_URL}${url}`)
     await this.page.goto(`${BASE_URL}${url}`, { waitUntil: 'domcontentloaded' })

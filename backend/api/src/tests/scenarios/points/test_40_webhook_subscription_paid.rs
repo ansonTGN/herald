@@ -157,11 +157,17 @@ async fn seed_subscription_row(
 }
 
 // ============================================================================
-// Test 1: Initial Subscription Grant
+// Test 1: Subscription Paid Grant
 // ============================================================================
 
 // User Story: docs/user-stories/points-billing-events.md
-// Covers: US-PO-06 场景 - Initial subscription grants points
+// Covers: US-PO-06 场景 - subscription.paid grants subscription_credit
+//
+// After the distribution-rules refactor, `handle_subscription_paid(is_renewal=false)`
+// grants NO points by design — initial fulfillment is owned by the captured
+// PaymentAttempt flow (BE-D04). The only subscription.paid points path is the
+// renewal route (`CurrentOwnerRules` over a `subscription_renewal` rule). This
+// test therefore exercises the renewal grant.
 #[test_context(SchemaTestContext)]
 #[tokio::test]
 async fn test_subscription_paid_initial_grant(ctx: &mut SchemaTestContext) {
@@ -176,13 +182,16 @@ async fn test_subscription_paid_initial_grant(ctx: &mut SchemaTestContext) {
 
     // Setup plan config for the test
     setup_test_plan_config(ctx, &realm_id, plan_id).await;
+    // Initial activation grants nothing; only the renewal route grants points,
+    // so seed a subscription_renewal rule and drive a renewal webhook.
+    seed_renewal_rule_for_plan_webhook(ctx, &realm_id, plan_id, 1000).await;
 
     // Create points account for user
     create_points_wallet(ctx, user_id, &realm_id).await;
 
-    // Build subscription.paid event (is_renewal = false)
+    // Build subscription.paid event (renewal is the grant-bearing route).
     let event = build_subscription_paid_event(
-        event_id, user_id, plan_id, false, // initial subscription
+        event_id, user_id, plan_id, true, // renewal
         &realm_id,
     );
 
@@ -206,7 +215,7 @@ async fn test_subscription_paid_initial_grant(ctx: &mut SchemaTestContext) {
     assert_eq!(entitlement.credit_type, CreditType::SubscriptionCredit);
     assert_eq!(
         entitlement.source_type,
-        QuotaSourceType::SubscriptionInitial
+        QuotaSourceType::SubscriptionRenewal
     );
     assert_eq!(
         entitlement.quota_windows.len(),
@@ -215,8 +224,8 @@ async fn test_subscription_paid_initial_grant(ctx: &mut SchemaTestContext) {
     );
     assert_eq!(
         entitlement.quota_windows[0].limit,
-        1000, // Amount from setup_test_plan_config
-        "Window limit should equal points_per_period"
+        1000, // Limit from the seeded subscription_renewal rule
+        "Window limit should equal the seeded rule limit"
     );
     assert_eq!(entitlement.status, QuotaEntitlementStatus::Active);
     assert!(
@@ -300,6 +309,9 @@ async fn test_subscription_paid_idempotency(ctx: &mut SchemaTestContext) {
 
     // Setup plan config for the test
     setup_test_plan_config(ctx, &realm_id, plan_id).await;
+    // Initial activation grants nothing; seed the renewal rule and drive a
+    // renewal webhook so the grant-bearing route produces the entitlement.
+    seed_renewal_rule_for_plan_webhook(ctx, &realm_id, plan_id, 1000).await;
 
     create_points_wallet(ctx, user_id, &realm_id).await;
 
@@ -308,7 +320,7 @@ async fn test_subscription_paid_idempotency(ctx: &mut SchemaTestContext) {
         event_id.clone(),
         user_id,
         plan_id,
-        false, // initial subscription
+        true, // renewal — the only grant-bearing subscription.paid route
         &realm_id,
     );
 
@@ -383,8 +395,12 @@ async fn test_subscription_activation_grants_current_period_only(ctx: &mut Schem
     let current_period_start = now - chrono::Duration::seconds(10);
     let current_period_end = now + chrono::Duration::days(30);
 
-    // --- When: subscription activation fires handle_subscription_paid -------
+    // --- When: subscription renewal fires handle_subscription_paid -----------
+    // Initial activation grants no points (BE-D04 owns initial fulfillment);
+    // the renewal route is the grant-bearing path, so seed a subscription_renewal
+    // rule on this mapping and drive a renewal.
     let mapping = mapping_for_key(ctx, &realm_id, &entitlement_key).await;
+    seed_subscription_renewal_rule(ctx, &realm_id, mapping.id, points_per_period).await;
     let result = ctx
         .app_state
         .subscription_service
@@ -393,13 +409,13 @@ async fn test_subscription_activation_grants_current_period_only(ctx: &mut Schem
             subscription_id,
             &realm_id,
             &mapping,
-            false, // initial activation
+            true, // renewal — the grant-bearing subscription.paid route
             current_period_start,
             current_period_end,
             format!("evt_be_t04_act_{}", Uuid::now_v7()),
         )
         .await;
-    assert!(result.is_ok(), "activation grant failed: {:?}", result);
+    assert!(result.is_ok(), "renewal grant failed: {:?}", result);
 
     // --- Then: exactly one active entitlement for the current period ---------
     let entitlements =
@@ -407,7 +423,7 @@ async fn test_subscription_activation_grants_current_period_only(ctx: &mut Schem
     assert_eq!(
         entitlements.len(),
         1,
-        "activation should create exactly one current-period quota entitlement, got {}",
+        "renewal should create exactly one current-period quota entitlement, got {}",
         entitlements.len()
     );
 
@@ -415,7 +431,7 @@ async fn test_subscription_activation_grants_current_period_only(ctx: &mut Schem
     assert_eq!(entitlement.credit_type, CreditType::SubscriptionCredit);
     assert_eq!(
         entitlement.source_type,
-        QuotaSourceType::SubscriptionInitial
+        QuotaSourceType::SubscriptionRenewal
     );
     assert_eq!(entitlement.status, QuotaEntitlementStatus::Active);
     assert_eq!(
@@ -611,16 +627,25 @@ async fn test_subscription_renewal_event_idempotency(ctx: &mut SchemaTestContext
         "duplicate webhook event_id must not create additional entitlement rows"
     );
 
-    // Verify the business idempotency key is anchored to (subscription, period).
-    // The quota model stores this key on the entitlement row itself.
+    // Verify the persisted idempotency key. After the distribution-rules
+    // refactor the entitlement row carries `distribution:{event_id}:{rule_id}`
+    // (the internal event + rule UUIDs), not the legacy sub:period form.
     let entitlements =
         get_user_quota_entitlements(ctx, user_id, CreditType::SubscriptionCredit).await;
     assert_eq!(entitlements.len(), 1);
     let entitlement = &entitlements[0];
-    let expected_key = format!("sub:{}:period:{}", entitlement.source_id, now.timestamp());
+    let expected_key = format!(
+        "distribution:{}:{}",
+        entitlement
+            .distribution_event_id
+            .expect("rule-attributed entitlement must carry distribution_event_id"),
+        entitlement
+            .distribution_rule_id
+            .expect("rule-attributed entitlement must carry distribution_rule_id"),
+    );
     assert_eq!(
         entitlement.idempotency_key, expected_key,
-        "entitlement idempotency key must be sub:{{subscription_id}}:period:{{period_start}}"
+        "entitlement idempotency key must be distribution:{{event_id}}:{{rule_id}}"
     );
 }
 

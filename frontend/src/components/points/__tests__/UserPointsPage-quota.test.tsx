@@ -21,7 +21,7 @@ import { renderWithProviders } from '@/test/utils/render'
 // ----------------------------------------------------------------------------
 // UserPointsPage renders, per bucket: a <PointsUsageDashboard> (quota view)
 // followed by a pool-only <PointsBalanceCard>. The whole stack is driven by
-// the real `walletsByBucketQueryOptions` + `pointsTransactionsQueryOptions`
+// the real `userPointsWalletsQueryOptions` + `userPointsTransactionsQueryOptions`
 // against MSW — this is the page-level integration counterpart to the
 // unit-level PointsBalanceCard / PointsUsageDashboard / derivation tests.
 //
@@ -199,8 +199,11 @@ function walletsAndTransactionsHandlers(opts: {
   const transactions = opts.transactions ?? []
 
   return [
-    http.get(`${API_BASE}/api/points/:realmId/wallets`, () => HttpResponse.json(walletsResponse)),
-    http.get(`${API_BASE}/api/points/:realmId/transactions`, ({ request }) => {
+    http.get(`${API_BASE}/api/user/wallets`, () => HttpResponse.json(walletsResponse)),
+    http.get(`${API_BASE}/api/user/feature-availability`, () =>
+      HttpResponse.json({ user: { pointsVisible: false } })
+    ),
+    http.get(`${API_BASE}/api/user/transactions`, ({ request }) => {
       const url = new URL(request.url)
       const bucketId = url.searchParams.get('bucketId')
       opts.onTransactionsRequest?.(bucketId)
@@ -459,7 +462,7 @@ describe('UserPointsPage — quota dashboard + pool cards (MSW integration)', ()
       // card loading root is `points-balance-card` (no suffix) — pinned so a
       // refactor that drops the loading branch surfaces here.
       server.use(
-        http.get(`${API_BASE}/api/points/:realmId/wallets`, async () => {
+        http.get(`${API_BASE}/api/user/wallets`, async () => {
           // No artificial timer — returning a fresh response on each tick is
           // enough; React Query starts in `pending` and the component renders
           // the loading branch on first paint. We assert synchronously before
@@ -469,7 +472,10 @@ describe('UserPointsPage — quota dashboard + pool cards (MSW integration)', ()
             items: [] as WalletByBucketResponse[],
           })
         }),
-        http.get(`${API_BASE}/api/points/:realmId/transactions`, () =>
+        http.get(`${API_BASE}/api/user/feature-availability`, () =>
+          HttpResponse.json({ user: { pointsVisible: false } })
+        ),
+        http.get(`${API_BASE}/api/user/transactions`, () =>
           HttpResponse.json({ items: [], page: 0, pageSize: 20, total: 0 })
         )
       )

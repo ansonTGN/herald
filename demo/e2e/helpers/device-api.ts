@@ -97,7 +97,6 @@ export async function seedDeviceCodeClientApp(
       description: 'Auto-created client app for device code demo tests',
       redirectUris: ['https://example.com/callback'],
       enabled: true,
-      sessionTtlSeconds: 1800,
       deviceCodeGrantEnabled: true,
     },
   })

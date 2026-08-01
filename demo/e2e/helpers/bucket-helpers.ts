@@ -5,25 +5,25 @@
  * User stories covered (across DE-D02..D05):
  * - US-CB-001: admin CRUD on the Credit Bucket directory
  * - US-CB-002: bind a Client App coverage set to a bucket (≥1 required)
- * - US-CB-003: assign provider entitlement mappings to a bucket
+ * - US-CB-003: entitlement mappings target a bucket via distribution rules;
+ *   the bucket editor surfaces these references read-only.
  *
  * Scope:
  * - UI helpers drive the Master-Detail editor at
  *   `/{realmId}/manage/billing/credit-buckets`. They perform NO business
  *   assertions — they only orchestrate clicks/fills and surface the resulting
- *   state (created id, error code, conflict presence). Assertion responsibility
- *   lives in the `.e2e.ts` flow tests (DE-D02 et al.).
+ *   state (created id, error code). Assertion responsibility lives in the
+ *   `.e2e.ts` flow tests (DE-D02 et al.).
  * - API helpers mirror `_http_json` in `scripts/lib/demo_seed.py` so other
  *   items can provision buckets in `beforeAll` without exercising the UI.
  *
  * Selectors are imported from `../selectors` (single source of truth). Bucket
  * keys/names come from `./bucket-seed-ids`.
  *
- * @see .ai/design/credit-bucket.md (API + error codes, schema)
  * @see docs/user-stories/billing/credit-bucket.md
  */
 
-import { Page, expect, type APIResponse } from '@playwright/test'
+import { Page, expect, type APIRequestContext, type APIResponse } from '@playwright/test'
 import { SELECTORS } from '../selectors'
 
 // ============================================================================
@@ -39,15 +39,6 @@ export interface CreateBucketOptions {
   enabled?: boolean
   /** Client App UUIDs to bind as the coverage set (≥1 required by the API). */
   clientAppIds: string[]
-  /** Provider entitlement mapping UUIDs to assign to this bucket. */
-  mappingIds?: string[]
-  /**
-   * Mark this bucket as the realm's registration pool. Per realm at most one
-   * bucket may carry this flag (`uq_credit_buckets_registration_pool`).
-   * Setting it on a realm that already has one yields 409
-   * `registration_pool_conflict`.
-   */
-  receivesRegistrationCredits?: boolean
 }
 
 /** Partial fields for `editBucketViaUI`. `undefined` fields are left as-is. */
@@ -56,7 +47,6 @@ export interface EditBucketFields {
   description?: string
   displayOrder?: number
   enabled?: boolean
-  receivesRegistrationCredits?: boolean
 }
 
 /** Result of attempting a destructive bucket delete via the confirm dialog. */
@@ -84,20 +74,27 @@ export interface CreateBucketApiPayload {
   displayOrder?: number
   enabled?: boolean
   clientAppIds: string[]
-  entitlementMappingIds?: string[]
-  receivesRegistrationCredits?: boolean
 }
 
-/** Bucket list item shape returned by `GET /api/realms/{realmId}/billing/credit-buckets`. */
+/**
+ * Bucket list item shape returned by `GET /api/realms/{realmId}/billing/credit-buckets`.
+ *
+ * Matches the backend `BucketResponse` (`credit_bucket_handlers.rs`): identity +
+ * display + enabled + covered client-app count + the aggregate count of
+ * distribution rules targeting the bucket. There is NO registration-pool flag
+ * and NO entitlement-mapping count — mapping→bucket binding is expressed
+ * through distribution rules (surfaced read-only as `ruleReferences` on the
+ * detail response).
+ */
 export interface CreditBucketListItem {
   id: string
   bucketKey: string
   name: string
   displayOrder: number
   enabled: boolean
-  receivesRegistrationCredits: boolean
   coveredClientAppCount: number
-  entitlementMappingCount: number
+  /** Number of distribution rules (both owners) targeting this bucket. */
+  ruleReferenceCount: number
 }
 
 // ============================================================================
@@ -148,7 +145,7 @@ export async function createBucketViaUI(
 ): Promise<string> {
   const cb = SELECTORS.creditBucket
 
-  await page.goto(`/${realmId}/manage/billing/credit-buckets`)
+  await page.goto(`/manage/billing/credit-buckets`)
   await expect(page.locator(cb.directoryPage)).toBeVisible()
 
   await page.locator(cb.newButton).click()
@@ -163,24 +160,6 @@ export async function createBucketViaUI(
   // Coverage set — bind client apps via the multiselect. Each click on
   // `${prefix}-item-${id}` toggles selection; the dropdown opens on input focus.
   await bindCoverageSetViaUI(page, options.clientAppIds)
-
-  // Mapping assignment is optional on create.
-  if (options.mappingIds && options.mappingIds.length > 0) {
-    await assignMappingsViaUI(page, options.mappingIds)
-  }
-
-  // Registration pool flag — at most one per realm.
-  if (options.receivesRegistrationCredits) {
-    const registrationSwitch = page.locator(cb.editorRegistration)
-    const state = await registrationSwitch.getAttribute('data-state')
-    if (state !== 'checked') {
-      await registrationSwitch.click()
-      // Wait for data-state to flip so the form value persists on submit.
-      await expect(registrationSwitch).toHaveAttribute('data-state', 'checked', {
-        timeout: 3000,
-      })
-    }
-  }
 
   // Submit and wait for the editor to close (directory re-renders the row).
   await page.locator(cb.editorSubmit).click()
@@ -240,27 +219,14 @@ export async function editBucketViaUI(
       }).toPass({ timeout: 3000 })
     }
   }
-  if (fields.receivesRegistrationCredits !== undefined) {
-    const registrationSwitch = page.locator(cb.editorRegistration)
-    const wantChecked = fields.receivesRegistrationCredits ? 'checked' : 'unchecked'
-    let state = await registrationSwitch.getAttribute('data-state')
-    if (state !== wantChecked) {
-      await registrationSwitch.click()
-      // Same race-resolve as the `enabled` switch above.
-      await expect(async () => {
-        state = await registrationSwitch.getAttribute('data-state')
-        expect(state).toBe(wantChecked)
-      }).toPass({ timeout: 3000 })
-    }
-  }
 
   await page.locator(cb.editorSubmit).click()
-  // On a successful save the editor stays open but the conflict alert must
-  // NOT appear; on a registration_pool_conflict 409 it does. Callers that
-  // need the conflict path should use `setRegistrationPoolViaUI` instead.
-  await expect(page.locator(cb.editorRegistrationConflict)).toBeHidden({
-    timeout: 5000,
-  })
+  // Wait for the PUT to settle so the list/detail refetch completes before the
+  // caller reads back state. The editor stays open on update (the directory
+  // refetches list/detail via `onSaved`); a stable persistent signal is the
+  // editor remaining visible with no submission error, so just confirm the
+  // editor is still mounted after the save resolves.
+  await expect(page.locator(cb.editor)).toBeVisible({ timeout: 5000 })
 }
 
 /**
@@ -276,50 +242,8 @@ export async function toggleBucketEnabledViaUI(
   await page.locator(cb.editorSubmit).click()
 }
 
-/**
- * Mark a bucket as the realm registration pool via the editor.
- *
- * Surfaces the 409 `registration_pool_conflict` case: if another bucket in the
- * realm already carries the flag, the backend rejects the update and the
- * frontend renders `credit-bucket-editor-registration-conflict`. This helper
- * returns the resulting conflict visibility so the caller can assert either
- * branch (success / conflict) without relying on auto-dismissing toasts.
- *
- * @returns `true` if the conflict alert rendered (another registration pool
- *          already exists), `false` if the save succeeded cleanly.
- */
-export async function setRegistrationPoolViaUI(
-  page: Page,
-  bucketId: string,
-  enable: boolean,
-): Promise<boolean> {
-  const cb = SELECTORS.creditBucket
-  await openBucketEditor(page, bucketId)
-
-  const registrationSwitch = page.locator(cb.editorRegistration)
-  const state = await registrationSwitch.getAttribute('data-state')
-  const wantChecked = enable ? 'checked' : 'unchecked'
-  if (state !== wantChecked) {
-    await registrationSwitch.click()
-  }
-
-  await page.locator(cb.editorSubmit).click()
-
-  // The conflict alert renders synchronously on 409; on success it stays hidden.
-  // Race-resolve both outcomes with a short timeout.
-  const conflictLocator = page.locator(cb.editorRegistrationConflict)
-  let conflictVisible = false
-  try {
-    await expect(conflictLocator).toBeVisible({ timeout: 5000 })
-    conflictVisible = true
-  } catch {
-    conflictVisible = false
-  }
-  return conflictVisible
-}
-
 // ============================================================================
-// UI Helpers — coverage set + mapping assignment multiselects
+// UI Helpers — coverage set multiselect
 // ============================================================================
 
 /**
@@ -363,37 +287,6 @@ export async function bindCoverageSetViaUI(
   // Close the popover via Escape. `search.blur()` does NOT close a Radix
   // Popover — without this the popover stays open and obscures / intercepts
   // the editor submit click, leading to "element detached" retries.
-  await page.keyboard.press('Escape')
-  await expect(search).toBeHidden({ timeout: 2000 })
-}
-
-/**
- * Assign (toggle) provider entitlement mappings onto a bucket.
- *
- * Same command-palette UX as the coverage multiselect, different prefix.
- */
-export async function assignMappingsViaUI(
-  page: Page,
-  mappingIds: string[],
-): Promise<void> {
-  const cb = SELECTORS.creditBucket
-  if (mappingIds.length === 0) {
-    return
-  }
-
-  // Open the popover via its trigger (see `bindCoverageSetViaUI` for the
-  // Radix-Popover rationale — the search input is gated behind the trigger).
-  await page.locator(cb.mappingsMultiselect).click()
-  const search = page.locator(cb.mappingsMultiselectSearch)
-  await expect(search).toBeVisible({ timeout: 5000 })
-  await search.click()
-
-  for (const mappingId of mappingIds) {
-    const item = page.locator(cb.mappingsMultiselectItem(mappingId))
-    await expect(item).toBeVisible({ timeout: 5000 })
-    await item.click()
-  }
-
   await page.keyboard.press('Escape')
   await expect(search).toBeHidden({ timeout: 2000 })
 }
@@ -537,9 +430,10 @@ export async function createBucketViaApi(
 export async function listBucketsViaApi(
   page: Page,
   realmId: string,
+  requestContext: APIRequestContext = page.context().request,
 ): Promise<CreditBucketListItem[]> {
   const url = `${backendBaseUrl()}/api/realms/${realmId}/billing/credit-buckets`
-  const response = await page.context().request.get(url)
+  const response = await requestContext.get(url)
   const body = await parseJsonBody(response)
   if (!response.ok()) {
     throw new Error(

@@ -28,7 +28,7 @@ import {
   isLoginApiResponse,
 } from './helpers/oauth-helpers'
 import { verifyTestEnvironment } from './helpers/environment-setup'
-import { DEMO_ADMIN } from './helpers/auth'
+import { DEMO_ADMIN, createBearerApiContext } from './helpers/auth'
 import { ClientAppsPage } from './pages/client-apps-page'
 import * as crypto from 'node:crypto'
 
@@ -67,7 +67,8 @@ test.describe('[OAuth PKCE] Error and Edge Case Demo Tests', () => {
 
     await test.step('Given: Admin is logged in and OAuth client app is seeded', async () => {
       await loginPage.loginAsAdmin(DEMO_ADMIN.email, DEMO_ADMIN.password, realmId)
-      const result = await seedOAuthClientApp(page.request, realmId, {
+      const adminApiContext = await createBearerApiContext(loginPage.getAccessToken())
+      const result = await seedOAuthClientApp(adminApiContext, realmId, {
         appName,
         redirectUris: [redirectUri],
       })
@@ -133,7 +134,8 @@ test.describe('[OAuth PKCE] Error and Edge Case Demo Tests', () => {
 
     await test.step('Given: Admin is logged in and OAuth client app is seeded', async () => {
       await loginPage.loginAsAdmin(DEMO_ADMIN.email, DEMO_ADMIN.password, realmId)
-      const result = await seedOAuthClientApp(page.request, realmId, {
+      const adminApiContext = await createBearerApiContext(loginPage.getAccessToken())
+      const result = await seedOAuthClientApp(adminApiContext, realmId, {
         appName,
         redirectUris: [redirectUri],
       })
@@ -187,7 +189,8 @@ test.describe('[OAuth PKCE] Error and Edge Case Demo Tests', () => {
 
     await test.step('Given: OAuth client app is seeded with whitelist containing only example.com', async () => {
       await loginPage.loginAsAdmin(DEMO_ADMIN.email, DEMO_ADMIN.password, realmId)
-      const result = await seedOAuthClientApp(page.request, realmId, {
+      const adminApiContext = await createBearerApiContext(loginPage.getAccessToken())
+      const result = await seedOAuthClientApp(adminApiContext, realmId, {
         appName,
         redirectUris: [whitelistedUri],
       })
@@ -230,7 +233,8 @@ test.describe('[OAuth PKCE] Error and Edge Case Demo Tests', () => {
 
     await test.step('Given: Admin is logged in and OAuth client app is seeded', async () => {
       await loginPage.loginAsAdmin(DEMO_ADMIN.email, DEMO_ADMIN.password, realmId)
-      const result = await seedOAuthClientApp(page.request, realmId, {
+      const adminApiContext = await createBearerApiContext(loginPage.getAccessToken())
+      const result = await seedOAuthClientApp(adminApiContext, realmId, {
         appName,
         redirectUris: [redirectUri],
       })

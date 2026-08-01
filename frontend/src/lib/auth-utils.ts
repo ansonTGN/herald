@@ -298,7 +298,11 @@ export async function initializeAuth(
       }
     }
 
-    store.setAuthStatus(authStatus.authenticated, authStatus.realmId || realmId)
+    store.setAuthStatus(
+      authStatus.authenticated,
+      authStatus.realmId || realmId,
+      authStatus.clientAppId
+    )
     store.setUserPermissions(userPermissions.permissions, userPermissions.roles)
     store.setUserProfile(userProfile)
 
@@ -317,7 +321,17 @@ export async function initializeAuth(
       clientId: authStatus.clientId,
     }
   } catch {
-    store.reset()
+    const { refreshToken } = store.getRefreshToken()
+    if (refreshToken) {
+      // Status/client-switch failures can be transient. Clear stale UI auth
+      // data, but keep the established token family so a later initialization
+      // can retry or a full-page reload can use refresh-first restore.
+      store.setAuthStatus(false)
+      store.setUserPermissions([], [])
+      store.setUserProfile(null)
+    } else {
+      store.reset()
+    }
     initializedRealm = null
     initializedClientId = null
     return {
@@ -368,6 +382,12 @@ export async function loginFlow(
   credentials: LoginRequestPayload
 ): Promise<LoginFlowResult> {
   const store = useAuthStore.getState()
+  // True once the Bearer token family has been issued + persisted (PKCE exchange
+  // succeeded). Guards the catch block: a failure AFTER this point (e.g. a
+  // transient 401 while fetching the post-login auth data) must NOT destroy the
+  // persisted refresh token, or a subsequent full-page navigation to a protected
+  // route cannot restore the session and is wrongly bounced to login.
+  let tokensEstablished = false
 
   try {
     // Attach FirstParty PKCE OAuth params unless the caller already supplied
@@ -401,6 +421,10 @@ export async function loginFlow(
     if (loginResponse.redirectTo) {
       const exchanged = await tryCompletePkceExchange(realmId, loginResponse.redirectTo)
       if (exchanged) {
+        // The Bearer token family (access in memory, refresh persisted) is now
+        // established. From here on, a failure must NOT wipe it — see the guard
+        // in the catch block.
+        tokensEstablished = true
         const userRealmId = loginResponse.realmId || realmId
         store.login(userRealmId)
         const { userPermissions } = await hydrateAuthenticatedSession(store, userRealmId)
@@ -427,7 +451,17 @@ export async function loginFlow(
 
     return { response: loginResponse, redirectPath }
   } catch (error) {
-    store.logout()
+    // Only tear down the session when no Bearer token family was established
+    // (e.g. bad credentials, PKCE exchange failure). If the token exchange
+    // already succeeded, a transient failure in the subsequent auth-data fetch
+    // must not destroy the persisted refresh token: a full-page navigation to a
+    // protected route can still restore the session via `initializeAuth`'s
+    // refresh-first restore. tryCompletePkceExchange already calls logout() on
+    // its own exchange failure, so this only short-circuits the post-exchange
+    // window.
+    if (!tokensEstablished) {
+      store.logout()
+    }
     throw error
   }
 }

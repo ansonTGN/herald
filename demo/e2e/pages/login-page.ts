@@ -7,7 +7,7 @@
  * @see ../../../spec/demo/e2e-testing.md#page-object-model-pom-规范
  */
 
-import { Page, Locator, expect } from '@playwright/test'
+import { Page, Locator, expect, type Response } from '@playwright/test'
 import { SELECTORS } from '../selectors'
 import { BasePage } from './base-page'
 import type { UnifiedLogger } from '../helpers/unified-logger'
@@ -33,6 +33,8 @@ export interface LoginCredentials {
  * ```
  */
 export class LoginPage extends BasePage {
+  private accessToken: string | null = null
+
   // Selectors
   readonly container: Locator
   readonly title: Locator
@@ -72,10 +74,19 @@ export class LoginPage extends BasePage {
     const currentUrl = this.page.url()
     console.log(`[LoginPage] Current URL: ${currentUrl}`)
 
-    // Check if we've been redirected to a dashboard/profile page (user is already logged in)
-    // Support URLs with or without query parameters (e.g., /admin, /admin/, /admin?param=value)
+    // Check if we've been redirected to a dashboard/profile page (user is already logged in).
+    // Support URLs with or without query parameters (e.g., /admin, /admin/, /admin?param=value).
+    //
+    // Post route-refactor (commit 03eeb456): the admin console and user account
+    // center moved to TOP-LEVEL paths with NO realm prefix (/manage, /user/profile).
+    // Realm-scoped variants are kept for backward-compat. Authenticated users visiting
+    // an auth page are sent to /manage (admin) or /user/profile (regular user).
+    const BASE_URL_NO_SLASH = BASE_URL.replace(/\/$/, '')
     const isRedirectedToDashboard = currentUrl.includes(`/${realmId}/manage`)
+      || currentUrl.startsWith(`${BASE_URL_NO_SLASH}/manage`)
     const isRedirectedToProfile = currentUrl.includes(`/${realmId}/user/profile`)
+      || currentUrl.startsWith(`${BASE_URL_NO_SLASH}/user/profile`)
+      || currentUrl.startsWith(`${BASE_URL_NO_SLASH}/user`)
     const isRedirectedToRealm = currentUrl.match(new RegExp(`/${realmId}/?(\\?.*)?$`)) !== null
 
     console.log(`[LoginPage] Dashboard: ${isRedirectedToDashboard}, Profile: ${isRedirectedToProfile}, Realm: ${isRedirectedToRealm}`)
@@ -119,19 +130,66 @@ export class LoginPage extends BasePage {
   }
 
   /**
+   * Force a clean login page by clearing localStorage (auth-storage) and
+   * reloading the login URL.
+   *
+   * Under the browser Bearer token model (commit f3b8d48a) the session is
+   * persisted in localStorage under `auth-storage`, NOT in a cookie. A leftover
+   * `auth-storage` from a previous test or worker makes the root loader's
+   * "authenticated → redirect away from auth pages" guard fire, so the login
+   * card never renders and the subsequent form-fill times out.
+   *
+   * localStorage can only be cleared while the page is on the app origin, so
+   * this must be called AFTER goto() has navigated to localhost:3000. We
+   * unconditionally clear + reload (never short-circuit on the current URL)
+   * because the root loader's auth redirect is asynchronous: a URL that reads
+   * as `/auth/login` immediately after goto() can still redirect to /manage a
+   * tick later, and an early-return here would let that redirect win.
+   */
+  private async forceFreshLoginPage(realmId: string = 'admin'): Promise<void> {
+    const beforeUrl = this.page.url()
+    console.log(`[LoginPage] Forcing fresh login page for realm ${realmId} (was on: ${beforeUrl})`)
+
+    try {
+      await this.page.evaluate(() => {
+        localStorage.clear()
+        sessionStorage.clear()
+      })
+    } catch {
+      // page not on an http origin yet — ignore; the goto below lands on origin
+    }
+
+    // Reload to the realm login page so the root loader re-evaluates auth with
+    // cleared storage and renders the login card. Use load state so the SPA has
+    // finished its initial render before we assert the card.
+    const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
+    await this.page.goto(`${BASE_URL}/${realmId}/auth/login`, {
+      waitUntil: 'load',
+    })
+
+    // The root loader may still issue an async redirect even after a cleared
+    // store (e.g. a raced rehydrate). Wait for the URL to settle on the login
+    // page, then assert the card.
+    await this.page.waitForURL(/\/auth\/login/, { timeout: 10000 }).catch(() => {})
+    await expect(this.container).toBeVisible()
+  }
+
+  /**
    * Login with credentials
    *
    * @param credentials Login credentials
    */
-  async login(credentials: LoginCredentials): Promise<void> {
+  async login(credentials: LoginCredentials): Promise<Response | null> {
     await this.fillLoginForm(credentials)
-    await this.submit()
 
-    // Wait for the login API response so the Bearer token is stored before proceeding.
-    const loginResponse = await this.page.waitForResponse(
-      response => response.url().includes('/login') && response.request().method() === 'POST',
+    const loginResponsePromise = this.page.waitForResponse(
+      response =>
+        /^\/api\/auth\/[^/]+\/login$/.test(new URL(response.url()).pathname)
+        && response.request().method() === 'POST',
       { timeout: 10000 }
     ).catch(() => null)
+    await this.submit()
+    const loginResponse = await loginResponsePromise
 
     if (loginResponse && !loginResponse.ok()) {
       const errorBody = await loginResponse.text().catch(() => 'Unable to read error body')
@@ -142,6 +200,22 @@ export class LoginPage extends BasePage {
     if (loginResponse) {
       console.log(`[LoginPage] Login API response status: ${loginResponse.status()}`)
     }
+
+    // Handle login-time legal re-consent. Newly created users (or users with
+    // outdated agreement versions) are presented with a reconsent view after
+    // successful credential check instead of being redirected to their profile.
+    // The view offers "Agree and Continue" / "Decline and return to login".
+    // Without accepting, the user stays on /auth/login and downstream profile
+    // assertions fail. Mirrors helpers/auth.ts `acceptLoginReconsentIfPresent`.
+    const reconsentView = this.page.locator(SELECTORS.legalConsent.loginReconsentView)
+    const needsReconsent = await reconsentView.isVisible({ timeout: 3000 }).catch(() => false)
+    if (needsReconsent) {
+      console.log(`[LoginPage] Login-time re-consent required; agreeing to current agreements`)
+      const agreeButton = this.page.locator(SELECTORS.legalConsent.loginAgreeAndContinueButton)
+      await this.smartClick(agreeButton)
+    }
+
+    return loginResponse
   }
 
   /**
@@ -160,26 +234,71 @@ export class LoginPage extends BasePage {
     password: string = 'password',
     realmId: string = 'admin'
   ): Promise<string> {
-    // Always clear cookies before login to ensure fresh authentication
-    // This prevents stale auth state from causing navigation failures
+    this.accessToken = null
+    // Always clear cookies before login. (localStorage is cleared per-test by
+    // the test's beforeEach on the app origin, so we do NOT blanket-clear it
+    // here — that would log out an already-correct session established by a
+    // fixture, forcing a wasteful and flaky re-login.)
     await this.page.context().clearCookies()
     console.log(`[LoginPage] Cookies cleared for fresh authentication`)
 
     console.log(`[LoginPage] Logging in as ${email} to realm ${realmId}`)
 
-    // Navigate to login page and login
+    // Navigate to login page. goto() detects the "already logged in" redirect
+    // (top-level /manage or /user/...) and returns early in that case.
     await this.goto(realmId)
 
-    // Wait for login API response to capture userId
-    const loginResponsePromise = this.page.waitForResponse(
-      response => response.url().includes('/login') && response.request().method() === 'POST',
+    // If goto() short-circuited because we're already on an authenticated
+    // route, check whether the existing session is already the requested admin.
+    // If so, skip re-login (matches legacy behavior and avoids a flaky forced
+    // re-login). Only force a fresh login page when the login card did NOT
+    // render (e.g. stale session redirected us off the login page).
+    const onLoginCard = await this.container.isVisible({ timeout: 1000 }).catch(() => false)
+    if (!onLoginCard) {
+      // Not on the login card — either already authenticated or stuck. If the
+      // current session user matches the requested admin email, reuse it;
+      // otherwise force a fresh login.
+      const sessionUser = await this.page
+        .evaluate(() => {
+          try {
+            const raw = window.localStorage.getItem('auth-storage')
+            if (!raw) return null
+            const parsed = JSON.parse(raw)
+            return parsed?.state?.user?.email ?? null
+          } catch {
+            return null
+          }
+        })
+        .catch(() => null)
+
+      if (sessionUser === email) {
+        console.log(`[LoginPage] Already logged in as ${email}; skipping re-login`)
+        return ''
+      }
+
+      // Stale/different session — force a clean login page.
+      await this.forceFreshLoginPage(realmId)
+    }
+
+    const tokenResponsePromise = this.page.waitForResponse(
+      response =>
+        new URL(response.url()).pathname === `/api/oauth/${realmId}/token`
+        && response.request().method() === 'POST',
       { timeout: 10000 }
-    )
+    ).catch(() => null)
 
-    await this.login({ email, password })
+    const switchResponsePromise = this.page.waitForResponse(
+      response =>
+        new URL(response.url()).pathname === '/api/auth/browser-token/switch-client'
+        && response.request().method() === 'POST',
+      { timeout: 15000 },
+    ).catch(() => null)
 
-    // Get userId from login response
-    const loginResponse = await loginResponsePromise
+    const loginResponse = await this.login({ email, password })
+
+    if (!loginResponse) {
+      throw new Error('[LoginPage] Login API response was not captured')
+    }
     if (!loginResponse.ok()) {
       const errorBody = await loginResponse.text().catch(() => 'Unable to read error body')
       console.error(`[LoginPage] Login API failed: ${loginResponse.status()} - ${errorBody}`)
@@ -188,11 +307,52 @@ export class LoginPage extends BasePage {
 
     const loginData = await loginResponse.json()
     const userId = loginData.userId
-    console.log(`[LoginPage] Login successful, userId: ${userId}`)
+    const hasDirectAdminToken =
+      typeof loginData.accessToken === 'string'
+      && loginData.clientId === 'admin-web-console'
+    let accessToken = typeof loginData.accessToken === 'string' ? loginData.accessToken : null
+    if (!accessToken) {
+      const tokenResponse = await tokenResponsePromise
+      if (!tokenResponse) {
+        throw new Error('[LoginPage] OAuth token response was not captured')
+      }
+      if (!tokenResponse.ok()) {
+        const errorBody = await tokenResponse.text().catch(() => 'Unable to read error body')
+        throw new Error(`PKCE token exchange failed: API returned ${tokenResponse.status()} ${errorBody}`)
+      }
+      const tokenData = await tokenResponse.json()
+      accessToken = typeof tokenData.access_token === 'string' ? tokenData.access_token : null
+    }
 
-    // Verify successful login - wait for navigation to dashboard
-    // Match either /admin/ for admin realm or /{realmId} for new realms
-    await this.page.waitForURL(new RegExp(`.*${realmId}`), { timeout: 15000 })
+    await this.page.waitForURL(
+      url => url.pathname === '/manage' || url.pathname.startsWith('/manage/'),
+      { timeout: 15000 },
+    )
+
+    if (!hasDirectAdminToken) {
+      const switchResponse = await switchResponsePromise
+      if (!switchResponse) {
+        throw new Error('[LoginPage] Admin client switch response was not captured')
+      }
+      if (!switchResponse.ok()) {
+        const errorBody = await switchResponse.text().catch(() => 'Unable to read error body')
+        throw new Error(`Admin client switch failed: API returned ${switchResponse.status()} ${errorBody}`)
+      }
+      const switchData = await switchResponse.json()
+      if (switchData.clientId !== 'admin-web-console') {
+        throw new Error(`Admin client switch returned unexpected clientId: ${switchData.clientId}`)
+      }
+      if (typeof switchData.accessToken !== 'string' || !switchData.accessToken) {
+        throw new Error('Admin client switch response did not include an accessToken')
+      }
+      accessToken = switchData.accessToken
+    }
+
+    if (!accessToken) {
+      throw new Error('[LoginPage] Login completed without an access token')
+    }
+    this.accessToken = accessToken
+    console.log(`[LoginPage] Login successful, userId: ${userId}`)
 
     // Verify the browser-token session was established. Since commit f3b8d48a
     // replaced the X-Auth session cookie with the browser Bearer token model,
@@ -207,10 +367,16 @@ export class LoginPage extends BasePage {
 
     console.log(`[LoginPage] auth-storage persisted (length=${authStorage.length})`)
 
-    // Verify successful login - should be redirected to admin page
-    await expect(this.page).toHaveURL(new RegExp(`^http://localhost:3000/${realmId}(/|$)`))
+    await expect(this.page).toHaveURL(/\/manage(?:\/|\?|$)/)
 
     return userId
+  }
+
+  getAccessToken(): string {
+    if (!this.accessToken) {
+      throw new Error('[LoginPage] Access token unavailable; a fresh login is required')
+    }
+    return this.accessToken
   }
 
   /**
@@ -230,18 +396,105 @@ export class LoginPage extends BasePage {
     realmId: string,
     clientId?: string
   ): Promise<void> {
+    this.accessToken = null
     await this.page.context().clearCookies()
     console.log(`[LoginPage] Cookies cleared for fresh user authentication`)
 
     console.log(`[LoginPage] Logging in as user ${email} to realm ${realmId}`)
 
     await this.goto(realmId, clientId)
-    await this.login({ email, password })
 
+    // If the login card did not render (e.g. a stale session redirected us off
+    // the login page), force a clean login page. See loginAsAdmin.
+    const onLoginCard = await this.container.isVisible({ timeout: 1000 }).catch(() => false)
+    if (!onLoginCard) {
+      await this.forceFreshLoginPage(realmId)
+    }
+
+    const tokenResponsePromise = this.page.waitForResponse(
+      response =>
+        new URL(response.url()).pathname === `/api/oauth/${realmId}/token`
+        && response.request().method() === 'POST',
+      { timeout: 10000 },
+    ).catch(() => null)
+
+    // The frontend ALWAYS runs the client-switch gate on login
+    // (frontend/src/lib/auth-utils.ts:278): when the authenticated session's
+    // clientId !== targetClientId, it calls switchFirstPartyClient(targetClientId),
+    // which the backend implements (backend/api-auth/src/browser_token.rs:127-228)
+    // by creating a NEW first-party token family and REVOKING the source token
+    // family (revoke_family(context.family_id) at line 182). So the OAuth/PKCE
+    // access_token captured above is the SOURCE token, which is then revoked.
+    // getAccessToken() must therefore return the POST-switch token, which
+    // supersedes the revoked source token. Mirrors loginAsAdmin's handling.
+    const switchResponsePromise = this.page.waitForResponse(
+      response =>
+        new URL(response.url()).pathname === '/api/auth/browser-token/switch-client'
+        && response.request().method() === 'POST',
+      { timeout: 15000 },
+    ).catch(() => null)
+
+    const loginResponse = await this.login({ email, password })
+    if (!loginResponse) {
+      throw new Error('[LoginPage] Login API response was not captured')
+    }
+    if (!loginResponse.ok()) {
+      const errorBody = await loginResponse.text().catch(() => 'Unable to read error body')
+      throw new Error(`Login failed: API returned ${loginResponse.status()} ${errorBody}`)
+    }
+
+    const loginData = await loginResponse.json()
+    let accessToken = typeof loginData.accessToken === 'string' ? loginData.accessToken : null
+    if (!accessToken) {
+      const tokenResponse = await tokenResponsePromise
+      if (!tokenResponse) {
+        throw new Error('[LoginPage] OAuth token response was not captured')
+      }
+      if (!tokenResponse.ok()) {
+        const errorBody = await tokenResponse.text().catch(() => 'Unable to read error body')
+        throw new Error(`PKCE token exchange failed: API returned ${tokenResponse.status()} ${errorBody}`)
+      }
+      const tokenData = await tokenResponse.json()
+      accessToken = typeof tokenData.access_token === 'string' ? tokenData.access_token : null
+    }
+
+    if (!accessToken) {
+      throw new Error('[LoginPage] Login completed without an access token')
+    }
+
+    // Post route-refactor (commit 03eeb456): regular users land on the top-level
+    // /user/profile (NO realm prefix). Accept /user/... or the legacy realm root
+    // /{realmId} for backward-compat.
     await this.page.waitForURL(
-      new RegExp(`^http://localhost:3000/${realmId}(/|\\?|$)`),
+      new RegExp(`^http://localhost:3000/(user|${realmId})(/|\\?|$)`),
       { timeout: 15000 }
     )
+
+    // The client-switch (if any) runs after the authenticated route settles.
+    // Tolerate its absence: if no switch happened (response null) the OAuth/
+    // direct accessToken remains authoritative; if the switch succeeded it
+    // supersedes the now-revoked source token. Do NOT hard-fail on a missing
+    // switch — the gate is conditional on clientId mismatch.
+    const switchResponse = await switchResponsePromise
+    if (switchResponse) {
+      if (!switchResponse.ok()) {
+        const errorBody = await switchResponse.text().catch(() => 'Unable to read error body')
+        console.warn(`[LoginPage] User client switch failed (keeping source token): ${switchResponse.status()} - ${errorBody}`)
+      } else {
+        const switchData = await switchResponse.json().catch(() => null)
+        const switchToken = typeof switchData?.accessToken === 'string' ? switchData.accessToken : null
+        if (switchToken) {
+          console.log(`[LoginPage] User client switch succeeded; using post-switch access token`)
+          accessToken = switchToken
+        } else {
+          console.warn(`[LoginPage] User client switch response did not include an accessToken; keeping source token`)
+        }
+      }
+    } else {
+      console.log(`[LoginPage] No user client switch response captured; keeping source access token`)
+    }
+
+    this.accessToken = accessToken
 
     // Browser Bearer token model (commit f3b8d48a): no X-Auth cookie. The
     // rotating refresh token is persisted in localStorage under `auth-storage`

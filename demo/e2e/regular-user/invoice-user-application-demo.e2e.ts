@@ -57,7 +57,7 @@ async function openApplyInvoiceForm(
   realmId: string,
   paymentAttemptId: string
 ): Promise<void> {
-  await page.goto(`/${realmId}/user/subscription-history`)
+  await page.goto(`/user/subscription-history`)
 
   const rowButton = page.getByTestId(`purchase-history-invoice-button-${paymentAttemptId}`)
   await expect(rowButton).toBeVisible({ timeout: 10000 })
@@ -301,7 +301,7 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
       await test.step('When: user opens purchase history', async () => {
         await page.context().clearCookies()
         await loginPage.loginAsUser(user.email, user.password, REALM_ID)
-        await page.goto(`/${REALM_ID}/user/subscription-history`)
+        await page.goto(`/user/subscription-history`)
         await expect(page.getByTestId(`purchase-history-item-${paymentAttemptId}`)).toBeVisible({
           timeout: 10000,
         })
@@ -387,7 +387,7 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
       await test.step('Then: user invoice page still lists invoices (view-only entry)', async () => {
         // The My Invoices page itself still exists and lists invoices; only the
         // standalone page-level "Apply" button was removed.
-        await page.goto(`/${REALM_ID}/user/invoices`)
+        await page.goto(`/user/invoices`)
         await expect(page.getByTestId('invoice-user-page')).toBeVisible({
           timeout: 10000,
         })
@@ -845,7 +845,7 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
         await page.context().clearCookies()
         await loginPage.loginAsUser(user2.email, user2.password, REALM_ID)
 
-        await page.goto(`/${REALM_ID}/user/invoices`)
+        await page.goto(`/user/invoices`)
         await expect(page.getByTestId('invoice-user-page')).toBeVisible({
           timeout: 10000,
         })

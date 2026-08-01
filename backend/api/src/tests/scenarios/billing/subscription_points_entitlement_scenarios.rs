@@ -285,7 +285,7 @@ mod tests {
 
         set_webhook_secret_for_realm(ctx, webhook_secret).await;
 
-        setup_test_entitlement_mapping_with_points(
+        let mapping_id = setup_test_entitlement_mapping_with_points(
             ctx,
             &realm_id,
             "creem",
@@ -294,6 +294,16 @@ mod tests {
             points_to_grant,
             true, // grant_on_subscribe
             true, // enabled
+        )
+        .await;
+        // Initial activation grants nothing (BE-D04 owns initial fulfillment);
+        // only the renewal route grants, so seed a subscription_renewal rule and
+        // drive a renewal webhook.
+        crate::tests::helpers::points_helpers::seed_subscription_renewal_rule(
+            &ctx.app_state.pool,
+            &realm_id,
+            mapping_id,
+            points_to_grant,
         )
         .await;
 
@@ -308,7 +318,7 @@ mod tests {
             Some(client_app_id),
             &external_sub_id,
             &external_product_id,
-            false, // not renewal
+            true, // renewal — the only grant-bearing subscription.paid route
         );
 
         let response = send_webhook_with_signature(&app, &realm_id, payload, webhook_secret).await;
@@ -530,7 +540,7 @@ mod tests {
 
         set_webhook_secret_for_realm(ctx, webhook_secret).await;
 
-        setup_test_entitlement_mapping_with_points(
+        let mapping_id = setup_test_entitlement_mapping_with_points(
             ctx,
             &realm_id,
             "creem",
@@ -539,6 +549,16 @@ mod tests {
             500,
             true,
             true,
+        )
+        .await;
+        // The renewal grant reads CURRENT distribution rules; the helper only
+        // seeds a subscription_initial rule, so add the subscription_renewal
+        // rule that the renewal route selects.
+        crate::tests::helpers::points_helpers::seed_subscription_renewal_rule(
+            &ctx.app_state.pool,
+            &realm_id,
+            mapping_id,
+            500,
         )
         .await;
 
@@ -624,7 +644,7 @@ mod tests {
 
         set_webhook_secret_for_realm(ctx, webhook_secret).await;
 
-        setup_test_entitlement_mapping_full(
+        let mapping_id = setup_test_entitlement_mapping_full(
             ctx,
             &realm_id,
             "creem",
@@ -642,6 +662,16 @@ mod tests {
             None,
         )
         .await;
+        // Initial activation grants nothing; seed a subscription_renewal rule
+        // (validity_days on the renewal quota is driven by the subscription
+        // period end) and drive a renewal webhook.
+        crate::tests::helpers::points_helpers::seed_subscription_renewal_rule(
+            &ctx.app_state.pool,
+            &realm_id,
+            mapping_id,
+            500,
+        )
+        .await;
 
         create_points_wallet_for_user(ctx, user_id, &realm_id).await;
 
@@ -654,7 +684,7 @@ mod tests {
             Some(client_app_id),
             &external_sub_id,
             &external_product_id,
-            false,
+            true, // renewal — the only grant-bearing subscription.paid route
         );
 
         let response = send_webhook_with_signature(&app, &realm_id, payload, webhook_secret).await;
@@ -705,7 +735,7 @@ mod tests {
 
         set_webhook_secret_for_realm(ctx, webhook_secret).await;
 
-        setup_test_entitlement_mapping_with_points(
+        let mapping_id = setup_test_entitlement_mapping_with_points(
             ctx,
             &realm_id,
             "creem",
@@ -716,10 +746,19 @@ mod tests {
             true,
         )
         .await;
+        // Initial activation grants nothing; seed a subscription_renewal rule
+        // so the renewal paid webhook grants the credits that cancel then revokes.
+        crate::tests::helpers::points_helpers::seed_subscription_renewal_rule(
+            &ctx.app_state.pool,
+            &realm_id,
+            mapping_id,
+            1000,
+        )
+        .await;
 
         create_points_wallet_for_user(ctx, user_id, &realm_id).await;
 
-        // First send subscription.paid to grant points
+        // First send subscription.paid (renewal — the grant-bearing route) to grant points
         let paid_event_id = generate_test_event_id();
         let external_sub_id = format!("sub_cancel_revoke_{}", paid_event_id);
         let paid_payload = build_creem_subscription_paid_with_herald_metadata(
@@ -730,7 +769,7 @@ mod tests {
             Some(client_app_id),
             &external_sub_id,
             &external_product_id,
-            false,
+            true, // renewal — the only grant-bearing subscription.paid route
         );
 
         let paid_response =
@@ -866,7 +905,7 @@ mod tests {
 
         set_webhook_secret_for_realm(ctx, webhook_secret).await;
 
-        setup_test_entitlement_mapping_with_points(
+        let mapping_id = setup_test_entitlement_mapping_with_points(
             ctx,
             &realm_id,
             "creem",
@@ -877,10 +916,19 @@ mod tests {
             true,
         )
         .await;
+        // Initial activation grants nothing; seed a subscription_renewal rule
+        // so the renewal paid webhook grants the credits the refund then revokes.
+        crate::tests::helpers::points_helpers::seed_subscription_renewal_rule(
+            &ctx.app_state.pool,
+            &realm_id,
+            mapping_id,
+            1000,
+        )
+        .await;
 
         create_points_wallet_for_user(ctx, user_id, &realm_id).await;
 
-        // First grant points via subscription.paid
+        // First grant points via subscription.paid (renewal — the grant-bearing route)
         let paid_event_id = generate_test_event_id();
         let external_sub_id = format!("sub_refund_revoke_{}", paid_event_id);
         let paid_payload = build_creem_subscription_paid_with_herald_metadata(
@@ -891,7 +939,7 @@ mod tests {
             Some(client_app_id),
             &external_sub_id,
             &external_product_id,
-            false,
+            true, // renewal — the only grant-bearing subscription.paid route
         );
 
         let paid_response =

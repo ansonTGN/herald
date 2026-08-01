@@ -81,13 +81,14 @@ test.describe('[Billing Admin] Subscription History Demo Tests', () => {
       })
 
       await test.step('And: 验证表格列显示', async () => {
-        // 验证表头列
+        // 验证表头列 (subscription-history-list.tsx renders 5 columns:
+        // Timestamp, Event Type, Subscription, User, Actor — there is NO
+        // Actions column, so it must not be asserted.)
         await expect(page.getByRole('columnheader', { name: /timestamp/i })).toBeVisible()
         await expect(page.getByRole('columnheader', { name: /event type/i })).toBeVisible()
         await expect(page.getByRole('columnheader', { name: /subscription/i })).toBeVisible()
         await expect(page.getByRole('columnheader', { name: /user/i })).toBeVisible()
         await expect(page.getByRole('columnheader', { name: /actor/i })).toBeVisible()
-        await expect(page.getByRole('columnheader', { name: /actions/i })).toBeVisible()
         await demoLogger.testCode.log('Table columns displayed')
       })
     })
@@ -215,49 +216,30 @@ test.describe('[Billing Admin] Subscription History Demo Tests', () => {
         await navigateToSubscriptionHistory(page, DEMO_ADMIN.realmId)
       })
 
-      await test.step('When: 选择 entitlement key 筛选器', async () => {
-        // The filter UI may use "Entitlement Key" or "Plan" label
-        const filterContainer = page.getByTestId('subscription-history-filter')
-        const entitlementFilter = filterContainer.getByLabel(/entitlement|plan/i)
-        const filterVisible = await entitlementFilter.isVisible({ timeout: 5000 }).catch(() => false)
+      await test.step('When: 在 entitlement key 筛选器中输入值', async () => {
+        // The entitlement-key filter is a TEXT input (data-testid
+        // "filter-entitlement-key", label "Entitlement Key"), NOT a select — so
+        // we type the key and apply filters rather than opening a dropdown.
+        const filterInput = page.getByTestId('filter-entitlement-key')
+        const filterVisible = await filterInput.isVisible({ timeout: 5000 }).catch(() => false)
 
         if (filterVisible) {
-          await entitlementFilter.click()
-          await expect(page.getByRole('option').first()).toBeVisible({ timeout: 5000 })
-          await demoLogger.testCode.log('Entitlement key dropdown opened')
+          await filterInput.fill(entitlementKey)
+          await applyFilters(page)
+          await demoLogger.testCode.log(`Entitlement key filter applied: ${entitlementKey}`)
         } else {
           await demoLogger.testCode.log('Entitlement key filter not found — skipping filter test')
         }
       })
 
-      await test.step('Then: 验证筛选器选项显示', async () => {
-        const firstOption = page.getByRole('option').first()
-        const optionVisible = await firstOption.isVisible({ timeout: 3000 }).catch(() => false)
-        if (optionVisible) {
-          await demoLogger.testCode.log('Filter options displayed')
+      await test.step('Then: 验证筛选器显示输入的 entitlement key', async () => {
+        const filterInput = page.getByTestId('filter-entitlement-key')
+        const filterVisible = await filterInput.isVisible({ timeout: 5000 }).catch(() => false)
+        if (filterVisible) {
+          await expect(filterInput).toHaveValue(entitlementKey, { timeout: 5000 })
+          await demoLogger.testCode.log('Entitlement key filter value verified')
         } else {
-          await demoLogger.testCode.log('No filter options available')
-        }
-      })
-
-      await test.step('When: 选择 entitlement key', async () => {
-        const option = page.getByRole('option', { name: entitlementKey })
-        const optionVisible = await option.isVisible({ timeout: 3000 }).catch(() => false)
-        if (optionVisible) {
-          await option.click()
-          await applyFilters(page)
-          await demoLogger.testCode.log('Entitlement key selected for filtering')
-        } else {
-          await demoLogger.testCode.log('Test entitlement key not in filter options')
-        }
-      })
-
-      await test.step('Then: 验证筛选器显示所选 entitlement key', async () => {
-        const filterContainer = page.getByTestId('subscription-history-filter')
-        const entitlementFilter = filterContainer.getByLabel(/entitlement|plan/i)
-        const filterHasValue = await entitlementFilter.isVisible().catch(() => false)
-        if (filterHasValue) {
-          await demoLogger.testCode.log('Filter selection verified')
+          await demoLogger.testCode.log('Entitlement key filter not available for verification')
         }
       })
     })
@@ -302,11 +284,22 @@ test.describe('[Billing Admin] Subscription History Demo Tests', () => {
       })
 
       await test.step('When: 导航到计费页面', async () => {
-        await page.goto(`/${DEMO_ADMIN.realmId}/manage/billing`)
+        // Use in-app SPA navigation (same rationale as
+        // navigateToSubscriptionHistory): a full page.goto reload re-runs the
+        // root loader's auth restore, which is flaky in the demo env and can
+        // bounce back to /auth/login. SPA navigation preserves the in-memory
+        // admin access token.
+        await page.evaluate((target) => {
+          const w = window as unknown as { router?: { navigate: (o: { to: string }) => void } }
+          w.router?.navigate({ to: target })
+        }, `/${DEMO_ADMIN.realmId}/manage/billing`)
       })
 
       await test.step('Then: 验证导航到计费页面', async () => {
-        await expect(page.getByTestId('billing-page')).toBeVisible()
+        // The billing route (`/{realmId}/manage/billing`) is a bare <Outlet/>
+        // with no `billing-page` testid and no index of its own; arriving
+        // there is verified by the URL settling under the billing section.
+        await expect(page).toHaveURL(/\/manage\/billing(\/|$|\?)/, { timeout: 10000 })
         await demoLogger.testCode.log('Navigated back to billing page')
       })
     })

@@ -68,7 +68,6 @@ test.describe('[Billing Admin] Subscription View Demo Tests', () => {
           name: clientAppName,
           description: 'Test app for subscription demo',
           redirectUris: ['https://example.com/callback'],
-          sessionTtl: 3600,
         })
         demoLogger.testCode.log('[Test] ✓ Client app created')
       })

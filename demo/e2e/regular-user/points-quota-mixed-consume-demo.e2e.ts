@@ -17,7 +17,7 @@ import { expect, type Page } from '@playwright/test'
 import { test, cleanupTestData } from '../fixtures/demo-page.fixtures'
 import { SELECTORS } from '../selectors'
 import { verifyTestEnvironment } from '../helpers/environment-setup'
-import { loginWithCredentials } from '../helpers/auth'
+import { createBearerApiContext, loginWithCredentials } from '../helpers/auth'
 import { listBucketsViaApi } from '../helpers/bucket-helpers'
 import {
   createTestApiKeyWithPermission,
@@ -129,21 +129,20 @@ test.beforeAll(async ({ browser }) => {
   const page = await context.newPage()
 
   try {
-    await loginWithCredentials(page, {
-      realmId: TEST_REALM,
-      email: ADMIN_EMAIL,
-      password: ADMIN_PASSWORD,
-    })
+    const { LoginPage } = await import('../pages/login-page')
+    const loginPage = new LoginPage(page)
+    await loginPage.loginAsAdmin(ADMIN_EMAIL, ADMIN_PASSWORD, TEST_REALM)
 
     // Sync the real multi-price catalog into Herald so the purchase flow has a
     // real Stripe subscription product to check out.
-    await ensureMultiPriceCatalog(page.context().request, {
+    const apiContext = await createBearerApiContext(loginPage.getAccessToken())
+    await ensureMultiPriceCatalog(apiContext, {
       baseUrl: BASE_URL,
       realmId: TEST_REALM,
       stripeSecretKey: secrets.stripe.secretKey!,
       stripePublishableKey: secrets.stripe.publishableKey!,
       stripeWebhookSecret: secrets.stripe.webhookSecret!,
-    })
+    }).finally(() => apiContext.dispose())
 
     await page.evaluate(() => localStorage.removeItem('cas-purchase-flow'))
 

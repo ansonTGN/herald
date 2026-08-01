@@ -50,8 +50,8 @@ test.describe('[Realm Admin] Client App Management Demo Tests', () => {
       description: 'Testing complete lifecycle',
       redirectUris: ['https://example.com/callback', 'https://app.example.com/auth'],
       enabled: true,
-      sessionTtl: 3600,
-      renewalTtl: 7200,
+      sessionTtl: 86400,
+      renewalTtl: 86400,
     }
 
     await test.step('Given: Admin is logged in', async () => {
@@ -94,7 +94,7 @@ test.describe('[Realm Admin] Client App Management Demo Tests', () => {
       // Configure Security Settings
       await test.step('Step 5: Configure security settings', async () => {
         await clientAppsPage.fillSecurityTab({
-          sessionTtlSeconds: testClientApp.sessionTtl || 3600,
+          sessionTtlSeconds: testClientApp.sessionTtl || 86400,
           sessionRenewalTtlSeconds: testClientApp.renewalTtl,
         })
         console.log('Security settings configured')
@@ -246,7 +246,7 @@ test.describe('[Realm Admin] Client App Management Demo Tests', () => {
       await clientAppsPage.switchTab('security')
       await clientAppsPage.verifyActiveTab('security')
       await clientAppsPage.fillSecurityTab({
-        sessionTtlSeconds: 3600,
+        sessionTtlSeconds: 86400,
       })
       console.log('Security tab filled')
 
@@ -279,7 +279,7 @@ test.describe('[Realm Admin] Client App Management Demo Tests', () => {
       // Switch to Security tab and update
       await clientAppsPage.switchTab('security')
       await clientAppsPage.fillSecurityTab({
-        sessionTtlSeconds: 7200,
+        sessionTtlSeconds: 86400,
       })
 
       // Submit changes
@@ -357,7 +357,7 @@ test.describe('[Realm Admin] Client App Management Demo Tests', () => {
 
       // Switch to Security and fill
       await clientAppsPage.fillSecurityTab({
-        sessionTtlSeconds: 3600,
+        sessionTtlSeconds: 86400,
       })
       console.log('Security settings filled')
 
@@ -457,7 +457,7 @@ test.describe('[Realm Admin] Client App Management Demo Tests', () => {
 
       // Fill Security
       await clientAppsPage.fillSecurityTab({
-        sessionTtlSeconds: 3600,
+        sessionTtlSeconds: 86400,
       })
 
       // Submit
@@ -519,7 +519,7 @@ test.describe('[Realm Admin] Client App Management Demo Tests', () => {
 
       // Fill security settings via POM
       await clientAppsPage.fillSecurityTab({
-        sessionTtlSeconds: 3600,
+        sessionTtlSeconds: 86400,
       })
       console.log('Security settings filled')
 
@@ -581,7 +581,7 @@ test.describe('[Realm Admin] Client App Management Demo Tests', () => {
         clientId: `esc-${testStartTime}`,
         name: `Esc Delete Test App ${testStartTime}`,
         redirectUris: ['https://example.com/callback'],
-        sessionTtl: 3600,
+        sessionTtl: 86400,
       }, 'admin')
       console.log('Test Client App created')
 

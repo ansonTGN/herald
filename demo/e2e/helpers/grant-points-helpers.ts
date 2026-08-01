@@ -12,7 +12,7 @@
  * @see docs/user-stories/integration/sdk.md (Story 4)
  */
 
-import { Page, expect } from '@playwright/test'
+import { Page, expect, type APIRequestContext } from '@playwright/test'
 import { SELECTORS } from '../selectors'
 import { makeExtApiRequest } from './ext-api-helper'
 import {
@@ -86,7 +86,7 @@ export async function openGrantDialog(
   realmId: string,
 ): Promise<void> {
   const gp = SELECTORS.grantPoints
-  const walletsUrl = `/${realmId}/manage/points/wallets`
+  const walletsUrl = `/manage/points/wallets`
 
   await page.goto(walletsUrl)
   await expect(page.locator('[data-testid="points-wallets-page"]')).toBeVisible()
@@ -271,8 +271,8 @@ export async function grantPointsViaExtApi(
 /**
  * Create a test Client App and API Key via the admin HTTP API.
  *
- * Uses Playwright's request context to call the backend directly.
- * Shares cookies with the browser context for authentication.
+ * Uses Playwright's request context to call the backend directly. Callers can
+ * provide a dedicated Bearer-authenticated context for Bearer-only admin APIs.
  *
  * When `permission` is "points.manage", this creates a custom role with that
  * permission and assigns it to the API key. Built-in roles cannot be assigned
@@ -308,6 +308,7 @@ export async function grantPointsViaExtApi(
  *                           a temp `grant-test-app-${suffix}` is created (the
  *                           historical behavior — DE-D07 siblings +
  *                           points-grant-sdk-demo are unaffected).
+ * @param requestContext - Optional authenticated request context for Bearer-only admin APIs
  */
 export async function createTestApiKeyWithPermission(
   page: Page,
@@ -315,6 +316,7 @@ export async function createTestApiKeyWithPermission(
   testStartTime: number,
   realmId: string = 'admin',
   boundClientAppId: string = '',
+  requestContext: APIRequestContext = page.context().request,
 ): Promise<ApiKeyWithPermission> {
   const suffix = testStartTime
   const clientAppName = `grant-test-app-${suffix}`
@@ -333,7 +335,7 @@ export async function createTestApiKeyWithPermission(
   if (boundClientAppId) {
     clientId = boundClientAppId
   } else {
-    const clientAppResponse = await page.context().request.post(
+    const clientAppResponse = await requestContext.post(
       `${backendUrl}/api/client/${realmId}`,
       {
         data: {
@@ -341,7 +343,6 @@ export async function createTestApiKeyWithPermission(
           name: clientAppName,
           redirectUris: ['https://example.com/callback'],
           enabled: true,
-          sessionTtlSeconds: 1800,
         },
       },
     )
@@ -358,7 +359,7 @@ export async function createTestApiKeyWithPermission(
   }
 
   // 2. Create API Key bound to the new Client App
-  const apiKeyResponse = await page.context().request.post(
+  const apiKeyResponse = await requestContext.post(
     `${backendUrl}/api/api-keys/${realmId}`,
     {
       data: {
@@ -381,7 +382,14 @@ export async function createTestApiKeyWithPermission(
 
   // 3. Assign permission via a custom role (built-in roles cannot be assigned to API keys).
   if (apiKeyId) {
-    await assignPermissionRoleToApiKey(page, backendUrl, realmId, apiKeyId, suffix, permission)
+    await assignPermissionRoleToApiKey(
+      requestContext,
+      backendUrl,
+      realmId,
+      apiKeyId,
+      suffix,
+      permission,
+    )
   }
 
   return { apiKey, clientId }
@@ -397,15 +405,13 @@ export async function createTestApiKeyWithPermission(
  * 4. Assign the role to the API key via PUT /api/api-keys/{realmId}/{apiKeyId}/roles
  */
 async function assignPermissionRoleToApiKey(
-  page: Page,
+  request: APIRequestContext,
   backendUrl: string,
   realmId: string,
   apiKeyId: string,
   suffix: number,
   permission: string,
 ): Promise<void> {
-  const request = page.context().request
-
   // 3a. Find the permission ID
   const permListResponse = await request.get(
     `${backendUrl}/api/permission/${realmId}/define`,

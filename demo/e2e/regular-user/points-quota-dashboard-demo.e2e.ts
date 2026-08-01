@@ -27,7 +27,7 @@ import { expect, type Page } from '@playwright/test'
 import { test, cleanupTestData } from '../fixtures/demo-page.fixtures'
 import { SELECTORS } from '../selectors'
 import { verifyTestEnvironment } from '../helpers/environment-setup'
-import { loginWithCredentials } from '../helpers/auth'
+import { createBearerApiContext, loginWithCredentials } from '../helpers/auth'
 import { listBucketsViaApi } from '../helpers/bucket-helpers'
 import {
   createTestApiKeyWithPermission,
@@ -119,21 +119,20 @@ test.beforeAll(async ({ browser }) => {
 
   try {
     // 1. Login as the realm-001 admin (carries points.manage).
-    await loginWithCredentials(page, {
-      realmId: TEST_REALM,
-      email: ADMIN_EMAIL,
-      password: ADMIN_PASSWORD,
-    })
+    const { LoginPage } = await import('../pages/login-page')
+    const loginPage = new LoginPage(page)
+    await loginPage.loginAsAdmin(ADMIN_EMAIL, ADMIN_PASSWORD, TEST_REALM)
 
     // 2. Resolve the real multi-price Stripe product + sync its catalog into
     //    Herald. Replaces the removed placeholder seed id.
-    const catalog = await ensureMultiPriceCatalog(page.context().request, {
+    const apiContext = await createBearerApiContext(loginPage.getAccessToken())
+    const catalog = await ensureMultiPriceCatalog(apiContext, {
       baseUrl: BASE_URL,
       realmId: TEST_REALM,
       stripeSecretKey: secrets.stripe.secretKey!,
       stripePublishableKey: secrets.stripe.publishableKey!,
       stripeWebhookSecret: secrets.stripe.webhookSecret!,
-    })
+    }).finally(() => apiContext.dispose())
     const realProductId = catalog.product.productId
 
     // 3. Configure the pro-plan entitlement mapping with multi-window quota.

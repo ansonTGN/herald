@@ -91,7 +91,7 @@ async fn create_user(ctx: &SchemaTestContext, realm_id: &str, email: &str) -> Uu
 ///     returns Some → renewal grant fires.
 ///   * `None`                     → the line carries no period → resolver
 ///     returns None → renewal grant is skipped (P0).
-fn build_stripe_invoice_payment_succeeded_event(
+pub(crate) fn build_stripe_invoice_payment_succeeded_event(
     event_id: &str,
     realm_id: &str,
     user_id: Uuid,
@@ -181,7 +181,7 @@ async fn test_stripe_invoice_period_normalized_drives_renewal_grant(ctx: &mut Sc
     .await;
 
     // Entitlement mapping so the renewal grant resolves points_per_period.
-    setup_test_entitlement_mapping_for_webhook(
+    let mapping_id = setup_test_entitlement_mapping_for_webhook(
         ctx,
         &realm_id,
         "stripe",
@@ -190,6 +190,16 @@ async fn test_stripe_invoice_period_normalized_drives_renewal_grant(ctx: &mut Sc
         1000,
         true,
         true,
+    )
+    .await;
+    // The renewal grant reads CURRENT distribution rules, so seed a
+    // subscription_renewal rule on this mapping (the bare mapping seeder
+    // creates none).
+    crate::tests::helpers::points_helpers::seed_subscription_renewal_rule(
+        &ctx.app_state.pool,
+        &realm_id,
+        mapping_id,
+        1000,
     )
     .await;
 

@@ -46,7 +46,7 @@ export class AdminSubscriptionListPage extends BasePage {
    * Navigate to the admin subscription list page for a given realm.
    */
   async goto(realmId: string = 'admin'): Promise<void> {
-    await super.goto(`/${realmId}/manage/billing/subscriptions`)
+    await super.goto(`/manage/billing/subscriptions`)
     await this.waitForReady()
   }
 

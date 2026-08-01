@@ -18,6 +18,7 @@ pub struct StatusResponse {
     /// Retained in the response shape for clients that display RBAC grants;
     /// browser-token authorization itself is governed by `scopes`.
     pub permissions: Option<Vec<String>>,
+    pub client_app_id: uuid::Uuid,
     pub client_id: String,
     pub credential_class: CredentialClass,
     pub scopes: Vec<CredentialScope>,
@@ -58,6 +59,7 @@ pub async fn status(
         realm_id: Some(user.realm_id.clone()),
         user_id: Some(user.id.to_string()),
         permissions: Some(permissions),
+        client_app_id: context.client_app_id,
         client_id: context.client_id,
         credential_class: context.credential_class,
         scopes,
