@@ -147,8 +147,13 @@ test.describe('[Regular User] Subscription Timeline Demo Tests', () => {
       })
 
       await test.step('Then: 验证页面基础元素', async () => {
-        // 验证页面标题
-        await expect(page.getByRole('heading', { name: 'Subscription History' })).toBeVisible()
+        // 验证页面标题 — the page title is a localized string
+        // (`billing.purchase_records_page_title`), so assert via the stable
+        // timeline container/empty-state testids rather than a hardcoded
+        // English heading name (which breaks under any locale change).
+        await expect(
+          page.getByTestId('subscription-timeline').or(page.getByTestId('subscription-timeline-empty')),
+        ).toBeVisible()
         await demoLogger.testCode.info('Page title displayed')
 
         // PageHeader has no subtitle, only verify title

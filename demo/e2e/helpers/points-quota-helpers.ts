@@ -7,7 +7,7 @@
  * - US-FU-005: 免费周期积分改为滚动窗口配额
  */
 
-import { Page, expect, type Locator } from '@playwright/test'
+import { Page, expect, type APIRequestContext, type Locator } from '@playwright/test'
 import { SELECTORS } from '../selectors'
 import { makeExtApiRequest } from './ext-api-helper'
 import { loginAsAdmin, loginWithCredentials } from './auth'
@@ -119,7 +119,18 @@ export async function fillRealmDefaultRequiredFields(page: Page): Promise<void> 
 
 /**
  * Create (or overwrite) multi-window quota configuration on an entitlement
- * mapping.
+ * mapping by driving the NEW `PointDistributionRuleEditor` flow.
+ *
+ * The entitlement-mappings refactor removed the per-price "Advanced"
+ * collapsible + bare `MultiWindowQuotaEditor`. The detail panel now embeds a
+ * `PointDistributionRuleEditor` directly inside each `PriceEditRow`; a rule's
+ * grant-mode select (`point-rule-mode`) switches between `fixed` and `quota`,
+ * and only `quota` mode reveals an embedded `MultiWindowQuotaEditor` whose
+ * testid prefix is `point-rule-quota-${key}` (key = `rule.id ?? 'new-${index}'`).
+ *
+ * Flow: open the product detail panel, add a fresh rule on the FIRST price
+ * row's editor (so we own its key), target the seeded `primary-pool` bucket,
+ * switch the rule to quota mode, then fill the embedded quota editor and save.
  */
 export async function createEntitlementMappingWithQuotaWindows(
   page: Page,
@@ -138,21 +149,53 @@ export async function createEntitlementMappingWithQuotaWindows(
   await productRow.click()
   await expect(page.locator(SELECTORS.multiPriceMapping.mappingDetailPanel)).toBeVisible()
 
-  // The quota editor lives inside each price row's Advanced collapsible.
-  const firstAdvanced = page
-    .locator(SELECTORS.multiPriceMapping.mappingDetailPanel)
-    .getByRole('button', { name: 'Advanced' })
-    .first()
-  await expect(firstAdvanced).toBeVisible()
-  await firstAdvanced.click()
+  // Scope to the FIRST price-edit-row's PointDistributionRuleEditor. A product
+  // may carry multiple prices, each with its own editor + add/bucket/mode
+  // controls, so unscoped lookups would be ambiguous.
+  const priceRow = page.locator('[data-testid^="price-edit-row-"]').first()
+  await expect(priceRow).toBeVisible()
 
-  const prefix = 'quota-window'
+  // Add a brand-new rule so we own its key. The editor assigns unsaved rules
+  // the React `key` `new-${index}` (index = array position); a freshly-added
+  // rule is appended, so its index === the pre-add rule count. NOTE the card
+  // testid uses the bare index (`point-rule-${index}`), while per-rule child
+  // testids and the embedded quota-editor prefix use the `new-${index}` key.
+  const ruleList = priceRow.locator('[data-testid="point-rule-list"]')
+  await expect(ruleList).toBeVisible()
+  const ruleCountBefore = await ruleList.locator(':scope > div').count()
+  await priceRow.locator('[data-testid="point-rule-add"]').click()
+
+  // The new rule card is the LAST direct child div of the list (the add
+  // button is a sibling outside the list container).
+  const newRuleCard = ruleList.locator(':scope > div').last()
+  await expect(newRuleCard).toBeVisible()
+  const ruleKey = `new-${ruleCountBefore}`
+
+  // Target the seeded primary pool. The demo seed (`scripts/lib/demo_seed.py`)
+  // creates the bucket with name "Primary Pool" (key `primary-pool`); the
+  // select option text is the bucket `name`, so match it case-insensitively.
+  await newRuleCard.locator('[data-testid="point-rule-bucket"]').click()
+  await page.getByRole('option', { name: /primary pool/i }).click()
+
+  // Switch grant-mode to quota. The mode select lists `fixed` first and
+  // `quota` second (only rendered when allowQuota — true for non-one-time
+  // prices). To avoid localization coupling we pick by ORDER: the second
+  // option in the open list is `quota`.
+  await newRuleCard.locator('[data-testid="point-rule-mode"]').click()
+  const quotaOption = page.locator('[role="option"]').nth(1)
+  await expect(quotaOption).toBeVisible()
+  await quotaOption.click()
+
+  // The embedded MultiWindowQuotaEditor is now visible. Its testid prefix is
+  // `point-rule-quota-${key}` (the React key, not the card index). Reuse the
+  // unchanged clear/fill helpers with this prefix.
+  const prefix = `point-rule-quota-${ruleKey}`
   await expect(page.locator(SELECTORS.pointsQuotaEditor.editor(prefix))).toBeVisible()
 
   await clearQuotaEditorRows(page, prefix)
   await fillQuotaEditorRows(page, prefix, windows)
 
-  await page.locator(SELECTORS.pointsQuotaEditor.saveMappingButton).click()
+  await page.locator(SELECTORS.multiPriceMapping.saveMappingButton).click()
   await page.waitForLoadState('networkidle')
 }
 
@@ -308,33 +351,113 @@ export async function getSpendableNow(page: Page): Promise<number> {
 }
 
 /**
+ * Resolve the backend base URL for direct wallets-API calls. The frontend
+ * proxies through `:3000`, but the API lives on `:8080`; mirrors the other
+ * helpers that read backend state out-of-band.
+ */
+function walletsApiBaseUrl(): string {
+  return (
+    process.env.API_BASE_URL ||
+    process.env.BASE_URL?.replace(/:\d+/, ':8080') ||
+    'http://localhost:8080'
+  )
+}
+
+/**
+ * Fetch the wallets-by-bucket response for a realm.
+ *
+ * Auth note: Herald's frontend uses a Bearer-token auth model — it injects
+ * `Authorization: Bearer {accessToken}` from an in-memory store
+ * (`frontend/src/lib/api-client.ts`). `page.context().request` carries only
+ * cookies, NOT the Bearer header, so it 401s with `"missing bearer token"`
+ * (see `createAdminBearerContext` in `bucket-helpers.ts` for the same finding).
+ *
+ * Endpoint selection: the admin-facing `GET /api/points/{realmId}/wallets`
+ * requires `points.manage` (regular users 403), whereas the user-facing
+ * `GET /api/user/wallets` requires only the `points.view` (PointsRead) scope
+ * every regular user holds and returns the SAME `ListWalletsByBucketResponse`
+ * shape (server-side scoped to the caller). So when a Bearer `apiContext` is
+ * supplied we hit `/api/user/wallets` (correct for regular users AND admins);
+ * the legacy no-context fallback keeps the admin path for backward compat
+ * (it 401s on cookies and returns 0, preserving prior behavior).
+ *
+ * Callers that need real values MUST pass a Bearer-authenticated `apiContext`
+ * (e.g. built via `createBearerApiContext(loginPage.getAccessToken())`).
+ */
+async function fetchWalletsByBucket(
+  page: Page,
+  realmId: string,
+  apiContext?: APIRequestContext,
+): Promise<{ bucketId?: string }[] | null> {
+  const requestContext = apiContext ?? page.context().request
+  // Bearer context → user-scoped endpoint (points.view). Cookie fallback →
+  // legacy admin endpoint path (kept for backward compat; 401s → null → 0).
+  const url = apiContext
+    ? `${walletsApiBaseUrl()}/api/user/wallets`
+    : `${walletsApiBaseUrl()}/api/points/${realmId}/wallets`
+  const resp = await requestContext.get(url)
+  if (!resp.ok()) return null
+  const body = await resp.json()
+  return (body?.items ?? []) as { bucketId?: string }[]
+}
+
+/**
  * Read the demo user's `spendable_from_pool` (topup + registration + granted
  * balances) for a bucket directly from the wallets API.
  *
  * Used by the total-formula test to assert `spendableNow === smallestRemaining
  * + pool` without hard-coding the pool value, which accumulates across demo
  * runs because the ext grant API has no idempotency key.
+ *
+ * Pass `apiContext` (a Bearer-authenticated request context built from the
+ * logged-in user's access token) for correct values — see `fetchWalletsByBucket`.
  */
 export async function getSpendableFromPool(
   page: Page,
   realmId: string,
   bucketId: string,
+  apiContext?: APIRequestContext,
 ): Promise<number> {
-  const baseUrl =
-    process.env.API_BASE_URL ||
-    process.env.BASE_URL?.replace(/:\d+/, ':8080') ||
-    'http://localhost:8080'
-  const resp = await page.context().request.get(
-    `${baseUrl}/api/points/${realmId}/wallets`,
-  )
-  if (!resp.ok()) return 0
-  const body = await resp.json()
-  const items = (body?.items ?? []) as {
+  const items = await fetchWalletsByBucket(page, realmId, apiContext)
+  if (!items) return 0
+  const match = (items as {
     bucketId?: string
     spendableFromPool?: number | null
-  }[]
-  const match = items.find((i) => i.bucketId === bucketId)
+  }[]).find((i) => i.bucketId === bucketId)
   return match?.spendableFromPool ?? 0
+}
+
+/**
+ * Read the backend-computed effective consumable total for a bucket directly
+ * from the wallets API `bucketTotal` field.
+ *
+ * The backend derives this as `min(window remaining) + pool balance`
+ * (see `backend/api-points/src/wallets.rs` — `spendable_from_quota` is the min
+ * window remaining, and `bucket_total = spendable_from_quota + pool_sum`), so
+ * it is the authoritative "spendable now" total.
+ *
+ * The dashboard refactor (`PointsUsageDashboard.tsx`) no longer renders an
+ * explicit "spendable now" headline with a stable testid — it folds
+ * `card.bucketTotal` into internal alert logic only. The total-formula test
+ * therefore verifies the invariant server-side via the same wallets response
+ * the dashboard derives from, using this helper for the per-bucket total.
+ *
+ * Pass `apiContext` (a Bearer-authenticated request context built from the
+ * logged-in user's access token) for correct values — see `fetchWalletsByBucket`.
+ */
+export async function getBucketTotal(
+  page: Page,
+  realmId: string,
+  bucketId: string,
+  apiContext?: APIRequestContext,
+): Promise<number> {
+  const items = await fetchWalletsByBucket(page, realmId, apiContext)
+  if (!items) return 0
+  const match = (items as {
+    bucketId?: string
+    bucketTotal?: number | null
+  }[]).find((i) => i.bucketId === bucketId)
+  return match?.bucketTotal ?? 0
 }
 
 function parseAmount(text: string | undefined | null): number {

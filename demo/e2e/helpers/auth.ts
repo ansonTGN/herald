@@ -293,8 +293,12 @@ export async function logout(page: Page): Promise<void> {
     // 作为后备方案，清除所有会话数据
     await clearSessionData(page)
 
-    // 导航到登录页确保干净状态
-    await page.goto(`${BASE_URL}/admin/auth/login`, { waitUntil: 'networkidle' })
+    // 导航到登录页确保干净状态。`domcontentloaded` is a more stable readiness
+    // signal than `networkidle` for the static login page — `networkidle` can
+    // flake-timeout when persistent connections (e.g. TanStack Query
+    // refetch intervals, devtools, websocket heartbeats) keep the network busy
+    // past the goto timeout, which aborted whole test files in beforeEach.
+    await page.goto(`${BASE_URL}/admin/auth/login`, { waitUntil: 'domcontentloaded' })
     console.log('[Auth] 已清除所有会话数据')
   }
 }

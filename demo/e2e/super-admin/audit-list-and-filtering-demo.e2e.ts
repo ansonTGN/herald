@@ -52,7 +52,10 @@ test.describe('US-AU-001: View Realm Audit Log List', () => {
     })
 
     await test.step('Then the table header row has the expected columns', async () => {
+      // DataTable only renders <thead> once data is loaded, so wait for the
+      // first header cell before reading (avoids an empty header array race).
       const headerCells = auditPage.table.locator('thead th')
+      await expect(headerCells.first()).toBeVisible()
       const headerTexts: string[] = []
       const count = await headerCells.count()
       for (let i = 0; i < count; i++) {

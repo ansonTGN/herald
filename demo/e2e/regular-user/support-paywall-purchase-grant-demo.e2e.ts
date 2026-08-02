@@ -69,10 +69,11 @@
  *  the same "select first purchasable card" approach for the same seed reason.
  */
 
-import { expect, type Page } from '@playwright/test'
+import { expect, type APIRequestContext, type Page } from '@playwright/test'
 
 import { SELECTORS } from '../selectors'
 import { verifyTestEnvironment } from '../helpers/environment-setup'
+import { createBearerApiContext } from '../helpers/auth'
 import { LoginPage } from '../pages/login-page'
 import { EntitlementMappingsPage } from '../pages/entitlement-mappings-page'
 import { RolesPage } from '../pages/roles-page'
@@ -150,86 +151,105 @@ test.beforeAll(async ({ browser }) => {
     const loginPage = new LoginPage(adminPage, adminLogger)
     await loginPage.loginAsAdmin(REALM_ADMIN_EMAIL, REALM_ADMIN_PASSWORD, TEST_REALM)
 
-    // 3. Ensure the granted role exists and bind the seeded permission to it.
-    const rolesPage = new RolesPage(adminPage, adminLogger)
-    await rolesPage.goto(TEST_REALM)
-    if (!(await rolesPage.roleExists(TEST_ROLE_NAME))) {
-      await rolesPage.createRole({
-        name: TEST_ROLE_NAME,
-        description: 'Granted-on-purchase role for support-paywall user demo',
-      })
-    }
-    // Bind the builtin `billing.view` permission to the role (US-PW-006:
-    // third-party RBAC gates on the role's bound permission).
-    await rolesPage.clickPermissionsButton(TEST_ROLE_NAME)
-    await rolesPage.setPermission(BOUND_PERMISSION_NAME, true)
-    await rolesPage.savePermissions()
+    // Build a Bearer-authenticated API context from the in-memory access token
+    // for the admin GETs/POSTs below. Under the auth-rewrite, admin endpoints
+    // mount under `inject_token_identity` which ONLY reads the
+    // `Authorization: Bearer` header — `page.context().request` shares only
+    // cookies and 401s with `"missing bearer token"`. Mirrors the
+    // points-quota-dashboard-demo beforeAll pattern. Disposed in the inner
+    // finally; the outer `adminContext.close()` is unaffected.
+    const adminApi = await createBearerApiContext(loginPage.getAccessToken())
+    try {
+      // 3. Ensure the granted role exists and bind the seeded permission to it.
+      const rolesPage = new RolesPage(adminPage, adminLogger)
+      await rolesPage.goto(TEST_REALM)
+      if (!(await rolesPage.roleExists(TEST_ROLE_NAME))) {
+        await rolesPage.createRole({
+          name: TEST_ROLE_NAME,
+          description: 'Granted-on-purchase role for support-paywall user demo',
+        })
+      }
+      // Bind the builtin `billing.view` permission to the role (US-PW-006:
+      // third-party RBAC gates on the role's bound permission).
+      await rolesPage.clickPermissionsButton(TEST_ROLE_NAME)
+      await rolesPage.setPermission(BOUND_PERMISSION_NAME, true)
+      await rolesPage.savePermissions()
 
-    // Resolve the roleId for the granted role (needed to select it on the
-    // mappings page RoleSelector).
-    const roleId = await findRoleIdByName(adminPage, TEST_REALM, TEST_ROLE_NAME)
-    if (!roleId) {
-      throw new Error(
-        `[DE-D01 beforeAll] could not resolve roleId for ${TEST_ROLE_NAME} after create`,
+      // Resolve the roleId for the granted role (needed to select it on the
+      // mappings page RoleSelector).
+      const roleId = await findRoleIdByName(adminApi, TEST_REALM, TEST_ROLE_NAME)
+      if (!roleId) {
+        throw new Error(
+          `[DE-D01 beforeAll] could not resolve roleId for ${TEST_ROLE_NAME} after create`,
+        )
+      }
+
+      // 4. Configure the FIRST entitlement mapping to grant this role on
+      //    purchase. The seeded realm-001 mapping is recurring; we keep its
+      //    billing type (flipping it to one_time is best-effort below).
+      const mappingsPage = new EntitlementMappingsPage(adminPage, adminLogger)
+      await mappingsPage.goto(TEST_REALM)
+      await mappingsPage.waitForDataLoaded()
+      await mappingsPage.selectFirstProduct()
+
+      const firstRow = mappingsPage.mappingDetailPanel
+        .locator('[data-testid^="price-edit-row-"]')
+        .first()
+      await expect(firstRow).toBeVisible()
+      const rowTestid = (await firstRow.getAttribute('data-testid')) ?? ''
+      const priceKey = rowTestid.replace(/^price-edit-row-/, '')
+
+      // Read the mapping's billing type so the test knows whether the one_time
+      // alreadyOwned path applies or the recurring grant chain is exercised. The
+      // billing-type field renders as a read-only Input under testid
+      // `price-billing-type-${priceKey}` (frontend
+      // entitlement-mappings-page.tsx L459-471); read its value directly.
+      const billingTypeInput = mappingsPage.getPriceEditRow(priceKey).locator(
+        `[data-testid="price-billing-type-${priceKey}"]`,
       )
-    }
+      const billingTypeRaw = await billingTypeInput.inputValue().catch(() => '')
+      const billingType = billingTypeRaw.toLowerCase().includes('one') ? 'one_time' : 'recurring'
 
-    // 4. Configure the FIRST entitlement mapping to grant this role on
-    //    purchase. The seeded realm-001 mapping is recurring; we keep its
-    //    billing type (flipping it to one_time is best-effort below).
-    const mappingsPage = new EntitlementMappingsPage(adminPage, adminLogger)
-    await mappingsPage.goto(TEST_REALM)
-    await mappingsPage.waitForDataLoaded()
-    await mappingsPage.selectFirstProduct()
+      // Resolve the mappingId (targetId for the purchase payment-attempt POST).
+      // For the seeded Stripe row with NULL external_price_id, the priceKey IS
+      // the mappingId. For a real external price id, the mappingId must be read
+      // separately — attempt both lookups.
+      const mappingId = await resolveMappingId(adminApi, TEST_REALM, priceKey)
 
-    const firstRow = mappingsPage.mappingDetailPanel
-      .locator('[data-testid^="price-edit-row-"]')
-      .first()
-    await expect(firstRow).toBeVisible()
-    const rowTestid = (await firstRow.getAttribute('data-testid')) ?? ''
-    const priceKey = rowTestid.replace(/^price-edit-row-/, '')
+      // Grant the role on this mapping and persist.
+      await mappingsPage.selectGrantedRoles(priceKey, [roleId])
+      await mappingsPage.saveChanges()
 
-    // Read the mapping's billing type so the test knows whether the one_time
-    // alreadyOwned path applies or the recurring grant chain is exercised. The
-    // billing-type field renders as a read-only Input under testid
-    // `price-billing-type-${priceKey}` (frontend
-    // entitlement-mappings-page.tsx L459-471); read its value directly.
-    const billingTypeInput = mappingsPage.getPriceEditRow(priceKey).locator(
-      `[data-testid="price-billing-type-${priceKey}"]`,
-    )
-    const billingTypeRaw = await billingTypeInput.inputValue().catch(() => '')
-    const billingType = billingTypeRaw.toLowerCase().includes('one') ? 'one_time' : 'recurring'
+      // 5. Mint a third-party RBAC api key bound to the realm's admin-api-client
+      //    app so `/permission/check` is unscoped (see file header rationale).
+      //    createTestApiKeyWithPermission needs an admin-authenticated page; we
+      //    reuse adminPage and thread the Bearer context through its optional
+      //    `requestContext` param (the api-key creation endpoints are also
+      //    Bearer-only). The permission arg also provisions the key's own
+      //    permitted role.
+      const adminApiAppId = await resolveClientAppId(
+        adminApi,
+        TEST_REALM,
+        ADMIN_API_CLIENT_ID,
+      )
+      const apiKey = await createTestApiKeyWithPermission(
+        adminPage,
+        BOUND_PERMISSION_NAME,
+        Date.now(),
+        TEST_REALM,
+        adminApiAppId,
+        adminApi,
+      )
 
-    // Resolve the mappingId (targetId for the purchase payment-attempt POST).
-    // For the seeded Stripe row with NULL external_price_id, the priceKey IS
-    // the mappingId. For a real external price id, the mappingId must be read
-    // separately — attempt both lookups.
-    const mappingId = await resolveMappingId(adminPage, TEST_REALM, priceKey)
-
-    // Grant the role on this mapping and persist.
-    await mappingsPage.selectGrantedRoles(priceKey, [roleId])
-    await mappingsPage.saveChanges()
-
-    // 5. Mint a third-party RBAC api key bound to the realm's admin-api-client
-    //    app so `/permission/check` is unscoped (see file header rationale).
-    //    createTestApiKeyWithPermission needs an admin-authenticated page; we
-    //    reuse adminPage. The permission arg also provisions the key's own
-    //    permitted role.
-    const adminApiAppId = await resolveClientAppId(adminPage, TEST_REALM, ADMIN_API_CLIENT_ID)
-    const apiKey = await createTestApiKeyWithPermission(
-      adminPage,
-      BOUND_PERMISSION_NAME,
-      Date.now(),
-      TEST_REALM,
-      adminApiAppId,
-    )
-
-    setupCtx = {
-      apiKey,
-      priceKey,
-      mappingId,
-      billingType,
-      roleId,
+      setupCtx = {
+        apiKey,
+        priceKey,
+        mappingId,
+        billingType,
+        roleId,
+      }
+    } finally {
+      await adminApi.dispose().catch(() => {})
     }
   } finally {
     await adminContext.close()
@@ -257,6 +277,7 @@ test.describe('[Regular User] Support Paywall — purchase grants role + already
   test('US-PW-002 + US-PW-003 场景1: 购买授 role 映射后用户被授予 role（永久）', async ({
     page,
     request,
+    loginPage,
   }) => {
     expect(setupCtx, 'beforeAll must have configured the grant mapping').not.toBeNull()
     const { apiKey, roleId } = setupCtx!
@@ -264,7 +285,10 @@ test.describe('[Regular User] Support Paywall — purchase grants role + already
     // US-PW-006 precondition gate BEFORE purchase: the user must NOT yet be
     // allowed (they don't hold the granted role yet). This anchors the
     // before/after delta on persistent RBAC state.
-    const sessionToken = await readSessionToken(page)
+    // Browser Bearer token model (commit f3b8d48a): there is no X-Auth cookie;
+    // the session token IS the in-memory access token established by
+    // `loginPage.loginAsUser` in beforeEach.
+    const sessionToken = loginPage.getAccessToken()
 
     await test.step('Given: 购买前用户未持有该 role 权限', async () => {
       const { status, body } = await makeExtApiRequest({
@@ -456,6 +480,7 @@ test.describe('[Regular User] Support Paywall — purchase grants role + already
   test('US-PW-004 场景2 对照: 积分包（无 role 授予）可重复购买，不触发 409', async ({
     page,
     request,
+    loginPage,
   }) => {
     // US-PW-004 场景2 contrast: a points-only mapping (granted_role_ids empty)
     // can be purchased repeatedly. We assert the NEGATIVE: a direct repeat POST
@@ -465,7 +490,17 @@ test.describe('[Regular User] Support Paywall — purchase grants role + already
     // mapping with NO role grant at runtime; if none exists, this contrast test
     // is skipped (cannot be seeded deterministically without mutating the
     // shared demo catalog).
-    const pointsMappingId = await findPointsOnlyMappingId(page, TEST_REALM)
+    //
+    // The entitlement-mapping list endpoint is Bearer-only under the
+    // auth-rewrite, so build a Bearer context from the logged-in user's access
+    // token and pass it to the helper (see findRoleIdByName rationale).
+    const userApi = await createBearerApiContext(loginPage.getAccessToken())
+    let pointsMappingId = ''
+    try {
+      pointsMappingId = (await findPointsOnlyMappingId(userApi, TEST_REALM)) ?? ''
+    } finally {
+      await userApi.dispose().catch(() => {})
+    }
 
     if (!pointsMappingId) {
       test.skip(true, 'no points-only mapping without role grant available in realm-001')
@@ -492,17 +527,6 @@ test.describe('[Regular User] Support Paywall — purchase grants role + already
 // ============================================================================
 // Local helpers
 // ============================================================================
-
-/** Read the user's session token from the X-Auth cookie (the permission/check
- * `sessionToken` field). */
-async function readSessionToken(page: Page): Promise<string> {
-  const cookies = await page.context().cookies()
-  const auth = cookies.find((c) => c.name === 'X-Auth')
-  if (!auth || !auth.value) {
-    throw new Error('[DE-D01] X-Auth session cookie missing — user not logged in')
-  }
-  return auth.value
-}
 
 /** Backend base URL for direct API calls (port 8080). */
 function purchaseBaseUrl(): string {
@@ -583,15 +607,22 @@ async function purchaseFirstMappingInline(
   return extractAttemptId(page)
 }
 
-/** Resolve a role id by name via the backend role-definitions API. */
+/**
+ * Resolve a role id by name via the backend role-definitions API.
+ *
+ * Uses the supplied Bearer-authenticated `apiContext` (admin endpoints 401
+ * `"missing bearer token"` on cookie-only requests under the auth-rewrite —
+ * `page.context().request` carries no Bearer header, so it must NOT be used
+ * here; the caller builds the context from `loginPage.getAccessToken()`).
+ */
 async function findRoleIdByName(
-  page: Page,
+  apiContext: APIRequestContext,
   realmId: string,
   roleName: string,
 ): Promise<string | null> {
-  const resp = await page
-    .context()
-    .request.get(`${purchaseBaseUrl()}/api/roles/${realmId}/define`)
+  const resp = await apiContext.get(
+    `${purchaseBaseUrl()}/api/roles/${realmId}/define`,
+  )
   if (!resp.ok()) return null
   const body = await resp.json()
   const roles: { id: string; name: string }[] = Array.isArray(body) ? body : body.items ?? []
@@ -599,17 +630,21 @@ async function findRoleIdByName(
   return hit ? hit.id : null
 }
 
-/** Resolve the client-app UUID for a given client_id in a realm. The list
+/**
+ * Resolve the client-app UUID for a given client_id in a realm. The list
  * endpoint returns a PageResponse<ClientAppItem> whose items live under
- * `data` (camelCase-serialized: `clientId`). Tolerate bare-array / items too. */
+ * `data` (camelCase-serialized: `clientId`). Tolerate bare-array / items too.
+ *
+ * Uses the supplied Bearer-authenticated `apiContext` — the admin client-list
+ * endpoint 401s on cookie-only requests under the auth-rewrite (see
+ * `findRoleIdByName` for the full rationale).
+ */
 async function resolveClientAppId(
-  page: Page,
+  apiContext: APIRequestContext,
   realmId: string,
   clientId: string,
 ): Promise<string> {
-  const resp = await page
-    .context()
-    .request.get(`${purchaseBaseUrl()}/api/client/${realmId}`)
+  const resp = await apiContext.get(`${purchaseBaseUrl()}/api/client/${realmId}`)
   if (!resp.ok()) {
     throw new Error(`could not list client apps in ${realmId}: ${resp.status()}`)
   }
@@ -635,26 +670,30 @@ async function resolveClientAppId(
  * IS the mappingId; for a Stripe row with a real external_price_id we must look
  * it up. We try both: first assume priceKey is the mappingId (works for the
  * seeded Stripe+NULL row), else query the mappings list.
+ *
+ * Uses the supplied Bearer-authenticated `apiContext` — the entitlement-mapping
+ * endpoints 401 on cookie-only requests under the auth-rewrite (see
+ * `findRoleIdByName` for the full rationale). Previously this silently degraded
+ * to returning `priceKey` unchanged on a 401, which masked setup failures.
  */
 async function resolveMappingId(
-  page: Page,
+  apiContext: APIRequestContext,
   realmId: string,
   priceKey: string,
 ): Promise<string> {
   // Validate that priceKey is itself a usable mappingId by fetching the
   // mapping; if that 404s, fall back to listing mappings and matching the
   // external_price_id.
-  const direct = await page
-    .context()
-    .request.get(`${purchaseBaseUrl()}/api/bill/${realmId}/entitlement-mappings/${priceKey}`)
+  const direct = await apiContext
+    .get(`${purchaseBaseUrl()}/api/bill/${realmId}/entitlement-mappings/${priceKey}`)
     .catch(() => null)
   if (direct && direct.ok()) {
     return priceKey
   }
   // Fall back to listing and matching external_price_id.
-  const list = await page
-    .context()
-    .request.get(`${purchaseBaseUrl()}/api/bill/${realmId}/entitlement-mappings`)
+  const list = await apiContext.get(
+    `${purchaseBaseUrl()}/api/bill/${realmId}/entitlement-mappings`,
+  )
   if (list.ok()) {
     const body = await list.json()
     const items: {
@@ -672,15 +711,21 @@ async function resolveMappingId(
   return priceKey
 }
 
-/** Resolve a mappingId whose granted_role_ids is empty (points-only), for the
- * US-PW-004 场景2 contrast. Returns null if none exists. */
+/**
+ * Resolve a mappingId whose granted_role_ids is empty (points-only), for the
+ * US-PW-004 场景2 contrast. Returns null if none exists.
+ *
+ * Uses the supplied Bearer-authenticated `apiContext` — the entitlement-mapping
+ * list endpoint 401s on cookie-only requests under the auth-rewrite (see
+ * `findRoleIdByName` for the full rationale).
+ */
 async function findPointsOnlyMappingId(
-  page: Page,
+  apiContext: APIRequestContext,
   realmId: string,
 ): Promise<string | null> {
-  const list = await page
-    .context()
-    .request.get(`${purchaseBaseUrl()}/api/bill/${realmId}/entitlement-mappings`)
+  const list = await apiContext.get(
+    `${purchaseBaseUrl()}/api/bill/${realmId}/entitlement-mappings`,
+  )
   if (!list.ok()) return null
   const body = await list.json()
   const items: {

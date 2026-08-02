@@ -97,6 +97,17 @@ export function UserPointsPage({
   )
 
   const transactions = transactionsData?.transactions ?? []
+  // Whether the user has any active filter applied (ephemeral type/date/app
+  // filters OR the URL-owned bucketId). Used to keep the transaction card
+  // visible when a filter returns 0 results so the empty-state + Clear button
+  // remain reachable instead of stranding the user.
+  const hasActiveFilters = Boolean(
+    effectiveFilters.transactionType ||
+    effectiveFilters.startTime ||
+    effectiveFilters.endTime ||
+    effectiveFilters.clientAppId ||
+    effectiveFilters.bucketId
+  )
   const reachedLimit = transactions.length >= MAX_VISIBLE_TRANSACTIONS
   const canLoadMore =
     !transactionsLoading && transactions.length >= requestedPageSize && !reachedLimit
@@ -214,11 +225,12 @@ export function UserPointsPage({
         </div>
       )}
 
-      {/* Hide the entire transaction history card when the user has no
-          transactions and the query is not loading (e.g. a brand-new user
-          with no pools/activity). Keeps the page quiet instead of showing
-          an empty "Transaction History" section. */}
-      {!transactionsLoading && transactions.length === 0 ? null : (
+      {/* Hide the transaction history card only for a genuinely-empty user:
+          no transactions, not loading, AND no active filters. When a filter
+          returns 0 results, keep the card visible so the empty-state
+          (no-transactions) shows and the Clear button stays reachable —
+          otherwise the user would be unable to recover from a 0-result filter. */}
+      {!transactionsLoading && transactions.length === 0 && !hasActiveFilters ? null : (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">

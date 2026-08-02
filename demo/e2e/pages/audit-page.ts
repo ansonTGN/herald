@@ -94,6 +94,27 @@ export class AuditPage extends BasePage {
   }
 
   /**
+   * Whether any visible audit row (up to maxRows) carries the given raw
+   * action code on its action cell's `data-audit-action` attribute. Use this
+   * instead of hasRowWithColumnText(3, ...) for action assertions: the action
+   * cell displays a localized label, so the raw code (e.g. `user.create`) is
+   * only exposed via the data attribute.
+   *
+   * Mirrors the same row-locator pattern (`this.table.locator('tbody
+   * tr').nth(i)`) used by getRowTexts / getRowCount so the helper stays
+   * consistent with the rest of the page object.
+   */
+  async hasRowWithAction(action: string, maxRows = 10): Promise<boolean> {
+    const rowCount = await this.getRowCount()
+    for (let i = 0; i < Math.min(rowCount, maxRows); i++) {
+      const actionCell = this.table.locator('tbody tr').nth(i).locator('[data-audit-action]').first()
+      const value = await actionCell.getAttribute('data-audit-action').catch(() => null)
+      if (value === action) return true
+    }
+    return false
+  }
+
+  /**
    * Select an option from a Radix Select component.
    * Clicks trigger, waits for dropdown, selects by data-value or falls back to text match.
    */

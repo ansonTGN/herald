@@ -27,7 +27,7 @@ import { expect, type Page } from '@playwright/test'
 import { test, cleanupTestData } from '../fixtures/demo-page.fixtures'
 import { SELECTORS } from '../selectors'
 import { verifyTestEnvironment } from '../helpers/environment-setup'
-import { createBearerApiContext, loginWithCredentials } from '../helpers/auth'
+import { createBearerApiContext } from '../helpers/auth'
 import { listBucketsViaApi } from '../helpers/bucket-helpers'
 import {
   createTestApiKeyWithPermission,
@@ -44,7 +44,7 @@ import {
   getWindowRow,
   getWindowRemaining,
   getWindowResetsIn,
-  getSpendableNow,
+  getBucketTotal,
   getSpendableFromPool,
 } from '../helpers/points-quota-helpers'
 import { registerUser } from '../helpers/points-helpers'
@@ -154,56 +154,64 @@ test.beforeAll(async ({ browser }) => {
       )
     }
 
-    // 4. Resolve the demo user UUID.
+    // 4. Resolve the demo user UUID. `context.request` carries only cookies,
+    //    not the in-memory Bearer access token (auth-rewrite); admin user/client
+    //    GETs 401 without the Bearer header. Reuse the same Bearer token the
+    //    catalog lookup used, via a fresh Bearer context scoped to this setup.
     const backendUrl =
       process.env.API_BASE_URL ||
       process.env.BASE_URL?.replace(/:\d+/, ':8080') ||
       'http://localhost:8080'
-    const usersResponse = await context.request.get(
-      `${backendUrl}/api/users/${TEST_REALM}?search=${encodeURIComponent(USER_EMAIL)}`,
-    )
-    let userId = ''
-    if (usersResponse.ok()) {
-      const usersBody = await usersResponse.json()
-      const items = (usersBody?.items ?? []) as { id: string; email: string }[]
-      const demoUser = items.find((u) => u.email === USER_EMAIL)
-      userId = demoUser?.id ?? ''
-    }
-    if (!userId) {
-      throw new Error(
-        `[DE-D02 beforeAll] Could not resolve demo user UUID for ${USER_EMAIL}`,
+    const adminApi = await createBearerApiContext(loginPage.getAccessToken())
+    try {
+      const usersResponse = await adminApi.get(
+        `${backendUrl}/api/users/${TEST_REALM}?search=${encodeURIComponent(USER_EMAIL)}`,
       )
-    }
+      let userId = ''
+      if (usersResponse.ok()) {
+        const usersBody = await usersResponse.json()
+        const items = (usersBody?.items ?? []) as { id: string; email: string }[]
+        const demoUser = items.find((u) => u.email === USER_EMAIL)
+        userId = demoUser?.id ?? ''
+      }
+      if (!userId) {
+        throw new Error(
+          `[DE-D02 beforeAll] Could not resolve demo user UUID for ${USER_EMAIL}`,
+        )
+      }
 
-    // 5. Resolve the points-demo-app client app UUID.
-    const clientAppResponse = await context.request.get(
-      `${backendUrl}/api/client/${TEST_REALM}`,
-    )
-    let clientAppId = ''
-    if (clientAppResponse.ok()) {
-      const clientAppBody = await clientAppResponse.json()
-      const items = (clientAppBody?.items ?? []) as {
-        id: string
-        clientId: string
-      }[]
-      const demoApp = items.find((a) => a.clientId === 'points-demo-app')
-      clientAppId = demoApp?.id ?? ''
-    }
-    if (!clientAppId) {
-      throw new Error(
-        `[DE-D02 beforeAll] Could not resolve client app UUID for points-demo-app`,
+      // 5. Resolve the points-demo-app client app UUID.
+      const clientAppResponse = await adminApi.get(
+        `${backendUrl}/api/client/${TEST_REALM}`,
       )
-    }
+      let clientAppId = ''
+      if (clientAppResponse.ok()) {
+        const clientAppBody = await clientAppResponse.json()
+        const items = (clientAppBody?.items ?? []) as {
+          id: string
+          clientId: string
+        }[]
+        const demoApp = items.find((a) => a.clientId === 'points-demo-app')
+        clientAppId = demoApp?.id ?? ''
+      }
+      if (!clientAppId) {
+        throw new Error(
+          `[DE-D02 beforeAll] Could not resolve client app UUID for points-demo-app`,
+        )
+      }
 
-    // 6. Mint a realm-001 API key with points.manage bound to points-demo-app
-    //    so consume's ensure_client_app_scope check passes.
-    const apiKey = await createTestApiKeyWithPermission(
-      page,
-      'points.manage',
-      setupStartTime,
-      TEST_REALM,
-      clientAppId,
-    )
+      // 6. Mint a realm-001 API key with points.manage bound to points-demo-app
+      //    so consume's ensure_client_app_scope check passes. The API-key
+      //    creation endpoints are also Bearer-only, so route them through the
+      //    same admin Bearer context instead of the cookie-only default.
+      const apiKey = await createTestApiKeyWithPermission(
+        page,
+        'points.manage',
+        setupStartTime,
+        TEST_REALM,
+        clientAppId,
+        adminApi,
+      )
 
     // 7. Seed a top-up balance for the total-formula assertion — but only if
     //    none exists yet. The ext grant API has no idempotency key, so an
@@ -232,6 +240,9 @@ test.beforeAll(async ({ browser }) => {
       userId,
       clientAppId,
       apiKey,
+    }
+    } finally {
+      await adminApi.dispose().catch(() => {})
     }
   } finally {
     await context.close()
@@ -334,8 +345,13 @@ test.describe('[Regular User] 积分配额仪表盘 (US-PU-010)', () => {
     await seedQuotaEntitlement(page)
 
     await page.goto(`/${TEST_REALM}/user/points`)
+    // The demo user may hold multiple buckets, so the broad `page` selector
+    // matches every `points-usage-dashboard-*` card and trips strict mode.
+    // Wait for the TARGET bucket's card — the in-block assertions all key off
+    // this bucket — mirroring the bucket-scoped waits in the cases below.
+    const { bucketId } = assertSetup()
     await expect(
-      page.locator(SELECTORS.pointsUsageDashboard.page),
+      page.locator(`[data-testid="points-usage-dashboard-${bucketId}"]`),
     ).toBeVisible({ timeout: 15000 })
   })
 
@@ -403,33 +419,45 @@ test.describe('[Regular User] 积分配额仪表盘 (US-PU-010)', () => {
 
   test('US-PU-010 场景5: 当前可消费总额 = 各窗口剩余最小值 + 充值余额', async ({
     page,
+    loginPage,
   }) => {
     const { bucketId } = assertSetup()
 
-    await expect(
-      page.locator(SELECTORS.pointsUsageDashboard.spendableNow),
-    ).toBeVisible()
-    await expect(
-      page.locator(SELECTORS.pointsUsageDashboard.spendableFormula),
-    ).toBeVisible()
+    // The dashboard refactor (`PointsUsageDashboard.tsx`) dropped the explicit
+    // "spendable now" headline + formula testids (`points-spendable-now` /
+    // `points-spendable-formula`); it now folds `card.bucketTotal` into internal
+    // alert logic only and exposes no stable testid for the total. The invariant
+    // is therefore verified server-side via the wallets API — the same response
+    // the dashboard derives from — reading the per-bucket `bucketTotal` (backend
+    // computes it as min-window-remaining + pool; see `api-points/src/wallets.rs`).
+    //
+    // The wallets endpoint uses Herald's Bearer-token auth model (the frontend
+    // injects `Authorization: Bearer {accessToken}` from an in-memory store), so
+    // `page.context().request` (cookie-only) 401s and returns 0. Build a Bearer
+    // context from the logged-in user's access token and pass it to both reads.
+    const userApi = await createBearerApiContext(loginPage.getAccessToken())
+    try {
+      const smallestRemaining = await getWindowRemaining(
+        page,
+        bucketId,
+        SMALLEST_WINDOW_KEY,
+      )
+      const spendableNow = await getBucketTotal(page, TEST_REALM, bucketId, userApi)
+      // The pool (topup/registration/granted) balance accumulates across demo
+      // runs — the ext grant API has no idempotency key — so read the live value
+      // from the wallets API instead of hard-coding TOPUP_GRANT_AMOUNT.
+      const poolBalance = await getSpendableFromPool(
+        page,
+        TEST_REALM,
+        bucketId,
+        userApi,
+      )
+      const expected = smallestRemaining + poolBalance
 
-    const smallestRemaining = await getWindowRemaining(
-      page,
-      bucketId,
-      SMALLEST_WINDOW_KEY,
-    )
-    const spendableNow = await getSpendableNow(page)
-    // The pool (topup/registration/granted) balance accumulates across demo
-    // runs — the ext grant API has no idempotency key — so read the live value
-    // from the wallets API instead of hard-coding TOPUP_GRANT_AMOUNT.
-    const poolBalance = await getSpendableFromPool(
-      page,
-      TEST_REALM,
-      bucketId,
-    )
-    const expected = smallestRemaining + poolBalance
-
-    expect(spendableNow).toBe(expected)
+      expect(spendableNow).toBe(expected)
+    } finally {
+      await userApi.dispose().catch(() => {})
+    }
   })
 
   // --------------------------------------------------------------------------
@@ -441,8 +469,13 @@ test.describe('[Regular User] 积分配额仪表盘 (US-PU-010)', () => {
 
     await consumeForTest(CONSUME_SMALL_AMOUNT)
     await page.reload()
+    // The demo user may hold multiple buckets (e.g. primary-pool + a
+    // registration-grant or promo-pool bucket), so the page renders one
+    // `points-usage-dashboard-${bucketId}` card per bucket. The broad `page`
+    // selector would match all of them and trip strict mode, so scope this
+    // visibility wait to the target bucket's dashboard card.
     await expect(
-      page.locator(SELECTORS.pointsUsageDashboard.page),
+      page.locator(`[data-testid="points-usage-dashboard-${bucketId}"]`),
     ).toBeVisible({ timeout: 15000 })
 
     const resetsIn = await getWindowResetsIn(page, bucketId, SMALLEST_WINDOW_KEY)
@@ -464,8 +497,10 @@ test.describe('[Regular User] 积分配额仪表盘 (US-PU-010)', () => {
     await consumeForTest(initialRemaining)
 
     await page.reload()
+    // Multi-bucket safe: scope the post-reload dashboard wait to the target
+    // bucket's card (the broad `page` selector matches every held bucket).
     await expect(
-      page.locator(SELECTORS.pointsUsageDashboard.page),
+      page.locator(`[data-testid="points-usage-dashboard-${bucketId}"]`),
     ).toBeVisible({ timeout: 15000 })
 
     const exhaustedRow = getWindowRow(page, bucketId, SMALLEST_WINDOW_KEY)
@@ -515,9 +550,13 @@ test('US-PU-010 加载态: 初始加载时显示骨架占位', async ({
   )
   await expect(skeletons.first()).toBeVisible({ timeout: 5000 })
 
-  // Wait for the delayed request to finish and the dashboard to render.
+  // Wait for the delayed request to finish and the dashboard to render. The
+  // demo user may hold multiple buckets, so the broad `page` selector (which
+  // matches every `points-usage-dashboard-*` card) trips strict mode; scope to
+  // the target bucket's card, mirroring the bucket-scoped waits elsewhere.
+  const { bucketId } = assertSetup()
   await expect(
-    page.locator(SELECTORS.pointsUsageDashboard.page),
+    page.locator(`[data-testid="points-usage-dashboard-${bucketId}"]`),
   ).toBeVisible({ timeout: 15000 })
 })
 
@@ -527,7 +566,9 @@ test('US-PU-010 加载态: 初始加载时显示骨架占位', async ({
 
 test('US-PU-010 空态: 无配额且无余额的用户显示空态提示', async ({
   page,
+  loginPage,
 }) => {
+  const { apiKey, clientAppId } = assertSetup()
   await verifyTestEnvironment(page, {
     requiredRealms: [TEST_REALM],
     requiredUsers: [USER_EMAIL],
@@ -535,19 +576,67 @@ test('US-PU-010 空态: 无配额且无余额的用户显示空态提示', async
 
   const emptyUserEmail = `empty-${Date.now()}@realm-001.com`
   await registerUser(page, TEST_REALM, emptyUserEmail, USER_PASSWORD)
-  await loginWithCredentials(page, {
-    realmId: TEST_REALM,
-    email: emptyUserEmail,
-    password: USER_PASSWORD,
-  })
+  await loginPage.loginAsUser(emptyUserEmail, USER_PASSWORD, TEST_REALM)
+
+  // realm-001 has realm-registration distribution rules (`demo_seed.py`) that
+  // auto-grant points to EVERY new user across the primary + promo buckets
+  // (Primary 40 + Promo 25 at the time of writing). So a freshly-registered
+  // user is NOT balance-less — they hold 2 buckets with registration balances,
+  // and UserPointsPage renders a card per bucket. The empty experience
+  // therefore cannot be "no cards render"; the only reachable "no quota and
+  // no balance" state is a DRAINED user, whose bucket cards each render the
+  // in-card `points-empty-state` (PointsUsageDashboard.tsx: empty = no windows
+  // && spendableFromQuota === 0 && spendableFromPool === 0). To verify that
+  // empty state we drain the registration grants first.
+  const emptyUserApi = await createBearerApiContext(loginPage.getAccessToken())
+  let drainedTotal = 0
+  try {
+    // Resolve the empty user's id + live total from their own (points.view)
+    // endpoints so the drain is robust to grant-amount changes in the seed.
+    const backendUrl =
+      process.env.API_BASE_URL ||
+      process.env.BASE_URL?.replace(/:\d+/, ':8080') ||
+      'http://localhost:8080'
+    const profileResp = await emptyUserApi.get(`${backendUrl}/api/user/profile`)
+    const profile = (await profileResp.json()) as { id?: string }
+    const emptyUserId = profile?.id ?? ''
+
+    const walletsResp = await emptyUserApi.get(
+      `${backendUrl}/api/user/wallets`,
+    )
+    const walletsBody = await walletsResp.json()
+    drainedTotal = (
+      (walletsBody?.items ?? []) as { bucketTotal?: number | null }[]
+    ).reduce((sum, i) => sum + (i.bucketTotal ?? 0), 0)
+
+    // Drain the full registration balance so both buckets reach zero. The ext
+    // consume API auto-distributes across the user's buckets (no bucketId in
+    // the request body), and the realm API key carries points.manage.
+    if (emptyUserId && drainedTotal > 0) {
+      const result = await consumePointsViaExtApi(apiKey.apiKey, TEST_REALM, {
+        userId: emptyUserId,
+        amount: drainedTotal,
+        clientAppId,
+        description: 'DE-D02 empty-state: drain registration grants',
+        idempotencyKey: `de-d02-empty-${setupStartTime}-${Date.now()}`,
+      })
+      expect(result.status).toBe(200)
+    }
+  } finally {
+    await emptyUserApi.dispose().catch(() => {})
+  }
 
   await page.goto(`/${TEST_REALM}/user/points`)
   await expect(page.locator(SELECTORS.pointsUser.page)).toBeVisible()
-  // A brand-new user holds no points buckets at all, so the page renders the
-  // "no pools" empty card (`points-balance-empty`). This is distinct from
-  // `points-empty-state`, which renders INSIDE a bucket card when the bucket
-  // exists but has no quota and no balance.
+  // After draining, each held bucket card still renders but shows the in-card
+  // empty state (`points-empty-state`): no quota windows and zero balance.
+  // This is the "no quota and no balance" empty experience for a realm whose
+  // registration rules guarantee every user holds buckets. It is distinct from
+  // the UserPointsPage-level `cards.length === 0` (no cards at all) branch,
+  // which is unreachable here precisely because registration always grants.
+  // The user holds >= 2 buckets, so >= 2 empty-state alerts render; assert the
+  // first is visible (strict mode rejects the multi-match `toBeVisible`).
   await expect(
-    page.locator(SELECTORS.pointsUser.balanceEmpty),
+    page.locator(SELECTORS.pointsUsageDashboard.emptyState).first(),
   ).toBeVisible({ timeout: 15000 })
 })

@@ -238,6 +238,17 @@ export async function selectPaymentMethodAndProceed(
  * `selectFirstMappingAndProceed` (Monthly pane by default; pass `period:'year'`
  * for annual-recurring products). The checkout `mappingId` is resolved by the
  * page from the clicked option; this helper does not pin it.
+ *
+ * Auto-skip behavior: when the selected price's provider is auto-determined
+ * (single-provider product / no choice needed), clicking Next on the packages
+ * step fires `createPaymentMutation` immediately and the page advances straight
+ * to the `processing` step (rendering the embedded Stripe Elements form). The
+ * `payment` step — with its `PaymentMethodSelector` provider buttons — never
+ * renders in that case. This helper handles BOTH paths:
+ *   - Path A (multi-provider / explicit choice): the `payment` step renders and
+ *     we run `selectPaymentMethodAndProceed` to pick the provider.
+ *   - Path B (single-provider / auto-skip): the `payment` step is skipped and
+ *     we just wait for the `processing` step directly.
  */
 export async function initiatePurchaseFlow(
   page: Page,
@@ -254,10 +265,21 @@ export async function initiatePurchaseFlow(
   // helper will fail. Callers in conditional test contexts should check for
   // price cards first.
   await selectFirstMappingAndProceed(page, opts)
-  await expect(page.locator(SELECTORS.purchasePoints.stepPayment)).toBeVisible()
 
-  await selectPaymentMethodAndProceed(page, provider)
+  // After selecting a price and clicking Next, the page either shows the
+  // `payment` step (multi-provider / explicit choice) or auto-advances straight
+  // to `processing` (single-provider products skip the provider-select step and
+  // fire createPaymentMutation immediately, rendering the embedded Stripe
+  // Elements form). Race the two: whichever wins decides the path.
+  const reachedPayment = await page
+    .locator(SELECTORS.purchasePoints.stepPayment)
+    .waitFor({ state: 'visible', timeout: 4000 })
+    .then(() => true)
+    .catch(() => false)
 
+  if (reachedPayment) {
+    await selectPaymentMethodAndProceed(page, provider)
+  }
   await expect(page.locator(SELECTORS.purchasePoints.stepProcessing)).toBeVisible({
     timeout: TEST_DATA.TIMEOUTS.ELEMENT_VISIBLE,
   })

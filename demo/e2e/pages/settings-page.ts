@@ -694,8 +694,11 @@ export class SettingsPage extends BasePage {
       await expect(this.addProviderButton).toBeVisible({ timeout: 5000 })
     }).toPass({ timeout: 15000 }) // Increased timeout for retries
 
-    // Wait for network to be idle to ensure page is fully stable
-    await this.page.waitForLoadState('networkidle')
+    // The visible tabpanel + add-button checks above are a stronger readiness
+    // signal than `waitForLoadState('networkidle')`. The former `networkidle`
+    // wait flaked-timeout under persistent network activity (TanStack Query
+    // refetch intervals, devtools, websocket heartbeats), aborting tests whose
+    // tab switch had already succeeded.
   }
 
   /**

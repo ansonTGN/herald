@@ -156,60 +156,71 @@ test.beforeAll(async ({ browser }) => {
       process.env.API_BASE_URL ||
       process.env.BASE_URL?.replace(/:\d+/, ':8080') ||
       'http://localhost:8080'
-    const usersResponse = await context.request.get(
-      `${backendUrl}/api/users/${TEST_REALM}?search=${encodeURIComponent(USER_EMAIL)}`,
-    )
-    let userId = ''
-    if (usersResponse.ok()) {
-      const usersBody = await usersResponse.json()
-      const items = (usersBody?.items ?? []) as { id: string; email: string }[]
-      const demoUser = items.find((u) => u.email === USER_EMAIL)
-      userId = demoUser?.id ?? ''
-    }
-    if (!userId) {
-      throw new Error(`[DE-D05 beforeAll] Could not resolve demo user UUID for ${USER_EMAIL}`)
-    }
-
-    const clientAppResponse = await context.request.get(
-      `${backendUrl}/api/client/${TEST_REALM}`,
-    )
-    let clientAppId = ''
-    if (clientAppResponse.ok()) {
-      const clientAppBody = await clientAppResponse.json()
-      const items = (clientAppBody?.items ?? []) as { id: string; clientId: string }[]
-      const demoApp = items.find((a) => a.clientId === 'points-demo-app')
-      clientAppId = demoApp?.id ?? ''
-    }
-    if (!clientAppId) {
-      throw new Error('[DE-D05 beforeAll] Could not resolve client app UUID for points-demo-app')
-    }
-
-    const apiKey = await createTestApiKeyWithPermission(
-      page,
-      'points.manage',
-      setupStartTime,
-      TEST_REALM,
-      clientAppId,
-    )
-
-    const grant = await grantPointsViaExtApi(apiKey.apiKey, TEST_REALM, {
-      userId,
-      amount: TOPUP_GRANT_AMOUNT,
-      bucketId: primary.id,
-      reason: 'DE-D05 setup: deterministic top-up balance for mixed consume',
-      validityDays: 365,
-    })
-    if (grant.status !== 200) {
-      throw new Error(
-        `[DE-D05 beforeAll] Top-up grant failed: status=${grant.status} body=${JSON.stringify(grant.responseBody)}`,
+    // `context.request` carries only cookies, not the in-memory Bearer access
+    // token (auth-rewrite); admin user/client GETs 401 without the Bearer
+    // header. Reuse the same Bearer token the catalog lookup used.
+    const adminApi = await createBearerApiContext(loginPage.getAccessToken())
+    try {
+      const usersResponse = await adminApi.get(
+        `${backendUrl}/api/users/${TEST_REALM}?search=${encodeURIComponent(USER_EMAIL)}`,
       )
-    }
+      let userId = ''
+      if (usersResponse.ok()) {
+        const usersBody = await usersResponse.json()
+        const items = (usersBody?.items ?? []) as { id: string; email: string }[]
+        const demoUser = items.find((u) => u.email === USER_EMAIL)
+        userId = demoUser?.id ?? ''
+      }
+      if (!userId) {
+        throw new Error(`[DE-D05 beforeAll] Could not resolve demo user UUID for ${USER_EMAIL}`)
+      }
 
-    setupCtx = {
-      bucketId: primary.id,
-      userId,
-      clientAppId,
-      apiKey,
+      const clientAppResponse = await adminApi.get(
+        `${backendUrl}/api/client/${TEST_REALM}`,
+      )
+      let clientAppId = ''
+      if (clientAppResponse.ok()) {
+        const clientAppBody = await clientAppResponse.json()
+        const items = (clientAppBody?.items ?? []) as { id: string; clientId: string }[]
+        const demoApp = items.find((a) => a.clientId === 'points-demo-app')
+        clientAppId = demoApp?.id ?? ''
+      }
+      if (!clientAppId) {
+        throw new Error('[DE-D05 beforeAll] Could not resolve client app UUID for points-demo-app')
+      }
+
+      // The API-key creation endpoints are also Bearer-only, so route them
+      // through the same admin Bearer context instead of the cookie-only default.
+      const apiKey = await createTestApiKeyWithPermission(
+        page,
+        'points.manage',
+        setupStartTime,
+        TEST_REALM,
+        clientAppId,
+        adminApi,
+      )
+
+      const grant = await grantPointsViaExtApi(apiKey.apiKey, TEST_REALM, {
+        userId,
+        amount: TOPUP_GRANT_AMOUNT,
+        bucketId: primary.id,
+        reason: 'DE-D05 setup: deterministic top-up balance for mixed consume',
+        validityDays: 365,
+      })
+      if (grant.status !== 200) {
+        throw new Error(
+          `[DE-D05 beforeAll] Top-up grant failed: status=${grant.status} body=${JSON.stringify(grant.responseBody)}`,
+        )
+      }
+
+      setupCtx = {
+        bucketId: primary.id,
+        userId,
+        clientAppId,
+        apiKey,
+      }
+    } finally {
+      await adminApi.dispose().catch(() => {})
     }
   } finally {
     await context.close()

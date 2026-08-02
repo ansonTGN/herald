@@ -178,6 +178,67 @@ async function consumePointsViaExtApi(
   return { status, body: responseBody }
 }
 
+/**
+ * Response body for `GET /api/ext/points/{realmId}/balance?userId=...`
+ * (`ExtPointsBalanceResponse` in backend/api-ext/src/points.rs). `balance` is
+ * the backend's effective consumable total (topup + subscription + granted +
+ * registration + free_periodic), gated on the same availability predicate
+ * (effective_at/expires_at) the consume path uses → excludes the
+ * future-effective pregrant.
+ */
+interface ExtPointsBalanceBody {
+  balance: number
+  topup_balance: number
+  subscription_balance: number
+  granted_balance: number
+  registration_balance: number
+  free_periodic_balance: number
+}
+
+/**
+ * Read the user's effective consumable balance E via the External API.
+ *
+ * Calls `GET /api/ext/points/{realmId}/balance?userId={userId}` using API Key
+ * auth. Returns `body.balance` — the SAME effective consumable total the
+ * consume path gates on, so E read here is exactly what assertion 2's consume
+ * predicate sees. The `points.manage` key covers this endpoint via the
+ * permission hierarchy (manage > view).
+ *
+ * Used INSTEAD of the FE-D04 pool-only UI total: PointsBalanceCard now renders
+ * only the pool model (topup/registration/granted) and excludes subscription,
+ * so the UI cell under-reports E. The ext-API `balance` includes subscription
+ * (topup 3000 + subscription 1900 = 4900) and is the authoritative source the
+ * consume path consults.
+ *
+ * @see backend/api-ext/src/points.rs::get_balance_ext
+ */
+async function readEffectiveBalanceViaExtApi(
+  apiKey: string,
+  realmId: string,
+  userId: string,
+): Promise<number> {
+  const { status, body } = await makeExtApiRequest({
+    apiKey,
+    method: 'GET',
+    path: `/points/${realmId}/balance?userId=${encodeURIComponent(userId)}`,
+  })
+
+  if (status !== 200) {
+    throw new Error(
+      `[DE-PU009] ext-API balance read failed: status=${status} body=${JSON.stringify(body)}`,
+    )
+  }
+
+  const balanceBody = body as Partial<ExtPointsBalanceBody>
+  if (typeof balanceBody?.balance !== 'number') {
+    throw new Error(
+      `[DE-PU009] ext-API balance response missing numeric balance: ${JSON.stringify(body)}`,
+    )
+  }
+
+  return balanceBody.balance
+}
+
 // ============================================================================
 // Shared setup context
 // ============================================================================
@@ -408,27 +469,29 @@ test.describe('[Regular User / SDK] 预发未来生效积分对普通用户不�
   // Assertion 2 — pregrant is NOT consumable (isolated insufficient_points)
   // ==========================================================================
 
-  test('US-PU009 断言2: 预发积分不可消费 (E+500 → 409 insufficient_points)', async ({
-    page,
-  }) => {
+  test('US-PU009 断言2: 预发积分不可消费 (E+500 → 409 insufficient_points)', async () => {
     expect(setupCtx, 'beforeAll must have resolved ids').not.toBeNull()
-    const { primaryPoolBucketId, demoUserId, coveredClientAppId, apiKey } =
-      setupCtx!
+    const { demoUserId, coveredClientAppId, apiKey } = setupCtx!
 
     let effectiveTotal = 0
 
     await test.step('Given: 读取普通用户当前有效总余额 E (跨所有持有的桶)', async () => {
-      await page.goto(`/${TEST_REALM}/user/points`)
-      await expect(page.locator(SELECTORS.pointsUser.page)).toBeVisible()
-
-      // The pregrant targets primary-pool, but consume selects across ALL
-      // buckets covering the client app (primary-pool + promo-pool both
-      // cover points-demo-app). The user's effective available balance E is
-      // therefore the SUM across every held bucket. The cross-bucket total
-      // bar renders when >=2 buckets are held; if only one bucket is held
-      // the per-bucket total IS the effective total. Sum the visible
-      // per-bucket totals to be robust to the held-bucket count.
-      effectiveTotal = await readEffectiveTotalAcrossBuckets(page)
+      // Read E from the SAME source the consume path uses — the ext-API
+      // `balance` — NOT the FE-D04 UI card. After the FE-D04 refactor,
+      // PointsBalanceCard renders ONLY the pool model (topup/registration/
+      // granted) and excludes subscription, so summing the per-bucket UI cells
+      // under-reports E (3000, not 4900). The ext-API `balance` is the
+      // authoritative effective consumable total (topup + subscription +
+      // granted + registration + free_periodic), derived under the SAME
+      // availability predicate (effective_at/expires_at) as the consume path,
+      // so it excludes the future-effective pregrant while INCLUDING
+      // subscription. The `points.manage` key covers this endpoint via the
+      // permission hierarchy (manage > view).
+      effectiveTotal = await readEffectiveBalanceViaExtApi(
+        apiKey.apiKey,
+        TEST_REALM,
+        demoUserId,
+      )
 
       // E is at least the seeded effective primary-pool ledgers
       // (topup 3000 + subscription 1900 = 4900); read at test time to avoid
@@ -547,45 +610,4 @@ function parseAmount(text: string | null): number {
   const cleaned = text.replace(/[^\d-]/g, '')
   const n = parseInt(cleaned, 10)
   return Number.isNaN(n) ? 0 : n
-}
-
-/**
- * Sum the per-bucket `points-balance-total-${bucketId}` values across every
- * held bucket card on the user points page.
- *
- * The user may hold 1 or 2+ buckets (primary-pool always; promo-pool only if
- * another demo's beforeAll granted into it — additive and out of this test's
- * control). The effective available balance E for a consume targeting
- * `points-demo-app` is the SUM across ALL buckets covering that app, so
- * summing every visible per-bucket total is the robust read. Each per-bucket
- * total is itself a derived SUM gated on the effective_at predicate, so the
- * pregrant (in primary-pool) is already excluded from each term.
- */
-async function readEffectiveTotalAcrossBuckets(
-  page: import('@playwright/test').Page,
-): Promise<number> {
-  // The per-bucket card testid prefix is `points-balance-card-`; the matching
-  // total cell is `points-balance-total-${bucketId}`. Resolve all visible
-  // per-bucket total cells and sum them. The flat `points-balance-total-`
-  // prefix (without a bucket UUID) only matches loading-skeleton/edge cases,
-  // but every rendered real card has a non-empty bucketId, so the prefix
-  // locator is a safe enumerable.
-  // Wait for at least one real (bucketed) balance card to render before
-  // counting totals — the points page loads balance cards asynchronously, and
-  // reading totals immediately after navigation races the load (the totals are
-  // 0 until the per-bucket cards mount). Mirrors assertion 1's explicit wait on
-  // the primary-pool card.
-  await expect(
-    page.locator('[data-testid^="points-balance-card-"]').first(),
-  ).toBeVisible({ timeout: 15000 })
-  const totalCells = page.locator('[data-testid^="points-balance-total-"]')
-  const count = await totalCells.count()
-  expect(count, 'at least one per-bucket balance total must render').toBeGreaterThan(0)
-
-  let sum = 0
-  for (let i = 0; i < count; i++) {
-    const text = await totalCells.nth(i).textContent()
-    sum += parseAmount(text)
-  }
-  return sum
 }

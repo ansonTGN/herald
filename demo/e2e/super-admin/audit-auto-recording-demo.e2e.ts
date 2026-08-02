@@ -63,7 +63,7 @@ test.describe('US-AU-005: Auto-Recording of Core Operations', () => {
     })
 
     await test.step('Verify a row contains "user.create" action text', async () => {
-      const found = await auditPage.hasRowWithColumnText(3, ['user.create'])
+      const found = await auditPage.hasRowWithAction('user.create')
       expect(found).toBe(true)
     })
 
@@ -102,7 +102,7 @@ test.describe('US-AU-005: Auto-Recording of Core Operations', () => {
     })
 
     await test.step('Verify a row contains "role.create" action text', async () => {
-      const found = await auditPage.hasRowWithColumnText(3, ['role.create'])
+      const found = await auditPage.hasRowWithAction('role.create')
       expect(found).toBe(true)
     })
 
@@ -130,7 +130,7 @@ test.describe('US-AU-005: Auto-Recording of Core Operations', () => {
     })
 
     await test.step('Verify a row contains "auth.login" action text', async () => {
-      const found = await auditPage.hasRowWithColumnText(3, ['auth.login'])
+      const found = await auditPage.hasRowWithAction('auth.login')
       expect(found).toBe(true)
     })
 
@@ -171,10 +171,9 @@ test.describe('US-AU-004: Admin Realm Platform Audit', () => {
     })
 
     await test.step('Verify realm_management rows contain expected action types', async () => {
-      const found = await auditPage.hasRowWithColumnText(3, [
-        'realm.create',
-        'realm.rbac_init',
-      ])
+      const found =
+        (await auditPage.hasRowWithAction('realm.create')) ||
+        (await auditPage.hasRowWithAction('realm.rbac_init'))
       expect(found).toBe(true)
     })
 

@@ -51,21 +51,20 @@ test.describe('Admin Realm Authentication', () => {
     // Scenario 1: Admin Realm user can login to system
     // ==========================================================================
     await test.step('Scenario 1: Admin Realm user can login to system', async () => {
-      await test.step('Login as admin using Page Object', async () => {
-        await loginPage.loginAsAdmin(DEMO_ADMIN.email, DEMO_ADMIN.password, DEMO_ADMIN.realmId)
+      const accessToken = await test.step('Login as admin using Page Object', async () => {
+        return await loginPage.loginAsAdmin(DEMO_ADMIN.email, DEMO_ADMIN.password, DEMO_ADMIN.realmId)
       })
 
       await test.step('Verify successful login', async () => {
         const page = loginPage.page
 
-        // Verify URL is on dashboard page (LoginPage.loginAsAdmin already verified this)
-        await expect(page).toHaveURL(/\/admin(\/manage)?$/)
+        // Verify URL is on the top-level admin dashboard (/manage after the
+        // route refactor that moved the admin console off the realm prefix).
+        await expect(page).toHaveURL(/\/manage(\/|$)/)
 
-        // Verify X-Auth Cookie is set
-        const cookies = await page.context().cookies()
-        const sessionCookie = cookies.find(c => c.name === 'X-Auth')
-        expect(sessionCookie).toBeDefined()
-        expect(sessionCookie?.value).toBeTruthy()
+        // Auth-rewrite: the X-Auth cookie was replaced by a bearer access token
+        // persisted in localStorage (auth-storage). Verify the token was issued.
+        expect(accessToken).toBeTruthy()
       })
     })
 
@@ -109,10 +108,21 @@ test.describe('Admin Realm Authentication', () => {
         await expect(page.locator(SELECTORS.login.title)).toBeVisible()
       })
 
-      await test.step('Verify session cookie is cleared', async () => {
-        const cookies = await page.context().cookies()
-        const sessionCookie = cookies.find(c => c.name === 'X-Auth')
-        expect(sessionCookie).toBeUndefined()
+      await test.step('Verify session is cleared', async () => {
+        // Auth-rewrite: the bearer access token lives in localStorage
+        // (auth-storage) rather than an X-Auth cookie. After logout the store
+        // resets to an unauthenticated state (the key may remain, but
+        // isAuthenticated flips to false and user is nulled).
+        const isAuthenticated = await page.evaluate(() => {
+          try {
+            const raw = localStorage.getItem('auth-storage')
+            if (!raw) return null
+            return JSON.parse(raw)?.state?.isAuthenticated ?? null
+          } catch {
+            return null
+          }
+        })
+        expect(isAuthenticated).toBe(false)
       })
     })
 

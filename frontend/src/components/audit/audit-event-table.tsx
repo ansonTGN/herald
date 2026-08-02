@@ -47,7 +47,9 @@ const columns: ColumnDef<AuditEventResponse>[] = [
     accessorKey: 'action',
     header: () => m['audit.table_action'](),
     cell: ({ getValue }) => (
-      <span className="text-sm">{formatAuditAction(getValue() as string)}</span>
+      <span className="text-sm" data-audit-action={getValue() as string}>
+        {formatAuditAction(getValue() as string)}
+      </span>
     ),
   },
   {

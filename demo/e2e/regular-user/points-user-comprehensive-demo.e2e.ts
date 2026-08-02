@@ -322,6 +322,12 @@ test.describe('[Points User] Comprehensive Demo Tests', () => {
         await page.locator(SELECTORS.pointsUser.filterType).click()
         await page.getByRole('option', { name: 'Recharge' }).click()
         await page.locator(SELECTORS.pointsUser.applyFiltersButton).click()
+        // Wait for the filter query to settle before proceeding: the Apply
+        // submit sets the transactions query into a loading state, during which
+        // both action buttons are `disabled={loading}`. Clicking Clear
+        // mid-load would block (Playwright waits for the element to become
+        // actionable) and trip the test timeout. Wait for Apply to re-enable.
+        await expect(page.locator(SELECTORS.pointsUser.applyFiltersButton)).toBeEnabled()
         demoLogger.testCode.log('[Test] ✓ Initial filter applied')
       })
 

@@ -1,8 +1,10 @@
 [profile.default]
-# Set test timeout to 60 seconds, terminate after 1 period
+# A test is "slow" after one 5-minute period and is then terminated.
 slow-timeout = { period = "300s", terminate-after = 1 }
-# Global timeout for all tests (increased to 60 minutes to prevent cancellations)
-global-timeout = "60m"
+# Global timeout covering the full ~1648-test suite (integration scenarios with
+# real PostgreSQL/Redis make it heavy). 879 tests took ~64m on CI, so 150m leaves
+# headroom for cold runners; tune down once the suite is sped up.
+global-timeout = "150m"
 # Default parallel test threads
 test-threads = 8
 # 立即显示失败输出
