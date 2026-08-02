@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { server } from '@/test/mocks/server'
@@ -368,6 +368,61 @@ describe('LegalAgreementTab', () => {
     expect(
       (screen.getByTestId('legal-content-en-input-terms_of_service') as HTMLTextAreaElement).value
     ).toBe('resumed draft body')
+  })
+
+  it('does not reset the mode select when a staged draft resolves after the admin edits the form', async () => {
+    // Regression: the seed effect used to re-run whenever the React Query
+    // `draft` reference changed. In the demo suite a prior run left a staged
+    // draft, so this run's draft GET resolved AFTER the admin had already
+    // switched `mode` to link — the effect then `form.reset({ mode: 'full_text' })`
+    // and clobbered the manual selection, so the external URL field vanished.
+    // Reproduce by holding the draft GET (a real staged draft) pending until
+    // after the admin picks link.
+    let resolveDraft!: () => void
+    const draftGate = new Promise<void>((resolve) => {
+      resolveDraft = resolve
+    })
+    setupAdminAgreementsHandler({
+      agreements: [makeAgreementView({ source: 'default' })],
+    })
+    server.use(
+      http.get(
+        `http://localhost:3000/api/legal/admin/${realmId}/agreements/terms_of_service/draft`,
+        async () => {
+          await draftGate
+          return HttpResponse.json({
+            agreement_type: 'terms_of_service',
+            content: { en: 'leftover draft body' },
+            version_label: 'leftover',
+            updated_at: '2026-07-01T00:00:00Z',
+            mode: 'full_text',
+            pending_version_no: 2,
+          })
+        }
+      )
+    )
+
+    renderWithProviders(<LegalAgreementTab realmId={realmId} canManage />)
+    const user = userEvent.setup()
+
+    // Draft GET is still pending, so the form is blank. The admin switches
+    // hosting mode to link; the external URL field mounts.
+    const card = await screen.findByTestId('legal-agreement-card-terms_of_service')
+    await user.selectOptions(within(card).getByTestId('legal-mode-select-terms_of_service'), 'link')
+    await screen.findByTestId('legal-external-url-input-terms_of_service')
+
+    // The staged draft now resolves (mode=full_text). On the buggy code the seed
+    // effect re-runs asynchronously and `form.reset({ mode: 'full_text' })`
+    // flips the select back to full_text, unmounting the external URL field.
+    // Let React flush the post-resolution reseed before asserting, so the test
+    // actually observes the regression rather than racing past it.
+    resolveDraft()
+    await new Promise((resolve) => setTimeout(resolve, 300))
+
+    expect(
+      (screen.getByTestId('legal-mode-select-terms_of_service') as HTMLSelectElement).value
+    ).toBe('link')
+    expect(screen.getByTestId('legal-external-url-input-terms_of_service')).toBeInTheDocument()
   })
 
   it('discards a draft after confirmation', async () => {

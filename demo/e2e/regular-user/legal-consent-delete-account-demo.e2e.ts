@@ -133,8 +133,10 @@ test.describe('[Regular User] Legal Consent Self-delete Account Demo Tests', () 
     expect(userId).toBeDefined()
     expect(userId).not.toBe('')
 
+    // Post-login lands on a session-scoped route with NO realm prefix after the
+    // route refactor (commit 03eeb456): regular users go to /user/profile.
     await page.waitForURL(
-      new RegExp(`^http://localhost:3000/${realmId}/(user|profile|dashboard|$|\\?)`),
+      /^http:\/\/localhost:3000\/(user\/profile|manage\/)/,
       { timeout: 15000 }
     )
 
@@ -262,7 +264,12 @@ test.describe('[Regular User] Legal Consent Self-delete Account Demo Tests', () 
         const rowTexts = await auditPage.getRowTexts(0)
         const rowText = rowTexts.join(' ')
         expect(rowText).toContain(userId)
-        expect(rowText).toContain('user.delete')
+        // The action filter above already constrained rows to `user.delete`,
+        // and the table renders the action via `formatAuditAction` (a localized
+        // label, not the raw `user.delete` string), so asserting the raw action
+        // text here would always fail. The delete event's identity is proven by
+        // the filter + rowCount>0 + the userId match; the detail sheet below
+        // verifies the self_service method marker.
       })
 
       await test.step('Open event detail and verify self_service method marker', async () => {

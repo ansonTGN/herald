@@ -26,6 +26,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { useAppForm, AppForm } from '@/components/ui/tanstack-form'
+import { useStore } from '@tanstack/react-form'
 import { TextareaField } from '@/components/shared/form-fields/textarea-field'
 import { TextField } from '@/components/shared/form-fields/text-field'
 import { MarkdownContent } from '@/components/legal/MarkdownContent'
@@ -265,12 +266,23 @@ function AgreementCard({
     },
   })
 
-  // Seed the form once the draft loads. A draft is fetched per
+  // Seed the form once the draft resolves. A draft is fetched per
   // (realm, agreement_type); until it resolves the form stays blank so an admin
   // never edits a published version's content by mistake. When a draft resolves,
   // prefill both fields; `form.reset` re-runs validation against the new values.
+  //
+  // Only seed while the form is still pristine. React Query hands back a fresh
+  // `draft` reference on every background refetch / window-focus / invalidation,
+  // and a draft can also resolve *after* the admin has started editing (e.g. a
+  // staged draft left by a previous session). Reseeding then would `form.reset`
+  // and wipe the in-flight edit — most visibly reverting an admin's manual switch
+  // of `mode` to link. Guarding on `isDirty` means an admin's edits always win
+  // over a late/background draft resolution. Publish/discard still reset the
+  // form explicitly in their `onSuccess` hooks (which clears `isDirty`, so the
+  // next draft resolution can seed cleanly).
+  const isFormDirty = useStore(form.store, (state) => state.isDirty)
   useEffect(() => {
-    if (draft !== undefined) {
+    if (draft !== undefined && !isFormDirty) {
       form.reset({
         versionLabel: draft?.version_label ?? '',
         contentEn: draftContentEn,
@@ -280,7 +292,7 @@ function AgreementCard({
     }
     // draftContentEn derives from `draft`; form is stable across renders.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft, draftContentEn])
+  }, [draft, draftContentEn, isFormDirty])
 
   // Publish = save the current edit as a draft, then publish that draft.
   async function handlePublish() {

@@ -69,7 +69,10 @@ test.describe('[Regular User] Legal Consent Registration Demo Tests', () => {
       await test.step('Step 3: Click Terms of Service link and verify agreement page', async () => {
         await page.locator(SELECTORS.legalConsent.termsOfServiceLink).click()
         await legalConsentHelper.expectAgreementPage('terms_of_service')
-        await expect(page.locator(SELECTORS.legalConsent.agreementTitle)).toContainText('Terms of Service')
+        // The agreement page no longer renders a separate title element; verify
+        // we landed on the terms_of_service legal route (the success card is
+        // already asserted by expectAgreementPage).
+        await expect(page).toHaveURL(/\/legal\/terms_of_service/)
 
         await page.goBack()
         await page.waitForLoadState('domcontentloaded')

@@ -16,6 +16,28 @@ export async function loginAsAdminWithConsent(
 ): Promise<void> {
   console.log(`[ConsentAwareLogin] Logging in as admin for realm: ${realmId}`)
 
+  // The admin console (/manage) is a DIFFERENT first-party client
+  // (admin-web-console) than the user account center the login flow mints a
+  // token for. When the SPA lands on /manage the root loader's initializeAuth
+  // fires POST /api/auth/browser-token/switch-client, which REVOKES the source
+  // token family and returns a new admin token. That swap is asynchronous with
+  // respect to the URL reaching /manage, so if a caller navigates to a realm
+  // admin page (e.g. /manage/users → GET /api/users/{realmId}) immediately
+  // after this helper returns, the in-flight request can ride on the now-
+  // revoked source token and 401 out, collapsing the whole session (401 →
+  // refresh 401 → kicked back to /auth/login). Capture the switch response up
+  // front so we can await its completion before returning, guaranteeing the
+  // admin token is persisted in the store (mirrors LoginPage.loginAsAdmin's
+  // switchResponsePromise handling at login-page.ts:290-295).
+  const switchClientResponsePromise = page
+    .waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === '/api/auth/browser-token/switch-client'
+        && response.request().method() === 'POST',
+      { timeout: 15000 }
+    )
+    .catch(() => null)
+
   await loginAsAdmin(page, {
     realmId,
     forceRelogin: options?.forceRelogin ?? true,
@@ -48,5 +70,35 @@ export async function loginAsAdminWithConsent(
       // redirect did not land on /manage in time.
       await page.goto(`${BASE_URL}/manage`, { waitUntil: 'domcontentloaded' })
     }
+  }
+
+  // Stabilize the admin console session before handing control back: the
+  // caller's next action is typically a sidebar click to a realm admin page
+  // whose data query (e.g. GET /api/users/{realmId}) requires the
+  // admin-web-console token. Awaiting the client-switch completion (or a short
+  // settle window when no switch fires — e.g. an already-admin session) ensures
+  // the store holds the valid admin token instead of the revoked source token.
+  const switchClientResponse = await switchClientResponsePromise
+  if (switchClientResponse) {
+    console.log(
+      `[ConsentAwareLogin] Admin client switch resolved (${switchClientResponse.status()})`
+    )
+    if (!switchClientResponse.ok()) {
+      // A failed switch leaves the session on the (still valid) source product
+      // token, which will 403/redirect on /manage routes. Force a reload so the
+      // root loader re-runs initializeAuth and either completes the switch or
+      // redirects the caller to a safe authenticated page — rather than letting
+      // a stale in-memory token silently break the next admin API call.
+      console.warn(
+        `[ConsentAwareLogin] Admin client switch failed (HTTP ${switchClientResponse.status()}); reloading /manage to resync`
+      )
+      await page.goto(`${BASE_URL}/manage`, { waitUntil: 'domcontentloaded' })
+      await page.waitForLoadState('domcontentloaded')
+    }
+  } else {
+    // No switch fired (the session was already admin-web-console). Still let the
+    // route loader settle so any pending React Query fetches complete on the
+    // authenticated token before the caller navigates further.
+    await page.waitForLoadState('domcontentloaded')
   }
 }

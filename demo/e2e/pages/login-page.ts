@@ -169,8 +169,21 @@ export class LoginPage extends BasePage {
 
     // The root loader may still issue an async redirect even after a cleared
     // store (e.g. a raced rehydrate). Wait for the URL to settle on the login
-    // page, then assert the card.
+    // page, then assert the card. If a raced rehydrate still pulled the URL off
+    // /auth/login (observed intermittently when the previous test left a stale
+    // auth-storage that rehydrated after waitForURL resolved), re-navigate once
+    // so the now-cleared store yields a stable login page.
     await this.page.waitForURL(/\/auth\/login/, { timeout: 10000 }).catch(() => {})
+    const onLoginUrl = /\/auth\/login/.test(this.page.url())
+    const cardVisible = await this.container
+      .isVisible({ timeout: 3000 })
+      .catch(() => false)
+    if (!onLoginUrl || !cardVisible) {
+      await this.page.goto(`${BASE_URL}/${realmId}/auth/login`, {
+        waitUntil: 'load',
+      })
+      await this.page.waitForURL(/\/auth\/login/, { timeout: 10000 }).catch(() => {})
+    }
     await expect(this.container).toBeVisible()
   }
 

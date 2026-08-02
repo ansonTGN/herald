@@ -25,6 +25,13 @@
 
 import { Page, expect, type APIRequestContext, type APIResponse } from '@playwright/test'
 import { SELECTORS } from '../selectors'
+import {
+  createBearerApiContext,
+  clearSessionData,
+  DEMO_ADMIN,
+  REALM_ADMINS,
+} from './auth'
+import { LoginPage } from '../pages/login-page'
 
 // ============================================================================
 // Types
@@ -392,12 +399,74 @@ function backendBaseUrl(): string {
 }
 
 /**
+ * Build a Bearer-authenticated `APIRequestContext` for the realm admin.
+ *
+ * ⚠️ Auth model (corrected): the `/api/realms/{realmId}/billing/credit-buckets`
+ * admin endpoints are mounted under `inject_token_identity`
+ * (`backend/api-base/.../identity_middleware.rs`), which ONLY reads the
+ * `Authorization: Bearer` header — it ignores cookies entirely. This project's
+ * access token is held purely in-memory in the frontend
+ * (`frontend/src/stores/auth-store.ts`) and injected per-request by the SPA
+ * fetch interceptor. `page.context().request` shares only the browser
+ * context's cookies and does NOT run the SPA interceptor, so it carries no
+ * Bearer → 401 `"missing bearer token"` (the failure captured in run
+ * `demo-run-all-20260801-103017`).
+ *
+ * This helper logs the realm admin in inside an ISOLATED disposable browser
+ * context (spawned from `page`'s browser) so it does NOT clobber the caller's
+ * `page` session (cookies, in-memory token, current route). The captured
+ * admin-web-console access token (`LoginPage.loginAsAdmin` awaits
+ * `/api/auth/browser-token/switch-client` and stores the post-switch token) is
+ * used to mint an independent `APIRequestContext`. The browser context is
+ * closed inside this helper; the returned context keeps a copy of the token in
+ * its `extraHTTPHeaders` and remains usable until the caller disposes it.
+ *
+ * `realmId` selects credentials via `REALM_ADMINS`, falling back to
+ * `DEMO_ADMIN`. Mirrors `createAdminBearerContext(browser, realmId)` in
+ * `realm-admin/user-sessions-management-demo.e2e.ts`.
+ *
+ * @returns A disposable Bearer-authenticated API request context. The caller
+ *          MUST `await context.dispose()` (typically in a try/finally) once
+ *          it is no longer needed.
+ */
+export async function createAdminBearerContext(
+  page: Page,
+  realmId: string,
+): Promise<APIRequestContext> {
+  const browser = page.context().browser()
+  if (!browser) {
+    throw new Error(
+      'createAdminBearerContext: page.context().browser() returned null — ' +
+        'a Browser is required to spawn an isolated admin login context.',
+    )
+  }
+  const context = await browser.newContext()
+  try {
+    const adminPage = await context.newPage()
+    await clearSessionData(adminPage)
+    const loginPage = new LoginPage(adminPage)
+    const creds = REALM_ADMINS[realmId] || DEMO_ADMIN
+    await loginPage.loginAsAdmin(creds.email, creds.password, realmId)
+    return createBearerApiContext(loginPage.getAccessToken())
+  } finally {
+    // Closing the page context does NOT invalidate the captured access token
+    // (the token family lives server-side in Redis and is independent of any
+    // browser context). The returned APIRequestContext keeps a copy of the
+    // token in its extraHTTPHeaders and remains usable.
+    await context.close().catch(() => {})
+  }
+}
+
+/**
  * Create a Credit Bucket via the admin HTTP API.
  *
- * Uses Playwright's `page.context().request` so the browser's authenticated
- * session (the X-Auth cookie set by `loginAsAdmin`) is reused — no separate
- * auth header required. Mirrors the `_http_json` pattern in
- * `scripts/lib/demo_seed.py` (status check + parsed body).
+ * Issues the request through a Bearer-authenticated `APIRequestContext`. If
+ * the caller supplies `apiContext`, it is used directly (and owned/disposed by
+ * the caller). When omitted, a one-shot admin Bearer context is built from
+ * `page`'s browser (see {@link createAdminBearerContext}) and disposed inside
+ * this helper — see that helper's docstring for why cookie-only auth does not
+ * work here. Mirrors the `_http_json` pattern in `scripts/lib/demo_seed.py`
+ * (status check + parsed body).
  *
  * Route: `POST /api/realms/{realmId}/billing/credit-buckets`.
  * Auth: Realm Admin with `points.manage`.
@@ -408,21 +477,38 @@ export async function createBucketViaApi(
   page: Page,
   realmId: string,
   payload: CreateBucketApiPayload,
+  apiContext?: APIRequestContext,
 ): Promise<{ status: number; body: CreditBucketListItem | Record<string, unknown> }> {
   const url = `${backendBaseUrl()}/api/realms/${realmId}/billing/credit-buckets`
-  const response = await page.context().request.post(url, { data: payload })
+  const ownsContext = !apiContext
+  const requestContext = apiContext ?? (await createAdminBearerContext(page, realmId))
+  try {
+    const response = await requestContext.post(url, { data: payload })
 
-  const body = await parseJsonBody(response)
-  if (!response.ok() && response.status() !== 409) {
-    throw new Error(
-      `createBucketViaApi failed: status=${response.status()} body=${JSON.stringify(body)}`,
-    )
+    const body = await parseJsonBody(response)
+    if (!response.ok() && response.status() !== 409) {
+      throw new Error(
+        `createBucketViaApi failed: status=${response.status()} body=${JSON.stringify(body)}`,
+      )
+    }
+    return { status: response.status(), body: body as CreditBucketListItem | Record<string, unknown> }
+  } finally {
+    if (ownsContext) {
+      await requestContext.dispose().catch(() => {})
+    }
   }
-  return { status: response.status(), body: body as CreditBucketListItem | Record<string, unknown> }
 }
 
 /**
  * List Credit Buckets via the admin HTTP API.
+ *
+ * Issues the request through a Bearer-authenticated `APIRequestContext`. If
+ * the caller supplies `requestContext` (e.g. built from a `loginPage` it
+ * already holds), it is used directly and owned/disposed by the caller. When
+ * omitted, a one-shot admin Bearer context is built from `page`'s browser (see
+ * {@link createAdminBearerContext}) and disposed inside this helper — see that
+ * helper's docstring for why cookie-only auth does not work here (the default
+ * previously was `page.context().request`, which carries no Bearer → 401).
  *
  * Route: `GET /api/realms/{realmId}/billing/credit-buckets`.
  * Auth: Realm Admin with `points.manage` (view).
@@ -430,29 +516,37 @@ export async function createBucketViaApi(
 export async function listBucketsViaApi(
   page: Page,
   realmId: string,
-  requestContext: APIRequestContext = page.context().request,
+  requestContext?: APIRequestContext,
 ): Promise<CreditBucketListItem[]> {
   const url = `${backendBaseUrl()}/api/realms/${realmId}/billing/credit-buckets`
-  const response = await requestContext.get(url)
-  const body = await parseJsonBody(response)
-  if (!response.ok()) {
+  const ownsContext = !requestContext
+  const apiContext = requestContext ?? (await createAdminBearerContext(page, realmId))
+  try {
+    const response = await apiContext.get(url)
+    const body = await parseJsonBody(response)
+    if (!response.ok()) {
+      throw new Error(
+        `listBucketsViaApi failed: status=${response.status()} body=${JSON.stringify(body)}`,
+      )
+    }
+    // Backend wraps list responses either as a bare array or as { items: [...] }.
+    if (Array.isArray(body)) {
+      return body as CreditBucketListItem[]
+    }
+    if (body && Array.isArray((body as { items?: unknown }).items)) {
+      return (body as { items: CreditBucketListItem[] }).items
+    }
+    if (body && Array.isArray((body as { data?: unknown }).data)) {
+      return (body as { data: CreditBucketListItem[] }).data
+    }
     throw new Error(
-      `listBucketsViaApi failed: status=${response.status()} body=${JSON.stringify(body)}`,
+      `listBucketsViaApi returned unexpected body shape: ${JSON.stringify(body)}`,
     )
+  } finally {
+    if (ownsContext) {
+      await apiContext.dispose().catch(() => {})
+    }
   }
-  // Backend wraps list responses either as a bare array or as { items: [...] }.
-  if (Array.isArray(body)) {
-    return body as CreditBucketListItem[]
-  }
-  if (body && Array.isArray((body as { items?: unknown }).items)) {
-    return (body as { items: CreditBucketListItem[] }).items
-  }
-  if (body && Array.isArray((body as { data?: unknown }).data)) {
-    return (body as { data: CreditBucketListItem[] }).data
-  }
-  throw new Error(
-    `listBucketsViaApi returned unexpected body shape: ${JSON.stringify(body)}`,
-  )
 }
 
 async function parseJsonBody(

@@ -41,7 +41,19 @@
  */
 
 import { test, expect, cleanupTestData } from '../fixtures/demo-page.fixtures'
-import type { Browser, BrowserContext, Page } from '@playwright/test'
+import type {
+  APIRequestContext,
+  Browser,
+  BrowserContext,
+  Page,
+} from '@playwright/test'
+import {
+  createBearerApiContext,
+  clearSessionData,
+  DEMO_ADMIN,
+  REALM_ADMINS,
+} from '../helpers/auth'
+import { LoginPage } from '../pages/login-page'
 
 // ─── Shared constants ────────────────────────────────────────────────────────
 
@@ -56,9 +68,23 @@ const SESSIONS_USER_PASSWORD = 'TestPass123!'
 
 /**
  * Backend base URL. Mirrors the resolution used in
- * user-reset-password-demo.e2e.ts and helpers/api-validator.ts. The page's
- * request context inherits the logged-in session cookies, so the same admin
- * identity authenticates these admin-API calls — no separate token needed.
+ * user-reset-password-demo.e2e.ts and helpers/api-validator.ts.
+ *
+ * ⚠️ Auth note (corrected): the `/api/users/{realmId}` CRUD endpoints and
+ * `/api/client-apps/{realmId}` are mounted under `inject_token_identity`
+ * (backend/api-base/.../identity_middleware.rs:34-47), which ONLY reads the
+ * `Authorization: Bearer` header — it ignores cookies entirely. This project's
+ * access token is held purely in-memory in the frontend
+ * (`frontend/src/stores/auth-store.ts:45-57`, "is NEVER persisted") and injected
+ * per-request by the SPA fetch interceptor (`frontend/src/lib/api-client.ts`).
+ * `page.request.*` shares only the browser context's cookies and does NOT run
+ * the SPA interceptor, so it carries no Bearer → 401 "missing bearer token".
+ *
+ * Therefore every admin-API call below is issued through a dedicated
+ * Bearer-authenticated `APIRequestContext` built from an admin-web-console
+ * access token captured via {@link createAdminBearerContext}. This matches the
+ * pattern used by the sibling custom-domain suite
+ * (`realm-admin-custom-domain-config-demo.e2e.ts:99-113`).
  */
 function backendBaseUrl(): string {
   return (
@@ -69,6 +95,50 @@ function backendBaseUrl(): string {
 }
 
 /**
+ * Log in as `realmId`'s admin in an isolated, disposable browser context and
+ * return a Bearer-authenticated `APIRequestContext` carrying the
+ * admin-web-console first-party access token (captured by
+ * `LoginPage.loginAsAdmin`, which awaits `/api/auth/browser-token/switch-client`
+ * and stores the post-switch token).
+ *
+ * Uses its OWN browser context (created from `browser`) so it does NOT disturb
+ * the caller's `adminPage`/fixture UI state (cookies, in-memory token, current
+ * route) — the fixtures' `usersPage`/`realmAdminPage` drive the sessions dialog
+ * through that page after this helper returns, so logging the admin in on
+ * `adminPage` would clobber the fixture session. The isolated context is
+ * closed inside this helper after the token is captured; the returned
+ * `APIRequestContext` is independent and must be disposed by the caller
+ * (try/finally).
+ *
+ * `realmId` selects credentials via `REALM_ADMINS` (`admin`→`admin@cas.com`,
+ * `realm1`→`realm1-admin@test.com`, ...), falling back to `DEMO_ADMIN`.
+ *
+ * Mirrors `loginAsAdminBearer` in
+ * `realm-admin-custom-domain-config-demo.e2e.ts:99-113` but uses a disposable
+ * context instead of a caller-supplied page.
+ */
+export async function createAdminBearerContext(
+  browser: Browser,
+  realmId: string
+): Promise<APIRequestContext> {
+  const context = await browser.newContext()
+  try {
+    const adminPage = await context.newPage()
+    await clearSessionData(adminPage)
+    const loginPage = new LoginPage(adminPage)
+    const creds = REALM_ADMINS[realmId] || DEMO_ADMIN
+    await loginPage.loginAsAdmin(creds.email, creds.password, realmId)
+    return createBearerApiContext(loginPage.getAccessToken())
+  } finally {
+    // Closing the page context does NOT invalidate the captured access token
+    // (the token family lives server-side in Redis and is independent of any
+    // browser context). The returned APIRequestContext keeps a copy of the
+    // token in its extraHTTPHeaders and remains usable.
+    await context.close().catch(() => {})
+  }
+}
+
+/**
  * Resolve a user's id by email via the admin user list API.
  *
  * GET /api/users/{realmId}?search={email} → PageResponse<{ id, email, ... }>
@@ -76,12 +146,12 @@ function backendBaseUrl(): string {
  * @returns The matching user id, or '' when the user does not exist.
  */
 async function findUserIdByEmail(
-  adminPage: Page,
+  apiContext: APIRequestContext,
   realmId: string,
   email: string
 ): Promise<string> {
   const url = `${backendBaseUrl()}/api/users/${realmId}?search=${encodeURIComponent(email)}`
-  const response = await adminPage.request.get(url)
+  const response = await apiContext.get(url)
   if (!response.ok()) {
     const body = await response.text().catch(() => '<unreadable>')
     throw new Error(
@@ -100,17 +170,17 @@ async function findUserIdByEmail(
  * create pattern as user-reset-password-demo.e2e.ts:74-94.
  */
 async function deleteExistingUser(
-  adminPage: Page,
+  apiContext: APIRequestContext,
   realmId: string,
   email: string
 ): Promise<void> {
   try {
-    const userId = await findUserIdByEmail(adminPage, realmId, email)
+    const userId = await findUserIdByEmail(apiContext, realmId, email)
     if (!userId) {
       return
     }
     const url = `${backendBaseUrl()}/api/users/${realmId}/${userId}`
-    const response = await adminPage.request.delete(url)
+    const response = await apiContext.delete(url)
     if (response.status() >= 400 && response.status() !== 404) {
       const body = await response.text().catch(() => '<unreadable>')
       console.warn(
@@ -131,27 +201,78 @@ async function deleteExistingUser(
 }
 
 /**
+ * Resolve any valid role id in the realm for the create-user payload.
+ *
+ * The backend create-user API (`POST /api/users/{realmId}`) requires a
+ * non-empty `roleIds` array (validator: `length(min = 1)`, see
+ * backend/api-admin/.../admin_users). These tests validate session revoke, not
+ * role permissions, so ANY role in the realm satisfies the constraint.
+ *
+ * Resolution order:
+ *  1. GET `/api/roles/{realmId}/define` (admin role-definitions list; flat
+ *     `Vec<RoleResponse>` per backend/api-admin/src/role_definitions/list.rs:81).
+ *     Prefer a role named `user` (the demo seed provisions one in both the
+ *     `admin` realm and `realm-001` — see scripts/lib/demo_seed.py:1224/499),
+ *     falling back to the first role in the list.
+ *
+ * @returns A role id string suitable for `roleIds: [roleId]`.
+ * @throws When the list call fails or the realm has no roles at all.
+ */
+async function resolveAnyRoleId(
+  apiContext: APIRequestContext,
+  realmId: string
+): Promise<string> {
+  const url = `${backendBaseUrl()}/api/roles/${realmId}/define`
+  const response = await apiContext.get(url)
+  if (!response.ok()) {
+    const body = await response.text().catch(() => '<unreadable>')
+    throw new Error(
+      `resolveAnyRoleId: list roles failed (HTTP ${response.status()}): ${body}`
+    )
+  }
+  const body = await response.json()
+  const roles = (Array.isArray(body) ? body : body?.items ?? []) as Array<{
+    id: string
+    name: string
+  }>
+  if (roles.length === 0) {
+    throw new Error(
+      `resolveAnyRoleId: no roles found in realm ${realmId} — ` +
+        `create-user requires at least one role id.`
+    )
+  }
+  const userRole = roles.find((r) => r.name === 'user')
+  return (userRole ?? roles[0]).id
+}
+
+/**
  * Ensure the target user exists as a Normal, no-2FA user. Idempotent:
  * delete-then-create. Creates via the admin user API directly (status: 1 =
- * Normal, no roles, no TOTP) so the user can log in with password only.
+ * Normal, no TOTP) so the user can log in with password only.
+ *
+ * `roleIds` MUST be non-empty (backend create-user validator
+ * `length(min = 1)`); a role id is resolved in-realm via {@link
+ * resolveAnyRoleId}. The specific role is irrelevant to these session-revoke
+ * tests — only the validator constraint must be satisfied.
  *
  * @returns The new user id.
  */
 async function ensureTargetUser(
-  adminPage: Page,
+  apiContext: APIRequestContext,
   realmId: string,
   email: string,
   password: string
 ): Promise<string> {
-  await deleteExistingUser(adminPage, realmId, email)
+  await deleteExistingUser(apiContext, realmId, email)
+  const roleId = await resolveAnyRoleId(apiContext, realmId)
   const url = `${backendBaseUrl()}/api/users/${realmId}`
-  const response = await adminPage.request.post(url, {
+  const response = await apiContext.post(url, {
     data: {
       email,
       password,
       nickname: email.split('@')[0],
       status: 1, // Normal
-      role_ids: [],
+      roleIds: [roleId],
     },
     headers: { 'content-type': 'application/json' },
   })
@@ -163,7 +284,7 @@ async function ensureTargetUser(
   }
   // Resolve the id via search (the create response shape varies across stacks;
   // search-by-email is the stable path used elsewhere in the demo suite).
-  const userId = await findUserIdByEmail(adminPage, realmId, email)
+  const userId = await findUserIdByEmail(apiContext, realmId, email)
   if (!userId) {
     throw new Error(
       `ensureTargetUser: user ${email} not found after create in realm ${realmId}`
@@ -183,11 +304,15 @@ async function ensureTargetUser(
  * @returns The client app UUID string.
  */
 async function resolveFirstPartyClientId(
-  adminPage: Page,
+  apiContext: APIRequestContext,
   realmId: string
 ): Promise<string> {
-  const url = `${backendBaseUrl()}/api/client-apps/${realmId}`
-  const response = await adminPage.request.get(url)
+  // Backend mounts the client-apps admin router at `/api/client/{realmId}`
+  // (see backend/api/src/application/http/server/mod.rs:668-673); the list
+  // endpoint is the nested index. Do NOT add a trailing slash — the backend
+  // does not match `/api/client/{realmId}/` and the SPA fallback returns HTML.
+  const url = `${backendBaseUrl()}/api/client/${realmId}`
+  const response = await apiContext.get(url)
   if (!response.ok()) {
     const body = await response.text().catch(() => '<unreadable>')
     throw new Error(
@@ -197,22 +322,23 @@ async function resolveFirstPartyClientId(
   const body = await response.json()
   const items = (body?.items ?? body ?? []) as Array<{
     id: string
-    credentialClass?: string
-    credential_class?: string
+    // The OAuth client_id string (e.g. "admin-web-console") — this is what the
+    // login API's `clientId` field expects, NOT the row UUID `id`. The backend
+    // serializes ClientAppItem with `rename_all = "camelCase"`, so the JSON key
+    // is `clientId` / `isFirstParty` (not snake_case).
+    clientId: string
+    isFirstParty?: boolean
     enabled?: boolean
   }>
   const firstParty = items.find(
-    (c) =>
-      (c.credentialClass === 'first_party' ||
-        c.credential_class === 'first_party') &&
-      c.enabled !== false
+    (c) => c.isFirstParty === true && c.enabled !== false
   )
   if (!firstParty) {
     throw new Error(
       `resolveFirstPartyClientId: no first-party client app found in realm ${realmId}`
     )
   }
-  return firstParty.id
+  return firstParty.clientId
 }
 
 // ─── Exported session helpers (imported by DE-D02) ───────────────────────────
@@ -242,12 +368,20 @@ export interface TargetUserSession {
  *  - The caller must pass a NO-2FA Normal user; if `requires_totp` is true the
  *    seed user was mis-provisioned — throw with a clear message.
  *
- * @param browser    Playwright Browser (used to spawn the isolated context).
+ * @param browser    Playwright Browser (used to spawn the isolated context and
+ *                   to build a one-shot admin Bearer context).
  * @param realmId    Realm to log the user into.
  * @param email      Target user email (must already exist as Normal/no-2FA).
  * @param password   Target user password.
- * @param adminPage  Admin-authenticated page used to resolve `client_id` and
- *                   (if needed) ensure the user exists.
+ * @param adminPage  Admin-authenticated page. Retained only for call-site
+ *                   stability; it is NOT used for any API call here. The admin
+ *                   API helpers require a Bearer token this page does not expose
+ *                   (the access token lives in SPA memory, see {@link
+ *                   backendBaseUrl} note), so a fresh admin Bearer context is
+ *                   built from `browser` instead. Logging the admin in on
+ *                   `adminPage` would clobber the fixture session the caller
+ *                   needs for subsequent UI steps (e.g. opening the sessions
+ *                   dialog), so this helper deliberately avoids mutating it.
  */
 export async function createTargetUserSession(
   browser: Browser,
@@ -256,26 +390,43 @@ export async function createTargetUserSession(
   password: string,
   adminPage: Page
 ): Promise<TargetUserSession> {
+  // The admin user-API + client-app endpoints are gated on
+  // `Authorization: Bearer`, which `adminPage.request.*` cannot supply (the
+  // token lives in SPA memory only). Build a dedicated Bearer context for the
+  // provisioning calls; dispose it once we have what we need.
+  const adminApi = await createAdminBearerContext(browser, realmId)
+
   // 1. Ensure the target user exists (idempotent). Required so the login call
   //    has a valid Normal/no-2FA account to authenticate.
-  const userId = await ensureTargetUser(
-    adminPage,
-    realmId,
-    email,
-    password
+  const userId = await ensureTargetUser(adminApi, realmId, email, password).catch(
+    async (error) => {
+      await adminApi.dispose().catch(() => {})
+      throw error
+    }
   )
 
   // 2. Resolve a first-party client_id (required by login.rs:46).
-  const clientAppId = await resolveFirstPartyClientId(adminPage, realmId)
+  const clientAppId = await resolveFirstPartyClientId(
+    adminApi,
+    realmId
+  ).catch(async (error) => {
+    await adminApi.dispose().catch(() => {})
+    throw error
+  })
+
+  // The admin Bearer context is no longer needed after provisioning; release
+  // it before spawning the target user's own isolated login context.
+  await adminApi.dispose().catch(() => {})
 
   // 3. Log the target user in from an ISOLATED browser context. This creates a
   //    real token family in Redis and a session cookie scoped to this context,
-  //    independent of the admin context.
+  //    independent of the admin context. NO admin Bearer is used here — this is
+  //    the target user's OWN login, which returns the user's own access token.
   const context = await browser.newContext()
   const loginRes = await context.request.post(
     `${backendBaseUrl()}/api/auth/${realmId}/login`,
     {
-      data: { email, password, client_id: clientAppId },
+      data: { email, password, clientId: clientAppId },
       headers: { 'content-type': 'application/json' },
     }
   )
@@ -287,7 +438,7 @@ export async function createTargetUserSession(
         `(HTTP ${loginRes.status()}): ${body}`
     )
   }
-  const body = await loginRes.json()
+  let body = await loginRes.json()
 
   // 4. Guard against a mis-provisioned seed user that requires TOTP. The
   //    top-level success branch returns BrowserTokenResponse (no requires_totp
@@ -297,8 +448,58 @@ export async function createTargetUserSession(
     await context.close().catch(() => {})
     throw new Error(
       `createTargetUserSession: seed user ${email} requires TOTP — ` +
-        `the user was mis-provisioned (expected no-2FA Normal user).`
+      `the user was mis-provisioned (expected no-2FA Normal user).`
     )
+  }
+
+  // 4b. Newly-created users have never accepted the realm's legal agreements,
+  // so the first login returns `consentRequired: true` with the current
+  // effective agreement summaries and NO accessToken. Re-submit login carrying
+  // the required agreements (agreementType + versionId) to record consent and
+  // obtain the access token in one round-trip (mirrors the SPA's login-time
+  // re-consent flow; backend login.rs evaluate_login_consent_gate).
+  if (body?.consentRequired === true && !body?.accessToken) {
+    const summaries = (body?.agreements ?? []) as Array<{
+      // Backend serializes LegalAgreementSummary WITHOUT rename_all, so the JSON
+      // keys are snake_case (agreement_type / version_id), even though the login
+      // request's AuthConsentAgreement uses camelCase.
+      agreement_type?: string
+      version_id?: string
+      agreementType?: string
+      versionId?: string
+    }>
+    const agreements = summaries
+      .map((s) => ({
+        agreementType: s.agreement_type ?? s.agreementType,
+        versionId: s.version_id ?? s.versionId,
+      }))
+      .filter(
+        (a): a is { agreementType: string; versionId: string } =>
+          !!a.agreementType && !!a.versionId
+      )
+    if (agreements.length === 0) {
+      await context.close().catch(() => {})
+      throw new Error(
+        `createTargetUserSession: login for ${email} required consent but ` +
+        `no agreement summaries were returned. Body: ${JSON.stringify(body)}`
+      )
+    }
+    const consentLoginRes = await context.request.post(
+      `${backendBaseUrl()}/api/auth/${realmId}/login`,
+      {
+        data: { email, password, clientId: clientAppId, agreements },
+        headers: { 'content-type': 'application/json' },
+      }
+    )
+    if (!consentLoginRes.ok()) {
+      const cbody = await consentLoginRes.text().catch(() => '<unreadable>')
+      await context.close().catch(() => {})
+      throw new Error(
+        `createTargetUserSession: consent login failed for ${email} ` +
+        `in realm ${realmId} (HTTP ${consentLoginRes.status()}): ${cbody}`
+      )
+    }
+    body = await consentLoginRes.json()
   }
 
   const accessToken: string | undefined = body?.accessToken
@@ -306,7 +507,7 @@ export async function createTargetUserSession(
     await context.close().catch(() => {})
     throw new Error(
       `createTargetUserSession: login response for ${email} did not carry ` +
-        `accessToken. Body keys: ${Object.keys(body ?? {}).join(', ')}`
+      `accessToken. Body keys: ${Object.keys(body ?? {}).join(', ')}`
     )
   }
 
@@ -409,11 +610,16 @@ const createdSessions: TargetUserSession[] = []
 
 /**
  * Close every tracked target context and delete the dedicated target users
- * (admin realm + realm1) via the admin context, then run the shared cleanup.
- * All non-fatal.
+ * (admin realm + realm1) via a fresh admin Bearer context, then run the shared
+ * cleanup. All non-fatal.
+ *
+ * `adminPage` (the fixture's UI page) is NOT used for the deletes: the user-API
+ * DELETE is gated on `Authorization: Bearer`, which `adminPage.request.*` cannot
+ * supply (token is SPA in-memory only — see {@link backendBaseUrl} note). A
+ * one-shot admin Bearer context is built from `browser` instead.
  */
 async function cleanupSessionsAndUsers(
-  adminPage: Page,
+  browser: Browser,
   adminUsersPage: { page: Page }
 ): Promise<void> {
   for (const t of createdSessions) {
@@ -423,12 +629,20 @@ async function cleanupSessionsAndUsers(
   }
   createdSessions.length = 0
 
-  await deleteExistingUser(adminPage, ADMIN_REALM, SESSIONS_USER_EMAIL).catch(
-    (error) => console.warn('[user-sessions afterEach] admin cleanup:', error)
-  )
-  await deleteExistingUser(adminPage, REALM1, SESSIONS_USER_EMAIL).catch(
-    (error) => console.warn('[user-sessions afterEach] realm1 cleanup:', error)
-  )
+  let adminApi: APIRequestContext | undefined
+  try {
+    adminApi = await createAdminBearerContext(browser, ADMIN_REALM)
+    await deleteExistingUser(adminApi, ADMIN_REALM, SESSIONS_USER_EMAIL).catch(
+      (error) => console.warn('[user-sessions afterEach] admin cleanup:', error)
+    )
+    await deleteExistingUser(adminApi, REALM1, SESSIONS_USER_EMAIL).catch(
+      (error) => console.warn('[user-sessions afterEach] realm1 cleanup:', error)
+    )
+  } catch (error) {
+    console.warn('[user-sessions afterEach] admin Bearer setup failed:', error)
+  } finally {
+    await adminApi?.dispose().catch(() => {})
+  }
 
   await cleanupTestData(adminUsersPage.page, ADMIN_REALM, {}).catch((error) =>
     console.warn('[user-sessions afterEach] cleanupTestData:', error)
@@ -436,8 +650,8 @@ async function cleanupSessionsAndUsers(
 }
 
 test.describe('[US-RA-020] Realm Admin manages user sessions', () => {
-  test.afterEach(async ({ usersPage, page }) => {
-    await cleanupSessionsAndUsers(page, usersPage)
+  test.afterEach(async ({ usersPage, page, browser }) => {
+    await cleanupSessionsAndUsers(browser, usersPage)
   })
 
   test('[US-RA-020 S1] admin sees active session list for a user', async ({

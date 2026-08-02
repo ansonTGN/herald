@@ -119,6 +119,13 @@ test.describe('[Regular User] Password Reset Demo Tests', () => {
   test('Scenario 3: Full reset flow — request, set new password, then log in', async ({
     page,
   }) => {
+    // This scenario drives the full forgot/reset flow AND logs in to the
+    // dashboard; afterEach then restores the original password via another
+    // reset round-trip. On a freshly rebuilt demo seed the dashboard render can
+    // be slow, so allow well beyond the default 120s to keep the afterEach
+    // restore from being killed mid-flow by the per-test timeout.
+    test.setTimeout(240_000)
+
     const newPassword = 'NewPassword123!'
 
     await test.step('Step 1: Request reset link via the forgot-password form', async () => {
@@ -149,15 +156,29 @@ test.describe('[Regular User] Password Reset Demo Tests', () => {
     })
 
     await test.step('Step 3: Submit the new password', async () => {
+      // The backend confirm handler returns 302 FOUND on success (it issues a
+      // Location redirect to the Client App / realm public URL). The SPA's API
+      // client uses `redirect: 'follow'`, so a loose glob would let the
+      // auto-followed GET response race in; match strictly on the POST to the
+      // confirm path. Also, 302 is NOT in Playwright's 200-299 `.ok()` range,
+      // so assert on the success-or-redirect status range rather than `.ok()`.
+      const confirmUrl = `/api/auth/${REALM_ID}/reset_password/confirm/`
       const responsePromise = page.waitForResponse(
-        '**/api/auth/**/reset_password/confirm/**',
+        (resp) =>
+          resp.request().method() === 'POST' &&
+          resp.url().includes(confirmUrl),
         { timeout: 10000 }
       )
       await page.getByTestId('reset-password-new-input').fill(newPassword)
       await page.getByTestId('reset-password-confirm-input').fill(newPassword)
       await page.getByTestId('reset-password-submit-button').click()
       const response = await responsePromise
-      expect(response.ok()).toBeTruthy()
+      // Success: 200-299 (if the API client ever stops following the redirect)
+      // or 302 (the documented successful-confirm redirect).
+      expect(
+        response.status() >= 200 && response.status() < 400,
+        `expected 2xx/3xx for reset confirm, got ${response.status()}`
+      ).toBeTruthy()
     })
 
     await test.step('Step 4: Verify redirect to login page', async () => {
@@ -236,6 +257,16 @@ async function seedResetCodeViaUi(page: import('@playwright/test').Page, email: 
  * Tests in this file may change it; this helper restores it by walking the
  * forgot/reset flow once more (no bcrypt dependency) so the rest of the demo
  * suite sees the documented seed credentials.
+ *
+ * The reset flow is run unconditionally. Scenario 3 leaves the page on the
+ * authenticated admin dashboard, which has two gotchas for cleanup:
+ *   1. The SPA's root route guard redirects authenticated users away from
+ *      `/auth/*` pages back to `/manage`, so the forgot-password form would
+ *      never render — we tear down the session (cookies + web storage) first.
+ *   2. The dashboard long-polls; clearing web storage while it is mounted can
+ *      stall the page's main thread, and `page.goto` with the default `load`
+ *      wait hangs. We navigate with `waitUntil: 'commit'` to drop the old
+ *      document before clearing storage, then `domcontentloaded` for the form.
  */
 async function restoreOriginalPassword(
   page: import('@playwright/test').Page,
@@ -243,16 +274,34 @@ async function restoreOriginalPassword(
   email: string,
   originalPassword: string
 ) {
-  // First check whether the original password still works; if so, nothing to do.
-  const stillOriginal = await tryLogin(page, realmId, email, originalPassword)
-  if (stillOriginal) {
-    console.log('[PasswordReset Demo] Original password intact; no restore needed')
-    return
+  console.log('[PasswordReset Demo] Restoring original password via reset flow')
+
+  // Tear down any leftover session so the SPA's root route guard lets us onto
+  // the public forgot-password page (otherwise it redirects authenticated
+  // users back to /manage). Scenario 3 leaves the page on the admin dashboard,
+  // which long-polls and whose main thread can stall a `page.evaluate`, so:
+  //   - clear cookies at the context level (always safe), then
+  //   - navigate with `waitUntil: 'commit'` — this resolves as soon as the
+  //     response is received, before the SPA mounts/polls, so the old
+  //     dashboard is torn down, and
+  //   - clear web storage from that not-yet-mounted document.
+  await page.context().clearCookies()
+  await page.goto(`/${realmId}/auth/forgot-password`, { waitUntil: 'commit' })
+  try {
+    await page.evaluate(() => {
+      localStorage.clear()
+      sessionStorage.clear()
+    })
+  } catch {
+    // On some documents (e.g. an opaque-origin blank page) web storage is
+    // unavailable; clearing cookies + a fresh navigation below is enough for
+    // the public page to render.
   }
 
-  console.log('[PasswordReset Demo] Restoring original password via reset flow')
-  // Request a fresh reset code.
-  await page.goto(`/${realmId}/auth/forgot-password`)
+  // Request a fresh reset code. Reload the now-unauthenticated public page and
+  // wait for the form. Use `domcontentloaded` (the SPA keeps long-polling
+  // under `load`).
+  await page.goto(`/${realmId}/auth/forgot-password`, { waitUntil: 'domcontentloaded' })
   await page.getByTestId('forgot-password-email-input').fill(email)
   const requestPromise = page.waitForResponse(
     '**/api/auth/**/reset_password/request',
@@ -267,43 +316,21 @@ async function restoreOriginalPassword(
     return
   }
 
-  // Reset back to the original password.
-  await page.goto(`/${realmId}/auth/reset-password?code=${code}`)
+  // Reset back to the original password. Match the POST to the confirm path
+  // specifically: the backend returns 302 and the SPA's API client follows the
+  // redirect, so a loose glob could match the auto-followed GET instead.
+  await page.goto(`/${realmId}/auth/reset-password?code=${code}`, {
+    waitUntil: 'domcontentloaded',
+  })
   await page.getByTestId('reset-password-new-input').fill(originalPassword)
   await page.getByTestId('reset-password-confirm-input').fill(originalPassword)
   const confirmPromise = page.waitForResponse(
-    '**/api/auth/**/reset_password/confirm/**',
+    (resp) =>
+      resp.request().method() === 'POST' &&
+      resp.url().includes(`/api/auth/${realmId}/reset_password/confirm/`),
     { timeout: 10000 }
   )
   await page.getByTestId('reset-password-submit-button').click()
   await confirmPromise
   console.log('[PasswordReset Demo] Original password restored')
-}
-
-/** Attempt a login; resolve true on success, false on auth failure. */
-async function tryLogin(
-  page: import('@playwright/test').Page,
-  realmId: string,
-  email: string,
-  password: string
-): Promise<boolean> {
-  try {
-    await page.context().clearCookies()
-    await page.evaluate(() => {
-      localStorage.clear()
-      sessionStorage.clear()
-    })
-    await page.goto(`/${realmId}/auth/login`)
-    await page.getByTestId('email-input').fill(email)
-    await page.getByTestId('password-input').fill(password)
-    const loginPromise = page.waitForResponse(
-      (resp) => resp.url().includes('/login') && resp.request().method() === 'POST',
-      { timeout: 8000 }
-    )
-    await page.getByTestId('login-submit-button').click()
-    const response = await loginPromise
-    return response.ok()
-  } catch {
-    return false
-  }
 }

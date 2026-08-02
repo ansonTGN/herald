@@ -65,6 +65,33 @@ test.describe('[Realm Admin] Legal Agreement Management Demo Tests', () => {
   }
 
   /**
+   * Collect the set of `version_id`s currently rendered in the agreement's
+   * history table. Each history row is keyed by `version_id`
+   * (`legal-history-row-${type}-${version_id}`), so the set membership is a
+   * durable signal of "which immutable versions exist" — independent of the
+   * per-scope `version_no` model (default-scope and custom-scope rows each
+   * number from 1).
+   */
+  async function getHistoryVersionIds(
+    page: Page,
+    agreementType: 'terms_of_service' | 'privacy_policy'
+  ): Promise<Set<string>> {
+    const locator = page.locator(
+      `[data-testid^="legal-history-row-${agreementType}-"]`
+    )
+    const count = await locator.count()
+    const prefix = `legal-history-row-${agreementType}-`
+    const ids = new Set<string>()
+    for (let i = 0; i < count; i++) {
+      const testid = await locator.nth(i).getAttribute('data-testid')
+      if (testid && testid.startsWith(prefix)) {
+        ids.add(testid.slice(prefix.length))
+      }
+    }
+    return ids
+  }
+
+  /**
    * Determine whether the currently rendered source badge for an agreement is
    * default or custom.
    */
@@ -198,45 +225,99 @@ test.describe('[Realm Admin] Legal Agreement Management Demo Tests', () => {
       await clearUserSession(page)
     })
 
-    const { beforeVersion, afterVersion } = await test.step(
+    const { afterSource, newVersionIds } = await test.step(
       'Publish a custom Terms of Service version',
       async () => {
         // loginAsAdminWithConsent ensures a stable admin session at the start.
         await adminLegalHelper.gotoLegalTab(realmId)
 
-        const beforeVersion = await adminLegalHelper.getCurrentVersion('terms_of_service')
+        // WHY: version_no is scoped per source — the platform default row
+        // (realm_id IS NULL) and the realm's custom rows each start at 1
+        // (backend `next_custom_version_no` only counts the realm's own custom
+        // rows; `legal_http_scenarios.rs` pins this). So the first publish
+        // switches source default→custom with version_no staying 1, and an
+        // `afterVersion > beforeVersion` assertion is always false. Assert the
+        // real business outcome instead: the source badge is custom AND a new
+        // immutable version (by version_id, not version_no) was published.
+        const beforeVersionIds = await getHistoryVersionIds(
+          page,
+          'terms_of_service'
+        )
+
         await adminLegalHelper.publishCustomAgreement(
           'terms_of_service',
           'Custom Terms of Service for admin legal demo (EN).',
           'admin-legal-demo-publish'
         )
         await adminLegalHelper.expectSourceBadge('terms_of_service', 'custom')
-        const afterVersion = await adminLegalHelper.getCurrentVersion('terms_of_service')
+        const afterSource = await getAgreementSource(page, 'terms_of_service')
 
-        return { beforeVersion, afterVersion }
+        const afterVersionIds = await getHistoryVersionIds(
+          page,
+          'terms_of_service'
+        )
+
+        // version_ids that exist after publish but not before = newly created.
+        const newVersionIds = [...afterVersionIds].filter(
+          id => !beforeVersionIds.has(id)
+        )
+
+        return { afterSource, newVersionIds }
       }
     )
 
-    expect(afterVersion).toBeGreaterThan(beforeVersion)
+    // Publishing a custom agreement must (a) make the source badge custom and
+    // (b) create at least one NEW immutable version identified by a fresh
+    // version_id. Both are durable business signals that survive across the
+    // default/custom scope boundary — unlike version_no, which is per-scope.
+    expect(afterSource).toBe('custom')
+    expect(newVersionIds.length).toBeGreaterThan(0)
 
-    await test.step('Clear session and login the test user again', async () => {
+    await test.step('Clear session and navigate to login as the test user', async () => {
+      // WHY: do NOT call loginPage.login() here — it auto-accepts the login-time
+      // re-consent view (login-page.ts:204-216), which would consume the very
+      // re-consent gate this scenario must observe. Use fillLoginForm() +
+      // submit() so the re-consent view surfaces naturally (mirrors
+      // legal-consent-login-demo.e2e.ts:157-182).
       await clearUserSession(page)
       await loginPage.goto(realmId)
-      await loginPage.login({ email, password })
+      await loginPage.waitForReady()
+      await loginPage.fillLoginForm({ email, password })
+      await loginPage.submit()
     })
 
     await test.step('Expect login-time re-consent view and agree to continue', async () => {
+      const loginResponse = await page.waitForResponse(
+        response =>
+          response.url().includes('/login') &&
+          response.request().method() === 'POST',
+        { timeout: 10000 }
+      )
+      expect(loginResponse.ok()).toBe(true)
+
       await expect(
         page.locator(SELECTORS.legalConsent.loginReconsentView)
       ).toBeVisible({ timeout: 10000 })
 
       await Promise.all([
-        page.waitForURL(
-          new RegExp(`^http://localhost:3000/${realmId}/(?!auth/login)`),
-          { timeout: 15000 }
+        page.waitForResponse(
+          response =>
+            response.url().includes('/login') &&
+            response.request().method() === 'POST',
+          { timeout: 10000 }
         ),
         page.locator(SELECTORS.legalConsent.loginAgreeAndContinueButton).click(),
       ])
+
+      // WHY: regular users land on the top-level session-scoped /user/profile
+      // (DEFAULT_USER_REDIRECT) OR the legacy realm-scoped /{realmId}/user/...
+      // after route-refactor. Accept either; only require we left /auth/login.
+      await page.waitForURL(
+        new RegExp(
+          `^http://localhost:3000/((user|manage)(/|$)|${realmId}/(?!auth/login))`
+        ),
+        { timeout: 15000 }
+      )
 
       await expect(page.locator('[data-testid="email-display"]')).toBeVisible({
         timeout: 10000,
@@ -294,24 +375,51 @@ test.describe('[Realm Admin] Legal Agreement Management Demo Tests', () => {
 
     expect(afterVersion).toBeGreaterThan(beforeVersion)
 
-    await test.step('Clear session and login the test user again', async () => {
+    await test.step('Clear session and navigate to login as the test user', async () => {
+      // WHY: do NOT call loginPage.login() here — it auto-accepts the login-time
+      // re-consent view (login-page.ts:204-216), which would consume the very
+      // re-consent gate this scenario must observe. Use fillLoginForm() +
+      // submit() so the re-consent view surfaces naturally (mirrors
+      // legal-consent-login-demo.e2e.ts:157-182).
       await clearUserSession(page)
       await loginPage.goto(realmId)
-      await loginPage.login({ email, password })
+      await loginPage.waitForReady()
+      await loginPage.fillLoginForm({ email, password })
+      await loginPage.submit()
     })
 
     await test.step('Expect login-time re-consent view and agree to continue', async () => {
+      const loginResponse = await page.waitForResponse(
+        response =>
+          response.url().includes('/login') &&
+          response.request().method() === 'POST',
+        { timeout: 10000 }
+      )
+      expect(loginResponse.ok()).toBe(true)
+
       await expect(
         page.locator(SELECTORS.legalConsent.loginReconsentView)
       ).toBeVisible({ timeout: 10000 })
 
       await Promise.all([
-        page.waitForURL(
-          new RegExp(`^http://localhost:3000/${realmId}/(?!auth/login)`),
-          { timeout: 15000 }
+        page.waitForResponse(
+          response =>
+            response.url().includes('/login') &&
+            response.request().method() === 'POST',
+          { timeout: 10000 }
         ),
         page.locator(SELECTORS.legalConsent.loginAgreeAndContinueButton).click(),
       ])
+
+      // WHY: regular users land on the top-level session-scoped /user/profile
+      // (DEFAULT_USER_REDIRECT) OR the legacy realm-scoped /{realmId}/user/...
+      // after route-refactor. Accept either; only require we left /auth/login.
+      await page.waitForURL(
+        new RegExp(
+          `^http://localhost:3000/((user|manage)(/|$)|${realmId}/(?!auth/login))`
+        ),
+        { timeout: 15000 }
+      )
 
       await expect(page.locator('[data-testid="email-display"]')).toBeVisible({
         timeout: 10000,

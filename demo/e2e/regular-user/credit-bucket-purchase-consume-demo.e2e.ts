@@ -73,6 +73,7 @@ import { verifyTestEnvironment } from '../helpers/environment-setup'
 import { loginWithCredentials } from '../helpers/auth'
 import {
   listBucketsViaApi,
+  createAdminBearerContext,
 } from '../helpers/bucket-helpers'
 import {
   grantPointsViaExtApi,
@@ -288,19 +289,27 @@ test.beforeAll(async ({ browser }) => {
     }
 
     // 3. Resolve the demo user UUID by email via the admin user list API.
+    // The admin endpoints require a Bearer token (in-memory access token);
+    // `context.request` only carries cookies and would 401. Use a disposable
+    // admin bearer context (same pattern as bucket-helpers).
     const backendUrl =
       process.env.API_BASE_URL ||
       process.env.BASE_URL?.replace(/:\d+/, ':8080') ||
       'http://localhost:8080'
-    const usersResponse = await context.request.get(
-      `${backendUrl}/api/users/${TEST_REALM}?search=${encodeURIComponent(POINTS_USER_EMAIL)}`,
-    )
+    const adminApi = await createAdminBearerContext(page, TEST_REALM)
     let demoUserId = ''
-    if (usersResponse.ok()) {
-      const usersBody = await usersResponse.json()
-      const items = (usersBody?.items ?? []) as { id: string; email: string }[]
-      const demoUser = items.find((u) => u.email === POINTS_USER_EMAIL)
-      demoUserId = demoUser?.id ?? ''
+    try {
+      const usersResponse = await adminApi.get(
+        `${backendUrl}/api/users/${TEST_REALM}?search=${encodeURIComponent(POINTS_USER_EMAIL)}`,
+      )
+      if (usersResponse.ok()) {
+        const usersBody = await usersResponse.json()
+        const items = (usersBody?.items ?? []) as { id: string; email: string }[]
+        const demoUser = items.find((u) => u.email === POINTS_USER_EMAIL)
+        demoUserId = demoUser?.id ?? ''
+      }
+    } finally {
+      await adminApi.dispose().catch(() => {})
     }
     if (!demoUserId) {
       throw new Error(
@@ -311,21 +320,27 @@ test.beforeAll(async ({ browser }) => {
     }
 
     // 4. Resolve the `points-demo-app` client app UUID (covered by both
-    //    buckets; consume takes the UUID, not the client_id string).
-    const clientAppResponse = await context.request.get(
-      `${backendUrl}/api/client/${TEST_REALM}`,
-    )
+    //    buckets; consume takes the UUID, not the client_id string). Reuse a
+    //    fresh admin bearer context (the prior one was disposed).
+    const clientAdminApi = await createAdminBearerContext(page, TEST_REALM)
     let coveredClientAppId = ''
-    if (clientAppResponse.ok()) {
-      const clientAppBody = await clientAppResponse.json()
-      const items = (clientAppBody?.items ?? []) as {
-        id: string
-        clientId: string
-      }[]
-      const demoApp = items.find(
-        (a) => a.clientId === POINTS_DEMO_APP_CLIENT_ID,
+    try {
+      const clientAppResponse = await clientAdminApi.get(
+        `${backendUrl}/api/client/${TEST_REALM}`,
       )
-      coveredClientAppId = demoApp?.id ?? ''
+      if (clientAppResponse.ok()) {
+        const clientAppBody = await clientAppResponse.json()
+        const items = (clientAppBody?.items ?? []) as {
+          id: string
+          clientId: string
+        }[]
+        const demoApp = items.find(
+          (a) => a.clientId === POINTS_DEMO_APP_CLIENT_ID,
+        )
+        coveredClientAppId = demoApp?.id ?? ''
+      }
+    } finally {
+      await clientAdminApi.dispose().catch(() => {})
     }
     if (!coveredClientAppId) {
       throw new Error(

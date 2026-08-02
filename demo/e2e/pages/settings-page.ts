@@ -102,8 +102,8 @@ export interface CustomDomainFormValues {
  * Email-OTP Configuration Data
  *
  * Mirrors the frontend `EmailOtpConfigForm` schema (see
- * frontend/src/lib/schemas/realm-config.ts and the form component
- * email-otp-config-form.tsx). Field names use snake_case to match the existing
+ * frontend/src/lib/schemas/realm-config.ts and the OTP section of
+ * email-config-form.tsx). Field names use snake_case to match the existing
  * `TOTPConfigData` convention even though the wire schema is camelCase.
  */
 export interface EmailOtpConfigData {
@@ -209,7 +209,13 @@ export class SettingsPage extends BasePage {
   readonly customDomainSaveButton: Locator
 
   // Email-OTP Configuration elements
-  readonly emailOtpTab: Locator
+  //
+  // NOTE: Email-OTP is no longer a top-level tab. After frontend commit 364767b2
+  // ("merged email-otp settings"), the two switches and save button live inside
+  // the `email` tab as a `data-testid="email-otp-section"` sub-block of
+  // EmailConfigForm. There is no `email-otp-tab` testid anymore — navigation to
+  // the OTP controls goes through `email-tab` (see switchToEmailOtpTab below).
+  readonly emailOtpSection: Locator
   readonly emailOtpEnabledSwitch: Locator
   readonly emailOtpAutoRegisterSwitch: Locator
   readonly emailOtpSaveButton: Locator
@@ -309,7 +315,12 @@ export class SettingsPage extends BasePage {
     // Email-OTP Configuration - using data-testid selectors (mirrors the TOTP
     // block, which locates elements with page.getByTestId(...) directly rather
     // than via selectors.totp.*).
-    this.emailOtpTab = page.getByTestId('email-otp-tab')
+    //
+    // The OTP controls were merged into the `email` tab by frontend commit
+    // 364767b2, so there is no standalone `email-otp-tab` to click. We locate
+    // the `email-otp-section` sub-block instead; navigation to it is handled by
+    // switchToEmailTab() (see switchToEmailOtpTab).
+    this.emailOtpSection = page.getByTestId('email-otp-section')
     this.emailOtpEnabledSwitch = page.getByTestId('email-otp-enabled-switch')
     this.emailOtpAutoRegisterSwitch = page.getByTestId('email-otp-auto-register-switch')
     this.emailOtpSaveButton = page.getByTestId('email-otp-save-button')
@@ -571,28 +582,28 @@ export class SettingsPage extends BasePage {
    * Enable user registration
    */
   async allowRegistration(): Promise<void> {
-    await this.setCheckbox(this.allowRegistrationSwitch, true)
+    await this.setSwitch(this.allowRegistrationSwitch, true)
   }
 
   /**
    * Disable user registration
    */
   async disallowRegistration(): Promise<void> {
-    await this.setCheckbox(this.allowRegistrationSwitch, false)
+    await this.setSwitch(this.allowRegistrationSwitch, false)
   }
 
   /**
    * Enable email verification requirement
    */
   async requireEmailVerification(): Promise<void> {
-    await this.setCheckbox(this.requireEmailVerificationSwitch, true)
+    await this.setSwitch(this.requireEmailVerificationSwitch, true)
   }
 
   /**
    * Disable email verification requirement
    */
   async disableEmailVerification(): Promise<void> {
-    await this.setCheckbox(this.requireEmailVerificationSwitch, false)
+    await this.setSwitch(this.requireEmailVerificationSwitch, false)
   }
 
   /**
@@ -623,8 +634,13 @@ export class SettingsPage extends BasePage {
    * Get current Registration Configuration state
    */
   async getRegistrationConfig(): Promise<RegistrationConfigData> {
-    const enabled = await this.allowRegistrationSwitch.isChecked()
-    const require_email_verification = await this.requireEmailVerificationSwitch.isChecked()
+    // Read the Radix Switch `data-state` (checked/unchecked) instead of
+    // `isChecked()` to stay consistent with setSwitch() and avoid reading a
+    // mid-toggle state.
+    const enabledState = await this.allowRegistrationSwitch.getAttribute('data-state')
+    const requireEmailState = await this.requireEmailVerificationSwitch.getAttribute('data-state')
+    const enabled = enabledState === 'checked'
+    const require_email_verification = requireEmailState === 'checked'
 
     return { enabled, require_email_verification }
   }
@@ -1272,56 +1288,69 @@ export class SettingsPage extends BasePage {
   // Email-OTP Configuration Methods
   //
   // Mirrors the TOTP block (switchToTOTPTab / enableTOTP / disableTOTP /
-  // saveTOTPConfig / getTOTPConfig). Drives the email-otp-config-form
-  // (frontend/src/components/realm-config/email-otp-config-form.tsx); the two
+  // saveTOTPConfig / getTOTPConfig). Drives the Email-OTP section that was
+  // merged into the `email` tab's EmailConfigForm by frontend commit 364767b2
+  // (frontend/src/components/realm-config/email-config-form.tsx). The two
   // switches carry `data-testid` via the shared config-switch-field.tsx.
   // @see .ai/design/email-otp-login.md
   // ============================================================================
 
   /**
-   * Switch to Email-OTP Tab.
+   * Navigate to the Email-OTP configuration controls.
    *
-   * Mirrors switchToTOTPTab: clicks the tab, waits for the save button to
-   * confirm tab content is fully loaded (10s timeout for re-login timing),
-   * then networkidle.
+   * After frontend commit 364767b2 ("merged email-otp settings"), Email-OTP is
+   * no longer a standalone tab. The two switches and the save button render
+   * inside the `email` tab as a `data-testid="email-otp-section"` sub-block of
+   * EmailConfigForm (only when `onSaveEmailOtp` is provided). So we navigate to
+   * the `email` tab via switchToEmailTab(), then assert the OTP section is
+   * visible before any switch/save interaction.
+   *
+   * The method name is retained for call-site compatibility
+   * (helpers/email-otp-setup.ts and the OTP config demo both call it).
    */
   async switchToEmailOtpTab(): Promise<void> {
-    await this.smartClick(this.emailOtpTab)
+    // switchToEmailTab() clicks the `email-tab` and waits for the email save
+    // button to confirm the tab content has loaded.
+    await this.switchToEmailTab()
 
-    // Wait for tab content to be visible with longer timeout
-    // Account for: navigation, API loading, React Query cache update, re-rendering
-    await expect(this.emailOtpSaveButton).toBeVisible({ timeout: 10000 })
-
-    // Additional wait to ensure React state is fully settled
-    await this.page.waitForLoadState('networkidle')
+    // Assert the Email-OTP sub-block is rendered before interacting with its
+    // switches. The section only appears when `onSaveEmailOtp` is wired up,
+    // which is the case on the realm settings page.
+    await expect(this.emailOtpSection).toBeVisible({ timeout: 10000 })
   }
 
   /**
    * Enable Email-OTP login for the realm.
+   *
+   * Uses setSwitch() (Radix Switch-aware) instead of setCheckbox(): the OTP
+   * switches are Radix `<button role="switch">` toggles, and a force-click on
+   * the switch root did not reliably flip data-state (Phase 3 true→false
+   * stalled with the switch still checked). setSwitch reads `data-state` and
+   * waits for the transition.
    */
   async enableEmailOtp(): Promise<void> {
-    await this.setCheckbox(this.emailOtpEnabledSwitch, true)
+    await this.setSwitch(this.emailOtpEnabledSwitch, true)
   }
 
   /**
    * Disable Email-OTP login for the realm.
    */
   async disableEmailOtp(): Promise<void> {
-    await this.setCheckbox(this.emailOtpEnabledSwitch, false)
+    await this.setSwitch(this.emailOtpEnabledSwitch, false)
   }
 
   /**
    * Enable auto-registration of unverified emails on successful OTP verify.
    */
   async enableAutoRegister(): Promise<void> {
-    await this.setCheckbox(this.emailOtpAutoRegisterSwitch, true)
+    await this.setSwitch(this.emailOtpAutoRegisterSwitch, true)
   }
 
   /**
    * Disable auto-registration of unverified emails.
    */
   async disableAutoRegister(): Promise<void> {
-    await this.setCheckbox(this.emailOtpAutoRegisterSwitch, false)
+    await this.setSwitch(this.emailOtpAutoRegisterSwitch, false)
   }
 
   /**
@@ -1342,10 +1371,16 @@ export class SettingsPage extends BasePage {
 
   /**
    * Get current Email-OTP Configuration state.
+   *
+   * Reads the Radix Switch `data-state` attribute (checked/unchecked) instead
+   * of `isChecked()` to stay consistent with setSwitch() and avoid reading the
+   * switch mid-transition.
    */
   async getEmailOtpConfig(): Promise<EmailOtpConfigData> {
-    const enabled = await this.emailOtpEnabledSwitch.isChecked()
-    const auto_register = await this.emailOtpAutoRegisterSwitch.isChecked()
+    const enabledState = await this.emailOtpEnabledSwitch.getAttribute('data-state')
+    const autoRegisterState = await this.emailOtpAutoRegisterSwitch.getAttribute('data-state')
+    const enabled = enabledState === 'checked'
+    const auto_register = autoRegisterState === 'checked'
 
     return { enabled, auto_register }
   }

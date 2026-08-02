@@ -350,6 +350,24 @@ export const test = base.extend<{
     const dashboardPage = new DashboardPage(page, demoLogger)
     await dashboardPage.goto()
 
+    // Defensively reload /manage so the dashboard stats query is issued AFTER
+    // the admin-web-console credential is in auth-storage. Without this, the
+    // initial /manage mount during login navigation races the switch-client
+    // request: the stats GET fires before the credential switch completes and
+    // fails with 403 ("Access denied: admin console credential required").
+    // The global QueryClient `retry: false` + 4xx-no-retry policy then caches
+    // that error permanently, so `dashboard-stats-row` never renders and
+    // US-RA-010's synchronous `isStatsRowVisible()` assertion fails.
+    //
+    // By the time loginAsAdmin() returns, switch-client has already completed
+    // (login-page.ts waits for it), so a full page reload re-mounts the SPA
+    // with a fresh in-memory React Query cache and the correct bearer token,
+    // making the stats GET return 200 deterministically. US-RA-011/012 already
+    // tolerated the race via looser timeouts / re-navigation; the reload
+    // unifies all three tests on the post-credential path without weakening
+    // any assertion.
+    await page.reload({ waitUntil: 'networkidle', timeout: 15000 })
+
     await use(dashboardPage)
   },
 

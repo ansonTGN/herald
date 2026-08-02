@@ -43,6 +43,7 @@ import { test, expect, cleanupTestData } from '../fixtures/demo-page.fixtures'
 import type { Browser } from '@playwright/test'
 import {
   createTargetUserSession,
+  createAdminBearerContext,
   assertContextUnauthorized,
   type TargetUserSession,
 } from './user-sessions-management-demo.e2e'
@@ -68,9 +69,18 @@ const STATUS_FORBIDDEN = '2' as const
 
 /**
  * Backend base URL. Mirrors the sibling sessions demo's helper
- * (`user-sessions-management-demo.e2e.ts:63-69`). The page's request context
- * inherits the logged-in session cookies; the isolated target context uses its
- * own login-issued session + Bearer token.
+ * (`user-sessions-management-demo.e2e.ts`). Used here only for the target
+ * user's OWN protected probe (`/api/auth/status`, exercised with an explicit
+ * `Authorization: Bearer` header on the isolated target context) and the
+ * target user's OWN re-login probe — both of which carry the target user's
+ * bearer explicitly and need no admin token.
+ *
+ * The admin user-API calls in this file (target-user delete in afterEach) are
+ * issued through a Bearer-authenticated `APIRequestContext` built by
+ * {@link createAdminBearerContext}: the `/api/users/{realmId}` endpoints are
+ * gated on `Authorization: Bearer`, which `page.request.*` cannot supply (the
+ * access token lives in SPA memory only). See the sibling sessions demo's
+ * `backendBaseUrl` note for the full rationale.
  */
 function backendBaseUrl(): string {
   return (
@@ -122,7 +132,7 @@ async function protectedStatus(
 const createdSessions: TargetUserSession[] = []
 
 test.describe('[US-RA-021] Forbidden status linkage revokes all sessions', () => {
-  test.afterEach(async ({ usersPage, page }) => {
+  test.afterEach(async ({ usersPage, page, browser }) => {
     // Close every tracked target context (non-fatal).
     for (const t of createdSessions) {
       await t.context.close().catch((error) => {
@@ -131,8 +141,11 @@ test.describe('[US-RA-021] Forbidden status linkage revokes all sessions', () =>
     }
     createdSessions.length = 0
 
-    // Best-effort delete of the dedicated target user (non-fatal).
-    await deleteExistingUser(page, FORBIDDEN_USER_EMAIL).catch((error) =>
+    // Best-effort delete of the dedicated target user (non-fatal). The
+    // user-API delete is gated on `Authorization: Bearer`, which
+    // `page.request.*` cannot supply (token is SPA in-memory only); build a
+    // one-shot admin Bearer context from `browser` instead.
+    await deleteExistingUser(browser, FORBIDDEN_USER_EMAIL).catch((error) =>
       console.warn('[user-forbidden afterEach] user cleanup:', error)
     )
 
@@ -341,49 +354,69 @@ async function selectUserStatus(
 }
 
 /**
- * Idempotent delete of the target user by email via the admin context. Mirrors
- * DE-D01's `deleteExistingUser` (user-sessions-management-demo.e2e.ts:102-131)
- * — duplicated locally because DE-D01 does not export it. Non-fatal on 404 /
- * missing user.
+ * Idempotent delete of the target user by email via an admin Bearer context.
+ * Mirrors DE-D01's `deleteExistingUser`
+ * (user-sessions-management-demo.e2e.ts) — duplicated locally because DE-D01
+ * keeps it module-local. Non-fatal on 404 / missing user.
+ *
+ * The `/api/users/{realmId}` search + delete endpoints are gated on
+ * `Authorization: Bearer`, which `page.request.*` cannot supply (token is SPA
+ * in-memory only — see the sibling sessions demo's `backendBaseUrl` note). A
+ * one-shot admin Bearer context is built from `browser` and disposed after the
+ * delete.
  */
 async function deleteExistingUser(
-  adminPage: import('@playwright/test').Page,
+  browser: Browser,
   email: string
 ): Promise<void> {
+  let adminApi
   try {
-    // Resolve the user id by email via the admin user list API.
-    const searchUrl = `${backendBaseUrl()}/api/users/${ADMIN_REALM}?search=${encodeURIComponent(
-      email
-    )}`
-    const searchRes = await adminPage.request.get(searchUrl)
-    if (!searchRes.ok()) {
-      const body = await searchRes.text().catch(() => '<unreadable>')
-      console.warn(
-        `[user-forbidden] user search for ${email} failed ` +
-          `(HTTP ${searchRes.status()}): ${body}`
-      )
-      return
-    }
-    const searchBody = await searchRes.json()
-    const items = (searchBody?.items ?? []) as Array<{
-      id: string
-      email: string
-    }>
-    const match = items.find((u) => u.email === email)
-    if (!match) {
-      return
-    }
-
-    const deleteUrl = `${backendBaseUrl()}/api/users/${ADMIN_REALM}/${match.id}`
-    const delRes = await adminPage.request.delete(deleteUrl)
-    if (delRes.status() >= 400 && delRes.status() !== 404) {
-      const body = await delRes.text().catch(() => '<unreadable>')
-      console.warn(
-        `[user-forbidden] delete user ${email} (${match.id}) ` +
-          `returned HTTP ${delRes.status()}: ${body}`
-      )
-    }
+    adminApi = await createAdminBearerContext(browser, ADMIN_REALM)
   } catch (error) {
-    console.warn(`[user-forbidden] deleteExistingUser error (non-fatal):`, error)
+    console.warn(
+      `[user-forbidden] admin Bearer setup failed (non-fatal):`,
+      error
+    )
+    return
+  }
+  try {
+    try {
+      // Resolve the user id by email via the admin user list API.
+      const searchUrl = `${backendBaseUrl()}/api/users/${ADMIN_REALM}?search=${encodeURIComponent(
+        email
+      )}`
+      const searchRes = await adminApi.get(searchUrl)
+      if (!searchRes.ok()) {
+        const body = await searchRes.text().catch(() => '<unreadable>')
+        console.warn(
+          `[user-forbidden] user search for ${email} failed ` +
+            `(HTTP ${searchRes.status()}): ${body}`
+        )
+        return
+      }
+      const searchBody = await searchRes.json()
+      const items = (searchBody?.items ?? []) as Array<{
+        id: string
+        email: string
+      }>
+      const match = items.find((u) => u.email === email)
+      if (!match) {
+        return
+      }
+
+      const deleteUrl = `${backendBaseUrl()}/api/users/${ADMIN_REALM}/${match.id}`
+      const delRes = await adminApi.delete(deleteUrl)
+      if (delRes.status() >= 400 && delRes.status() !== 404) {
+        const body = await delRes.text().catch(() => '<unreadable>')
+        console.warn(
+          `[user-forbidden] delete user ${email} (${match.id}) ` +
+            `returned HTTP ${delRes.status()}: ${body}`
+        )
+      }
+    } catch (error) {
+      console.warn(`[user-forbidden] deleteExistingUser error (non-fatal):`, error)
+    }
+  } finally {
+    await adminApi.dispose().catch(() => {})
   }
 }

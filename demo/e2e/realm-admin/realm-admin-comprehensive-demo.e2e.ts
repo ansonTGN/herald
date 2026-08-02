@@ -59,7 +59,10 @@ test.describe('[Realm Admin] Realm Isolation Access Demo Tests', () => {
       await test.step('When: 访问 realm-001 的用户管理页面', async () => {
         const usersPage = new UsersPage(page, demoLogger)
         await usersPage.goto(SEEDED_REALM)
-        await expect(page).toHaveURL(new RegExp(`\\/${SEEDED_REALM}\\/manage\\/users`))
+        // Sidebar navigation lands on the session-scoped manage route
+        // (`/manage/users`, realm resolved from the auth store); realm-scoped
+        // `/realm-001/manage/users` is only entered via direct cross-realm URL.
+        await expect(page).toHaveURL(/\/manage\/users$/)
       })
 
       await test.step('Then: 可以看到 realm-001 的用户', async () => {

@@ -116,16 +116,30 @@ function seedPurchaseAttempt(
   )
   if (!userId) throw new Error(`User not found: ${userEmail} in realm ${realmId}`)
 
-  // Resolve a credit bucket for the realm (NOT NULL FK on both tables).
-  const bucketId = execPgSql(
-    `SELECT id FROM credit_buckets WHERE realm_id = '${realmId}' ORDER BY created_at LIMIT 1`
-  )
-  if (!bucketId) {
-    throw new Error(`No credit_buckets row found for realm ${realmId}`)
-  }
+  // Provider choice rationale: the seeded payment_attempt must render a row on
+  // /user/subscription-history AND that row's per-row Invoice button must be
+  // ENABLED (route === 'manual_fallback', canApply === true) so the test can
+  // click it to open the apply form. The frontend
+  // (purchase-history-list.tsx) only renders the Invoice button when
+  // `purchase.paymentProvider !== 'stripe'`, and the backend eligibility rule
+  // `determine_invoice_apply_route` (invoice_eligibility.rs) returns:
+  //   - 'external_provider' (disabled) for stripe under the default
+  //     provider_first policy (Rule 4),
+  //   - 'disabled' for creem — Creem is Merchant of Record (Rule 2),
+  //   - 'manual_fallback' (enabled) for any other non-MoR provider (Rule 6).
+  // Both payment_attempts and provider_entitlement_mappings have a CHECK
+  // constraint restricting payment_provider to {stripe, creem, apple, google},
+  // so the only values that satisfy (render + enabled + constraint) are
+  // 'apple' and 'google'. We use 'apple' (arbitrary; both behave identically).
+  // Using 'stripe' (the previous value) hid the button entirely, which is why
+  // every apply-flow test failed at openApplyInvoiceForm.
+  const SEED_PAYMENT_PROVIDER = 'apple'
 
   // Reuse an existing enabled one_time mapping if present; otherwise create one
-  // with the CURRENT schema only (no removed columns like credit_amount/is_active).
+  // with the CURRENT schema only. NOTE: provider_entitlement_mappings and
+  // payment_attempts no longer carry bucket_id / points_per_period /
+  // validity_days / grant_on_subscribe (those columns were dropped); the
+  // legacy INSERT referenced them and failed at seed time.
   let mappingId = execPgSql(
     `SELECT id FROM provider_entitlement_mappings WHERE realm_id = '${realmId}' AND billing_type = 'one_time' AND enabled = true ORDER BY created_at LIMIT 1`
   )
@@ -134,20 +148,20 @@ function seedPurchaseAttempt(
     const externalProductId = `demo-credit-pack-${marker}`
     execPgSql(
       `INSERT INTO provider_entitlement_mappings ` +
-        `(id, realm_id, payment_provider, external_product_id, bucket_id, entitlement_key, billing_type, points_per_period, validity_days, enabled, grant_on_subscribe, created_at, updated_at) ` +
-        `VALUES ('${mappingId}', '${realmId}', 'stripe', '${externalProductId}', '${bucketId}', 'demo-credit-pack-${marker}', 'one_time', 100, 365, true, false, NOW(), NOW())`
+        `(id, realm_id, payment_provider, external_product_id, entitlement_key, billing_type, enabled, synced_at, created_at, updated_at) ` +
+        `VALUES ('${mappingId}', '${realmId}', '${SEED_PAYMENT_PROVIDER}', '${externalProductId}', 'demo-credit-pack-${marker}', 'one_time', true, NOW(), NOW(), NOW())`
     )
   }
 
-  // Insert a Succeeded entitlement_mapping payment attempt using the full
-  // current column set (mirrors scripts/lib/demo_seed.py).
+  // Insert a Succeeded entitlement_mapping payment attempt using the current
+  // column set (no bucket_id; mirrors scripts/lib/demo_seed.py).
   // list_purchase_history filters status='Succeeded' AND target_type='entitlement_mapping'.
   const paymentAttemptId = randomUUID()
   const providerReference = `cs_demo_${paymentAttemptId.slice(-3)}`
   execPgSql(
     `INSERT INTO payment_attempts ` +
-      `(id, realm_id, user_id, payment_provider, target_type, target_id, bucket_id, amount, currency, status, provider_reference, provider_status, metadata, expires_at, completed_at, created_at, updated_at) ` +
-      `VALUES ('${paymentAttemptId}', '${realmId}', '${userId}'::uuid, 'stripe', 'entitlement_mapping', '${mappingId}'::uuid, '${bucketId}'::uuid, 1000, 'usd', 'Succeeded', '${providerReference}', 'paid', NULL, NOW() + INTERVAL '1 hour', NOW(), NOW(), NOW())`
+      `(id, realm_id, user_id, payment_provider, target_type, target_id, amount, currency, status, provider_reference, provider_status, metadata, expires_at, completed_at, created_at, updated_at) ` +
+      `VALUES ('${paymentAttemptId}', '${realmId}', '${userId}'::uuid, '${SEED_PAYMENT_PROVIDER}', 'entitlement_mapping', '${mappingId}'::uuid, 1000, 'usd', 'Succeeded', '${providerReference}', 'paid', NULL, NOW() + INTERVAL '1 hour', NOW(), NOW(), NOW())`
   )
 
   return { paymentAttemptId }

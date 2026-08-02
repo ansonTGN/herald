@@ -51,8 +51,9 @@
 
 import { test, expect, cleanupTestData } from '../fixtures/demo-page.fixtures'
 import { verifyTestEnvironment } from '../helpers/environment-setup'
-import { loginAsAdmin } from '../helpers/auth'
+import { loginAsAdmin, createBearerApiContext, DEMO_ADMIN } from '../helpers/auth'
 import { SettingsPage } from '../pages/settings-page'
+import { LoginPage } from '../pages/login-page'
 
 /**
  * Base URL for the internal authorize gate.
@@ -189,20 +190,40 @@ test.describe('[Realm Admin] Custom-domain authorize (ask) 门禁演示测试', 
     // Setup: 通过 API 在 realm admin 保存专用 hostname（单次 PUT）
     // ----------------------------------------------------------------------
     await test.step('Setup: loginAsAdmin + PUT 专用 hostname', async () => {
-      // loginAsAdmin seeds the admin session cookie into the browser context;
-      // page.request.* shares that cookie so the config endpoints authenticate.
-      await loginAsAdmin(page, { realmId: 'admin' })
-
-      // PUT saves the hostname + writes the enabled=true mapping row in one step.
-      const saveResp = await page.request.put(
-        `${FRONTEND_BASE_URL}/api/realms/admin/config/custom-domain`,
-        { data: { hostname: DEDICATED_HOSTNAME } },
+      // The config endpoint (PUT /api/realms/{realmId}/config/custom-domain)
+      // is gated behind `inject_token_identity` + `require_admin_console_token`,
+      // which ONLY read the `Authorization: Bearer` header — never cookies.
+      // The access token lives in-memory in the frontend store and is injected
+      // per-request by the SPA fetch interceptor (`frontend/src/lib/api-client.ts`),
+      // so `page.request.*` — which only inherits browser-context cookies —
+      // cannot reach it and would 401 with "missing bearer token".
+      //
+      // Log in via the LoginPage page object, which explicitly awaits the
+      // `/api/auth/browser-token/switch-client` response and captures the
+      // post-switch admin-web-console token. Then issue the PUT through a
+      // dedicated APIRequestContext that carries the Bearer header.
+      // Mirrors `demo/e2e/billing-admin/points-grant-sdk-demo.e2e.ts:60-75`.
+      const loginPage = new LoginPage(page)
+      await loginPage.loginAsAdmin(
+        DEMO_ADMIN.email,
+        DEMO_ADMIN.password,
+        DEMO_ADMIN.realmId,
       )
-      expect(
-        saveResp.status(),
-        `PUT for "${DEDICATED_HOSTNAME}" must succeed (got ${saveResp.status()})`,
-      ).toBe(200)
-      demoLogger.testCode.log(`Setup: PUT "${DEDICATED_HOSTNAME}" → ${saveResp.status()}`)
+      const apiContext = await createBearerApiContext(loginPage.getAccessToken())
+      try {
+        // PUT saves the hostname + writes the enabled=true mapping row in one step.
+        const saveResp = await apiContext.put(
+          `${FRONTEND_BASE_URL}/api/realms/admin/config/custom-domain`,
+          { data: { hostname: DEDICATED_HOSTNAME } },
+        )
+        expect(
+          saveResp.status(),
+          `PUT for "${DEDICATED_HOSTNAME}" must succeed (got ${saveResp.status()})`,
+        ).toBe(200)
+        demoLogger.testCode.log(`Setup: PUT "${DEDICATED_HOSTNAME}" → ${saveResp.status()}`)
+      } finally {
+        await apiContext.dispose()
+      }
     })
 
     // ----------------------------------------------------------------------

@@ -106,7 +106,18 @@ export class AdminLegalHelper extends BasePage {
     versionLabel?: string
   ): Promise<void> {
     const card = this.agreementCard(agreementType)
-    await card.locator(SELECTORS.legalConsent.legalModeSelect(agreementType)).selectOption('link')
+    const modeSelect = card.locator(SELECTORS.legalConsent.legalModeSelect(agreementType))
+    await modeSelect.selectOption('link')
+
+    // selectOption returns before React's onChange commits the TanStack Form
+    // state update, and legal-external-url-input only mounts when mode === 'link'
+    // (form.Subscribe conditional render). Wait for both anchors via assertion
+    // before touching the field — no fixed sleeps.
+    await expect(modeSelect).toHaveValue('link', { timeout: 5000 })
+    await expect(card.locator(SELECTORS.legalConsent.legalExternalUrlInput(agreementType))).toBeVisible({
+      timeout: 5000,
+    })
+
     if (versionLabel !== undefined) {
       await this.fillField(card.locator(SELECTORS.legalConsent.legalVersionLabelInput(agreementType)), versionLabel)
     }

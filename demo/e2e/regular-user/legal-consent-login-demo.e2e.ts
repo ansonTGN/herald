@@ -194,8 +194,11 @@ test.describe('[Regular User] Login Re-consent Demo Tests', () => {
             .click(),
         ])
 
+        // Post-login lands on a session-scoped route with NO realm prefix after
+        // the route refactor (commit 03eeb456): regular users go to /user/profile,
+        // admins to /manage. Match either directly.
         await page.waitForURL(
-          new RegExp(`^http://localhost:3000/${realmId}/(user|profile|dashboard|manage|$|\\?)`),
+          /^http:\/\/localhost:3000\/(user\/profile|manage\/)/,
           { timeout: 15000 }
         )
 
@@ -203,11 +206,25 @@ test.describe('[Regular User] Login Re-consent Demo Tests', () => {
         expect(currentUrl).not.toContain('/auth/login')
       })
 
-      await test.step('Assert X-Auth session cookie is present', async () => {
-        const cookies = await page.context().cookies()
-        const xAuthCookie = cookies.find(cookie => cookie.name === 'X-Auth')
-        expect(xAuthCookie).toBeDefined()
-        expect(xAuthCookie?.value).toBeTruthy()
+      await test.step('Assert a session was established', async () => {
+        // Post auth-rewrite: the access token is in-memory (never persisted)
+        // and there is no X-Auth cookie. A durable session is proven by the
+        // persisted refresh token in localStorage under `auth-storage`. The
+        // URL having moved off /auth/login (asserted above) confirms the
+        // in-memory access token was issued and the SPA routed to an
+        // authenticated route.
+        const hasPersistedSession = await page.evaluate(() => {
+          const raw = localStorage.getItem('auth-storage')
+          if (!raw) return false
+          try {
+            const parsed = JSON.parse(raw)
+            const state = parsed?.state ?? parsed
+            return Boolean(state?.isAuthenticated && state?.refreshToken)
+          } catch {
+            return false
+          }
+        })
+        expect(hasPersistedSession).toBe(true)
       })
     })
 

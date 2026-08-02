@@ -139,6 +139,16 @@ def ensure_demo_seed_data(logger: "Logger | None" = None) -> bool:
         # handled by `_ensure_realm001_subscription_data` above.
         _ensure_payment_provider_config(logger)
 
+        # Ensure subscription history demo data for the admin realm. This seeds
+        # the `user1@demo.com` account plus its subscription/subscription_history
+        # rows, which the regular-user invoice-fallback / credit-note-user /
+        # user-subscription-timeline demos depend on. Commit 533ec22d dropped
+        # this call alongside `_ensure_purchase_history_demo_data` (whose removal
+        # WAS intended — it seeded placeholder entitlement mappings); this call
+        # is unrelated to entitlement mappings and its removal was collateral.
+        _info(logger, "Ensuring subscription history demo data...")
+        _ensure_subscription_history_demo_data(admin_opener, logger)
+
         _info(logger, "Ensuring admin realm audit seed data...")
         _ensure_admin_realm_audit_events(logger)
 

@@ -30,9 +30,11 @@
 
 import { test, expect, cleanupTestData } from '../fixtures/demo-page.fixtures'
 import { verifyTestEnvironment } from '../helpers/environment-setup'
-import { loginAsAdmin } from '../helpers/auth'
+import { loginAsAdmin, createBearerApiContext, clearSessionData, DEMO_ADMIN, REALM_ADMINS } from '../helpers/auth'
 import { SettingsPage } from '../pages/settings-page'
+import { LoginPage } from '../pages/login-page'
 import type { CustomDomainFormValues } from '../pages/settings-page'
+import type { APIRequestContext } from '@playwright/test'
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
 
@@ -55,22 +57,59 @@ const TOUCHED_REALMS = ['admin', 'realm-001'] as const
 /**
  * GET the persisted custom-domain config state for a realm.
  *
- * Shares the browser context's auth cookies (admin is logged in). Returns the
- * parsed `CustomDomainConfigStateResponse` body
- * (`{published, cnameTarget, status}`).
+ * Uses a Bearer-authenticated `APIRequestContext` (NOT `page.request`):
+ * `/api/realms/{realmId}/config/custom-domain` is gated behind
+ * `inject_token_identity` + `require_admin_console_token`, which ONLY read the
+ * `Authorization: Bearer` header. The access token lives in-memory in the
+ * frontend store (`frontend/src/stores/auth-store.ts`, "is NEVER persisted") and
+ * is injected per-request by the SPA fetch interceptor, so `page.request.*`
+ * (which only inherits browser-context cookies) cannot reach it and would 401.
+ *
+ * Callers must build the context via {@link createBearerApiContext} from a token
+ * captured by `LoginPage.loginAsAdmin` (which awaits the post-switch
+ * admin-web-console token). Returns the parsed `CustomDomainConfigStateResponse`
+ * body (`{published, cnameTarget, status}`).
  */
 async function getCustomDomainState(
-  page: import('@playwright/test').Page,
+  apiContext: APIRequestContext,
   realmId: string,
 ): Promise<{
   published: { hostname: string | null }
   cnameTarget: string
 }> {
-  const resp = await page.request.get(
+  const resp = await apiContext.get(
     `${BASE_URL}/api/realms/${realmId}/config/custom-domain`,
   )
   expect(resp.ok(), `GET custom-domain config for "${realmId}" must succeed`).toBeTruthy()
   return resp.json()
+}
+
+/**
+ * Log into `realmId` as its admin via the LoginPage page object and return a
+ * Bearer-authenticated `APIRequestContext` for direct config-endpoint calls.
+ *
+ * `LoginPage.loginAsAdmin` awaits `/api/auth/browser-token/switch-client` and
+ * captures the post-switch admin-web-console token, which `createBearerApiContext`
+ * stamps onto every request as `Authorization: Bearer <token>`.
+ *
+ * Mirrors the established pattern in
+ * `demo/e2e/realm-admin/realm-admin-custom-domain-authorize-gate-demo.e2e.ts`
+ * and `demo/e2e/billing-admin/points-grant-sdk-demo.e2e.ts:60-75`.
+ */
+async function loginAsAdminBearer(
+  page: import('@playwright/test').Page,
+  realmId: string,
+): Promise<APIRequestContext> {
+  // Drop any prior session (cookies + storage) so LoginPage.loginAsAdmin lands
+  // on a clean /auth/login and logs in as the requested realm's admin. The
+  // access token lives only in SPA memory, so without clearing cookies a stale
+  // authenticated session survives the page load and the auth gate redirects
+  // off the login page before the card renders.
+  await clearSessionData(page)
+  const loginPage = new LoginPage(page)
+  const creds = REALM_ADMINS[realmId] || DEMO_ADMIN
+  await loginPage.loginAsAdmin(creds.email, creds.password, realmId)
+  return createBearerApiContext(loginPage.getAccessToken())
 }
 
 test.describe('[Realm Admin] Custom-domain 配置演示测试', () => {
@@ -122,55 +161,61 @@ test.describe('[Realm Admin] Custom-domain 配置演示测试', () => {
       hostname: 'login.acme.com',
     }
 
-    await test.step('登录并进入 Custom-domain 配置 Tab', async () => {
-      await loginAsAdmin(page, { realmId })
-      await settingsPage.goto()
-      await settingsPage.waitForReady()
-      await settingsPage.switchToCustomDomainTab()
-    })
+    // 登录并捕获 admin-web-console token 用于 Step D 的直接 GET（admin console
+    // 中间件只读 Authorization Bearer 头，page.request 无 token 会 401）。
+    const apiContext = await loginAsAdminBearer(page, realmId)
+    try {
+      await test.step('登录并进入 Custom-domain 配置 Tab', async () => {
+        await settingsPage.goto()
+        await settingsPage.waitForReady()
+        await settingsPage.switchToCustomDomainTab()
+      })
 
-    // ----------------------------------------------------------------------
-    // Step A [US-CD-001] 场景1: 填入域名并保存 → published.hostname 生效
-    // ----------------------------------------------------------------------
-    await test.step('Step A [US-CD-001] 场景1: 填入域名并保存', async () => {
-      await settingsPage.fillCustomDomainForm(values)
-      await settingsPage.saveCustomDomain()
-      demoLogger.testCode.log('域名已保存（单次保存即生效）')
-    })
+      // ----------------------------------------------------------------------
+      // Step A [US-CD-001] 场景1: 填入域名并保存 → published.hostname 生效
+      // ----------------------------------------------------------------------
+      await test.step('Step A [US-CD-001] 场景1: 填入域名并保存', async () => {
+        await settingsPage.fillCustomDomainForm(values)
+        await settingsPage.saveCustomDomain()
+        demoLogger.testCode.log('域名已保存（单次保存即生效）')
+      })
 
-    // ----------------------------------------------------------------------
-    // Step B [US-CD-001] 场景2: CNAME 指引面板展示配置的 cname_target
-    // ----------------------------------------------------------------------
-    await test.step('Step B [US-CD-001] 场景2: CNAME 指引面板包含配置的 cname_target', async () => {
-      const guidanceText = await settingsPage.getCnameGuidanceText()
-      expect(guidanceText.length, 'CNAME guidance panel must render non-empty').toBeGreaterThan(0)
-      expect(
-        guidanceText,
-        `CNAME guidance must contain the configured cname_target "${CONFIGURED_CNAME_TARGET}"`,
-      ).toContain(CONFIGURED_CNAME_TARGET)
-      demoLogger.testCode.log(`CNAME 指引面板包含 cname_target: ${CONFIGURED_CNAME_TARGET}`)
-    })
+      // ----------------------------------------------------------------------
+      // Step B [US-CD-001] 场景2: CNAME 指引面板展示配置的 cname_target
+      // ----------------------------------------------------------------------
+      await test.step('Step B [US-CD-001] 场景2: CNAME 指引面板包含配置的 cname_target', async () => {
+        const guidanceText = await settingsPage.getCnameGuidanceText()
+        expect(guidanceText.length, 'CNAME guidance panel must render non-empty').toBeGreaterThan(0)
+        expect(
+          guidanceText,
+          `CNAME guidance must contain the configured cname_target "${CONFIGURED_CNAME_TARGET}"`,
+        ).toContain(CONFIGURED_CNAME_TARGET)
+        demoLogger.testCode.log(`CNAME 指引面板包含 cname_target: ${CONFIGURED_CNAME_TARGET}`)
+      })
 
-    // ----------------------------------------------------------------------
-    // Step C [US-CD-001] 场景2: CNAME/TLS 生效状态展示（状态徽章存在，非瞬态）
-    // ----------------------------------------------------------------------
-    await test.step('Step C [US-CD-001] 场景2: CNAME/TLS 状态徽章渲染', async () => {
-      await expect(page.getByTestId('custom-domain-status-cname')).toBeVisible({ timeout: 10000 })
-      await expect(page.getByTestId('custom-domain-status-tls')).toBeVisible({ timeout: 10000 })
-      demoLogger.testCode.log('CNAME/TLS 状态徽章已渲染')
-    })
+      // ----------------------------------------------------------------------
+      // Step C [US-CD-001] 场景2: CNAME/TLS 生效状态展示（状态徽章存在，非瞬态）
+      // ----------------------------------------------------------------------
+      await test.step('Step C [US-CD-001] 场景2: CNAME/TLS 状态徽章渲染', async () => {
+        await expect(page.getByTestId('custom-domain-status-cname')).toBeVisible({ timeout: 10000 })
+        await expect(page.getByTestId('custom-domain-status-tls')).toBeVisible({ timeout: 10000 })
+        demoLogger.testCode.log('CNAME/TLS 状态徽章已渲染')
+      })
 
-    // ----------------------------------------------------------------------
-    // Step D: 通过 GET 断言 published.hostname == 保存的值
-    // ----------------------------------------------------------------------
-    await test.step('Step D: 通过 GET 断言 published.hostname == 保存值', async () => {
-      const state = await getCustomDomainState(page, realmId)
-      expect(
-        state.published.hostname,
-        'published.hostname must equal the just-saved value',
-      ).toBe('login.acme.com')
-      demoLogger.testCode.log(`published.hostname=${state.published.hostname} (保存生效)`)
-    })
+      // ----------------------------------------------------------------------
+      // Step D: 通过 GET 断言 published.hostname == 保存的值
+      // ----------------------------------------------------------------------
+      await test.step('Step D: 通过 GET 断言 published.hostname == 保存值', async () => {
+        const state = await getCustomDomainState(apiContext, realmId)
+        expect(
+          state.published.hostname,
+          'published.hostname must equal the just-saved value',
+        ).toBe('login.acme.com')
+        demoLogger.testCode.log(`published.hostname=${state.published.hostname} (保存生效)`)
+      })
+    } finally {
+      await apiContext.dispose()
+    }
   })
 
   // ==========================================================================
@@ -195,38 +240,43 @@ test.describe('[Realm Admin] Custom-domain 配置演示测试', () => {
     const hostnameA = 'switch-a.cd.test'
     const hostnameB = 'switch-b.cd.test'
 
-    await test.step('登录并进入 Custom-domain 配置 Tab', async () => {
-      await loginAsAdmin(page, { realmId })
-      await settingsPage.goto()
-      await settingsPage.waitForReady()
-      await settingsPage.switchToCustomDomainTab()
-    })
+    // 登录并捕获 admin-web-console token 用于直接 GET（同 Test 1）。
+    const apiContext = await loginAsAdminBearer(page, realmId)
+    try {
+      await test.step('登录并进入 Custom-domain 配置 Tab', async () => {
+        await settingsPage.goto()
+        await settingsPage.waitForReady()
+        await settingsPage.switchToCustomDomainTab()
+      })
 
-    await test.step('保存 hostname A', async () => {
-      await settingsPage.fillCustomDomainForm({ hostname: hostnameA })
-      await settingsPage.saveCustomDomain()
-      demoLogger.testCode.log(`hostname A (${hostnameA}) 已保存`)
-    })
+      await test.step('保存 hostname A', async () => {
+        await settingsPage.fillCustomDomainForm({ hostname: hostnameA })
+        await settingsPage.saveCustomDomain()
+        demoLogger.testCode.log(`hostname A (${hostnameA}) 已保存`)
+      })
 
-    await test.step('通过 GET 确认 published == A', async () => {
-      const state = await getCustomDomainState(page, realmId)
-      expect(state.published.hostname).toBe(hostnameA)
-    })
+      await test.step('通过 GET 确认 published == A', async () => {
+        const state = await getCustomDomainState(apiContext, realmId)
+        expect(state.published.hostname).toBe(hostnameA)
+      })
 
-    await test.step('保存 hostname B（覆盖 A）', async () => {
-      await settingsPage.fillCustomDomainForm({ hostname: hostnameB })
-      await settingsPage.saveCustomDomain()
-      demoLogger.testCode.log(`hostname B (${hostnameB}) 已保存（覆盖 A）`)
-    })
+      await test.step('保存 hostname B（覆盖 A）', async () => {
+        await settingsPage.fillCustomDomainForm({ hostname: hostnameB })
+        await settingsPage.saveCustomDomain()
+        demoLogger.testCode.log(`hostname B (${hostnameB}) 已保存（覆盖 A）`)
+      })
 
-    await test.step('通过 GET 断言 published == B', async () => {
-      const state = await getCustomDomainState(page, realmId)
-      expect(
-        state.published.hostname,
-        'published.hostname must equal the newly-saved value',
-      ).toBe(hostnameB)
-      demoLogger.testCode.log(`published.hostname=${state.published.hostname} (切换生效)`)
-    })
+      await test.step('通过 GET 断言 published == B', async () => {
+        const state = await getCustomDomainState(apiContext, realmId)
+        expect(
+          state.published.hostname,
+          'published.hostname must equal the newly-saved value',
+        ).toBe(hostnameB)
+        demoLogger.testCode.log(`published.hostname=${state.published.hostname} (切换生效)`)
+      })
+    } finally {
+      await apiContext.dispose()
+    }
   })
 
   // ==========================================================================
@@ -264,32 +314,38 @@ test.describe('[Realm Admin] Custom-domain 配置演示测试', () => {
     })
 
     await test.step(`在 ${otherRealm} 直接 PUT 相同 hostname → 期望 409`, async () => {
-      // 登录到 otherRealm 以共享其 auth cookie，然后直接 PUT 端点。
-      await loginAsAdmin(page, { realmId: otherRealm, forceRelogin: true })
+      // 登录到 otherRealm 并捕获其 admin-web-console token。直接 PUT 端点
+      // （/config/custom-domain）被 inject_token_identity + require_admin_console_token
+      // 门禁，只读 Authorization Bearer 头；page.request.* 只继承 cookie、无 token
+      // 会在冲突检查前就被 401，掩盖真正的 409。改用 bearer context 发起 PUT。
+      const apiContext = await loginAsAdminBearer(page, otherRealm)
+      try {
+        const resp = await apiContext.put(
+          `${BASE_URL}/api/realms/${otherRealm}/config/custom-domain`,
+          { data: { hostname: uniqueHostname } },
+        )
 
-      const resp = await page.request.put(
-        `${BASE_URL}/api/realms/${otherRealm}/config/custom-domain`,
-        { data: { hostname: uniqueHostname } },
-      )
+        // 域名全局唯一：otherRealm 不得占用 conflictRealm 已保存的 hostname → 409。
+        expect(
+          resp.status(),
+          `PUT with already-occupied hostname must return 409 (got ${resp.status()})`,
+        ).toBe(409)
 
-      // 域名全局唯一：otherRealm 不得占用 conflictRealm 已保存的 hostname → 409。
-      expect(
-        resp.status(),
-        `PUT with already-occupied hostname must return 409 (got ${resp.status()})`,
-      ).toBe(409)
+        const body = await resp.json().catch(() => ({}))
+        demoLogger.testCode.log(
+          `${otherRealm} PUT ${uniqueHostname} → 409 (body: ${JSON.stringify(body)})`,
+        )
 
-      const body = await resp.json().catch(() => ({}))
-      demoLogger.testCode.log(
-        `${otherRealm} PUT ${uniqueHostname} → 409 (body: ${JSON.stringify(body)})`,
-      )
-
-      // 额外验证：otherRealm 的 published 未被这次失败的保存写入污染。
-      const otherState = await getCustomDomainState(page, otherRealm)
-      expect(
-        otherState.published.hostname,
-        'failed conflict save must NOT mutate otherRealm published config',
-      ).not.toBe(uniqueHostname)
-      demoLogger.testCode.log(`${otherRealm} published 未被冲突保存污染`)
+        // 额外验证：otherRealm 的 published 未被这次失败的保存写入污染。
+        const otherState = await getCustomDomainState(apiContext, otherRealm)
+        expect(
+          otherState.published.hostname,
+          'failed conflict save must NOT mutate otherRealm published config',
+        ).not.toBe(uniqueHostname)
+        demoLogger.testCode.log(`${otherRealm} published 未被冲突保存污染`)
+      } finally {
+        await apiContext.dispose()
+      }
     })
   })
 })

@@ -550,6 +550,13 @@ export class UsersPage extends BasePage {
    * @param email User email whose sessions to manage.
    */
   async clickManageSessions(email: string): Promise<void> {
+    // The usersPage fixture navigates here at test start, but session-setup
+    // helpers create the target user via the admin API AFTER that, so the
+    // rendered list is stale. Reload the list so the freshly-created user row
+    // is present before we search for it.
+    await this.page.reload()
+    await this.waitForReady()
+
     const row = this.findUserRow(email)
     await expect(row).toBeVisible()
 

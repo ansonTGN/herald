@@ -180,6 +180,42 @@ export class BasePage {
   }
 
   /**
+   * Toggle a Radix `Switch` (role="switch") to a desired on/off state.
+   *
+   * Radix Switch renders a `<button role="switch">` with a `data-state`
+   * attribute (`checked` | `unchecked`) and `aria-checked`. Unlike native
+   * checkboxes, toggling it reliably requires:
+   *   - reading `data-state` (NOT `isChecked()`, which can race with the
+   *     React state update), and
+   *   - a plain `click()` (NOT `click({ force: true })`), which lets Playwright
+   *     run its normal actionability checks and hit the real interactive layer.
+   *
+   * Mirrors the proven pattern in helpers/bucket-helpers.ts: click only when
+   * the current state differs from the target, then assert the `data-state`
+   * transitioned before returning (assertion-based wait, no fixed sleeps).
+   *
+   * @param locator Locator pointing at the Radix Switch button
+   * @param on Desired state: true = checked, false = unchecked
+   */
+  protected async setSwitch(locator: Locator, on: boolean): Promise<void> {
+    await expect(locator).toBeVisible()
+
+    const wantState = on ? 'checked' : 'unchecked'
+
+    const state = await locator.getAttribute('data-state')
+    if (state === wantState) {
+      return
+    }
+
+    await locator.click()
+
+    await expect(async () => {
+      const newState = await locator.getAttribute('data-state')
+      expect(newState).toBe(wantState)
+    }).toPass({ timeout: 5000 })
+  }
+
+  /**
    * Select an option from a select dropdown
    *
    * @param locator Element locator

@@ -51,6 +51,13 @@ def rmi_image(image: str, force: bool = False) -> bool:
 
 def run_detached(args: list[str]) -> bool:
     result = _run(["run", "-d", *args])
+    if result.returncode != 0:
+        # Surface docker's own error so callers (and CI) can see the real
+        # failure reason instead of only their generic start_error message.
+        if result.stderr.strip():
+            print(result.stderr.strip())
+        if result.stdout.strip():
+            print(result.stdout.strip())
     return result.returncode == 0
 
 

@@ -4,7 +4,10 @@
  * 用户故事: US-EO-003 - Realm 管理员启用/禁用 Email-OTP 登录并独立控制 autoRegister
  *
  * 测试覆盖（镜像 realm-admin-totp-config-demo.e2e.ts 的 TOTP 配置范式，
- * 将 TOTP Tab 映射为 Email-OTP Tab）：
+ * 将 TOTP Tab 映射为 Email-OTP 控件）：
+ * - Phase 0: 配置邮箱通道（Email-OTP 开关在邮箱未配置时为 disabled，
+ *            故需先配置 Resend，使 `emailStatus.configured` 为 true，
+ *            参考 realm-admin-email-config-demo.e2e.ts 的配置范式）。
  * - Phase 1: 验证初始配置状态（两个开关可见，可读取当前状态）
  * - Phase 2: 启用 Email-OTP + 开启 autoRegister，断言两者均为 true
  * - Phase 3: 保持 OTP 开启，单独关闭 autoRegister，断言 enabled=true 且
@@ -12,6 +15,11 @@
  * - Phase 4: 关闭 Email-OTP（平滑降级配置侧），断言两者均为 false
  *            （US-EO-003 场景 3 配置侧）
  * - Phase 5: 刷新页面验证配置持久化
+ *
+ * 前端结构说明（提交 364767b2 "merged email-otp settings"）：
+ * Email-OTP 不再是独立 tab，而是作为 `email-otp-section` 子区块并入 `email`
+ * tab 内的 EmailConfigForm。SettingsPage.switchToEmailOtpTab() 因此先切到
+ * `email-tab` 再等待 `email-otp-section` 可见。
  *
  * 所有交互均通过 SettingsPage 的 Email-OTP 方法驱动（DE-D01 交付），
  * 不在本文件内内联任何 data-testid 字符串。
@@ -75,6 +83,37 @@ test.describe('[Realm Admin] Email-OTP 配置综合演示测试', () => {
     // 导航到 Settings 页面（登录后首次进入）
     await settingsPage.goto()
     await settingsPage.waitForReady()
+
+    // ========================================================================
+    // Phase 0: 配置邮箱通道（OTP 开关的前置条件）
+    //
+    // Email-OTP 的两个开关在 `emailStatus.configured === false` 时处于
+    // disabled 状态（前端 email-config-form.tsx 的 emailOtpDisabled）。
+    // realm-001 种子数据未配置邮箱，因此必须先配置邮箱通道（这里用 Resend
+    // 最小字段集：provider + from_address + resend_api_key），使 configured
+    // 变为 true，OTP 开关才会被启用。范式参考 realm-admin-email-config-demo。
+    // ========================================================================
+
+    await test.step('Phase 0: 配置邮箱通道以启用 OTP 开关', async () => {
+      await test.step('切到 Email tab', async () => {
+        await settingsPage.switchToEmailTab()
+      })
+
+      await test.step('配置 Resend 邮箱提供商并保存', async () => {
+        await settingsPage.configureResend({
+          provider: 'resend',
+          fromAddress: 'otp-demo@example.com',
+          resendApiKey: 're_otp_demo_test_key',
+        })
+        await settingsPage.saveEmailConfig()
+      })
+
+      await test.step('断言邮箱已 configured（OTP 开关前置满足）', async () => {
+        await expect.poll(async () => settingsPage.isEmailConfigured(), {
+          timeout: 15000,
+        }).toBe(true)
+      })
+    })
 
     // ========================================================================
     // Phase 1: 验证初始配置状态

@@ -234,13 +234,10 @@ export function seedCreemPaymentAttempt(
     throw new Error(`User not found: ${options.userEmail} in realm ${realmId}`)
   }
 
-  // Resolve a credit bucket for the realm (bucket_id is NOT NULL FK).
-  const bucketId = execPgSql(
-    `SELECT id FROM credit_buckets WHERE realm_id = '${realmId}' ORDER BY created_at LIMIT 1`,
-  )
-  if (!bucketId) {
-    throw new Error(`No credit_buckets row found for realm ${realmId}`)
-  }
+  // NOTE: payment_attempts no longer carries a bucket_id column (the FK was
+  // dropped when credit buckets stopped binding at the attempt level); the
+  // legacy bucketId resolution block was removed with it. The attempt only
+  // needs target_id -> provider_entitlement_mappings.
 
   // Resolve an enabled entitlement mapping to use as target_id. Prefer a Creem
   // one_time mapping; fall back to any enabled one_time mapping in the realm.
@@ -252,6 +249,26 @@ export function seedCreemPaymentAttempt(
   if (!mappingId) {
     mappingId = execPgSql(
       `SELECT id FROM provider_entitlement_mappings WHERE realm_id = '${realmId}' AND billing_type = 'one_time' AND enabled = true ORDER BY created_at LIMIT 1`,
+    )
+  }
+  if (!mappingId) {
+    // Commit 533ec22d intentionally stopped seeding placeholder entitlement
+    // mappings (tests now resolve real catalogs via provider sync). This
+    // helper seeds payment_attempts DB-direct and cannot run a provider sync,
+    // so when no one_time mapping exists it creates a throwaway Creem one_time
+    // mapping to use as the target_id. The row is deterministic across re-runs
+    // (fixed external_product_id + ON CONFLICT) and only exists to satisfy the
+    // purchase-history JOIN; it carries no real provider catalog data.
+    mappingId = randomUUID()
+    execPgSql(
+      `INSERT INTO provider_entitlement_mappings (id, realm_id, payment_provider, external_product_id, external_price_id, entitlement_key, billing_type, enabled, provider_product_info, synced_at) ` +
+        `VALUES ('${mappingId}'::uuid, '${realmId}', 'creem', 'demo-creem-one-time-fallback', NULL, 'one-time-fallback', 'one_time', TRUE, '{}'::jsonb, NOW()) ` +
+        `ON CONFLICT (realm_id, payment_provider, external_product_id, external_price_id) DO UPDATE SET enabled = TRUE, synced_at = NOW() RETURNING id`,
+    )
+    // Re-resolve in case ON CONFLICT kept a pre-existing row's id (RETURNING
+    // above runs inside the same statement; re-select is the robust read).
+    mappingId = execPgSql(
+      `SELECT id FROM provider_entitlement_mappings WHERE realm_id = '${realmId}' AND payment_provider = 'creem' AND external_product_id = 'demo-creem-one-time-fallback' AND billing_type = 'one_time' AND enabled = true LIMIT 1`,
     )
   }
   if (!mappingId) {
@@ -275,8 +292,8 @@ export function seedCreemPaymentAttempt(
 
   const sql =
     `INSERT INTO payment_attempts ` +
-    `(id, realm_id, user_id, payment_provider, target_type, target_id, bucket_id, amount, currency, status, provider_reference, provider_status, metadata, expires_at, completed_at, created_at, updated_at) ` +
-    `VALUES ('${id}', '${realmId}', '${userId}'::uuid, 'creem', '${targetType}', '${mappingId}'::uuid, '${bucketId}'::uuid, ${amount}, '${currency}', '${status}', '${providerReference}', '${providerStatus}', NULL, NOW() + INTERVAL '1 hour', NOW(), NOW(), NOW())`
+    `(id, realm_id, user_id, payment_provider, target_type, target_id, amount, currency, status, provider_reference, provider_status, metadata, expires_at, completed_at, created_at, updated_at) ` +
+    `VALUES ('${id}', '${realmId}', '${userId}'::uuid, 'creem', '${targetType}', '${mappingId}'::uuid, ${amount}, '${currency}', '${status}', '${providerReference}', '${providerStatus}', NULL, NOW() + INTERVAL '1 hour', NOW(), NOW(), NOW())`
   execPgSql(sql)
 
   return {

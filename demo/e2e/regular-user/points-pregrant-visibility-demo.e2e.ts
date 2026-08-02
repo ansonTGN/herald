@@ -81,7 +81,7 @@ import { expect } from '@playwright/test'
 import { SELECTORS } from '../selectors'
 import { verifyTestEnvironment } from '../helpers/environment-setup'
 import { loginWithCredentials } from '../helpers/auth'
-import { listBucketsViaApi } from '../helpers/bucket-helpers'
+import { listBucketsViaApi, createAdminBearerContext } from '../helpers/bucket-helpers'
 import {
   createTestApiKeyWithPermission,
   type ApiKeyWithPermission,
@@ -239,11 +239,17 @@ test.beforeAll(async ({ browser }) => {
     }
 
     // 3. Resolve the demo user UUID by email via the admin user list API.
+    //    `context.request` only carries cookies, not the in-memory Bearer
+    //    access token (auth-rewrite); admin user/client-app GETs 401 without
+    //    the Bearer header. Build a one-shot Bearer context from the logged-in
+    //    page (same pattern as bucket-helpers' listBucketsViaApi).
     const backendUrl =
       process.env.API_BASE_URL ||
       process.env.BASE_URL?.replace(/:\d+/, ':8080') ||
       'http://localhost:8080'
-    const usersResponse = await context.request.get(
+    const adminApi = await createAdminBearerContext(page, TEST_REALM)
+    try {
+    const usersResponse = await adminApi.get(
       `${backendUrl}/api/users/${TEST_REALM}?search=${encodeURIComponent(POINTS_USER_EMAIL)}`,
     )
     let demoUserId = ''
@@ -262,7 +268,7 @@ test.beforeAll(async ({ browser }) => {
 
     // 4. Resolve the `points-demo-app` client app UUID (covered by
     //    primary-pool; consume takes the UUID, not the client_id string).
-    const clientAppResponse = await context.request.get(
+    const clientAppResponse = await adminApi.get(
       `${backendUrl}/api/client/${TEST_REALM}`,
     )
     let coveredClientAppId = ''
@@ -295,6 +301,7 @@ test.beforeAll(async ({ browser }) => {
       setupStartTime,
       TEST_REALM,
       coveredClientAppId,
+      adminApi,
     )
 
     setupCtx = {
@@ -302,6 +309,9 @@ test.beforeAll(async ({ browser }) => {
       demoUserId,
       coveredClientAppId,
       apiKey,
+    }
+    } finally {
+      await adminApi.dispose().catch(() => {})
     }
   } finally {
     await context.close()
@@ -560,6 +570,14 @@ async function readEffectiveTotalAcrossBuckets(
   // prefix (without a bucket UUID) only matches loading-skeleton/edge cases,
   // but every rendered real card has a non-empty bucketId, so the prefix
   // locator is a safe enumerable.
+  // Wait for at least one real (bucketed) balance card to render before
+  // counting totals — the points page loads balance cards asynchronously, and
+  // reading totals immediately after navigation races the load (the totals are
+  // 0 until the per-bucket cards mount). Mirrors assertion 1's explicit wait on
+  // the primary-pool card.
+  await expect(
+    page.locator('[data-testid^="points-balance-card-"]').first(),
+  ).toBeVisible({ timeout: 15000 })
   const totalCells = page.locator('[data-testid^="points-balance-total-"]')
   const count = await totalCells.count()
   expect(count, 'at least one per-bucket balance total must render').toBeGreaterThan(0)

@@ -185,7 +185,10 @@ test.describe('[Realm Admin] TOTP 配置综合演示测试', () => {
 
           // 获取当前用户权限信息
           const currentUrl = page.url()
-          expect(currentUrl).toContain('/admin/manage/settings')
+          // Post route-refactor the admin console moved to the top-level
+          // /manage path (no realm prefix); accept both the new session-scoped
+          // /manage/settings and the legacy /admin/manage/settings.
+          expect(currentUrl).toMatch(/\/(admin\/)?manage\/settings/)
 
           // 验证 TOTP 配置开关可见（使用 data-testid）
           const totpEnabledSwitch = page.getByTestId('totp-enabled-switch')
@@ -239,6 +242,27 @@ test.describe('[Realm Admin] TOTP 配置综合演示测试', () => {
       })
 
       await loginAsAdmin(page, { realmId })
+
+      // ========================================================================
+      // Phase 0: 配置邮箱通道以启用 "Require Email Verification" 开关
+      // ========================================================================
+      // The switch is disabled while the realm has no email channel configured
+      // (frontend: `disabled || !emailConfigured`). Seed a Resend provider so
+      // the switch becomes enabled before Phase 1 toggles it.
+      await test.step('Phase 0: 配置邮箱通道以启用 Require Email Verification 开关', async () => {
+        await settingsPage.goto()
+        await settingsPage.waitForReady()
+        await settingsPage.switchToEmailTab()
+        await settingsPage.configureResend({
+          provider: 'resend',
+          fromAddress: 'reg-demo@example.com',
+          resendApiKey: 're_reg_demo_test_key',
+        })
+        await settingsPage.saveEmailConfig()
+        await expect.poll(async () => settingsPage.isEmailConfigured(), {
+          timeout: 15000,
+        }).toBe(true)
+      })
 
       // ========================================================================
       // Phase 1: 修改注册配置

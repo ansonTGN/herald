@@ -1126,8 +1126,11 @@ export const SELECTORS = {
    *   `email-otp-login-toggle` which does not exist)
    * - `frontend/src/components/auth/email-otp-login-form.tsx` (every user-side
    *   form testid below)
-   * - `frontend/src/routes/$realmId/manage/settings.tsx` (`email-otp-tab`)
-   * - `frontend/src/components/realm-config/email-otp-config-form.tsx` + shared
+   * - `frontend/src/routes/$realmId/manage/settings.tsx` (Email-OTP controls
+   *   are NOT a standalone tab — since commit 364767b2 "merged email-otp
+   *   settings" they live inside the `email` tab as a
+   *   `data-testid="email-otp-section"` sub-block of EmailConfigForm)
+   * - `frontend/src/components/realm-config/email-config-form.tsx` + shared
    *   `frontend/src/components/realm-config/config-switch-field.tsx`
    *   (`config-switch-field` emits `data-testid={`${id}-switch`}`, yielding
    *   `email-otp-enabled-switch` / `email-otp-auto-register-switch`)
@@ -1168,10 +1171,14 @@ export const SELECTORS = {
     registerLink: '[data-testid="email-otp-register-link"]',
     backAfterConflictButton: '[data-testid="email-otp-back-after-conflict-button"]',
 
-    // --- Admin Settings → Security Email-OTP tab -----------------------------
-    // The tab + the two config switches (enabled / autoRegister) + save button.
-    // Switches carry `data-testid` via `config-switch-field.tsx`.
-    tab: '[data-testid="email-otp-tab"]',
+    // --- Admin Settings → Email-OTP section (inside the `email` tab) ---------
+    // Since frontend commit 364767b2 ("merged email-otp settings"), Email-OTP is
+    // NOT a standalone tab. The two config switches + save button render inside
+    // the `email` tab as a `data-testid="email-otp-section"` sub-block of
+    // EmailConfigForm. `tab` is retained only for selector discoverability;
+    // navigation to the OTP controls must go through `email-tab` (see
+    // SettingsPage.switchToEmailOtpTab).
+    tab: '[data-testid="email-otp-section"]',
     enabledSwitch: '[data-testid="email-otp-enabled-switch"]',
     autoRegisterSwitch: '[data-testid="email-otp-auto-register-switch"]',
     saveButton: '[data-testid="email-otp-save-button"]',

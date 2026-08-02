@@ -34,7 +34,9 @@ test.describe('[Regular User] US-PU-006: One-Time Mapping Purchase Flow', () => 
       password: TEST_DATA.CREDENTIALS.DEFAULT_PASSWORD,
     })
 
-    await page.waitForURL(`**/${REALM_ID}/user**`)
+    // Post-login lands on a session-scoped route with NO realm prefix after
+    // the route refactor (commit 03eeb456): regular users go to /user/profile.
+    await page.waitForURL('**/user/profile**')
   })
 
   test.afterEach(async ({ page, testStartTime }) => {
