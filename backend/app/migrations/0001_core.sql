@@ -3,6 +3,8 @@
 -- ====================================
 -- Consolidates identity, RBAC, TOTP, API keys, OAuth config, audit events,
 -- and email tables into a single baseline. Pre-launch squash: no ALTER/DROP.
+-- The user_roles role-grant provenance/expiry columns and split manual/payment
+-- partial unique indexes (former 0006_support_paywall) are inlined.
 
 -- ====================================
 -- UUID v7 Support (PostgreSQL 18+)
@@ -250,6 +252,10 @@ CREATE INDEX idx_role_permissions_permission_id ON role_permissions(permission_i
 COMMENT ON TABLE role_permissions IS 'Many-to-many relationship between roles and permissions';
 
 -- User-Role associations
+-- Pre-launch squash: the role-grant provenance/expiry columns
+-- (source/source_id/expires_at) and the split manual/payment partial unique
+-- indexes (which admit the same role from multiple sources, design §4.2) are
+-- inlined from the former 0006_support_paywall migration. No ALTER/DROP.
 CREATE TABLE user_roles (
     id UUID PRIMARY KEY DEFAULT uuidv7(),
     user_id UUID,
@@ -258,6 +264,9 @@ CREATE TABLE user_roles (
     client_id TEXT,
     principal_type TEXT NOT NULL DEFAULT 'user',
     principal_id TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'manual',
+    source_id TEXT NULL,
+    expires_at TIMESTAMPTZ NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     CONSTRAINT fk_user_roles_role FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE,
@@ -267,7 +276,22 @@ CREATE TABLE user_roles (
 CREATE INDEX idx_user_roles_user_id ON user_roles(user_id);
 CREATE INDEX idx_user_roles_role_id ON user_roles(role_id);
 CREATE INDEX idx_user_roles_realm_id ON user_roles(realm_id);
-CREATE UNIQUE INDEX idx_user_roles_principal_role ON user_roles (realm_id, principal_type, principal_id, role_id);
+-- Principal-role uniqueness is split across manual and payment sources so the
+-- same role can coexist from manual + payment grants (PRD §4.2). source_id is
+-- always NULL for manual grants (excluded from the key); for payment grants it
+-- is the payment origin (attempt_id / subscription_id), so distinct purchases
+-- coexist and revoking one source leaves the other intact (grant/revoke/
+-- idempotency code agrees on this key — BE-D03).
+CREATE UNIQUE INDEX idx_user_roles_principal_role_manual
+    ON user_roles(realm_id, principal_type, principal_id, role_id)
+    WHERE source = 'manual';
+CREATE UNIQUE INDEX idx_user_roles_principal_role_payment
+    ON user_roles(realm_id, principal_type, principal_id, role_id, source_id)
+    WHERE source = 'payment';
+-- Revoke-lookup partial index: used by the payment-role revocation path to find
+-- rows by payment origin.
+CREATE INDEX idx_user_roles_source
+    ON user_roles(source, source_id) WHERE source = 'payment';
 COMMENT ON TABLE user_roles IS 'Many-to-many relationship between principals (users, api_keys, clients) and roles';
 COMMENT ON COLUMN user_roles.user_id IS 'UUID of the user (nullable for non-user principals)';
 COMMENT ON COLUMN user_roles.role_id IS 'UUID of the role (references roles.id)';
@@ -275,6 +299,16 @@ COMMENT ON COLUMN user_roles.realm_id IS 'Realm ID for multi-tenant isolation';
 COMMENT ON COLUMN user_roles.client_id IS 'Client app identifier (nullable for non-user principals)';
 COMMENT ON COLUMN user_roles.principal_type IS 'Type of principal: "user", "api_key", or "client"';
 COMMENT ON COLUMN user_roles.principal_id IS 'ID of the principal (user_id for users, client_api_keys.id for API keys)';
+COMMENT ON COLUMN user_roles.source IS
+    'Grant origin: ''manual'' (hand-assigned) or ''payment'' (granted on payment success).';
+COMMENT ON COLUMN user_roles.source_id IS
+    'Payment origin identifier. one_time = payment attempt_id; subscription = subscription_id. NULL for manual grants.';
+COMMENT ON COLUMN user_roles.expires_at IS
+    'INFORMATIONAL/PROVENANCE ONLY: the subscription billing period end aligned '
+    'at grant time. Not an authz TTL — there is NO background sweep that removes '
+    'rows once this timestamp passes. Role removal is event-driven (ImmediateCancel '
+    'webhook → revoke_roles_by_payment_source). NULL for manual or permanent '
+    'one-time grants. Kept for observability/audit of when the grant was meant to lapse.';
 
 -- Role Policies table (RBAC policies for roles)
 CREATE TABLE role_policies (

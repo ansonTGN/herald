@@ -24,6 +24,8 @@
 --   0001_core.sql, not here.
 
 -- (a) legal_agreement_version: append-only version + history for legal agreements.
+-- Pre-launch squash: the link-mode columns (mode/external_url) and their CHECK
+-- constraints (former 0009_legal_agreement_link_mode) are inlined. No ALTER/DROP.
 CREATE TABLE legal_agreement_version (
     id UUID PRIMARY KEY DEFAULT uuidv7(),
     realm_id TEXT,
@@ -31,9 +33,13 @@ CREATE TABLE legal_agreement_version (
     version_no INTEGER NOT NULL,
     version_label TEXT,
     content JSONB NOT NULL,
+    mode TEXT NOT NULL DEFAULT 'full_text',
+    external_url TEXT,
     source TEXT NOT NULL DEFAULT 'custom',
     published_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    published_by TEXT
+    published_by TEXT,
+    CONSTRAINT legal_agreement_version_mode_chk CHECK (mode IN ('full_text', 'link')),
+    CONSTRAINT legal_agreement_version_mode_url_chk CHECK (mode = 'full_text' OR external_url IS NOT NULL)
 );
 
 -- Expression unique index: folds NULL realm_id into '' so the platform-default
@@ -56,6 +62,8 @@ COMMENT ON COLUMN legal_agreement_version.realm_id IS 'NULL = platform default t
 COMMENT ON COLUMN legal_agreement_version.agreement_type IS 'terms_of_service | privacy_policy';
 COMMENT ON COLUMN legal_agreement_version.version_no IS 'Monotonic within (scope, agreement_type); used as effective-resolution tiebreaker';
 COMMENT ON COLUMN legal_agreement_version.content IS 'JSONB { [locale]: body } — at least the default locale body';
+COMMENT ON COLUMN legal_agreement_version.mode IS 'Agreement content mode: full_text or link';
+COMMENT ON COLUMN legal_agreement_version.external_url IS 'External agreement URL when mode is link';
 COMMENT ON COLUMN legal_agreement_version.source IS 'default | custom (revert-to-default snapshots as custom)';
 COMMENT ON COLUMN legal_agreement_version.published_by IS 'Publishing user_id; platform default seed = system';
 

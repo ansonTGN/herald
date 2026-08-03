@@ -16,6 +16,17 @@
 --   - payment_attempts.target_type CHECK is the FINAL 'entitlement_mapping'
 --     form (the obsolete 'subscription_entitlement' / 'points_package'
 --     values and the dropped points_packages family never existed)
+--   - subscription.billing_type + chk_subscription_billing_type (former 0011)
+--     are inline
+--   - payment_event.next_retry_at (former 0006) is inline
+--   - provider_entitlement_mappings.granted_role_ids (former 0006) and
+--     service_duration_days + chk_pem_service_duration_days (former 0011) are
+--     inline; chk_pem_billing_type is the FINAL ('recurring','one_time',
+--     'non_renewing') value set (former 0011) and chk_pem_payment_provider is
+--     the FINAL ('stripe','creem','apple','google') value set (former 0010)
+--   - payment_attempts.is_one_time_role + idx_payment_attempts_one_time_role
+--     (former 0006) are inline; chk_payment_attempt_provider is the FINAL
+--     ('stripe','creem','apple','google') value set (former 0010)
 --
 -- Available balance is exclusively a derived SUM over points_credit_ledger
 -- (same predicate as consumption); there is no stored/derived dual-track.
@@ -80,9 +91,17 @@ CREATE TABLE subscription (
     cancel_at_period_end BOOLEAN DEFAULT false,
     client_app_id UUID UNIQUE,
     cancel_at TIMESTAMPTZ,
+    -- billing_type is the snapshot of the mapping billing type taken at
+    -- fulfillment time (DEC-pay_model-007), so reconciliation/views/api-ext can
+    -- filter without joining the mapping. Only subscription-shape billing types
+    -- land here (recurring / non_renewing); one_time purchases never create a
+    -- subscription row. NOT NULL directly (no existing rows; DEC-pay_model-008).
+    billing_type TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_subscription_client_app UNIQUE (client_app_id)
+    CONSTRAINT uq_subscription_client_app UNIQUE (client_app_id),
+    CONSTRAINT chk_subscription_billing_type
+        CHECK (billing_type IN ('recurring', 'non_renewing'))
 );
 
 CREATE INDEX idx_subscription_realm_id ON subscription(realm_id);
@@ -94,6 +113,8 @@ CREATE INDEX idx_subscription_client_app_id ON subscription(client_app_id);
 CREATE INDEX idx_subscription_user_id ON subscription(user_id);
 CREATE INDEX idx_subscription_realm_user_id ON subscription(realm_id, user_id);
 COMMENT ON TABLE subscription IS 'Client app subscriptions mapped to entitlement keys';
+COMMENT ON COLUMN subscription.billing_type IS
+    'Billing type snapshot from the entitlement mapping at fulfillment time (DEC-pay_model-007): recurring or non_renewing';
 
 -- ====================================
 -- Subscription History
@@ -149,6 +170,7 @@ CREATE TABLE payment_event (
     payload JSONB,
     processed BOOLEAN DEFAULT false,
     processing_started_at TIMESTAMPTZ,
+    next_retry_at TIMESTAMPTZ NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT payment_event_unique_external_provider
         UNIQUE (external_event_id, payment_provider)
@@ -162,6 +184,8 @@ COMMENT ON TABLE payment_event IS 'Payment events from multiple providers (Creem
 COMMENT ON COLUMN payment_event.external_event_id IS 'External event ID from payment provider (unique per provider)';
 COMMENT ON COLUMN payment_event.payment_provider IS 'Payment provider type (creem, stripe, etc.)';
 COMMENT ON COLUMN payment_event.processing_started_at IS 'When webhook processing last claimed the event for execution; null means idle';
+COMMENT ON COLUMN payment_event.next_retry_at IS
+    'Backoff-scheduled retry time for the processed=false sweep job (PaymentEventRetryJob). NULL = eligible for immediate retry.';
 
 -- ====================================
 -- Points Wallets
@@ -604,12 +628,19 @@ CREATE TABLE provider_entitlement_mappings (
     enabled BOOLEAN NOT NULL DEFAULT false,
     provider_product_info JSONB,
     synced_at TIMESTAMPTZ,
+    granted_role_ids UUID[] NOT NULL DEFAULT '{}'::uuid[],
+    service_duration_days INT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_pem_realm_provider_product_price UNIQUE NULLS NOT DISTINCT (realm_id, payment_provider, external_product_id, external_price_id),
     CONSTRAINT chk_pem_entitlement_key CHECK (entitlement_key ~ '^[a-z0-9-]{1,64}$'),
-    CONSTRAINT chk_pem_billing_type CHECK (billing_type IS NULL OR billing_type IN ('recurring', 'one_time')),
-    CONSTRAINT chk_pem_payment_provider CHECK (payment_provider IN ('stripe', 'creem'))
+    CONSTRAINT chk_pem_billing_type CHECK (billing_type IS NULL OR billing_type IN ('recurring', 'one_time', 'non_renewing')),
+    CONSTRAINT chk_pem_payment_provider CHECK (payment_provider IN ('stripe', 'creem', 'apple', 'google')),
+    CONSTRAINT chk_pem_service_duration_days
+        CHECK (
+            (billing_type IS DISTINCT FROM 'non_renewing')
+            OR (service_duration_days IS NOT NULL AND service_duration_days >= 1)
+        )
 );
 
 CREATE INDEX idx_pem_realm_id ON provider_entitlement_mappings(realm_id);
@@ -618,9 +649,13 @@ CREATE INDEX idx_pem_entitlement_key ON provider_entitlement_mappings(entitlemen
 
 COMMENT ON TABLE provider_entitlement_mappings IS 'Maps payment provider products to Herald entitlement keys; points distribution is configured via points_distribution_rules';
 COMMENT ON COLUMN provider_entitlement_mappings.entitlement_key IS 'Herald entitlement identifier, matching [a-z0-9-]{1,64}';
-COMMENT ON COLUMN provider_entitlement_mappings.billing_type IS 'recurring, one_time or non_renewing (non_renewing added by 0011)';
-COMMENT ON COLUMN provider_entitlement_mappings.payment_provider IS 'Payment provider: stripe, creem';
+COMMENT ON COLUMN provider_entitlement_mappings.billing_type IS 'recurring, one_time or non_renewing';
+COMMENT ON COLUMN provider_entitlement_mappings.payment_provider IS 'Payment provider: stripe, creem, apple, google';
 COMMENT ON COLUMN provider_entitlement_mappings.provider_product_info IS 'Cached provider product info (name, price, currency, etc.)';
+COMMENT ON COLUMN provider_entitlement_mappings.granted_role_ids IS
+    'Role IDs auto-granted on payment success (paywall). Empty = no role grant.';
+COMMENT ON COLUMN provider_entitlement_mappings.service_duration_days IS
+    'Fixed service-period length in days; required (>=1) when billing_type = non_renewing, NULL otherwise (DEC-pay_model-005)';
 
 -- ====================================
 -- Payment Attempts
@@ -643,9 +678,10 @@ CREATE TABLE payment_attempts (
     metadata jsonb,
     expires_at timestamptz NOT NULL,
     completed_at timestamptz,
+    is_one_time_role BOOLEAN NOT NULL DEFAULT FALSE,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT chk_payment_attempt_provider CHECK (payment_provider IN ('stripe', 'creem')),
+    CONSTRAINT chk_payment_attempt_provider CHECK (payment_provider IN ('stripe', 'creem', 'apple', 'google')),
     CONSTRAINT chk_target_type CHECK (target_type = 'entitlement_mapping'),
     CONSTRAINT chk_status CHECK (status IN ('Pending', 'RequiresAction', 'Succeeded', 'Failed', 'Cancelled', 'Expired', 'completed'))
 );
@@ -659,9 +695,21 @@ CREATE INDEX idx_payment_attempts_status_expires ON payment_attempts(status, exp
 -- Index for looking up attempts by provider reference (for webhooks)
 CREATE INDEX idx_payment_attempts_provider_reference ON payment_attempts(payment_provider, provider_reference);
 
+-- Anti-repeat DB guard: marks attempts subject to the "one purchase per user"
+-- rule (billing_type=one_time + non-empty granted_role_ids). The partial unique
+-- index on (user_id, target_id) WHERE status='Succeeded' AND is_one_time_role=TRUE
+-- closes the concurrent double-purchase window that the application-layer
+-- pre-check (purchase_service.rs) cannot fully prevent.
+CREATE UNIQUE INDEX idx_payment_attempts_one_time_role
+    ON payment_attempts(user_id, target_id)
+    WHERE status = 'Succeeded' AND is_one_time_role = TRUE;
+
 COMMENT ON TABLE payment_attempts IS 'Unified payment attempt tracking for initiator-based payment platforms';
 COMMENT ON COLUMN payment_attempts.target_type IS 'Type of purchasable target: entitlement_mapping';
 COMMENT ON COLUMN payment_attempts.target_id IS 'ID of the provider entitlement mapping being purchased';
+COMMENT ON COLUMN payment_attempts.is_one_time_role IS
+    'TRUE only for one_time + role entitlement mappings (anti-repeat). '
+    'Gates the partial unique index that prevents concurrent double-purchase.';
 COMMENT ON COLUMN payment_attempts.provider_reference IS 'Platform-specific order reference (session ID for Stripe)';
 COMMENT ON COLUMN payment_attempts.provider_status IS 'Raw status from payment platform';
 COMMENT ON COLUMN payment_attempts.expires_at IS 'Payment attempt expiration time (2 hours after creation)';
