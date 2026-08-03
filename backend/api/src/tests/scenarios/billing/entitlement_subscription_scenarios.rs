@@ -22,6 +22,10 @@ mod tests {
         body::{Body, to_bytes},
         http::{Request, StatusCode, header},
     };
+    use herald_core::domain::authentication::BrowserTokenService;
+    use herald_core::domain::client::ports::ClientService;
+    use herald_core::domain::user::UserRepository;
+    use herald_core::infrastructure::authentication::RedisBrowserTokenService;
     use serde_json::json;
     use test_context::test_context;
     use tower::ServiceExt;
@@ -352,5 +356,192 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    // =========================================================================
+    // POST /api/bill/{realmId}/client/{clientAppId}/subscription/cancel
+    // =========================================================================
+    //
+    // User self-service cancel. The route calls the provider cancel API and
+    // deliberately does NOT mutate the local subscription row — local status is
+    // updated by the provider webhook. These tests encode that contract: an
+    // unsupported provider (Apple/Google) is rejected, and a provider failure
+    // leaves the local row untouched.
+
+    /// Mint a FirstParty browser-token family for `user_id` bound to the test
+    /// client app. FirstParty tokens bypass scope checks but are still subject
+    /// to `require_bound_client_app`, so they exercise the new browser route.
+    async fn create_user_browser_token(ctx: &SubTestContext, user_id: Uuid) -> String {
+        let user = ctx
+            .app_state
+            .user_repository
+            .get_user_by_id(user_id)
+            .await
+            .expect("Failed to load test user");
+        let client_app = ctx
+            .app_state
+            .service
+            .client_service()
+            .get_client_app_by_client_id(&ctx._realm_id, &ctx._client_id)
+            .await
+            .expect("Failed to load test client app");
+        RedisBrowserTokenService::new(ctx.app_state.redis_manager.clone())
+            .create_first_party_token_family(&user, &client_app, None, None)
+            .await
+            .expect("Failed to create user browser token family")
+            .access_token
+    }
+
+    /// Create a subscription owned by `user_id` (so the ownership check passes)
+    /// with a fixed external_subscription_id. Returns the local subscription id.
+    async fn create_subscription_for_user(
+        ctx: &SubTestContext,
+        user_id: Uuid,
+        payment_provider: &str,
+    ) -> Uuid {
+        let subscription_id = Uuid::now_v7();
+        let external_subscription_id = format!("sub_test_{}", subscription_id);
+        let client_app_id = Uuid::parse_str(&ctx._client_app_id).unwrap();
+        sqlx::query(
+            "INSERT INTO subscription
+                (id, realm_id, user_id, client_app_id, status, entitlement_key, external_price_id,
+                 external_subscription_id, external_product_id, payment_provider,
+                 current_period_start, current_period_end,
+                 provider_metadata, synced_at,
+                 cancel_at_period_end, created_at, updated_at, billing_type)
+             VALUES ($1, $2, $3, $4, 'active', $5, $6,
+                     $7, $8, $9, NOW(), NOW() + INTERVAL '30 days',
+                     NULL, NOW(),
+                     false, NOW(), NOW(), 'recurring')",
+        )
+        .bind(subscription_id)
+        .bind(&ctx._realm_id)
+        .bind(user_id)
+        .bind(client_app_id)
+        .bind(format!("cancel-plan-{}", subscription_id))
+        .bind(format!("price_{}", subscription_id))
+        .bind(&external_subscription_id)
+        .bind(format!("prod_{}", subscription_id))
+        .bind(payment_provider)
+        .execute(&ctx.app_state.pool)
+        .await
+        .expect("Failed to insert test subscription");
+        subscription_id
+    }
+
+    /// Covers: Apple/Google subscriptions cannot be canceled via a developer
+    /// API; the route must reject them with 400 instead of attempting a
+    /// provider call. The local status must remain `active`.
+    #[test_context(SubTestContext)]
+    #[tokio::test]
+    async fn test_cancel_subscription_apple_rejects_with_400(ctx: &mut SubTestContext) {
+        let app = ctx.create_unified_test_router();
+        let realm_id = ctx._realm_id.clone();
+        let client_app_id = Uuid::parse_str(&ctx._client_app_id).unwrap();
+
+        // Create the owning user + a FirstParty browser token bound to the client app.
+        let user_id = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO account (id, realm_id, email, password, status)
+             VALUES ($1, $2, $3, '$2a$12$dummy_password_hash', 1)",
+        )
+        .bind(user_id)
+        .bind(&realm_id)
+        .bind(format!("apple-cancel-owner-{}@test.com", user_id))
+        .execute(&ctx.app_state.pool)
+        .await
+        .unwrap();
+        let token = create_user_browser_token(ctx, user_id).await;
+        let sub_id = create_subscription_for_user(ctx, user_id, "apple").await;
+
+        let response = app
+            .clone()
+            .oneshot(auth_request(
+                "POST",
+                format!(
+                    "/api/bill/{}/client/{}/subscription/cancel",
+                    realm_id, client_app_id
+                ),
+                &token,
+                Some(Body::from(
+                    serde_json::to_vec(&json!({"cancelAtPeriodEnd": false})).unwrap(),
+                )),
+            ))
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        // Local status must be untouched (still active), per the webhook-driven model.
+        let status: String =
+            sqlx::query_scalar("SELECT status::text FROM subscription WHERE id = $1")
+                .bind(sub_id)
+                .fetch_one(&ctx.app_state.pool)
+                .await
+                .unwrap();
+        assert_eq!(status, "active");
+    }
+
+    /// Covers: When the provider cancel API cannot be reached (Stripe not
+    /// configured for the realm), the error surfaces and the local
+    /// subscription row is left unchanged. This is the core "do not flip local
+    /// state" contract of the provider-driven cancel.
+    #[test_context(SubTestContext)]
+    #[tokio::test]
+    async fn test_cancel_subscription_stripe_failure_leaves_status_unchanged(
+        ctx: &mut SubTestContext,
+    ) {
+        let app = ctx.create_unified_test_router();
+        let realm_id = ctx._realm_id.clone();
+        let client_app_id = Uuid::parse_str(&ctx._client_app_id).unwrap();
+
+        let user_id = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO account (id, realm_id, email, password, status)
+             VALUES ($1, $2, $3, '$2a$12$dummy_password_hash', 1)",
+        )
+        .bind(user_id)
+        .bind(&realm_id)
+        .bind(format!("stripe-cancel-owner-{}@test.com", user_id))
+        .execute(&ctx.app_state.pool)
+        .await
+        .unwrap();
+        let token = create_user_browser_token(ctx, user_id).await;
+        let sub_id = create_subscription_for_user(ctx, user_id, "stripe").await;
+
+        let response = app
+            .clone()
+            .oneshot(auth_request(
+                "POST",
+                format!(
+                    "/api/bill/{}/client/{}/subscription/cancel",
+                    realm_id, client_app_id
+                ),
+                &token,
+                Some(Body::from(
+                    serde_json::to_vec(&json!({"cancelAtPeriodEnd": false})).unwrap(),
+                )),
+            ))
+            .await
+            .unwrap();
+
+        // Stripe is not configured in the test realm → CoreError → 5xx.
+        assert!(
+            response.status().is_server_error(),
+            "expected 5xx when Stripe is unconfigured, got {}",
+            response.status()
+        );
+
+        // The local row must NOT have been flipped — this is the contract.
+        let status: String =
+            sqlx::query_scalar("SELECT status::text FROM subscription WHERE id = $1")
+                .bind(sub_id)
+                .fetch_one(&ctx.app_state.pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            status, "active",
+            "local status must stay active when the provider call fails"
+        );
     }
 }

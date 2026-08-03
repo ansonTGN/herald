@@ -117,11 +117,6 @@ pub fn billing_routes() -> Router<AppState> {
             "/api/bill/{realmId}/subscriptions/{subscriptionId}",
             get(get_subscription),
         )
-        // ===== Subscription (Client App) =====
-        .route(
-            "/api/bill/{realmId}/client/{clientAppId}/subscription/cancel",
-            post(cancel_subscription_for_client_app),
-        )
         // ===== Subscription History =====
         .route(
             "/api/bill/{realmId}/subscriptions/{subscriptionId}/history",
@@ -184,6 +179,14 @@ pub fn billing_browser_routes() -> Router<AppState> {
         .route(
             "/api/bill/{realmId}/client/{clientAppId}/subscription",
             get(get_subscription_for_client_app),
+        )
+        // User self-service cancel: calls provider cancel API (Stripe/Creem),
+        // local status updated via webhook. Mounted here so a CustomUserUi
+        // browser token with the SubscriptionCancel scope may cancel the user's
+        // own subscription; admin console no longer cancels directly.
+        .route(
+            "/api/bill/{realmId}/client/{clientAppId}/subscription/cancel",
+            post(cancel_subscription_for_client_app),
         )
         .route(
             "/api/bill/{realmId}/client/{clientAppId}/purchase-options",

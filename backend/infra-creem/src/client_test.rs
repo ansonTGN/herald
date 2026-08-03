@@ -535,3 +535,104 @@ async fn test_search_subscriptions_handles_canceled_subscription() {
     assert_eq!(sub.status, "canceled");
     assert_eq!(sub.canceled_at.as_deref(), Some("2026-06-05T10:00:00Z"));
 }
+
+// =============================================================================
+// cancel_subscription tests
+// =============================================================================
+//
+// User Story: As a billing system, I need to cancel a Creem subscription on
+// behalf of a user so that provider-side cancellation propagates back via the
+// Creem webhook. Covers: correct method/path/api-key, immediate vs scheduled
+// mode bodies, and provider error surfacing.
+
+#[tokio::test]
+async fn test_cancel_subscription_immediate_sends_correct_body() {
+    let mock_server = MockServer::start().await;
+    let client = create_test_client(&mock_server);
+
+    Mock::given(method("POST"))
+        .and(path("/v1/subscriptions/sub_abc/cancel"))
+        .and(header("x-api-key", "test_api_key"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "sub_abc",
+            "status": "canceled",
+            "canceled_at": "2026-08-03T12:00:00Z"
+        })))
+        .mount(&mock_server)
+        .await;
+
+    let result = client
+        .cancel_subscription("sub_abc", CreemCancelMode::Immediate)
+        .await
+        .expect("immediate cancel should succeed");
+
+    assert_eq!(result.id, "sub_abc");
+    assert_eq!(result.status.as_deref(), Some("canceled"));
+    assert_eq!(result.canceled_at.as_deref(), Some("2026-08-03T12:00:00Z"));
+
+    // Body must carry mode=immediate and NOT carry on_execute (immediate ignores it).
+    let requests = mock_server
+        .received_requests()
+        .await
+        .expect("request recording should be enabled");
+    assert_eq!(requests.len(), 1);
+    let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
+    assert_eq!(body["mode"], "immediate");
+    assert!(body.get("onExecute").is_none());
+}
+
+#[tokio::test]
+async fn test_cancel_subscription_scheduled_sends_correct_body() {
+    let mock_server = MockServer::start().await;
+    let client = create_test_client(&mock_server);
+
+    Mock::given(method("POST"))
+        .and(path("/v1/subscriptions/sub_def/cancel"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "sub_def",
+            "status": "active",
+            "canceled_at": null
+        })))
+        .mount(&mock_server)
+        .await;
+
+    let result = client
+        .cancel_subscription("sub_def", CreemCancelMode::Scheduled)
+        .await
+        .expect("scheduled cancel should succeed");
+
+    assert_eq!(result.id, "sub_def");
+    assert_eq!(result.status.as_deref(), Some("active"));
+
+    // Body must carry mode=scheduled and onExecute=cancel (we never pause).
+    let requests = mock_server
+        .received_requests()
+        .await
+        .expect("request recording should be enabled");
+    assert_eq!(requests.len(), 1);
+    let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
+    assert_eq!(body["mode"], "scheduled");
+    assert_eq!(body["onExecute"], "cancel");
+}
+
+#[tokio::test]
+async fn test_cancel_subscription_surfaces_provider_error() {
+    let mock_server = MockServer::start().await;
+    let client = create_test_client(&mock_server);
+
+    Mock::given(method("POST"))
+        .and(path("/v1/subscriptions/sub_missing/cancel"))
+        .respond_with(ResponseTemplate::new(404).set_body_string("subscription not found"))
+        .mount(&mock_server)
+        .await;
+
+    let result = client
+        .cancel_subscription("sub_missing", CreemCancelMode::Immediate)
+        .await;
+
+    assert!(
+        matches!(result, Err(CoreError::InternalServerError(_))),
+        "provider error must surface, got {:?}",
+        result
+    );
+}

@@ -103,6 +103,28 @@ pub struct PaymentIntent {
     pub metadata: serde_json::Value,
 }
 
+/// Request to cancel a Stripe subscription.
+///
+/// `cancel_at_period_end = false` issues `DELETE /v1/subscriptions/{id}` (immediate);
+/// `true` issues `POST /v1/subscriptions/{id}` with `cancel_at_period_end=true` (scheduled).
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CancelSubscriptionRequest {
+    /// Stripe subscription id (`sub_...`).
+    pub subscription_id: String,
+    /// When true, the subscription stays active until period end then cancels.
+    pub cancel_at_period_end: bool,
+}
+
+/// Stripe subscription object after a cancel call. Only the fields we read back.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CancelSubscriptionResponse {
+    pub id: String,
+    pub status: Option<String>,
+    pub cancel_at_period_end: Option<bool>,
+    /// Unix timestamp the subscription was canceled, if any.
+    pub canceled_at: Option<i64>,
+}
+
 /// Stripe webhook event envelope
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct StripeWebhookEvent {

@@ -1,19 +1,23 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { PageHeader } from '@/components/shared/page-header'
+import { ConfirmDialog } from '@/components/shared'
 import { formatDate } from '@/lib/date-utils'
 import { clientAppsQueryOptions, userSubscriptionsQueryOptions } from '@/data/query-options'
 import {
+  cancelSubscriptionForClientApp,
   getSubscriptionForClientApp,
   type ClientAppItem,
   type SubscriptionDetailResponse,
 } from '@/lib/api-generated'
 import { formatProviderName } from '@/components/billing/format-provider-name'
 import { m } from '@/paraglide/messages'
+import { toast } from 'sonner'
+import { getErrorMessage } from '@/lib/error-utils'
 
 interface MySubscriptionsPageProps {
   realmId: string
@@ -22,6 +26,108 @@ interface MySubscriptionsPageProps {
 type SubscriptionWithClientApp = {
   clientApp: ClientAppItem
   subscription: SubscriptionDetailResponse
+}
+
+/**
+ * Self-service cancel action for a single subscription.
+ *
+ * Provider routing:
+ * - stripe / creem: call the provider cancel API; the local status is updated
+ *   later by the provider webhook (the success message reflects this).
+ * - apple / google: developer-initiated cancel is not supported by the platform
+ *   APIs, so only a static hint to manage the subscription in the store is
+ *   shown — no cancel button, no API call.
+ */
+function SubscriptionCancelAction({
+  realmId,
+  clientAppId,
+  subscriptionId,
+  paymentProvider,
+  active,
+}: {
+  realmId: string
+  clientAppId: string
+  subscriptionId: string
+  paymentProvider: string
+  active: boolean
+}) {
+  const queryClient = useQueryClient()
+  const [confirmOpen, setConfirmOpen] = useState(false)
+
+  const cancelMutation = useMutation({
+    mutationFn: async () => {
+      const response = await cancelSubscriptionForClientApp({
+        path: { realmId, clientAppId },
+        body: { cancelAtPeriodEnd: false },
+      })
+      if (response.error) throw response.error
+      return response.data
+    },
+    onSuccess: () => {
+      toast.success(m['billing.subscription_canceled_success']())
+      setConfirmOpen(false)
+      // Local status updates via webhook; refetch to pick it up when it lands.
+      queryClient.invalidateQueries({ queryKey: ['user-subscriptions', realmId] })
+    },
+    onError: (error: unknown) => {
+      toast.error(m['billing.subscription_cancel_failed']({ message: getErrorMessage(error) }))
+    },
+  })
+
+  // Apple / Google: no developer cancel API; show only the store hint.
+  if (paymentProvider === 'apple' || paymentProvider === 'google') {
+    return (
+      <p
+        className="text-sm text-muted-foreground"
+        data-testid={`subscription-manage-hint-${subscriptionId}`}
+      >
+        {paymentProvider === 'apple'
+          ? m['billing.subscription_manage_via_app_store']()
+          : m['billing.subscription_manage_via_google_play']()}
+      </p>
+    )
+  }
+
+  // Other/unknown providers: also cannot self-cancel, generic hint.
+  if (paymentProvider !== 'stripe' && paymentProvider !== 'creem') {
+    return (
+      <p className="text-sm text-muted-foreground">
+        {m['billing.subscription_cancel_provider_unsupported']()}
+      </p>
+    )
+  }
+
+  if (!active) {
+    return null
+  }
+
+  return (
+    <>
+      <Button
+        variant="destructive"
+        size="sm"
+        className="w-full"
+        onClick={() => setConfirmOpen(true)}
+        disabled={cancelMutation.isPending}
+        data-testid={`subscription-cancel-${subscriptionId}`}
+      >
+        {cancelMutation.isPending
+          ? m['billing.subscription_canceling']()
+          : m['billing.subscription_cancel_button']()}
+      </Button>
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title={m['billing.subscription_cancel_confirm_title']()}
+        description={m['billing.subscription_cancel_confirm_description']()}
+        onConfirm={() => {
+          cancelMutation.mutateAsync().catch(() => {})
+        }}
+        confirmLabel={m['billing.subscription_cancel_button']()}
+        isPending={cancelMutation.isPending}
+      />
+    </>
+  )
 }
 
 export function MySubscriptionsPage({ realmId }: MySubscriptionsPageProps) {
@@ -184,6 +290,14 @@ export function MySubscriptionsPage({ realmId }: MySubscriptionsPageProps) {
                     </Link>
                   </Button>
                 )}
+
+                <SubscriptionCancelAction
+                  realmId={realmId}
+                  clientAppId={clientApp.id}
+                  subscriptionId={subscription.id}
+                  paymentProvider={subscription.paymentProvider ?? ''}
+                  active={subscription.status.toLowerCase() === 'active'}
+                />
 
                 <Button asChild variant="outline" size="sm" className="w-full">
                   <Link

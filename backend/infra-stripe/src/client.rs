@@ -1,6 +1,6 @@
 use crate::models::{
-    CheckoutSession, CreateCheckoutRequest, CreatePaymentIntentRequest, ListEventsParams,
-    PaymentIntent, StripeEventList,
+    CancelSubscriptionRequest, CancelSubscriptionResponse, CheckoutSession, CreateCheckoutRequest,
+    CreatePaymentIntentRequest, ListEventsParams, PaymentIntent, StripeEventList,
 };
 use herald_domain::common::entities::app_errors::CoreError;
 use herald_domain::telemetry::external_http::timed_external_http_span;
@@ -455,6 +455,80 @@ impl StripeClient {
                 .to_string(),
             status: stripe_response["status"].as_str().map(str::to_string),
             metadata: stripe_response["metadata"].clone(),
+        })
+    }
+
+    /// Cancel a Stripe subscription.
+    ///
+    /// - `cancel_at_period_end = false` → `DELETE /v1/subscriptions/{id}` (immediate cancel).
+    /// - `cancel_at_period_end = true`  → `POST /v1/subscriptions/{id}` with form
+    ///   `cancel_at_period_end=true` (stays active until period end).
+    ///
+    /// Only the provider side is touched; local subscription state is expected to be
+    /// updated by the subsequent Stripe webhook (`customer.subscription.deleted`).
+    pub async fn cancel_subscription(
+        &self,
+        request: &CancelSubscriptionRequest,
+    ) -> Result<CancelSubscriptionResponse, CoreError> {
+        if request.subscription_id.is_empty() {
+            return Err(CoreError::BadRequest(
+                "Stripe subscription id is required".to_string(),
+            ));
+        }
+
+        let url = format!(
+            "{}/v1/subscriptions/{}",
+            self.base_url, request.subscription_id
+        );
+
+        // external.http span + duration histogram. Verb differs by mode but the
+        // span label only carries the host; both branches share one timing site.
+        let timing = timed_external_http_span(&self.base_url, "POST");
+        let _span_enter = timing.span().enter();
+
+        let response = if request.cancel_at_period_end {
+            self.http
+                .post(&url)
+                .bearer_auth(&self.api_key)
+                .form(&[("cancel_at_period_end".to_string(), "true".to_string())])
+                .send()
+                .await?
+        } else {
+            self.http
+                .delete(&url)
+                .bearer_auth(&self.api_key)
+                .send()
+                .await?
+        };
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let text = response.text().await.unwrap_or_default();
+            tracing::error!(
+                "Stripe cancel subscription API error: {} - {}",
+                status,
+                text
+            );
+            return Err(CoreError::InternalServerError(format!(
+                "Stripe cancel subscription API error: {} - {}",
+                status.as_u16(),
+                text
+            )));
+        }
+
+        let stripe_response: serde_json::Value = response.json().await.map_err(|e| {
+            tracing::error!("Failed to parse Stripe cancel response: {}", e);
+            CoreError::InternalServerError(format!("Invalid Stripe response: {}", e))
+        })?;
+
+        Ok(CancelSubscriptionResponse {
+            id: stripe_response["id"]
+                .as_str()
+                .unwrap_or(&request.subscription_id)
+                .to_string(),
+            status: stripe_response["status"].as_str().map(str::to_string),
+            cancel_at_period_end: stripe_response["cancel_at_period_end"].as_bool(),
+            canceled_at: stripe_response["canceled_at"].as_i64(),
         })
     }
 
@@ -916,6 +990,122 @@ mod tests {
             .await;
 
         assert!(matches!(result, Err(CoreError::BadRequest(_))));
+    }
+
+    /// Immediate cancel issues `DELETE /v1/subscriptions/{id}`.
+    #[tokio::test]
+    async fn test_cancel_subscription_immediate_uses_delete() {
+        let mock_server = MockServer::start().await;
+        let client =
+            StripeClient::with_base_url("sk_test_123".to_string(), mock_server.uri(), 30).unwrap();
+
+        Mock::given(any())
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": "sub_test_123",
+                "status": "canceled",
+                "cancel_at_period_end": false,
+                "canceled_at": 1700000000
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let result = client
+            .cancel_subscription(&CancelSubscriptionRequest {
+                subscription_id: "sub_test_123".to_string(),
+                cancel_at_period_end: false,
+            })
+            .await
+            .expect("immediate cancel should succeed");
+
+        assert_eq!(result.id, "sub_test_123");
+        assert_eq!(result.status.as_deref(), Some("canceled"));
+        assert_eq!(result.cancel_at_period_end, Some(false));
+        assert_eq!(result.canceled_at, Some(1700000000));
+
+        let requests = mock_server
+            .received_requests()
+            .await
+            .expect("request recording should be enabled");
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].method.as_str(), "DELETE");
+        assert_eq!(requests[0].url.path(), "/v1/subscriptions/sub_test_123");
+        assert_eq!(
+            requests[0]
+                .headers
+                .get("authorization")
+                .and_then(|value| value.to_str().ok()),
+            Some("Bearer sk_test_123")
+        );
+    }
+
+    /// Scheduled cancel issues `POST /v1/subscriptions/{id}` with form
+    /// `cancel_at_period_end=true`.
+    #[tokio::test]
+    async fn test_cancel_subscription_at_period_end_uses_post_with_form() {
+        let mock_server = MockServer::start().await;
+        let client =
+            StripeClient::with_base_url("sk_test_123".to_string(), mock_server.uri(), 30).unwrap();
+
+        Mock::given(any())
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": "sub_test_456",
+                "status": "active",
+                "cancel_at_period_end": true,
+                "canceled_at": null
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let result = client
+            .cancel_subscription(&CancelSubscriptionRequest {
+                subscription_id: "sub_test_456".to_string(),
+                cancel_at_period_end: true,
+            })
+            .await
+            .expect("scheduled cancel should succeed");
+
+        assert_eq!(result.id, "sub_test_456");
+        assert_eq!(result.status.as_deref(), Some("active"));
+        assert_eq!(result.cancel_at_period_end, Some(true));
+        assert!(result.canceled_at.is_none());
+
+        let requests = mock_server
+            .received_requests()
+            .await
+            .expect("request recording should be enabled");
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].method.as_str(), "POST");
+        assert_eq!(requests[0].url.path(), "/v1/subscriptions/sub_test_456");
+        let form: std::collections::HashMap<_, _> = url::form_urlencoded::parse(&requests[0].body)
+            .into_owned()
+            .collect();
+        assert_eq!(form.get("cancel_at_period_end"), Some(&"true".to_string()));
+    }
+
+    /// Provider error (non-2xx) is surfaced as InternalServerError and not swallowed.
+    #[tokio::test]
+    async fn test_cancel_subscription_surfaces_provider_error() {
+        let mock_server = MockServer::start().await;
+        let client =
+            StripeClient::with_base_url("sk_test_123".to_string(), mock_server.uri(), 30).unwrap();
+
+        Mock::given(any())
+            .respond_with(ResponseTemplate::new(402).set_body_string("no such subscription"))
+            .mount(&mock_server)
+            .await;
+
+        let result = client
+            .cancel_subscription(&CancelSubscriptionRequest {
+                subscription_id: "sub_missing".to_string(),
+                cancel_at_period_end: false,
+            })
+            .await;
+
+        assert!(
+            matches!(result, Err(CoreError::InternalServerError(_))),
+            "provider error must surface, got {:?}",
+            result
+        );
     }
 
     /// Verify that payment mode sends payment_intent_data[metadata] and skips

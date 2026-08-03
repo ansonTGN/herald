@@ -324,6 +324,7 @@ impl RedisBrowserTokenService {
             InvoiceRead,
             InvoiceApply,
             SubscriptionRead,
+            SubscriptionCancel,
         ]
         .into_iter()
         .collect()
@@ -348,6 +349,7 @@ impl RedisBrowserTokenService {
             InvoiceRead,
             InvoiceApply,
             SubscriptionRead,
+            SubscriptionCancel,
         ]
         .into_iter()
         .collect()

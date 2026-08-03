@@ -194,3 +194,32 @@ pub struct CreemSubscriptionList {
     pub data: Vec<CreemSubscriptionSearchResult>,
     pub pagination: CreemPagination,
 }
+
+/// Cancel timing for a Creem subscription.
+///
+/// Maps to the Creem cancel endpoint's `mode` field (`"immediate"` / `"scheduled"`).
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+pub enum CreemCancelMode {
+    #[serde(rename = "immediate")]
+    Immediate,
+    #[serde(rename = "scheduled")]
+    Scheduled,
+}
+
+/// Request body for `POST /v1/subscriptions/{id}/cancel`.
+#[derive(Debug, Clone, Serialize)]
+pub struct CreemCancelSubscriptionRequest {
+    pub mode: CreemCancelMode,
+    /// `"cancel"` or `"pause"`; only honored when `mode = scheduled`.
+    /// We always request a terminal cancel (never pause).
+    #[serde(rename = "onExecute", skip_serializing_if = "Option::is_none")]
+    pub on_execute: Option<String>,
+}
+
+/// Response from canceling a Creem subscription. Only the fields we read back.
+#[derive(Debug, Clone, Deserialize)]
+pub struct CreemCancelSubscriptionResponse {
+    pub id: String,
+    pub status: Option<String>,
+    pub canceled_at: Option<String>,
+}

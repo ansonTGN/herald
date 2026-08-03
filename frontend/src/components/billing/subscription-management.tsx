@@ -1,11 +1,7 @@
-import { useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Button } from '@/components/ui/button'
+import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { cancelSubscriptionForClientApp } from '@/lib/api-generated'
-import { queryKeys, subscriptionQueryOptions } from '@/data/query-options'
-import { toast } from 'sonner'
+import { subscriptionQueryOptions } from '@/data/query-options'
 import {
   getStatusBadgeVariant,
   getStatusMessage,
@@ -13,9 +9,8 @@ import {
   type SubscriptionStatus,
 } from '@/types/billing'
 import { formatDate } from '@/lib/date-utils'
-import { ConfirmDialog, PageHeader } from '@/components/shared'
+import { PageHeader } from '@/components/shared'
 import { m } from '@/paraglide/messages'
-import { getErrorMessage } from '@/lib/error-utils'
 
 interface SubscriptionManagementProps {
   realmId: string
@@ -23,41 +18,7 @@ interface SubscriptionManagementProps {
 }
 
 export function SubscriptionManagement({ realmId, clientAppId }: SubscriptionManagementProps) {
-  const queryClient = useQueryClient()
   const { data: subscription, isLoading } = useQuery(subscriptionQueryOptions(realmId, clientAppId))
-  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false)
-
-  // Cancel subscription mutation
-  const cancelSubscriptionMutation = useMutation({
-    mutationFn: async () => {
-      const response = await cancelSubscriptionForClientApp({
-        path: { realmId, clientAppId },
-        body: { cancelAtPeriodEnd: true },
-      })
-      if (response.error) throw response.error
-      return response.data
-    },
-    onSuccess: () => {
-      toast.success(m['billing.subscription_canceled_success']())
-      setCancelConfirmOpen(false)
-      queryClient.invalidateQueries({ queryKey: queryKeys.subscription(realmId, clientAppId) })
-    },
-    onError: (error: unknown) => {
-      toast.error(m['billing.subscription_cancel_failed']({ message: getErrorMessage(error) }))
-    },
-  })
-
-  function handleCancelSubscription() {
-    setCancelConfirmOpen(true)
-  }
-
-  async function confirmCancelSubscription() {
-    // The mutation's `onError` surfaces the failure toast and logs the error.
-    // Swallow the rejected promise so it doesn't propagate as an unhandled
-    // rejection (per vitest config, rejections are expected to be handled in
-    // components). Sibling forms share this latent leak; see FE-T06 handoff.
-    await cancelSubscriptionMutation.mutateAsync().catch(() => {})
-  }
 
   if (isLoading) {
     return <div>{m['billing.subscription_info_loading']()}</div>
@@ -147,32 +108,8 @@ export function SubscriptionManagement({ realmId, clientAppId }: SubscriptionMan
               <span className="text-sm">{formatDate(subscription.cancelAt)}</span>
             </div>
           )}
-
-          {subscription.status === 'active' && (
-            <Button
-              variant="destructive"
-              onClick={handleCancelSubscription}
-              disabled={cancelSubscriptionMutation.isPending}
-              data-testid="cancel-subscription-button"
-            >
-              {cancelSubscriptionMutation.isPending
-                ? m['billing.subscription_canceling']()
-                : m['billing.subscription_cancel_button']()}
-            </Button>
-          )}
         </CardContent>
       </Card>
-
-      {/* Cancel Confirmation Dialog */}
-      <ConfirmDialog
-        open={cancelConfirmOpen}
-        onOpenChange={setCancelConfirmOpen}
-        title={m['billing.subscription_cancel_confirm_title']()}
-        description={m['billing.subscription_cancel_confirm_description']()}
-        onConfirm={confirmCancelSubscription}
-        confirmLabel={m['billing.subscription_cancel_button']()}
-        isPending={cancelSubscriptionMutation.isPending}
-      />
     </div>
   )
 }

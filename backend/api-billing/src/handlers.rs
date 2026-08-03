@@ -289,7 +289,19 @@ pub async fn get_subscription_for_client_app(
     Ok(Json(subscription_to_response(&subscription)))
 }
 
-/// Cancel subscription for a client app
+/// Cancel the caller's own subscription for a client app.
+///
+/// Unlike the previous admin-only flip, this handler is a **user self-service**
+/// endpoint mounted on the browser-token router. It calls the **payment provider
+/// cancel API** (Stripe/Creem) and does **NOT** touch the local subscription
+/// row — local status is updated exclusively by the subsequent provider webhook
+/// (`customer.subscription.deleted` / `subscription.canceled`). If the provider
+/// call fails the error is surfaced to the caller and the local state is left
+/// untouched.
+///
+/// Apple / Google in-app purchases cannot be canceled via a developer API
+/// (only via the App Store / Play Store by the user); this endpoint rejects
+/// them with 400.
 #[utoipa::path(
     post,
     path = "/api/bill/{realmId}/client/{clientAppId}/subscription/cancel",
@@ -300,17 +312,19 @@ pub async fn get_subscription_for_client_app(
     ),
     request_body = CancelSubscriptionRequest,
     responses(
-        (status = 200, description = "Subscription canceled successfully", body = CancelSubscriptionResponse),
+        (status = 200, description = "Cancel request submitted to provider; local status will update via webhook", body = CancelSubscriptionResponse),
+        (status = 400, description = "Provider does not support developer-initiated cancel (Apple/Google)", body = ErrorResponse),
         (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 403, description = "Forbidden - Insufficient permissions", body = ErrorResponse),
+        (status = 403, description = "Forbidden - token scope denied or not the subscription owner", body = ErrorResponse),
         (status = 404, description = "Subscription not found", body = ErrorResponse),
-        (status = 500, description = "Internal server error", body = ErrorResponse)
+        (status = 502, description = "Provider cancel API failed; local state unchanged", body = ErrorResponse)
     ),
     security(("bearer_auth" = []))
 )]
 pub async fn cancel_subscription_for_client_app(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
+    Extension(context): Extension<TokenCredentialContext>,
     Path((realm_id, client_app_id)): Path<(String, Uuid)>,
     Json(request): Json<CancelSubscriptionRequest>,
 ) -> Result<Json<CancelSubscriptionResponse>, ApiError> {
@@ -321,7 +335,15 @@ pub async fn cancel_subscription_for_client_app(
         request.cancel_at_period_end
     );
 
-    require_billing_permission(&state, &identity, &realm_id, "manage").await?;
+    // User self-service auth: scope + realm user + bound client app.
+    require_token_scope(&identity, &context, CredentialScope::SubscriptionCancel)?;
+    let user_id = require_authenticated_user_in_realm_with_token(
+        &identity,
+        &context,
+        &realm_id,
+        "subscription",
+    )?;
+    require_bound_client_app(&context, client_app_id)?;
 
     let subscription = state
         .billing_repository
@@ -329,32 +351,106 @@ pub async fn cancel_subscription_for_client_app(
         .await?
         .ok_or_else(|| CoreError::SubscriptionNotFound(client_app_id.to_string()))?;
 
-    if subscription.realm_id != realm_id {
-        return Err(ApiError::not_found("Subscription not found"));
+    require_subscription_ownership(&subscription, &realm_id, user_id)?;
+
+    if subscription.external_subscription_id.is_empty() {
+        return Err(ApiError::bad_request(
+            "Subscription has no external provider id; cannot cancel via provider API",
+        ));
     }
 
-    let canceled_at = if request.cancel_at_period_end {
-        subscription.current_period_end.unwrap_or_else(Utc::now)
-    } else {
-        Utc::now()
-    };
-
-    let updated = state
-        .billing_repository
-        .cancel_subscription(subscription.id, request.cancel_at_period_end)
-        .await?;
+    // Dispatch to the provider cancel API. Local DB state is intentionally NOT
+    // mutated here — it is updated by the provider webhook. A provider failure
+    // must surface to the user with the local row unchanged.
+    let canceled_at = dispatch_provider_cancel(
+        &state,
+        &realm_id,
+        &subscription.payment_provider,
+        &subscription.external_subscription_id,
+        request.cancel_at_period_end,
+    )
+    .await?;
 
     let message = if request.cancel_at_period_end {
-        "Subscription will be canceled at the end of the billing period".to_string()
+        "Cancel request submitted; subscription will end at the next period (status updates via webhook)"
     } else {
-        "Subscription canceled immediately".to_string()
+        "Cancel request submitted to provider (status will update via webhook)"
     };
 
     Ok(Json(CancelSubscriptionResponse {
-        subscription_id: updated.id.to_string(),
+        subscription_id: subscription.id.to_string(),
         canceled_at: canceled_at.to_rfc3339(),
-        message,
+        message: message.to_string(),
     }))
+}
+
+/// Provider dispatch for subscription cancellation.
+///
+/// Routes to the matching provider's cancel API based on
+/// `subscription.payment_provider`. Returns the effective cancellation timestamp
+/// (provider-reported when available, else now). Errors propagate as
+/// `CoreError` which `From<CoreError> for ApiError` maps to a 5xx/502-style
+/// response, leaving the local subscription row untouched.
+async fn dispatch_provider_cancel(
+    state: &AppState,
+    realm_id: &str,
+    payment_provider: &str,
+    external_subscription_id: &str,
+    cancel_at_period_end: bool,
+) -> Result<chrono::DateTime<Utc>, CoreError> {
+    let purchase_service = &state.purchase_service;
+    match payment_provider {
+        "stripe" => {
+            let client = purchase_service
+                .get_stripe_client_for_realm(realm_id)
+                .await?;
+            let resp = client
+                .cancel_subscription(&herald_infra_stripe::CancelSubscriptionRequest {
+                    subscription_id: external_subscription_id.to_string(),
+                    cancel_at_period_end,
+                })
+                .await?;
+            tracing::info!(
+                provider = "stripe",
+                external_id = external_subscription_id,
+                status = ?resp.status,
+                "Stripe cancel submitted; awaiting webhook"
+            );
+            Ok(Utc::now())
+        }
+        "creem" => {
+            let client = purchase_service
+                .get_creem_client_for_realm(realm_id)
+                .await?;
+            let mode = if cancel_at_period_end {
+                herald_infra_creem::CreemCancelMode::Scheduled
+            } else {
+                herald_infra_creem::CreemCancelMode::Immediate
+            };
+            let resp = client
+                .cancel_subscription(external_subscription_id, mode)
+                .await?;
+            tracing::info!(
+                provider = "creem",
+                external_id = external_subscription_id,
+                status = ?resp.status,
+                "Creem cancel submitted; awaiting webhook"
+            );
+            Ok(Utc::now())
+        }
+        "apple" | "google" => Err(CoreError::BadRequest(format!(
+            "{payment_provider} subscriptions must be canceled in the {} by the user; \
+             developer-initiated cancel is not supported",
+            if payment_provider == "apple" {
+                "App Store"
+            } else {
+                "Google Play Store"
+            }
+        ))),
+        other => Err(CoreError::BadRequest(format!(
+            "Unsupported payment provider for cancel: {other}"
+        ))),
+    }
 }
 
 /// Map a price-level entitlement mapping to the purchase-page view.

@@ -1,5 +1,6 @@
 use crate::models::{
-    CheckoutSession, CreateCheckoutRequest, CreemSubscriptionList, CreemTransactionList,
+    CheckoutSession, CreateCheckoutRequest, CreemCancelMode, CreemCancelSubscriptionRequest,
+    CreemCancelSubscriptionResponse, CreemSubscriptionList, CreemTransactionList,
     SearchSubscriptionsParams, SearchTransactionsParams,
 };
 use herald_domain::common::entities::app_errors::CoreError;
@@ -190,5 +191,58 @@ impl CreemClient {
             tracing::error!("Failed to parse Creem subscription list: {}", e);
             CoreError::InternalServerError(format!("Invalid Creem response: {}", e))
         })
+    }
+
+    /// Cancel a Creem subscription.
+    ///
+    /// Issues `POST /v1/subscriptions/{id}/cancel` with a JSON body selecting
+    /// immediate vs scheduled (period-end) cancellation. Only the provider side
+    /// is touched; local subscription state is expected to be updated by the
+    /// subsequent Creem webhook (`subscription.canceled`).
+    pub async fn cancel_subscription(
+        &self,
+        subscription_id: &str,
+        mode: CreemCancelMode,
+    ) -> Result<CreemCancelSubscriptionResponse, CoreError> {
+        let url = format!(
+            "{}/v1/subscriptions/{}/cancel",
+            self.base_url, subscription_id
+        );
+        let body = CreemCancelSubscriptionRequest {
+            mode,
+            // For scheduled cancels we always request a terminal cancel, never pause.
+            on_execute: (mode == CreemCancelMode::Scheduled).then(|| "cancel".to_string()),
+        };
+
+        // external.http span + duration histogram.
+        let timing = timed_external_http_span(&self.base_url, "POST");
+        let _span_enter = timing.span().enter();
+
+        let response = self
+            .http
+            .post(&url)
+            .header("x-api-key", &self.api_key)
+            .json(&body)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let text = response.text().await.unwrap_or_default();
+            tracing::error!("Creem cancel subscription API error: {} - {}", status, text);
+            return Err(CoreError::InternalServerError(format!(
+                "{} - {}",
+                status.as_u16(),
+                text
+            )));
+        }
+
+        response
+            .json::<CreemCancelSubscriptionResponse>()
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to parse Creem cancel subscription response: {}", e);
+                CoreError::InternalServerError(format!("Invalid Creem response: {}", e))
+            })
     }
 }

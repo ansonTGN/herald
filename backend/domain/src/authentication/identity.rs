@@ -38,6 +38,7 @@ pub enum CredentialScope {
     InvoiceRead,
     InvoiceApply,
     SubscriptionRead,
+    SubscriptionCancel,
 }
 
 #[derive(Debug, Clone)]

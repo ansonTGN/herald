@@ -10,6 +10,8 @@ herald-api-auth = { path = "../api-auth" }
 herald-api-base = { path = "../api-base" }
 herald-core = { path = "../core" }
 herald-infra-iap = { path = "../infra-iap" }
+herald-infra-stripe = { path = "../infra-stripe" }
+herald-infra-creem = { path = "../infra-creem" }
 axum = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

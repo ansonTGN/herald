@@ -617,7 +617,7 @@ where
         ))
     }
 
-    async fn get_creem_client_for_realm(&self, realm_id: &str) -> PurchaseResult<CreemClient> {
+    pub async fn get_creem_client_for_realm(&self, realm_id: &str) -> PurchaseResult<CreemClient> {
         let api_key = sqlx::query_scalar::<_, String>(
             "SELECT config_value
              FROM realm_config
@@ -646,7 +646,10 @@ where
         CreemClient::new(api_key, timeout)
     }
 
-    async fn get_stripe_client_for_realm(&self, realm_id: &str) -> PurchaseResult<StripeClient> {
+    pub async fn get_stripe_client_for_realm(
+        &self,
+        realm_id: &str,
+    ) -> PurchaseResult<StripeClient> {
         let api_key = sqlx::query_scalar::<_, String>(
             "SELECT config_value
              FROM realm_config
