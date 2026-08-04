@@ -515,6 +515,7 @@ pub async fn build_app_state_with_migrations(
         custom_domain_cname_target: config.custom_domain.cname_target.clone(),
         custom_domain_ask_key: config.custom_domain.ask_key.clone(),
         google_jwks_url: config.google_oauth.jwks_url.clone(),
+        apple_jwks_url: config.apple_oauth.jwks_url.clone(),
     });
 
     // Initialize Redis Functions using the final state's redis_manager

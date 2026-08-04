@@ -1,6 +1,7 @@
 // Herald API OAuth Module
 // OAuth provider authentication handlers
 
+pub mod apple_native;
 pub mod authorize;
 pub mod callback;
 pub mod config;
@@ -15,6 +16,7 @@ pub mod token;
 pub mod wechat;
 pub mod wechat_miniprogram;
 
+pub use apple_native::*;
 pub use authorize::*;
 pub use callback::*;
 pub use config::*;
@@ -44,6 +46,7 @@ pub use wechat_miniprogram::*;
         crate::wechat::wechat_callback,
         crate::wechat_miniprogram::wechat_miniprogram_login,
         crate::google_one_tap::google_one_tap,
+        crate::apple_native::apple_native_login,
         crate::device_authorize::device_authorize,
         crate::device_token::device_token,
         crate::device_verify::device_verify,
@@ -64,6 +67,9 @@ pub use wechat_miniprogram::*;
         crate::google_one_tap::OneTapRequest,
         crate::google_one_tap::OneTapDirectResponse,
         crate::google_one_tap::OneTapCodeResponse,
+        crate::apple_native::AppleNativeRequest,
+        crate::apple_native::AppleNativeDirectResponse,
+        crate::apple_native::AppleNativeCodeResponse,
         crate::device_authorize::DeviceAuthorizationRequest,
         crate::device_authorize::DeviceAuthorizationResponse,
         crate::device_authorize::DeviceAuthorizationErrorResponse,

@@ -17,5 +17,9 @@ pub use google::GoogleOAuthProvider;
 // `pub use providers::*;` in oauth/mod.rs only lifts items re-exported here;
 // it does not auto-promote nested-module free functions.
 pub use google::verify_google_id_token;
+// Same pattern as `verify_google_id_token` above: makes the free function
+// reachable at `herald_core::infrastructure::oauth::verify_apple_id_token`
+// for the Apple native login handler (different crate).
+pub use apple::verify_apple_id_token;
 pub use wechat::WeChatOAuthProvider;
 pub use wechat_miniprogram::WeChatMiniProgramProvider;

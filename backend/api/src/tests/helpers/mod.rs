@@ -36,10 +36,17 @@ pub mod webhook_helpers;
 pub mod otp_helpers;
 
 // Google One Tap test-only helpers (RSA keypair fixture + test ID Token mint
-// + wiremock JWKS). Not exported via `pub use` — imported explicitly by
+// + wiremock JWKS). Not exported via `pub use` — imported explicitly by the
 // `google_one_tap_scenarios.rs`, mirroring the `otp_helpers` pattern.
 #[cfg(test)]
 pub mod google_one_tap_helpers;
+
+// Apple native login test-only helpers (test identity token mint + wiremock
+// JWKS at Apple's `/auth/keys` path). Reuses the provider-agnostic RSA keypair
+// fixtures from `google_one_tap_helpers`. Not exported via `pub use` —
+// imported explicitly by `apple_native_scenarios.rs`.
+#[cfg(test)]
+pub mod apple_native_helpers;
 
 pub use auth_helpers::*;
 pub use billing_helpers::*;

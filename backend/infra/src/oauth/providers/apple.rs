@@ -23,7 +23,9 @@ pub struct AppleOAuthProvider;
 impl AppleOAuthProvider {
     const AUTH_URL: &'static str = "https://appleid.apple.com/auth/authorize";
     const TOKEN_URL: &'static str = "https://appleid.apple.com/auth/token";
-    const JWKS_URL: &'static str = "https://appleid.apple.com/auth/keys";
+    // `pub` so the `[apple_oauth]` config default and the web redirect caller
+    // both resolve the canonical Apple JWKS endpoint from one place.
+    pub const JWKS_URL: &'static str = "https://appleid.apple.com/auth/keys";
 }
 
 // Apple's token response
@@ -48,16 +50,18 @@ struct AppleClientSecretClaims {
     exp: u64,
 }
 
-// Decoded ID token claims
-#[allow(dead_code)]
+// Decoded ID token claims. `pub` because `verify_apple_id_token` is a public
+// function whose return type must be equally visible; the Apple native login
+// handler (different crate) reads these fields after verification.
 #[derive(Debug, Deserialize)]
-struct AppleIdTokenClaims {
-    sub: String, // Apple's unique user ID
-    iss: String,
-    aud: String,
-    exp: u64,
-    email: Option<String>,
-    email_verified: Option<String>,
+pub struct AppleIdTokenClaims {
+    pub sub: String, // Apple's unique user ID
+    pub iss: String,
+    pub aud: String,
+    pub exp: u64,
+    pub email: Option<String>,
+    // Apple serializes this as the string "true"/"false" (never a bool).
+    pub email_verified: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -161,9 +165,13 @@ impl OAuthProviderHandler for AppleOAuthProvider {
                     CoreError::InternalServerError(format!("Failed to parse token response: {}", e))
                 })?;
 
-            let claims =
-                verify_apple_id_token(&token_response.id_token, &config.client_id, http_client)
-                    .await?;
+            let claims = verify_apple_id_token(
+                &token_response.id_token,
+                &config.client_id,
+                http_client,
+                Self::JWKS_URL,
+            )
+            .await?;
 
             let email = claims.email.ok_or_else(|| {
                 CoreError::BadRequest(
@@ -187,10 +195,11 @@ impl OAuthProviderHandler for AppleOAuthProvider {
     }
 }
 
-async fn verify_apple_id_token<H>(
+pub async fn verify_apple_id_token<H>(
     id_token: &str,
     client_id: &str,
     http_client: &H,
+    jwks_url: &str,
 ) -> Result<AppleIdTokenClaims, CoreError>
 where
     H: HttpClient + Send + Sync,
@@ -202,7 +211,7 @@ where
         .kid
         .ok_or_else(|| CoreError::BadRequest("Apple id_token missing kid".to_string()))?;
 
-    let keys_response = http_client.get(AppleOAuthProvider::JWKS_URL).await?;
+    let keys_response = http_client.get(jwks_url).await?;
     if !keys_response.is_success() {
         let status_code = keys_response.status_code;
         let response_body = keys_response.body_as_string().unwrap_or_default();

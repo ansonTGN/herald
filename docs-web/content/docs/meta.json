@@ -15,6 +15,7 @@
     "custom-user-ui",
     "auth-passkey",
     "auth-email-otp",
+    "auth-apple-native",
     "ui-custom",
     "realm-custom-domain",
     "points-quota",

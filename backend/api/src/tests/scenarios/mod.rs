@@ -104,3 +104,6 @@ pub mod realm_email_otp_config_scenarios;
 
 // Google One Tap login scenarios.
 pub mod google_one_tap_scenarios;
+
+// Apple native login scenarios.
+pub mod apple_native_scenarios;

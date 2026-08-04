@@ -591,6 +591,13 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
             "/api/oauth/{realmId}/google/one-tap",
             post(oauth::google_one_tap),
         )
+        // Apple native (Sign in with Apple) login — no redirect, direct POST.
+        // The iOS app obtains the identityToken via ASAuthorizationAppleIDProvider
+        // and submits it here for server-side verification.
+        .route(
+            "/api/oauth/{realmId}/apple/native-login",
+            post(oauth::apple_native_login),
+        )
         // Device code authorization
         .route(
             "/api/device/{realmId}/authorize",

@@ -465,6 +465,11 @@ impl AsyncTestContext for SchemaTestContext {
             // Production default; scenarios that exercise the One Tap handler
             // override this via `create_unified_test_router_with_state`.
             google_jwks_url: herald_core::infrastructure::oauth::google::GoogleOAuthProvider::GOOGLE_JWKS_URL.to_string(),
+            // Production default; scenarios that exercise the Apple native
+            // login handler override this via
+            // `create_unified_test_router_with_state`.
+            apple_jwks_url:
+                herald_core::infrastructure::oauth::apple::AppleOAuthProvider::JWKS_URL.to_string(),
         });
 
         // 13. 初始化 Redis Functions（只运行一次）

@@ -22,6 +22,8 @@ pub struct ApiConfig {
     pub observability: ObservabilityConfig,
     #[serde(default)]
     pub google_oauth: GoogleOAuthConfig,
+    #[serde(default)]
+    pub apple_oauth: AppleOAuthConfig,
 }
 
 #[derive(serde::Deserialize, Clone)]
@@ -127,6 +129,28 @@ impl Default for GoogleOAuthConfig {
     fn default() -> Self {
         Self {
             jwks_url: default_google_jwks_url(),
+        }
+    }
+}
+
+/// Apple OAuth global settings parsed from the `[apple_oauth]` config section.
+/// Same injection pattern as `GoogleOAuthConfig`: read from AppState (not the
+/// DB / per-realm config) so scenario tests override it on the test AppState
+/// to point at a wiremock JWKS.
+#[derive(serde::Deserialize, Clone)]
+pub struct AppleOAuthConfig {
+    #[serde(default = "default_apple_jwks_url")]
+    pub jwks_url: String,
+}
+
+fn default_apple_jwks_url() -> String {
+    herald_core::infrastructure::oauth::apple::AppleOAuthProvider::JWKS_URL.to_string()
+}
+
+impl Default for AppleOAuthConfig {
+    fn default() -> Self {
+        Self {
+            jwks_url: default_apple_jwks_url(),
         }
     }
 }
