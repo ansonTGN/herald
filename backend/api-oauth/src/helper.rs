@@ -1,6 +1,7 @@
 // OAuth helper functions for login and callback handlers
 
 use herald_api_base::application::http::auth::error::AuthError;
+use herald_api_base::application::http::auth::util::is_registration_enabled;
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::oauth::{
     ports::{OAuthProviderHandler, OAuthRepository},
@@ -549,6 +550,29 @@ async fn find_or_create_user_by_email(
     {
         Ok(user) => Ok(user.id),
         Err(herald_core::domain::common::entities::app_errors::CoreError::NotFound) => {
+            // Account creation is gated by the realm's registration policy.
+            // Registration-disabled realms must not auto-provision accounts via
+            // OAuth (mirrors the gate in email-otp/register handlers; PRD:
+            // 注册政策优先 — auto-register must not bypass realm policy).
+            let registration_enabled =
+                is_registration_enabled(state, realm_id)
+                    .await
+                    .map_err(|_| {
+                        AuthError::InternalServerError(
+                            "Failed to query registration config".to_string(),
+                        )
+                    })?;
+            if !registration_enabled {
+                tracing::debug!(
+                    realm_id = %realm_id,
+                    email = %user_info.email,
+                    "OAuth auto-register blocked: registration not enabled for realm"
+                );
+                return Err(AuthError::Conflict(
+                    "Registration is not enabled for this realm".to_string(),
+                ));
+            }
+
             // User not found, create new user
             let create_request = CreateUserRequest {
                 realm_id: realm_id.to_string(),

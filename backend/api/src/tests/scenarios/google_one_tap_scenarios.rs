@@ -84,6 +84,23 @@ async fn enable_google_provider(ctx: &TestContext) {
     .expect("failed to seed enabled Google provider config");
 }
 
+/// Enable the realm registration policy so OAuth auto-provisioning of new
+/// accounts is permitted (mirrors `email_otp_send_verify_scenarios.rs` /
+/// `client_app_turnstile_scenarios.rs`). Without this, `find_or_create_user`
+/// rejects new-account creation with HTTP 409.
+async fn enable_registration(ctx: &TestContext) {
+    sqlx::query(
+        "INSERT INTO realm_config (realm_id, config_type, config_key, config_value, enabled)
+         VALUES ($1, 'registration', 'enabled', 'true', true)
+         ON CONFLICT (realm_id, config_type, config_key)
+         DO UPDATE SET config_value = 'true', enabled = true",
+    )
+    .bind(&ctx._realm_id)
+    .execute(&ctx._app_state.pool)
+    .await
+    .expect("failed to enable registration");
+}
+
 /// POST /api/oauth/{realmId}/google/one-tap with the given body fields.
 ///
 /// `jwks_url` overrides the One Tap handler's JWKS source on a private owned
@@ -186,6 +203,7 @@ async fn count_provider_links_by_open_id(ctx: &TestContext, provider_user_id: &s
 #[tokio::test]
 async fn google_one_tap_creates_new_user_and_returns_token_family(ctx: &mut TestContext) {
     enable_google_provider(ctx).await;
+    enable_registration(ctx).await;
     // Start the wiremock JWKS serving the default keypair under `test_kid()`,
     // and point the One Tap handler at it via the AppState override.
     let jwks = spawn_default_jwks().await;
@@ -248,6 +266,7 @@ async fn google_one_tap_creates_new_user_and_returns_token_family(ctx: &mut Test
 #[tokio::test]
 async fn google_one_tap_matches_existing_user_by_open_id(ctx: &mut TestContext) {
     enable_google_provider(ctx).await;
+    enable_registration(ctx).await;
     let jwks = spawn_default_jwks().await;
     let jwks_url = full_jwks_url(&jwks.0.uri());
 
@@ -383,6 +402,7 @@ async fn google_one_tap_matches_existing_user_by_email(ctx: &mut TestContext) {
 #[tokio::test]
 async fn google_one_tap_downstream_mode_issues_authorization_code(ctx: &mut TestContext) {
     enable_google_provider(ctx).await;
+    enable_registration(ctx).await;
     let jwks = spawn_default_jwks().await;
     let jwks_url = full_jwks_url(&jwks.0.uri());
 
@@ -650,5 +670,57 @@ async fn google_one_tap_returns_503_when_jwks_unreachable(ctx: &mut TestContext)
     assert!(
         message.contains("Upstream service unavailable"),
         "503 message must be the exact upstream-unavailable string; got {message:?}"
+    );
+}
+
+/// rejection: a registration-disabled Realm must NOT auto-provision an account
+/// via OAuth. A brand-new Google `sub` with a verified email is otherwise valid,
+/// but because no `registration/enabled` row exists the realm defaults to
+/// registration-disabled, so `find_or_create_user` must refuse account creation
+/// with HTTP 409 and leave the DB untouched. This guards the policy-bypass fix
+/// (OAuth auto-register must respect realm registration policy, PRD: 注册政策优先).
+#[test_context(TestContext)]
+#[tokio::test]
+async fn google_one_tap_blocked_when_registration_disabled(ctx: &mut TestContext) {
+    enable_google_provider(ctx).await;
+    // Intentionally do NOT call enable_registration(ctx) — realm defaults to
+    // registration-disabled, which is the condition under test.
+    let jwks = spawn_default_jwks().await;
+    let jwks_url = full_jwks_url(&jwks.0.uri());
+
+    let google_sub = format!("ot-noreg-{}", uuid::Uuid::now_v7());
+    let email = format!("ot-noreg-{}@test.com", uuid::Uuid::now_v7());
+    let id_token = mint_test_google_id_token(&MintIdTokenOpts {
+        sub: google_sub.clone(),
+        email: email.clone(),
+        ..Default::default()
+    });
+
+    let resp = post_one_tap(ctx, &jwks_url, &id_token, &ctx._client_id, None).await;
+    assert_eq!(
+        resp.status(),
+        StatusCode::CONFLICT,
+        "a registration-disabled realm must refuse OAuth auto-provisioning with 409"
+    );
+    let body: Value = response_json(resp).await;
+    assert_eq!(
+        body["code"].as_str().unwrap_or(""),
+        "conflict",
+        "rejection must carry the standard conflict code; got {:?}",
+        body["code"]
+    );
+
+    // No account must have been created for this email — the policy gate must
+    // short-circuit before any INSERT into `account`.
+    let user_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM account WHERE realm_id = $1 AND email = $2")
+            .bind(&ctx._realm_id)
+            .bind(&email)
+            .fetch_one(&ctx._app_state.pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        user_count, 0,
+        "registration-disabled realm must not create an account via OAuth"
     );
 }

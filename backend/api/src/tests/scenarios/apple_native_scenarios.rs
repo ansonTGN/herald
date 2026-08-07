@@ -89,6 +89,23 @@ async fn enable_apple_provider(ctx: &TestContext) {
     .expect("failed to seed enabled Apple provider config");
 }
 
+/// Enable the realm registration policy so OAuth auto-provisioning of new
+/// accounts is permitted (mirrors `email_otp_send_verify_scenarios.rs` /
+/// `client_app_turnstile_scenarios.rs`). Without this, `find_or_create_user`
+/// rejects new-account creation with HTTP 409.
+async fn enable_registration(ctx: &TestContext) {
+    sqlx::query(
+        "INSERT INTO realm_config (realm_id, config_type, config_key, config_value, enabled)
+         VALUES ($1, 'registration', 'enabled', 'true', true)
+         ON CONFLICT (realm_id, config_type, config_key)
+         DO UPDATE SET config_value = 'true', enabled = true",
+    )
+    .bind(&ctx._realm_id)
+    .execute(&ctx._app_state.pool)
+    .await
+    .expect("failed to enable registration");
+}
+
 /// POST /api/oauth/{realmId}/apple/native-login with the given body fields.
 ///
 /// `jwks_url` overrides the Apple native handler's JWKS source on a private
@@ -193,6 +210,7 @@ async fn count_provider_links_by_open_id(ctx: &TestContext, provider_user_id: &s
 #[tokio::test]
 async fn apple_native_creates_new_user_and_returns_token_family(ctx: &mut TestContext) {
     enable_apple_provider(ctx).await;
+    enable_registration(ctx).await;
     // Start the wiremock JWKS serving the default keypair under `test_kid()`,
     // and point the Apple native handler at it via the AppState override.
     let jwks = spawn_apple_default_jwks().await;
@@ -260,6 +278,7 @@ async fn apple_native_creates_new_user_and_returns_token_family(ctx: &mut TestCo
 #[tokio::test]
 async fn apple_native_matches_existing_user_by_open_id(ctx: &mut TestContext) {
     enable_apple_provider(ctx).await;
+    enable_registration(ctx).await;
     let jwks = spawn_apple_default_jwks().await;
     let jwks_url = full_apple_jwks_url(&jwks.0.uri());
 
@@ -401,6 +420,7 @@ async fn apple_native_matches_existing_user_by_email(ctx: &mut TestContext) {
 #[tokio::test]
 async fn apple_native_downstream_mode_issues_authorization_code(ctx: &mut TestContext) {
     enable_apple_provider(ctx).await;
+    enable_registration(ctx).await;
     let jwks = spawn_apple_default_jwks().await;
     let jwks_url = full_apple_jwks_url(&jwks.0.uri());
 
@@ -651,6 +671,7 @@ async fn apple_native_returns_503_when_jwks_unreachable(ctx: &mut TestContext) {
 #[tokio::test]
 async fn apple_native_empty_email_creates_with_placeholder(ctx: &mut TestContext) {
     enable_apple_provider(ctx).await;
+    enable_registration(ctx).await;
     let jwks = spawn_apple_default_jwks().await;
     let jwks_url = full_apple_jwks_url(&jwks.0.uri());
 
@@ -709,6 +730,7 @@ async fn apple_native_empty_email_creates_with_placeholder(ctx: &mut TestContext
 #[tokio::test]
 async fn apple_native_empty_email_existing_user_matches_by_open_id(ctx: &mut TestContext) {
     enable_apple_provider(ctx).await;
+    enable_registration(ctx).await;
     let jwks = spawn_apple_default_jwks().await;
     let jwks_url = full_apple_jwks_url(&jwks.0.uri());
 
@@ -768,6 +790,7 @@ async fn apple_native_empty_email_existing_user_matches_by_open_id(ctx: &mut Tes
 #[tokio::test]
 async fn apple_native_privaterelay_email_treated_as_real(ctx: &mut TestContext) {
     enable_apple_provider(ctx).await;
+    enable_registration(ctx).await;
     let jwks = spawn_apple_default_jwks().await;
     let jwks_url = full_apple_jwks_url(&jwks.0.uri());
 
