@@ -1,0 +1,71 @@
+# Herald — single-host docker-compose deployment.
+#
+# Runs Herald (backend + frontend SPA in one binary) + PostgreSQL + Redis on one
+# host. The herald image bundles frontend/dist and runs migrations on boot, so
+# no separate web server or migration step is needed.
+#
+# Usage:
+#   1. Edit config.toml (set jwt secret + custom_domain ask_key + frontend url).
+#   2. Edit .env (set ADMIN_PASSWORD — required in production).
+#   3. docker compose up -d
+#   4. curl http://localhost:3000/health
+#
+# For TLS / custom domain, put Caddy or nginx in front and terminate TLS there;
+# point its upstream at herald:3000 (on this compose network) or the host's 3000.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: herald
+      POSTGRES_PASSWORD: herald
+      POSTGRES_DB: herald
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U herald -d herald"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # Keep the DB on the internal network only; do not publish 5432 unless you
+    # need host-side access (e.g. local psql for debugging).
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  herald:
+    # Use the published multi-arch image by default. Override with
+    # `HERALD_IMAGE` in .env, or build locally and reference that tag.
+    image: ${HERALD_IMAGE:-ghcr.io/timzaak/herald:latest}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # --- Required env (read at runtime, NOT from config.toml) ---
+      # Production refuses to start without ADMIN_PASSWORD (backend/core/src/admin/user.rs:62).
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required in production}
+      ADMIN_REALM_ID: ${ADMIN_REALM_ID:-admin}
+      # Internal API key for service-to-service calls (backend/api-base/.../internal_auth.rs).
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
+      # TOTP HMAC key — must be >=32 bytes (backend/domain/src/user_totp/service.rs:182).
+      TOTP_SECRET_KEY: ${TOTP_SECRET_KEY:?TOTP_SECRET_KEY is required (>=32 bytes)}
+    volumes:
+      # Config is TOML, not env (ApiConfig::load reads only from file).
+      - ./config.toml:/app/config.toml:ro
+    ports:
+      - "3000:3000"
+    # The image has its own HEALTHCHECK; Compose reports it on `docker ps`.
+
+volumes:
+  pgdata:

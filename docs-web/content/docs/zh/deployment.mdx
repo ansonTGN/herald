@@ -1,366 +1,246 @@
 ---
 title: 部署
-description: "Herald 用 Docker 部署，生产环境四个容器跑在同一台机器上。"
+description: "用 docker compose 在一台服务器上跑起 Herald，三个容器搞定后端、数据库和缓存。"
 ---
 
-Herald 用 Docker 部署，生产环境四个容器跑在同一台机器上。
+用 docker compose 在一台服务器上跑起 Herald，三个容器搞定后端、数据库和缓存。
 
 ## 架构
 
 ```
-Internet ──→ Caddy (80/443) ──→ App (3000)
-                                    |
+Internet ──→ Caddy (80/443) ──→ herald (3000)
+                                      │
                            PostgreSQL + Redis
 ```
 
-外部流量走 Caddy 进来。Caddy 负责 TLS 终止，把请求转发到 App 容器的 3000 端口。App 同时处理 API 请求（`/api/*`）和前端静态文件（`/app/frontend/dist`）。
+外部流量走 Caddy 进来。Caddy 负责 TLS 终止，把请求转发到 herald 容器的 3000 端口。herald 容器里的后端二进制同时处理 API 请求（`/api/*`）和前端静态文件（`/app/frontend/dist`），所以前端不用单独部署。
 
-所有容器挂在同一个 Docker 网络上，用容器名互相访问（比如 App 连 PostgreSQL 用 `herald-postgres:5432`）。
+三个容器挂在同一个 compose 网络上，用服务名互相访问（herald 连 PostgreSQL 用 `db:5432`）。Caddy 是可选的反向代理，只在你要 HTTPS 或自定义域名时加。
 
 ## 前置条件
 
 - Linux 服务器（Ubuntu 22.04+ 或 Debian 12+），至少 2GB 内存
-- Docker Engine 24+ 和 Docker CLI
+- Docker Engine 24+ 和 Docker Compose v2
 - 一个域名，DNS A 记录指向服务器 IP
 - 防火墙开放两个端口：80（HTTP）、443（HTTPS）
 
-## 准备工作
+如果只想先跑通不带 HTTPS，可以跳过 Caddy，直接开放 3000 端口。
 
-### 创建 Docker 网络
+## 准备配置文件
 
-```bash
-docker network create herald-net
-```
-
-后面所有容器都会加入这个网络。
-
-### 创建 Volumes
+部署文件在仓库的 `docker/deploy/` 目录。把它们拷到服务器，比如 `/opt/herald/`：
 
 ```bash
-docker volume create pgdata
-docker volume create redisdata
-docker volume create caddy-data
-docker volume create caddy-config
+mkdir -p /opt/herald
+cd /opt/herald
+# 把 docker/deploy/ 下的 docker-compose.yml、config.toml、.env.example 拷到这里
+cp .env.example .env
 ```
 
-四个 volume 分别存数据库数据、Redis 持久化、Caddy 证书和配置。Docker volume 的数据在容器删除后不会丢。
+需要改三个文件：`config.toml`（应用配置）、`.env`（运行时密钥）、`Caddyfile`（反向代理，可选）。
 
-### 创建配置目录
+### 生成密钥
+
+应用配置（`config.toml`）和运行时环境（`.env`）里各需要几个密钥。先一次性生成：
 
 ```bash
-mkdir -p /opt/herald/conf
+openssl rand -base64 48   # config.toml 的 [jwt] secret
+openssl rand -hex 32      # config.toml 的 [custom_domain] ask_key
+openssl rand -base64 24   # .env 的 ADMIN_PASSWORD
+openssl rand -hex 24      # .env 的 INTERNAL_API_KEY
+openssl rand -base64 48   # .env 的 TOTP_SECRET_KEY（至少 32 字节）
 ```
 
-### 准备 App 配置
+Herald 的应用配置只从 TOML 文件读取（`ApiConfig::load` 在 `backend/api/src/config.rs`），所以 JWT 密钥放在 `config.toml`。但管理员账号初始化和几个服务密钥在运行时从环境变量读，这些放 `.env`。两套都不能少。
 
-创建生产配置文件 `/opt/herald/config.production.toml`，内容如下：
+### 应用配置 config.toml
+
+`config.toml` 控制数据库连接、Redis 地址、JWT 密钥等。镜像内置了一份带占位值的 `production.toml`，你这份 `config.toml` 会覆盖它。改这几项：
 
 ```toml
-[database]
-url = "postgres://herald:你的密码@herald-postgres:5432/herald"
-
-[redis]
-url = "redis://herald-redis:6379"
-
-[server]
-bind_address = "0.0.0.0:3000"
-log_level = "info"
-app_env = "production"
-
 [frontend]
+# 改成你的真实域名，控制 CORS 允许来源
 url = "https://your-domain.com"
-static_dir = "/app/frontend/dist"
+
+[jwt]
+# 必填。用上面 openssl rand -base64 48 生成的值
+secret = "替换成你的 JWT 密钥"
 
 [custom_domain]
-# 服务端启动必填。生成方式：openssl rand -hex 32
-ask_key = "你的自定义域名共享密钥"
-# 展示给 Realm 管理员的 CNAME 目标，用你自己的 hostname
+# 必填，服务启动时会校验非占位值（backend/api/src/lib.rs:164）
+# 用上面 openssl rand -hex 32 生成的值
+ask_key = "替换成你的自定义域名密钥"
 cname_target = "custom.your-domain.com"
 ```
 
-把 `你的密码`、`your-domain.com` 和 `你的自定义域名共享密钥` 替换成实际值。Redis 没有密码，因为 Docker 网络不对外暴露端口。如果你对外暴露了 Redis 端口，需要加密码。`[custom_domain].ask_key` 必须非空，否则服务端拒绝启动——见 [配置](/docs/zh/configuration#custom_domain)。
+数据库和 Redis 的地址保持默认（`db:5432`、`redis:6379`），它们对应 compose 里的服务名。`[custom_domain].ask_key` 留成 `change-me-in-production` 服务会拒绝启动，见[配置](/docs/zh/configuration#custom_domain)。
 
-### 准备 Caddy 配置
+### 运行时环境 .env
 
-创建 `/opt/herald/Caddyfile`：
+`.env` 给 herald 容器注入环境变量。生产模式下这几项必填，少一个服务都起不来：
+
+```bash
+# 镜像地址。pin 版本可保证部署可复现，比如 ghcr.io/timzaak/herald:0.4.1
+HERALD_IMAGE=ghcr.io/timzaak/herald:latest
+
+# 生产模式下 ADMIN_PASSWORD 必填，否则启动直接 bail（backend/core/src/admin/user.rs:62）
+ADMIN_EMAIL=admin@example.com
+ADMIN_PASSWORD=替换成你的管理员密码
+ADMIN_REALM_ID=admin
+
+# 内部 API 调用用的密钥（/api/internal/* 的 X-Internal-Api-Key）
+INTERNAL_API_KEY=替换成你的内部 API 密钥
+
+# TOTP 的 HMAC 密钥，至少 32 字节（backend/domain/src/user_totp/service.rs:182）
+TOTP_SECRET_KEY=替换成你的 TOTP 密钥
+```
+
+首次启动时，Herald 会在数据库为空时用 `ADMIN_EMAIL` / `ADMIN_PASSWORD` 创建管理员账号。之后再启动不会重复创建。
+
+### Caddyfile（可选，HTTPS 用）
+
+需要 HTTPS 或自定义域名时加 Caddy。创建 `/opt/herald/Caddyfile`：
 
 ```
 your-domain.com {
-    reverse_proxy herald-app:3000
+    reverse_proxy herald:3000
 }
 ```
 
-把 `your-domain.com` 改成你的域名。
+`herald` 是 compose 里的服务名，Caddy 通过 compose 网络访问它。把 `your-domain.com` 改成你的域名，Caddy 会自动向 Let's Encrypt 申请证书并续期，不用手动配。
 
-Caddy 会自动向 Let's Encrypt 申请 TLS 证书，也会自动续期。不需要额外配置证书。
+## 启动
 
-## 启动服务
-
-按 PostgreSQL → Redis → App → Caddy 的顺序启动。App 启动时要连数据库和 Redis，所以先把基础服务拉起来。
-
-### PostgreSQL
+配置改完后，一条命令拉起三个容器：
 
 ```bash
-docker run -d \
-    --name herald-postgres \
-    --network herald-net \
-    --restart unless-stopped \
-    -e POSTGRES_USER=herald \
-    -e POSTGRES_PASSWORD=你的密码 \
-    -e POSTGRES_DB=herald \
-    -v pgdata:/var/lib/postgresql/data \
-    postgres:18-alpine
+docker compose up -d
 ```
 
-验证：
+启动顺序由 `depends_on` 控制：PostgreSQL 和 Redis 先就绪（healthcheck 通过），herald 才开始启动。herald 启动时会自动跑数据库迁移（`sqlx::migrate!` 嵌在二进制里），你不用手动建表。
+
+看启动状态：
 
 ```bash
-docker exec herald-postgres pg_isready -U herald
+docker compose ps
 ```
 
-输出 `/var/run/postgresql:5432 - accepting connections` 就表示数据库就绪。
+等 herald 那行显示 `healthy`。第一次拉镜像和跑迁移会慢一点，大概一两分钟。
 
-### Redis
+## 验证
 
 ```bash
-docker run -d \
-    --name herald-redis \
-    --network herald-net \
-    --restart unless-stopped \
-    -v redisdata:/data \
-    redis:8.4-alpine \
-    redis-server --appendonly yes
+curl http://localhost:3000/health
 ```
 
-`--appendonly yes` 开启 AOF 持久化，Redis 重启后数据不会丢。
+返回类似下面的 JSON 就说明后端、数据库、Redis 都通了：
 
-验证：
+```json
+{"status":"healthy","database":true,"redis":true,"version":"0.4.1","uptime":45,"timestamp":"..."}
+```
+
+浏览器打开 `https://your-domain.com`（加了 Caddy 的话）或 `http://你的服务器IP:3000`（没加的话），用 `ADMIN_EMAIL` / `ADMIN_PASSWORD` 登录管理后台。
+
+## 加上 Caddy（HTTPS）
+
+前面只起了三个容器，没带 Caddy。要 HTTPS，把 Caddy 作为第四个服务加进来。在 `docker-compose.yml` 末尾补：
+
+```yaml
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - herald
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  pgdata:
+  caddy-data:
+  caddy-config:
+```
+
+再 `docker compose up -d caddy`。Caddy 第一次启动会向 Let's Encrypt 申请证书。如果域名 DNS 还没生效或 80 端口被防火墙挡了，证书申请会失败，Caddy 会一直重试，日志里能看到 `acme: error`。
+
+改了 Caddyfile 后不用重启容器：
 
 ```bash
-docker exec herald-redis redis-cli ping
+docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
 ```
 
-输出 `PONG` 就行。
+## 升级
 
-### App
+升级只换镜像，PostgreSQL 和 Redis 不动。中间有几秒服务中断。
 
 ```bash
-docker run -d \
-    --name herald-app \
-    --network herald-net \
-    --restart unless-stopped \
-    -e HERALD_CONFIG=/app/config.toml \
-    -v /opt/herald/config.production.toml:/app/config.toml:ro \
-    ghcr.io/timzaak/herald:latest
+# 先备份，迁移不可逆
+docker compose exec db pg_dump -U herald herald > backup_$(date +%Y%m%d).sql
+
+# 改 .env 里的 HERALD_IMAGE 到新版本，然后重建 herald 容器
+docker compose up -d herald
 ```
 
-如果要用指定版本，把 `latest` 换成 tag（比如 `v0.1.0`）。
+`docker compose up -d herald` 会拉新镜像、停掉旧 herald 容器、用新镜像起一个。其他容器不受影响。
 
-App 启动时会自动运行数据库迁移（`sqlx::migrate!`）。你不需要手动建表。但每次部署新版本前建议备份数据库，因为迁移不可逆。
+出问题就回滚。把 `.env` 里的 `HERALD_IMAGE` 改回旧版本 tag，再 `docker compose up -d herald`。
 
-验证：
+## 备份与恢复
+
+App 本身无状态。持久化数据只有 PostgreSQL：
 
 ```bash
-docker exec herald-app wget -qO- http://localhost:3000/health
+# 备份
+docker compose exec db pg_dump -U herald herald > backup.sql
+
+# 恢复
+cat backup.sql | docker compose exec -T db psql -U herald herald
 ```
 
-返回类似 `{"status":"healthy","database":true,"redis":true,"version":"0.1.7","uptime":45,"timestamp":"..."}` 的 JSON 表示服务正常。
-
-### Caddy
-
-```bash
-docker run -d \
-    --name herald-caddy \
-    --network herald-net \
-    --restart unless-stopped \
-    -p 80:80 \
-    -p 443:443 \
-    -v /opt/herald/Caddyfile:/etc/caddy/Caddyfile:ro \
-    -v caddy-data:/data \
-    -v caddy-config:/config \
-    caddy:2-alpine
-```
-
-Caddy 首次启动时会向 Let's Encrypt 发起证书申请。如果域名 DNS 还没生效，或者 80 端口被防火墙挡了，证书申请会失败，Caddy 会不断重试。
-
-验证：
-
-```bash
-curl -I https://your-domain.com
-```
-
-返回 `HTTP/2 200` 就表示部署完成。浏览器打开 `https://your-domain.com` 应该能看到前端页面。
-
-## 验证整体部署
-
-部署完成后，按这个清单检查：
-
-1. 浏览器访问 `https://your-domain.com`，能看到前端界面
-2. `curl https://your-domain.com/health` 返回 `{"status":"healthy",...}`
-3. `docker exec herald-redis redis-cli ping` 返回 PONG
-4. `docker exec herald-postgres pg_isready -U herald` 返回 accepting connections
+Redis 是缓存和会话，丢了不严重，App 会自动重建。Volume `pgdata` 删容器不会丢数据，但 `docker compose down -v` 会把 volume 一起删，注意别加 `-v`。
 
 ## CI/CD
 
-项目用 GitHub Actions 做自动构建和推送。流程在 `.github/workflows/cd.yml` 里定义。
+项目用 GitHub Actions 自动构建镜像，流程在 `.github/workflows/cd.yml`。
 
-触发条件：推送以 `v` 开头的 tag（比如 `git tag v0.1.0 && git push origin v0.1.0`）。
+推一个 `v` 开头的 tag 触发（比如 `git tag v0.4.1 && git push origin v0.4.1`）。流程做四件事：在 amd64 和 arm64 上分别构建、合并多架构 manifest、推送到 `ghcr.io/timzaak/herald:<tag>` 和 `ghcr.io/timzaak/herald:latest`、创建 GitHub Release。
 
-流程做的事：
-
-1. 分别在 amd64 和 arm64 上构建镜像
-2. 合并多架构 manifest
-3. 推送到 `ghcr.io/timzaak/herald:<tag>` 和 `ghcr.io/timzaak/herald:latest`
-4. 创建 GitHub Release
-
-Dockerfile 用多阶段构建，一共五个阶段：
-
-| 阶段 | 基础镜像 | 做什么 |
-|------|---------|--------|
-| backend-chef | rust:1.90-alpine | 安装 cargo-chef 和编译依赖 |
-| backend-planner | backend-chef | 分析依赖图，生成 recipe.json |
-| backend-builder | backend-chef | 先编译依赖（缓存层），再编译项目二进制 |
-| frontend-builder | node:20-alpine | 从后端导出 OpenAPI spec，生成前端 API 客户端，构建前端 |
-| 最终镜像 | alpine:3.20 | 只拷贝二进制和前端产物，非 root 用户运行 |
-
-依赖缓存的设计：只要 `Cargo.toml` 和 `Cargo.lock` 没变，依赖层就会命中缓存，只重新编译业务代码。前端也一样，`package.json` 和 `package-lock.json` 不变就复用 `node_modules`。
-
-运行镜像包含二进制文件、前端静态资源、数据库迁移脚本和配置文件。进程以 `herald` 用户（UID 1000）运行，不是 root。内置健康检查，每 30 秒请求 `/health`。
-
-### 发布新版本
-
-1. 打 tag 并推送，触发 GitHub Actions 构建镜像：
+Dockerfile 用五阶段构建（`cargo-chef` 缓存 Rust 依赖 → 后端 release → 前端 build 含 OpenAPI 生成 → alpine 运行时）。最终镜像非 root 用户运行，内置每 30 秒一次的 `/health` 健康检查。本地构建：
 
 ```bash
-git tag v0.2.0
-git push origin v0.2.0
+docker build -f docker/Dockerfile -t herald-app:local .
 ```
 
-2. 等 GitHub Actions 构建完成后，SSH 到生产服务器升级：
-
-```bash
-VERSION=v0.2.0
-
-# 拉取新镜像
-docker pull ghcr.io/timzaak/herald:${VERSION}
-
-# 停止并删除旧容器
-docker stop herald-app
-docker rm herald-app
-
-# 用新镜像启动
-docker run -d \
-    --name herald-app \
-    --network herald-net \
-    --restart unless-stopped \
-    -e HERALD_CONFIG=/app/config.toml \
-    -v /opt/herald/config.production.toml:/app/config.toml:ro \
-    ghcr.io/timzaak/herald:${VERSION}
-```
-
-3. 验证：
-
-```bash
-# 检查日志
-docker logs herald-app --tail 10
-
-# 健康检查
-docker exec herald-app wget -qO- http://localhost:3000/health
-```
-
-### 回滚
-
-如果新版本有问题，用旧版本 tag 重新启动：
-
-```bash
-docker stop herald-app
-docker rm herald-app
-docker run -d \
-    --name herald-app \
-    --network herald-net \
-    --restart unless-stopped \
-    -e HERALD_CONFIG=/app/config.toml \
-    -v /opt/herald/config.production.toml:/app/config.toml:ro \
-    ghcr.io/timzaak/herald:v0.1.0
-```
-
-### 升级前备份数据库
-
-App 启动时会自动运行数据库迁移，迁移不可逆。升级前备份：
-
-```bash
-docker exec herald-postgres pg_dump -U herald herald > backup_$(date +%Y%m%d).sql
-```
-
-> 升级过程只有 `herald-app` 容器需要替换，其他容器不需要变动。stop 到 start 之间会有几秒服务中断。
-
-## 数据持久化
-
-App 本身无状态。所有持久化数据在这几个地方：
-
-| 数据 | 存储位置 | Volume 或挂载 |
-|------|---------|--------------|
-| 业务数据 | PostgreSQL | `pgdata` volume |
-| 缓存和会话 | Redis | `redisdata` volume（AOF 持久化） |
-| TLS 证书 | Caddy | `caddy-data` volume |
-| App 配置 | 宿主机 | `/opt/herald/config.production.toml` 文件挂载 |
-| Caddyfile | 宿主机 | `/opt/herald/Caddyfile` 文件挂载 |
-
-备份数据库：
-
-```bash
-docker exec herald-postgres pg_dump -U herald herald > backup.sql
-```
-
-恢复：
-
-```bash
-cat backup.sql | docker exec -i herald-postgres psql -U herald herald
-```
-
-Redis 的数据丢了不严重，App 会自动重建缓存。如果确实想备份：
-
-```bash
-docker exec herald-redis redis-cli BGSAVE
-docker cp herald-redis:/data/dump.rdb ./redis-backup.rdb
-```
+然后在 `.env` 里设 `HERALD_IMAGE=herald-app:local`，用自己构建的镜像。
 
 ## 常见问题
 
+### herald 启动后马上退出
+
+看日志：
+
+```bash
+docker compose logs herald
+```
+
+大概率是密钥没填。生产模式下这几项缺一不可：`config.toml` 里的 `[jwt] secret` 和 `[custom_domain] ask_key`（不能是占位值），`.env` 里的 `ADMIN_PASSWORD`、`INTERNAL_API_KEY`、`TOTP_SECRET_KEY`。
+
+### herald 连不上数据库
+
+日志里看到 `connection refused`。检查 compose 里 herald 的 `depends_on` 是否等 db 的 healthcheck 通过了，再确认 `config.toml` 里的数据库地址是 `db:5432` 而不是 `localhost`。容器之间用服务名通信，不是 `localhost`。
+
 ### Caddy 证书申请失败
 
-日志里看到 `acme: error` 之类的信息。检查：
+日志里看到 `acme: error`。检查域名 DNS 是否指向服务器 IP（`dig your-domain.com`），防火墙是否开放 80 和 443，服务器 80 端口是否被别的进程占了（`ss -tlnp | grep :80`）。
 
-- 域名 DNS 是否指向服务器 IP（`dig your-domain.com` 确认）
-- 防火墙是否开放 80 和 443 端口
-- 服务器 80 端口是否被其他进程占用（`ss -tlnp | grep :80`）
+### realm-admin role not found
 
-### App 连不上数据库
-
-App 日志里看到 `connection refused` 或 `no route to host`。
-
-检查容器是否在同一个网络：
+正常不会出现，迁移在初始化前就跑完了。如果真遇到了，重启 herald 容器，迁移是幂等的：
 
 ```bash
-docker network inspect herald-net
+docker compose restart herald
 ```
-
-应该能看到 postgres、app 等容器都挂在这个网络上。确认配置文件里的数据库地址是 `herald-postgres:5432`，不是 `localhost`。
-
-### App 启动后马上退出
-
-通常是数据库迁移失败。看日志：
-
-```bash
-docker logs herald-app --tail 100
-```
-
-常见原因：数据库密码配置错误，或者 PostgreSQL 还没完全启动。等 `pg_isready` 返回正常后再启动 App。
-
-### 修改 Caddyfile 后生效
-
-```bash
-docker exec herald-caddy caddy reload --config /etc/caddy/Caddyfile
-```
-
-不需要重启 Caddy 容器。

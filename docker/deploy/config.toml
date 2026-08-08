@@ -1,0 +1,44 @@
+# Herald — production config for docker-compose deployment.
+#
+# Mounted into the herald container at /app/config.toml:ro (see docker-compose.yml).
+# The image already bundles backend/config/production.toml with sensible defaults
+# and DB/Redis hostnames `db`/`redis`; this file overrides only the values that
+# MUST be set per deployment: secrets and your public origin.
+#
+# BEFORE first boot:
+#   1. Generate jwt secret:        openssl rand -base64 48
+#   2. Generate custom_domain key: openssl rand -hex 32
+#   3. Put both below (never commit real secrets).
+#   4. Set [frontend] url to your real public origin (used for CORS allowlist).
+
+[database]
+# Matches the `db` service in docker-compose.yml.
+url = "postgresql://herald:herald@db:5432/herald"
+max_connections = 50
+
+[redis]
+# Matches the `redis` service in docker-compose.yml.
+url = "redis://redis:6379"
+
+[server]
+bind_address = "0.0.0.0:3000"
+log_level = "info"
+app_env = "production"
+
+[frontend]
+# CORS allowlist origin. Change to your real domain, e.g. "https://app.example.com".
+url = "http://localhost:3000"
+# Bundled inside the image; do not change.
+static_dir = "/app/frontend/dist"
+
+[jwt]
+# REQUIRED. Generate with: openssl rand -base64 48
+secret = "change-me-to-a-secure-random-base64-string"
+
+# REQUIRED (startup guard at backend/api/src/lib.rs:164 rejects placeholder).
+# The image bundles "change-me-in-production" here; overwrite with a high-entropy
+# value. Generate with: openssl rand -hex 32
+[custom_domain]
+ask_key = "change-me-in-production"
+# Hostname tenants CNAME their custom login domain to. Use a Herald-owned host.
+cname_target = "custom.example.com"
