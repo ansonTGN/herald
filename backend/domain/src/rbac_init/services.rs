@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use crate::authentication::Identity;
 use crate::authorization::{
     CreatePermissionRequest, CreateRoleRequest, PermissionRepository, RolePermissionRepository,
     RoleRepository,
@@ -62,11 +61,7 @@ where
     RP: RolePermissionRepository,
     RPR: RolePolicyRepository,
 {
-    async fn init_default_rbac(
-        &self,
-        _identity: Identity,
-        request: RealmRBACInitRequest,
-    ) -> Result<(), CoreError> {
+    async fn init_default_rbac(&self, request: RealmRBACInitRequest) -> Result<(), CoreError> {
         tracing::info!(
             "Starting RBAC initialization for realm {} with client_id '{}'",
             request.realm_id,

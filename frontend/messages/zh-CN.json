@@ -178,6 +178,31 @@
       "consent_required": "请阅读并同意用户协议与隐私政策。",
       "consent_label_prefix": "我已阅读并同意"
     },
+    "signup": {
+      "title": "创建你的专属空间",
+      "subtitle": "一步开通新 Realm 并成为其管理员。",
+      "submit": "创建 Realm",
+      "submitting": "创建中...",
+      "success_title": "Realm 已创建",
+      "success_description": "你的新 Realm 已就绪，正在进入管理控制台...",
+      "realm_name_label": "Realm 名称",
+      "realm_name_min_length": "Realm 名称至少需要 3 个字符",
+      "realm_name_max_length": "Realm 名称最多 50 个字符",
+      "realm_slug_label": "Realm ID（可选）",
+      "realm_slug_optional": "留空将自动生成",
+      "realm_slug_format": "3-36 个字符：字母、数字、连字符、下划线",
+      "realm_slug_reserved": "该 Realm ID 已被保留",
+      "email_label": "管理员邮箱",
+      "password_label": "密码",
+      "security_verification": "完成安全验证",
+      "already_have_account": "已有账户？",
+      "login_link": "登录",
+      "disabled_title": "自助开通不可用",
+      "disabled_description": "当前未启用自助开通 Realm。请联系管理员。",
+      "return_to_login": "返回登录",
+      "error_loading": "加载开通配置时出错",
+      "quota_exceeded": "你的 IP 已达开通上限，请稍后再试。"
+    },
     "verify_email": {
       "title": "验证您的邮箱",
       "description": "请输入您的邮箱和发送到邮箱的6位验证码。",
@@ -852,6 +877,7 @@
     "tab_registration": "注册",
     "tab_email": "邮件",
     "tab_providers": "提供商",
+    "tab_platform_signup": "平台",
     "general_realm_id_label": "域 ID",
     "general_realm_name_label": "域名称",
     "general_description_label": "描述",
@@ -869,6 +895,12 @@
     "config_failed_to_load": "加载配置失败：{message}",
     "config_loading": "加载中...",
     "realm_updated_success": "域更新成功",
+    "platform_signup": {
+      "title": "平台自助开通",
+      "description": "允许访客从公开注册页自助开通新 Realm（仅限 admin 域）。",
+      "enable_label": "允许公开自助开通",
+      "enable_description": "开启后，未登录访客可自行创建 Realm 并成为其管理员。"
+    },
     "legal": {
       "tab_legal": "协议",
       "title": "协议管理",

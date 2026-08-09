@@ -19,6 +19,7 @@ import type {
   PasskeyVerifyResponse,
   BrowserTokenResponse,
   OneTapDirectResponse,
+  SignupResponse,
 } from '@/lib/api-generated'
 import {
   fetchAuthData,
@@ -681,6 +682,45 @@ export async function completeLoginAfterEmailOtp(
 export async function completeLoginAfterOneTap(
   realmId: string,
   tokenResponse: OneTapDirectResponse,
+  clientId: string
+): Promise<{ redirectPath: string }> {
+  const store = useAuthStore.getState()
+
+  try {
+    store.setTokens({
+      accessToken: tokenResponse.accessToken,
+      refreshToken: tokenResponse.refreshToken,
+      clientId,
+    })
+    store.login(realmId)
+
+    const { userPermissions } = await hydrateAuthenticatedSession(store, realmId)
+    return { redirectPath: redirectPathForPermissions(userPermissions.permissions) }
+  } catch (error) {
+    store.logout()
+    throw error
+  }
+}
+
+/**
+ * Complete a self-service realm signup session.
+ *
+ * The signup endpoint issues a first-party `admin-web-console` token set for the
+ * newly created realm directly (DEC-012), so — like the OTP / One-Tap direct
+ * paths — it does not go through PKCE. This mirrors
+ * `completeLoginAfterEmailOtp` / `completeLoginAfterOneTap`: persist the token
+ * set via the shared store helper (passing the admin-web-console `clientId`),
+ * mark the new realm initialized via the shared `hydrateAuthenticatedSession`,
+ * and return the safe redirect path. The caller then navigates to the new
+ * realm's `/manage`.
+ *
+ * `realmId` is the NEWLY created realm (from `SignupResponse.realmId`). The
+ * `SignupResponse` body carries `accessToken`/`refreshToken` but not `clientId`,
+ * so the caller (which knows the console Client App) supplies it.
+ */
+export async function completeSignup(
+  realmId: string,
+  tokenResponse: Pick<SignupResponse, 'accessToken' | 'refreshToken'>,
   clientId: string
 ): Promise<{ redirectPath: string }> {
   const store = useAuthStore.getState()

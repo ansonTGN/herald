@@ -228,6 +228,36 @@ pub async fn is_email_verification_required(
     Ok(required)
 }
 
+/// Check whether self-service realm signup is open on the platform.
+///
+/// Reads the admin realm's `platform_signup` / `enabled` config row. The
+/// public signup entry is fail-closed: a missing or non-true row means the
+/// endpoint must refuse to provision, so an unconfigured deployment never
+/// accidentally opens self-service to the public internet.
+pub async fn is_platform_signup_enabled(state: &AppState) -> Result<bool, ApiError> {
+    let row = sqlx::query_as::<_, (String,)>(
+        "SELECT config_value FROM realm_config
+         WHERE realm_id = $1 AND config_type = 'platform_signup' AND config_key = 'enabled' AND enabled = true",
+    )
+    .bind(herald_core::domain::realm::ADMIN_REALM_ID)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to query platform signup config: {e}");
+        ApiError::internal("Failed to query platform signup config")
+    })?;
+
+    let enabled = row
+        .and_then(|(value,)| match value.to_lowercase().as_str() {
+            "true" | "1" | "yes" => Some(true),
+            "false" | "0" | "no" => Some(false),
+            _ => None,
+        })
+        .unwrap_or(false); // fail-closed: missing row => disabled
+
+    Ok(enabled)
+}
+
 /// Check if email is configured for a realm
 ///
 /// Returns true if the realm has a complete email configuration, false otherwise.

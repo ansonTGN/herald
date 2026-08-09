@@ -90,7 +90,7 @@ Key submodules:
 | `points` | Points accounts (pooled per credit account), top-up, consumption, expiration, idempotency |
 | `payment_attempt` | Unified payment attempts (abstracting over payment channels) |
 | `purchase` | Purchase fulfillment (one-time top-up or subscription activation) |
-| `realm` | Tenant management |
+| `realm` | Tenant management (manual creation by Admin Realm admins, plus a public self-service signup entry hosted on the admin realm — `/api/auth/admin/signup` — that lets an unauthenticated visitor provision a new realm and become its admin) |
 | `realm_config` | Tenant configuration (payment provider secrets, etc.) |
 | `client` | Third-party application management |
 | `client_app` | Client App entity and logic |

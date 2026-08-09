@@ -22,6 +22,7 @@ import {
   getTurnstileStatus,
   status2 as emailOtpStatus,
   status3 as passkeyStatus,
+  getSignupStatus,
   getProfile,
   handleGetTotpStatus,
   handleListPasskeyCredentials,
@@ -178,6 +179,7 @@ export const queryKeys = {
     [QUERY_KEYS.TURNSTILE_STATUS, realmId, clientId] as const,
   emailOtpStatus: (realmId: string) => [QUERY_KEYS.EMAIL_OTP_STATUS, realmId] as const,
   passkeyStatus: (realmId: string) => [QUERY_KEYS.PASSKEY_STATUS, realmId] as const,
+  signupStatus: (realmId: string) => [QUERY_KEYS.SIGNUP_STATUS, realmId] as const,
   subscription: (realmId: string, clientAppId: string) =>
     [QUERY_KEYS.SUBSCRIPTION, realmId, clientAppId] as const,
   subscriptionDetails: (realmId: string, subscriptionId: string) =>
@@ -626,6 +628,28 @@ export const passkeyStatusQueryOptions = (realmId: string) =>
     },
     retry: RETRY_COUNT,
     staleTime: STALE_TIME_2_MIN,
+    gcTime: GC_TIME_5_MIN,
+  })
+
+// ==================== Signup Status (public) ====================
+//
+// Reads the platform self-service realm-signup enablement flag
+// (`GET /api/auth/{realmId}/signup/status`, admin realm only). Public; consumed
+// by the public signup route to gate the entry visibility (DEC-009). Missing
+// config → `enabled:false` (fail-closed, DEC-013). Mirrors
+// `emailOtpStatusQueryOptions`, except `staleTime: 0` so the entry is re-read
+// on every mount — the enablement flag is a fail-closed security gate and must
+// not be served from a stale cache when a visitor navigates to the page.
+export const signupStatusQueryOptions = (realmId: string) =>
+  queryOptions({
+    queryKey: queryKeys.signupStatus(realmId),
+    queryFn: async () => {
+      const response = await getSignupStatus({ path: { realmId } })
+      if (response.error) throw response.error
+      return response.data
+    },
+    retry: RETRY_COUNT,
+    staleTime: 0,
     gcTime: GC_TIME_5_MIN,
   })
 

@@ -90,7 +90,7 @@ SeaORM 自动生成的实体定义。覆盖用户、角色、权限、订阅、�
 | `points` | 积分账户（按积分账户分池）、充值、消费、过期、幂等 |
 | `payment_attempt` | 统一支付尝试（抽象不同支付渠道） |
 | `purchase` | 购买履约（一次性充值 or 订阅开通） |
-| `realm` | 租户管理 |
+| `realm` | 租户管理（Admin Realm 管理员手动创建；另有托管在 admin realm 的公共自助开通入口 `/api/auth/admin/signup`，未登录访客可借此开通一个新 realm 并成为其 admin） |
 | `realm_config` | 租户配置（支付渠道密钥等） |
 | `legal` | 用户协议/隐私政策版本化、用户同意记录、账户自助注销 |
 | `client` | 第三方应用管理 |

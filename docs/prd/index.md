@@ -8,7 +8,7 @@ PRD 文件保留独立主题，便于评审和追踪；规划、排期和端到�
 
 | 能力包 | 目标 | 应合并阅读的 PRD |
 |-------|------|------------------|
-| 租户与运营 | 创建、配置和运营 Realm | [Realm](core/realm.md)、[Realm Settings](core/realm-settings.md)、[Dashboard](core/dashboard.md)、[Audit](core/audit.md) |
+| 租户与运营 | 创建、配置和运营 Realm | [Realm](core/realm.md)、[SaaS 自助注册开通 Realm](core/realm-create.md)、[Realm Settings](core/realm-settings.md)、[Dashboard](core/dashboard.md)、[Audit](core/audit.md) |
 | 用户生命周期与合规 | 用户从注册、资料维护到协议确认和注销 | [Users](core/users.md)、[会话管理/强制下线](core/kickoff-user.md)、[合规适配](core/legal-consent-account-deletion.md) |
 | 登录体验与品牌 | 提供统一、可品牌化且可本地化的认证入口 | [OAuth](auth/oauth.md)、[微信 OAuth](auth/wechat-oauth.md)、[邮箱验证码登录](auth/email-otp-login.md)、[Google One Tap](auth/google-one-tap.md)、[Apple native 登录](auth/support-mobile-apple-login.md)、[White-label](core/ui-custom.md)、[自定义域名](core/realm-custom-domain.md)、[i18n](core/i18n.md) |
 | 强认证 | 配置并完成多因素或无密码认证 | [TOTP](auth/totp.md)、[Passkey](auth/passkey.md)、[Device Code](auth/device-code.md) |
@@ -43,6 +43,7 @@ docs/
 | PRD 文档 | 标题 | 相关角色 |
 |---------|------|---------|
 | [realm.md](core/realm.md) | Realm 管理 | Admin Realm, Realm Admin |
+| [realm-create.md](core/realm-create.md) | SaaS 自助注册开通 Realm | SaaS 自助注册访客, Admin Realm, Realm Admin |
 | [users.md](core/users.md) | 用户管理 | Realm Admin, Regular User |
 | [kickoff-user.md](core/kickoff-user.md) | 会话管理 / 强制用户下线（查看与撤销用户活跃会话 + Forbidden 联动下线） | Realm Admin |
 | [realm-settings.md](core/realm-settings.md) | Realm 设置 | Realm Admin |

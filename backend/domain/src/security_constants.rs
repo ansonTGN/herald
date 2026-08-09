@@ -38,6 +38,12 @@ pub const CHANGE_EMAIL_REQUEST_IP_RATE_LIMIT: (i64, usize) = (1, 120);
 pub const CHANGE_EMAIL_REQUEST_EMAIL_RATE_LIMIT: (i64, usize) = (1, 120);
 pub const CHANGE_EMAIL_CONFIRM_IP_RATE_LIMIT: (i64, usize) = (5, 60);
 
+// --- Self-service realm signup (design realm-create §4.1 / §5.1) ---
+/// Same-IP 24h cap on self-service realm provisioning. The counter is
+/// incremented after validation + human verification pass, before
+/// `create_realm`, and is not rolled back on provisioning failure.
+pub const SIGNUP_IP_RATE_LIMIT: (i64, usize) = (2, 86_400);
+
 pub const TOTP_VERIFY_USER_RATE_LIMIT: (i64, usize) = (5, 60);
 pub const TOTP_VERIFY_IP_RATE_LIMIT: (i64, usize) = (10, 60);
 

@@ -452,6 +452,14 @@ pub async fn build_app_state_with_migrations(
     // Initialize admin user if database is empty
     init_admin_user(pg_pool, &config.server.app_env).await?;
 
+    // Ensure the platform self-service signup toggle exists (fail-closed:
+    // default disabled). Idempotent; an admin can flip it on later. A missing
+    // row is already treated as disabled at read time, but seeding it keeps the
+    // fail-closed state observable and consistent across deployments.
+    ensure_platform_signup_default(pg_pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to seed platform signup toggle: {e}"))?;
+
     // Build final state once, then call init functions
     let startup_time = std::time::Instant::now();
     let api_key_cache = ApiKeyCache::new(redis_manager.clone().into());
@@ -624,4 +632,21 @@ async fn shutdown_signal() {
             tracing::info!("Received SIGTERM, initiating graceful shutdown");
         }
     }
+}
+
+/// Seed the platform self-service signup toggle as disabled (fail-closed).
+///
+/// Idempotent: only inserts when no `(admin, platform_signup, enabled)` row
+/// exists, so an admin's later opt-in is never overwritten. The row is marked
+/// `enabled = true` (the config entry is active) with `config_value = 'false'`
+/// (the feature is off) — these are independent axes in `realm_config`.
+async fn ensure_platform_signup_default(pool: &sqlx::PgPool) -> anyhow::Result<()> {
+    sqlx::query(
+        "INSERT INTO realm_config (realm_id, config_type, config_key, config_value, is_secret, enabled, metadata)
+         VALUES ('admin', 'platform_signup', 'enabled', 'false', false, true, '{}'::jsonb)
+         ON CONFLICT (realm_id, config_type, config_key) DO NOTHING",
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
 }

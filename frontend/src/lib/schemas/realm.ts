@@ -1,8 +1,8 @@
 import { z } from 'zod'
 import { m } from '@/paraglide/messages'
 
-// 保留词列表
-const RESERVED_WORDS = ['admin', 'system', 'api', 'www'] as const
+// Reserved realm identifiers (shared by realm id + self-service signup slug validation).
+export const RESERVED_WORDS = ['admin', 'system', 'api', 'www'] as const
 
 // Realm ID 验证（必填）
 // 注意：后端只验证长度 (3-64)，没有格式限制

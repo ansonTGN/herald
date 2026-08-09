@@ -178,6 +178,31 @@
       "consent_required": "Please read and agree to the Terms of Service and Privacy Policy.",
       "consent_label_prefix": "I have read and agree to "
     },
+    "signup": {
+      "title": "Create Your Space",
+      "subtitle": "Spin up a new realm and become its admin in one step.",
+      "submit": "Create Realm",
+      "submitting": "Creating...",
+      "success_title": "Realm Created",
+      "success_description": "Your new realm is ready. Taking you to the management console...",
+      "realm_name_label": "Realm Name",
+      "realm_name_min_length": "Realm name must be at least 3 characters",
+      "realm_name_max_length": "Realm name must be at most 50 characters",
+      "realm_slug_label": "Realm ID (Optional)",
+      "realm_slug_optional": "Leave blank to auto-generate",
+      "realm_slug_format": "3-36 characters: letters, numbers, hyphens, underscores",
+      "realm_slug_reserved": "This realm ID is reserved",
+      "email_label": "Admin Email",
+      "password_label": "Password",
+      "security_verification": "Complete security verification",
+      "already_have_account": "Already have an account?",
+      "login_link": "Login",
+      "disabled_title": "Self-Service Signup Unavailable",
+      "disabled_description": "Self-service realm signup is currently disabled. Please contact an administrator.",
+      "return_to_login": "Return to Login",
+      "error_loading": "Error loading signup configuration",
+      "quota_exceeded": "Signup limit reached for your IP. Please try again later."
+    },
     "verify_email": {
       "title": "Verify Your Email",
       "description": "Please enter your email and 6-digit verification code sent to your email.",
@@ -852,6 +877,7 @@
     "tab_registration": "Registration",
     "tab_email": "Email",
     "tab_providers": "Providers",
+    "tab_platform_signup": "Platform",
     "general_realm_id_label": "Realm ID",
     "general_realm_name_label": "Realm Name",
     "general_description_label": "Description",
@@ -869,6 +895,12 @@
     "config_failed_to_load": "Failed to load configuration: {message}",
     "config_loading": "Loading...",
     "realm_updated_success": "Realm updated successfully",
+    "platform_signup": {
+      "title": "Platform Self-Service Signup",
+      "description": "Allow visitors to self-provision a new realm from the public signup page (admin realm only).",
+      "enable_label": "Allow Public Self-Service Signup",
+      "enable_description": "When enabled, unauthenticated visitors can create their own realm and become its admin."
+    },
     "legal": {
       "tab_legal": "Legal",
       "title": "Legal Agreements",

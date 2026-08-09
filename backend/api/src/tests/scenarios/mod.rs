@@ -26,6 +26,7 @@ pub mod realm_passkey_config_scenarios;
 pub mod realm_totp_config_scenarios;
 pub mod realm_white_label_config_scenarios;
 pub mod role_policies_scenarios;
+pub mod signup_scenarios;
 pub mod user_list_scenarios;
 pub mod user_register_test;
 pub mod user_roles_scenarios;

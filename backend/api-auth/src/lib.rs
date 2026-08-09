@@ -13,6 +13,7 @@ pub mod reauth;
 pub mod register;
 pub mod registration_status;
 pub mod reset_password;
+pub mod signup;
 pub mod status;
 pub mod turnstile_status;
 pub mod user_passkey;
@@ -53,6 +54,8 @@ pub use reauth::{__path_handle_begin_reauth, __path_handle_verify_reauth};
 pub use register::__path_register;
 pub use reset_password::__path_confirm as __path_reset_password_confirm;
 pub use reset_password::__path_request as __path_reset_password_request;
+pub use signup::__path_get_signup_status;
+pub use signup::__path_signup;
 pub use status::__path_status;
 pub use turnstile_status::__path_get_turnstile_status;
 pub use user_passkey::__path_handle_begin_passkey_registration;
@@ -89,6 +92,8 @@ pub use verify_totp::__path_handle_verify_totp as __path_verify_totp;
         crate::reauth::handle_verify_reauth,
         crate::logout::logout,
         crate::status::status,
+        crate::signup::signup,
+        crate::signup::get_signup_status,
         crate::turnstile_status::get_turnstile_status,
         crate::verify_email::trigger,
         crate::verify_email::confirm,
@@ -133,6 +138,9 @@ pub use verify_totp::__path_handle_verify_totp as __path_verify_totp;
         crate::reauth::PasskeyAssertion,
         crate::reauth::ReauthTicket,
         crate::status::StatusResponse,
+        crate::signup::SignupRequest,
+        crate::signup::SignupResponse,
+        crate::signup::SignupStatusResponse,
         crate::turnstile_status::TurnstileStatusRequest,
         crate::turnstile_status::TurnstileStatusResponse,
         crate::verify_email::VerifyEmailTriggerRequest,
@@ -178,6 +186,8 @@ pub struct ApiDoc;
 pub fn auth_router() -> Router<AppState> {
     Router::new()
         .route("/register", post(register::register))
+        .route("/signup", post(signup::signup))
+        .route("/signup/status", get(signup::get_signup_status))
         .route("/login", post(login::login))
         .route("/login/email-otp/send", post(email_otp::send))
         .route("/login/email-otp/verify", post(email_otp::verify))

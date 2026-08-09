@@ -135,6 +135,13 @@ export const AUTH_STORAGE_KEY = 'auth-storage'
 export const AUTH_STORE_NAME = 'AuthStore'
 
 /**
+ * The platform-level realm id. Mirrors `herald_core::domain::realm::ADMIN_REALM_ID`.
+ * Hosts platform-wide entries (e.g. self-service realm signup) and is the realm
+ * the console + first-party client ids below are bound to.
+ */
+export const ADMIN_REALM_ID = 'admin'
+
+/**
  * The built-in FirstParty OAuth Client App `client_id` for the Herald console.
  * Bound to the PKCE flow and to refresh-token families issued by the console.
  */

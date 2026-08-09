@@ -92,8 +92,9 @@ where
     }
 }
 
-impl<R, P, RB, C, UR, RR, U, UR2, RCR, AE> RealmService
-    for RealmServiceImpl<R, P, RB, C, UR, RR, U, UR2, RCR, AE>
+// Inherent helper shared by both `create_realm` paths. Kept out of the trait so
+// the public surface only exposes the two named provisioning entries.
+impl<R, P, RB, C, UR, RR, U, UR2, RCR, AE> RealmServiceImpl<R, P, RB, C, UR, RR, U, UR2, RCR, AE>
 where
     R: RealmRepository,
     P: RealmPolicy,
@@ -106,18 +107,16 @@ where
     RCR: RealmConfigRepository,
     AE: AuditEventRepository + 'static,
 {
-    async fn create_realm(
+    /// Shared realm initialization used by the permission-gated admin/ext
+    /// `create_realm` and the policy-free `create_realm_self_service`.
+    /// `actor_realm_id` is the realm the operation originates from and scopes
+    /// the audit events so they stay visible to the acting administrator.
+    async fn create_realm_inner(
         &self,
-        identity: Identity,
-        ctx: AuditContext,
         request: CreateRealmRequest,
+        actor_realm_id: String,
+        ctx: AuditContext,
     ) -> Result<Realm, CoreError> {
-        // Policy check
-        ensure_policy(
-            self.policy.can_create_realm(identity.clone()).await,
-            "Insufficient permissions to create realm",
-        )?;
-
         // Extract admin_user before moving request
         let admin_user = request.admin_user.clone();
 
@@ -268,13 +267,10 @@ where
         // 2. Call RBAC initialization (failure should rollback realm creation)
         match self
             .rbac_init_service
-            .init_default_rbac(
-                identity.clone(),
-                crate::rbac_init::RealmRBACInitRequest {
-                    realm_id: realm.id.clone(),
-                    admin_web_console_client_id: client.client_id.clone(), // Use client.client_id (e.g., "admin-web-console"), not UUID
-                },
-            )
+            .init_default_rbac(crate::rbac_init::RealmRBACInitRequest {
+                realm_id: realm.id.clone(),
+                admin_web_console_client_id: client.client_id.clone(), // Use client.client_id (e.g., "admin-web-console"), not UUID
+            })
             .await
         {
             Ok(_) => {
@@ -477,7 +473,6 @@ where
         // a create performed from the `admin` realm must be recorded under
         // `admin` to be visible. The created realm's id is kept in `target_id`
         // and `details` for traceability.
-        let actor_realm_id = identity.realm_id().to_string();
         if let Err(e) = self
             .audit_event_repository
             .create(NewAuditEvent {
@@ -534,7 +529,48 @@ where
 
         Ok(realm)
     }
+}
 
+impl<R, P, RB, C, UR, RR, U, UR2, RCR, AE> RealmService
+    for RealmServiceImpl<R, P, RB, C, UR, RR, U, UR2, RCR, AE>
+where
+    R: RealmRepository,
+    P: RealmPolicy,
+    RB: RealmInitializationService,
+    C: ClientRepository,
+    UR: UserRoleRepository,
+    RR: RoleRepository,
+    U: UserRepository,
+    UR2: UserService,
+    RCR: RealmConfigRepository,
+    AE: AuditEventRepository + 'static,
+{
+    async fn create_realm(
+        &self,
+        identity: Identity,
+        ctx: AuditContext,
+        request: CreateRealmRequest,
+    ) -> Result<Realm, CoreError> {
+        // Policy check
+        ensure_policy(
+            self.policy.can_create_realm(identity.clone()).await,
+            "Insufficient permissions to create realm",
+        )?;
+
+        let actor_realm_id = identity.realm_id().to_string();
+        self.create_realm_inner(request, actor_realm_id, ctx).await
+    }
+
+    async fn create_realm_self_service(
+        &self,
+        request: CreateRealmRequest,
+        actor_realm_id: String,
+        ctx: AuditContext,
+    ) -> Result<Realm, CoreError> {
+        // No policy gate: signup handlers own the pre-flight checks
+        // (platform toggle, human verification, IP quota) before reaching here.
+        self.create_realm_inner(request, actor_realm_id, ctx).await
+    }
     async fn get_realm(&self, identity: Identity, id: String) -> Result<Realm, CoreError> {
         // Self-realm: any authenticated user can view own realm basic info
         // Cross-realm: requires realm.manage in admin realm

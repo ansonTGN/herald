@@ -1,12 +1,8 @@
 use sqlx::{PgPool, Row};
 use std::sync::Arc;
 use tracing::info;
-use uuid::Uuid;
 
-use crate::domain::authentication::Identity;
 use crate::domain::rbac_init::RealmInitializationService;
-use crate::domain::user::entities::User;
-use chrono::Utc;
 
 /// Initialize default RBAC for the admin realm
 ///
@@ -51,29 +47,11 @@ where
         permission_count, EXPECTED_BUILTIN_PERMISSIONS
     );
 
-    // Create a virtual system user for initialization
-    let system_user = User {
-        id: Uuid::now_v7(), // Virtual ID
-        realm_id: realm_id.clone(),
-        email: "system@localhost".to_string(),
-        nickname: None,
-        password_hash: None,
-        provider_ids: vec![],
-        status: crate::domain::user::entities::UserStatus::Normal,
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
-    };
-
-    let identity = Identity::User(system_user);
-
     rbac_init_service
-        .init_default_rbac(
-            identity,
-            crate::domain::rbac_init::RealmRBACInitRequest {
-                realm_id,
-                admin_web_console_client_id: client_id, // Use client_app.client_id (string identifier)
-            },
-        )
+        .init_default_rbac(crate::domain::rbac_init::RealmRBACInitRequest {
+            realm_id,
+            admin_web_console_client_id: client_id, // Use client_app.client_id (string identifier)
+        })
         .await?;
 
     info!("Admin realm RBAC initialized successfully");

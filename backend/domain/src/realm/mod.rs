@@ -8,6 +8,10 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 use validator::Validate;
 
+/// The platform-level realm. Realm lifecycle operations that affect the whole
+/// tenant fleet (e.g. self-service signup entry) are hosted here and only here.
+pub const ADMIN_REALM_ID: &str = "admin";
+
 // ============================================================================
 // Pagination Types
 // ============================================================================
@@ -174,6 +178,19 @@ pub trait RealmService: Send + Sync {
         identity: Identity,
         ctx: AuditContext,
         request: CreateRealmRequest,
+    ) -> impl Future<Output = Result<Realm, CoreError>> + Send;
+
+    /// Provision a realm from a public, unauthenticated entry (self-service
+    /// signup). The caller is responsible for all pre-flight checks (platform
+    /// toggle, human verification, IP quota) before invoking this; the method
+    /// intentionally performs **no** policy gate, unlike `create_realm`.
+    /// `actor_realm_id` scopes the resulting audit events and must be the realm
+    /// the signup originates from (the admin realm).
+    fn create_realm_self_service(
+        &self,
+        request: CreateRealmRequest,
+        actor_realm_id: String,
+        ctx: AuditContext,
     ) -> impl Future<Output = Result<Realm, CoreError>> + Send;
 
     fn get_realm(

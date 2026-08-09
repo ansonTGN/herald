@@ -36,6 +36,13 @@ export const registrationConfigSchema = z.object({
   requireEmailVerification: z.boolean(), // ✅ camelCase：是否需要邮箱验证
 })
 
+// Platform self-service signup 配置 Schema
+// ✅ admin realm 独有：控制公开自助开通 Realm 的总闸 (DEC-009/013)。
+//    存于 realm_config(platform_signup, enabled) 单行，缺失 = false (fail-closed)。
+export const platformSignupConfigSchema = z.object({
+  enabled: z.boolean(), // 是否允许公开自助开通 Realm
+})
+
 // Turnstile 配置 Schema
 export const turnstileConfigSchema = z.object({
   siteKey: z.string(),
@@ -94,6 +101,7 @@ export type TOTPConfigForm = z.infer<typeof totpConfigSchema>
 export type PasskeyConfigForm = z.infer<typeof passkeyConfigSchema>
 export type EmailOtpConfigForm = z.infer<typeof emailOtpConfigSchema>
 export type RegistrationConfigForm = z.infer<typeof registrationConfigSchema>
+export type PlatformSignupConfigForm = z.infer<typeof platformSignupConfigSchema>
 export type TurnstileConfigForm = z.infer<typeof turnstileConfigSchema>
 export type EmailConfigForm = z.infer<typeof emailConfigSchema>
 export type WhiteLabelBackgroundForm = z.infer<typeof whiteLabelBackgroundSchema>

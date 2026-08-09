@@ -16,6 +16,7 @@ import type { UpsertRealmConfigRequest } from '@/lib/api-generated/types.gen'
 import { TOTPConfigForm as TOTPConfigFormComponent } from '@/components/realm-config/totp-config-form'
 import { PasskeyConfigForm as PasskeyConfigFormComponent } from '@/components/realm-config/passkey-config-form'
 import { RegistrationConfigForm as RegistrationConfigFormComponent } from '@/components/realm-config/registration-config-form'
+import { PlatformSignupConfigForm as PlatformSignupConfigFormComponent } from '@/components/realm-config/platform-signup-config-form'
 import { EmailConfigForm as EmailConfigFormComponent } from '@/components/realm-config/email-config-form'
 import { TurnstileConfigForm as TurnstileConfigFormComponent } from '@/components/realm-config/turnstile-config-form'
 import { WhiteLabelConfigForm as WhiteLabelConfigFormComponent } from '@/components/realm-config/white-label-config-form'
@@ -23,12 +24,13 @@ import { CustomDomainConfigForm as CustomDomainConfigFormComponent } from '@/com
 import { ProviderConfigPage } from '@/components/oauth-config/provider-config-page'
 import { LegalAgreementTab } from '@/components/settings/LegalAgreementTab'
 import { useAuth } from '@/hooks/use-auth'
-import { PERMISSION } from '@/lib/constants/auth-constants'
+import { ADMIN_REALM_ID, PERMISSION } from '@/lib/constants/auth-constants'
 import { toast } from 'sonner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import type {
   TOTPConfigForm,
   RegistrationConfigForm,
+  PlatformSignupConfigForm,
   EmailConfigForm,
   TurnstileConfigForm,
   PasskeyConfigForm,
@@ -39,10 +41,12 @@ import type {
 import {
   parseTOTPConfig,
   parseRegistrationConfig,
+  parsePlatformSignupConfig,
   parseEmailConfig,
   parseTurnstileConfig,
   buildTOTPConfigRequest,
   buildRegistrationConfigRequest,
+  buildPlatformSignupConfigRequest,
   buildEmailConfigRequest,
   buildTurnstileConfigRequest,
   normalizeWhiteLabelConfig,
@@ -469,6 +473,9 @@ export function SettingsPage() {
   const turnstileConfig = parseTurnstileConfig(configs || [])
   const registrationConfig = parseRegistrationConfig(configs || [])
   const emailConfig = parseEmailConfig(configs || [])
+  // Platform self-service signup is an admin-realm-only switch (DEC-001/009).
+  // Parsed unconditionally; the tab/UI is gated on `realmId === 'admin'`.
+  const platformSignupConfig = parsePlatformSignupConfig(configs || [])
 
   // Derive Passkey form values from the dedicated endpoint response.
   // The API returns `userVerification` as a generic string; narrow it to the
@@ -511,6 +518,15 @@ export function SettingsPage() {
     }
 
     await mutation.mutateAsync(buildRegistrationConfigRequest(config)).catch(() => {})
+  }
+
+  async function savePlatformSignupConfig(config: PlatformSignupConfigForm) {
+    if (!canUpdateConfig) {
+      toast.error(m['settings.config_modify_denied']())
+      return
+    }
+
+    await mutation.mutateAsync(buildPlatformSignupConfigRequest(config)).catch(() => {})
   }
 
   async function saveEmailConfig(config: EmailConfigForm) {
@@ -628,6 +644,11 @@ export function SettingsPage() {
           <TabsTrigger value="custom-domain" data-testid="custom-domain-tab">
             {m['settings.custom_domain.tab_custom_domain']()}
           </TabsTrigger>
+          {realmId === ADMIN_REALM_ID && (
+            <TabsTrigger value="platform-signup" data-testid="platform-signup-tab">
+              {m['settings.tab_platform_signup']()}
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="general">
@@ -761,6 +782,16 @@ export function SettingsPage() {
             )
           })()}
         </TabsContent>
+        {realmId === ADMIN_REALM_ID && (
+          <TabsContent value="platform-signup">
+            <PlatformSignupConfigFormComponent
+              initialConfig={platformSignupConfig}
+              onSave={savePlatformSignupConfig}
+              isLoading={isLoading}
+              disabled={!canUpdateConfig}
+            />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   )

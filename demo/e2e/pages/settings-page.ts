@@ -146,6 +146,11 @@ export class SettingsPage extends BasePage {
   readonly requireEmailVerificationSwitch: Locator
   readonly registrationSaveButton: Locator
 
+  // Platform Self-Service Signup Configuration elements (admin realm only)
+  readonly platformSignupTab: Locator
+  readonly platformSignupEnabledSwitch: Locator
+  readonly platformSignupSaveButton: Locator
+
   // OAuth Provider Configuration elements
   readonly addProviderButton: Locator
   readonly providerTypeSelect: Locator
@@ -249,6 +254,13 @@ export class SettingsPage extends BasePage {
 
     // Save button in Registration form
     this.registrationSaveButton = page.getByTestId('reg-save-button')
+
+    // Platform Self-Service Signup Configuration (admin realm only, DEC-001/009).
+    // The tab trigger only renders when realmId === 'admin'. Switch testid is
+    // derived from ConfigSwitchField `id="platform-signup"` → `${id}-switch`.
+    this.platformSignupTab = page.getByTestId('platform-signup-tab')
+    this.platformSignupEnabledSwitch = page.getByTestId('platform-signup-switch')
+    this.platformSignupSaveButton = page.getByTestId('platform-signup-save-button')
 
     // OAuth Provider Configuration - using data-testid selectors
     this.addProviderButton = page.getByTestId('add-provider-button')
@@ -1404,6 +1416,88 @@ export class SettingsPage extends BasePage {
     } catch (error) {
       // Teardown must never hard-fail the test run; log and continue.
       console.warn(`[SettingsPage] resetEmailOtpConfig failed for realm "${this.realmId}":`, error)
+    }
+  }
+
+  // ============================================================================
+  // Platform Self-Service Signup Configuration Methods (admin realm only)
+  //
+  // Mirrors the Email-OTP config methods: Radix Switch toggles via setSwitch,
+  // save + wait for button text to settle. The platform-signup tab is rendered
+  // only when realmId === 'admin' (frontend settings.tsx), so the caller must
+  // be logged into the admin realm.
+  // ============================================================================
+
+  /**
+   * Switch to the Platform Self-Service Signup tab (admin realm only).
+   *
+   * Asserts the enable switch is visible to confirm the tab content loaded,
+   * mirroring switchToTOTPTab/switchToRegistrationTab.
+   */
+  async switchToPlatformSignupTab(): Promise<void> {
+    await this.smartClick(this.platformSignupTab)
+    await expect(this.platformSignupEnabledSwitch).toBeVisible({ timeout: 10000 })
+  }
+
+  /**
+   * Enable the platform self-service signup entry.
+   */
+  async enablePlatformSignup(): Promise<void> {
+    await this.setSwitch(this.platformSignupEnabledSwitch, true)
+  }
+
+  /**
+   * Disable the platform self-service signup entry (fail-closed default).
+   */
+  async disablePlatformSignup(): Promise<void> {
+    await this.setSwitch(this.platformSignupEnabledSwitch, false)
+  }
+
+  /**
+   * Save Platform Self-Service Signup Configuration.
+   *
+   * Mirrors saveTOTPConfig/saveEmailOtpConfig: clicks save and waits for the
+   * button text to return to 'Save' (indicates the PUT settled).
+   */
+  async savePlatformSignupConfig(): Promise<void> {
+    await this.smartClick(this.platformSignupSaveButton)
+
+    await expect(async () => {
+      const buttonText = await this.platformSignupSaveButton.textContent()
+      expect(buttonText).toBe('Save')
+    }).toPass({ timeout: 15000 })
+  }
+
+  /**
+   * Get the current platform self-service signup enabled state.
+   *
+   * Reads the Radix Switch `data-state` attribute (consistent with
+   * getEmailOtpConfig / setSwitch), NOT isChecked(), to avoid reading the
+   * switch mid-transition.
+   */
+  async isPlatformSignupEnabled(): Promise<boolean> {
+    const state = await this.platformSignupEnabledSwitch.getAttribute('data-state')
+    return state === 'checked'
+  }
+
+  /**
+   * Best-effort teardown: disable platform self-service signup.
+   *
+   * The startup seed leaves the toggle at its fail-closed default (false), so
+   * resetting to disabled keeps the demo env in its default state and avoids
+   * leaking an open public signup entry into other demos. Mirrors
+   * resetEmailOtpConfig's try/catch so teardown never hard-fails the run.
+   */
+  async resetPlatformSignupConfig(): Promise<void> {
+    try {
+      await this.switchToPlatformSignupTab()
+      await this.disablePlatformSignup()
+      await this.savePlatformSignupConfig()
+    } catch (error) {
+      console.warn(
+        `[SettingsPage] resetPlatformSignupConfig failed for realm "${this.realmId}":`,
+        error
+      )
     }
   }
 

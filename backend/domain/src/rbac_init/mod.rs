@@ -1,4 +1,3 @@
-use crate::authentication::Identity;
 use crate::common::entities::app_errors::CoreError;
 use std::future::Future;
 use uuid::Uuid;
@@ -46,7 +45,6 @@ pub trait RealmInitializationService: Send + Sync {
     /// 包括：角色定义、权限定义、角色权限关联、策略
     fn init_default_rbac(
         &self,
-        identity: Identity,
         request: RealmRBACInitRequest,
     ) -> impl Future<Output = Result<(), CoreError>> + Send;
 }

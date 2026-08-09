@@ -612,6 +612,33 @@ export const SELECTORS = {
   },
 
   /**
+   * Platform Self-Service Signup Page Selectors
+   *
+   * Admin-realm-hosted public self-service realm signup entry (DEC-realm-create-001).
+   * Frontend testids live in:
+   *   frontend/src/routes/$realmId/auth/signup.tsx
+   *   frontend/src/components/auth/signup-form.tsx
+   *
+   * These mirror the `registration` block (data-testid-based stable selectors)
+   * rather than role/label selectors: the signup labels are i18n-derived and the
+   * disabled-notice / card states are asserted across locales.
+   */
+  platformSignup: {
+    card: '[data-testid="signup-card"]',
+    title: '[data-testid="signup-title"]',
+    subtitle: '[data-testid="signup-subtitle"]',
+    realmNameInput: '[data-testid="signup-realm-name-input"]',
+    realmSlugInput: '[data-testid="signup-realm-slug-input"]',
+    emailInput: '[data-testid="signup-email-input"]',
+    passwordInput: '[data-testid="signup-password-input"]',
+    submitButton: '[data-testid="signup-submit-button"]',
+    // Fail-closed notice rendered when the toggle is off or the status query
+    // fails (DEC-realm-create-013). Asserted in US-SR-004 (disabled) scenarios.
+    disabledNotice: '[data-testid="signup-disabled-notice"]',
+    loginLink: '[data-testid="login-link"]',
+  },
+
+  /**
    * Unified Purchase - Purchase Points Page (User)
    */
   purchasePoints: {
@@ -763,6 +790,21 @@ export const SELECTORS = {
     logo: '[data-testid="auth-brand-logo"]',
     text: '[data-testid="auth-brand-text"]',
     footer: '[data-testid="auth-brand-footer"]',
+  },
+
+  /**
+   * Platform Self-Service Signup config (admin Settings > Platform tab)
+   *
+   * Mounted only for realmId === 'admin' (DEC-realm-create-001/009). The switch
+   * testid is derived from ConfigSwitchField `id="platform-signup"` →
+   * `${id}-switch` (see config-switch-field.tsx). Used to enable/disable the
+   * public signup entry (fail-closed default false, DEC-013) before running the
+   * public signup flow.
+   */
+  platformSignupConfig: {
+    tab: '[data-testid="platform-signup-tab"]',
+    switch: '[data-testid="platform-signup-switch"]',
+    saveButton: '[data-testid="platform-signup-save-button"]',
   },
 
   /**

@@ -8,7 +8,7 @@
 
 | 能力包 | 连续旅程 | 用户故事文件 |
 |-------|----------|--------------|
-| 租户与运营 | 创建 Realm → 配置 → Dashboard 运营 → 审计 | [Admin Realm](core/admin-realm.md)、[Realm Admin](core/realm-admin.md)、[审计](core/audit.md)、[内置保护](core/builtin-protection.md) |
+| 租户与运营 | 创建 Realm → 配置 → Dashboard 运营 → 审计 | [Admin Realm](core/admin-realm.md)、[自助开通 Realm](core/realm-create.md)、[Realm Admin](core/realm-admin.md)、[审计](core/audit.md)、[内置保护](core/builtin-protection.md) |
 | 用户生命周期与合规 | 注册/登录 → 资料维护 → 协议确认 → 账户注销 | [普通用户](core/regular-user.md)、[合规适配](core/legal-consent-account-deletion.md) |
 | 登录体验与品牌 | 第三方登录 → 品牌页面 → 自定义域名 → 多语言 | [OAuth 应用](auth/third-party-app.md)、[OAuth 扩展](auth/oauth-extension.md)、[微信 OAuth](auth/wechat-oauth.md)、[Apple native 登录](auth/support-mobile-apple-login.md)、[White-label](core/white-label.md)、[自定义域名](core/realm-custom-domain.md)、[i18n](core/i18n.md) |
 | 强认证 | 管理员配置 → 用户绑定 → 登录/恢复 | [TOTP](auth/totp.md)、[Passkey](auth/passkey.md)、[Device Code](auth/device-code.md) |
@@ -38,6 +38,10 @@
 | US-AR-003 | 查看 Realm 详情 | Admin Realm | P1 | [core/admin-realm](core/admin-realm.md#故事-3查看-realm-详情-us-ar-003) |
 | US-AR-004 | Realm 创建权限控制 | Admin Realm | P0 | [core/admin-realm](core/admin-realm.md#故事-4realm-创建权限控制-us-ar-004) |
 | US-AR-005 | 访问新创建的 Realm | Admin Realm | P0 | [core/admin-realm](core/admin-realm.md#故事-5访问新创建的-realm-us-ar-005) |
+| US-SR-001 | 自助注册开通新 Realm | SaaS 自助注册访客 | P0 | [core/realm-create](core/realm-create.md#故事-1自助注册开通新-realm-us-sr-001) |
+| US-SR-002 | 开通后立即管理新 Realm | 新 realm-admin | P0 | [core/realm-create](core/realm-create.md#故事-2开通后立即管理新-realm-us-sr-002) |
+| US-SR-003 | Admin Realm 管理员查看自助开通的 Realm | Admin Realm | P1 | [core/realm-create](core/realm-create.md#故事-3admin-realm-管理员查看自助开通的-realm-us-sr-003) |
+| US-SR-004 | 平台自助开通开关控制 | Admin Realm | P0 | [core/realm-create](core/realm-create.md#故事-4平台自助开通开关控制-us-sr-004) |
 | US-RA-001 | Realm 隔离访问 | Realm Admin | P0 | [core/realm-admin](core/realm-admin.md#故事-1realm-隔离访问-us-ra-001) |
 | US-RA-002 | 角色定义管理 | Realm Admin | P0 | [core/realm-admin](core/realm-admin.md#故事-2角色定义管理-us-ra-002) |
 | US-RA-003 | 权限定义管理 | Realm Admin | P0 | [core/realm-admin](core/realm-admin.md#故事-3权限定义管理-us-ra-003) |
@@ -236,6 +240,7 @@
 | 角色 | 文档 | 相关 PRD |
 |------|------|---------|
 | Admin Realm | [core/admin-realm.md](core/admin-realm.md) | [Realm PRD](/docs/prd/core/realm.md) |
+| 自助开通 Realm | [core/realm-create.md](core/realm-create.md) | [SaaS 自助注册开通 Realm PRD](/docs/prd/core/realm-create.md) |
 | Realm Admin | [core/realm-admin.md](core/realm-admin.md), [core/builtin-protection.md](core/builtin-protection.md), [core/legal-consent-account-deletion.md](core/legal-consent-account-deletion.md) | [Users PRD](/docs/prd/core/users.md), [Permissions PRD](/docs/prd/auth/permissions.md), [Client Apps PRD](/docs/prd/integration/client-app.md), [Realm Settings PRD](/docs/prd/core/realm-settings.md), [Dashboard PRD](/docs/prd/core/dashboard.md), [API Key Roles PRD](/docs/prd/integration/api-key-roles.md), [Legal Consent PRD](/docs/prd/core/legal-consent-account-deletion.md) |
 | Regular User | [core/regular-user.md](core/regular-user.md), [core/legal-consent-account-deletion.md](core/legal-consent-account-deletion.md) | [Users PRD](/docs/prd/core/users.md), [OAuth PRD](/docs/prd/auth/oauth.md), [Legal Consent PRD](/docs/prd/core/legal-consent-account-deletion.md) |
 | i18n | [core/i18n.md](core/i18n.md) | [i18n PRD](/docs/prd/core/i18n.md) |

@@ -439,6 +439,22 @@ pub enum ConfigType {
     /// }
     /// ```
     EmailOtp,
+
+    /// Platform self-service realm signup toggle
+    ///
+    /// A platform-level switch owned by the admin realm that controls whether
+    /// unauthenticated visitors can self-provision a new realm through the
+    /// public signup endpoint. Reuses the `realm_config` KV table; no DDL.
+    ///
+    /// - config_key: `enabled` (fixed)
+    /// - config_value: `"true"` | `"false"`
+    /// - is_secret: false
+    /// - enabled: true (the config row itself is active)
+    /// - metadata: null
+    ///
+    /// Read as fail-closed: a missing row is treated as `false` so the public
+    /// entry is never opened by accident.
+    PlatformSignup,
 }
 
 impl From<String> for ConfigType {
@@ -464,6 +480,7 @@ impl ConfigType {
             "email" => ConfigType::Email,
             "invoice_policy" => ConfigType::InvoicePolicy,
             "email_otp" => ConfigType::EmailOtp,
+            "platform_signup" => ConfigType::PlatformSignup,
             _ => return Err(format!("Invalid config type: {}", s)),
         };
         Ok(config_type)
@@ -489,6 +506,7 @@ impl ConfigType {
             ConfigType::Email => "email",
             ConfigType::InvoicePolicy => "invoice_policy",
             ConfigType::EmailOtp => "email_otp",
+            ConfigType::PlatformSignup => "platform_signup",
         }
     }
 }
@@ -832,6 +850,27 @@ mod config_type_tests {
             ConfigType::try_from_str("EMAIL_OTP").unwrap(),
             ConfigType::EmailOtp
         );
+    }
+
+    /// Platform self-service signup toggle (design realm-create §4.3.2):
+    /// the canonical string is `platform_signup` and must round-trip.
+    #[test]
+    fn platform_signup_round_trip() {
+        assert_eq!(ConfigType::PlatformSignup.as_ref(), "platform_signup");
+        assert_eq!(String::from(ConfigType::PlatformSignup), "platform_signup");
+        assert_eq!(
+            ConfigType::try_from_str("platform_signup").unwrap(),
+            ConfigType::PlatformSignup
+        );
+        assert_eq!(
+            ConfigType::try_from_str("PLATFORM_SIGNUP").unwrap(),
+            ConfigType::PlatformSignup
+        );
+        // The From<String> fallback quirk must NOT silently turn the toggle
+        // into Turnstile — it must resolve to PlatformSignup.
+        let ct: ConfigType = "platform_signup".to_string().into();
+        assert_eq!(ct, ConfigType::PlatformSignup);
+        assert_ne!(ct, ConfigType::Turnstile);
     }
 
     // IAP providers (design support-iap §5.4 / §6.3 regression point).

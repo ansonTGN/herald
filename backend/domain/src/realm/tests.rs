@@ -253,7 +253,7 @@ mod realm_admin_tests {
 
         mock_rbac_init
             .expect_init_default_rbac()
-            .returning(|_, _| Box::pin(async { Ok(()) }));
+            .returning(|_| Box::pin(async { Ok(()) }));
 
         mock_user_service
             .expect_create_user_without_identity_check()
@@ -345,6 +345,112 @@ mod realm_admin_tests {
     }
 
     // =========================================================================
+    // Scenario 1b: Self-service provisioning bypasses the permission gate
+    // =========================================================================
+
+    /// `create_realm_self_service` must succeed even when the realm policy
+    /// denies every permission. The policy gate belongs only to the
+    /// admin/ext `create_realm` paths; the self-service path relies on the
+    /// signup handler's pre-flight defenses. If this test fails because the
+    /// policy is consulted, the public signup entry would be gated by an
+    /// identity the visitor does not have.
+    #[tokio::test]
+    async fn test_unit_create_realm_self_service_skips_policy_gate() {
+        let mut mock_realm_repo = MockRealmRepository::new();
+        let mut mock_user_service = MockUserService::new();
+        let mut mock_role_repo = MockRoleRepository::new();
+        let mut mock_user_role_repo = MockUserRoleRepository::new();
+        let mut mock_client_repo = MockClientRepository::new();
+        let mut mock_rbac_init = MockRealmInitializationService::new();
+
+        mock_realm_repo
+            .expect_create_realm()
+            .returning(|_| Box::pin(async { Ok(realm_fixture()) }));
+
+        mock_client_repo
+            .expect_get_client_app_by_client_id()
+            .returning(|_, _| Box::pin(async { Err(CoreError::NotFound) }));
+        mock_client_repo
+            .expect_create_client_app()
+            .returning(|_| Box::pin(async { Ok(client_fixture()) }));
+        mock_client_repo
+            .expect_set_first_party()
+            .returning(|_, _| Box::pin(async { Ok(()) }));
+        mock_rbac_init
+            .expect_init_default_rbac()
+            .returning(|_| Box::pin(async { Ok(()) }));
+        mock_user_service
+            .expect_create_user_without_identity_check()
+            .returning(|_| Box::pin(async { Ok(user_fixture()) }));
+        mock_role_repo
+            .expect_find_by_name()
+            .returning(|_, _, _| Box::pin(async { Ok(role_fixture()) }));
+        mock_user_role_repo
+            .expect_assign_role_to_user()
+            .returning(|_| Box::pin(async { Ok(()) }));
+
+        let mut mock_user_repo = MockUserRepository::new();
+        mock_user_repo
+            .expect_update_user()
+            .returning(|_, _| Box::pin(async { Ok(user_fixture()) }));
+
+        let mut mock_realm_config_repo = MockRealmConfigRepository::new();
+        mock_realm_config_repo.expect_upsert().returning(|_, _| {
+            Box::pin(async {
+                Ok(crate::realm_config::RealmConfig {
+                    id: crate::common::entities::generate_uuid_v7(),
+                    realm_id: "test-realm".to_string(),
+                    config_type: crate::realm_config::ConfigType::Registration,
+                    config_key: "enabled".to_string(),
+                    config_value: "false".to_string(),
+                    is_secret: false,
+                    enabled: true,
+                    metadata: Some(serde_json::json!({})),
+                    created_at: Utc::now(),
+                    updated_at: Utc::now(),
+                })
+            })
+        });
+        mock_realm_config_repo
+            .expect_batch_upsert()
+            .returning(|_, _| Box::pin(async { Ok(vec![]) }));
+
+        let realm_service = Arc::new(RealmServiceImpl::new(
+            Arc::new(mock_realm_repo),
+            Arc::new(DenyAllRealmPolicy),
+            Arc::new(mock_rbac_init),
+            Arc::new(mock_client_repo),
+            Arc::new(mock_user_role_repo),
+            Arc::new(mock_role_repo),
+            Arc::new(mock_user_repo),
+            Arc::new(mock_user_service),
+            Arc::new(mock_realm_config_repo),
+            Arc::new(mock_audit_repo()),
+        ));
+
+        let result = realm_service
+            .create_realm_self_service(
+                CreateRealmRequest {
+                    id: Some("test-realm".to_string()),
+                    name: "Test Realm".to_string(),
+                    description: None,
+                    admin_user: InitialAdminUser {
+                        email: "admin@test.com".to_string(),
+                        password: "password123".to_string(),
+                    },
+                },
+                "admin".to_string(),
+                audit_ctx(),
+            )
+            .await;
+
+        assert!(
+            result.is_ok(),
+            "self-service must not consult the policy gate"
+        );
+    }
+
+    // =========================================================================
     // Scenario 2: Rollback - User Creation Failure
     // =========================================================================
 
@@ -377,7 +483,7 @@ mod realm_admin_tests {
 
         mock_rbac_init
             .expect_init_default_rbac()
-            .returning(|_, _| Box::pin(async { Ok(()) }));
+            .returning(|_| Box::pin(async { Ok(()) }));
 
         // User creation fails
         mock_user_service
@@ -489,7 +595,7 @@ mod realm_admin_tests {
 
         mock_rbac_init
             .expect_init_default_rbac()
-            .returning(|_, _| Box::pin(async { Ok(()) }));
+            .returning(|_| Box::pin(async { Ok(()) }));
 
         mock_user_service
             .expect_create_user_without_identity_check()

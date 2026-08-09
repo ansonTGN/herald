@@ -8,6 +8,7 @@ import {
   customDomainConfigSchema,
   type TOTPConfigForm,
   type RegistrationConfigForm,
+  type PlatformSignupConfigForm,
   type TurnstileConfigForm,
   type EmailConfigForm,
   type WhiteLabelConfigForm,
@@ -62,6 +63,22 @@ export function parseRegistrationConfig(configs: RealmConfigResponse[]): Registr
 }
 
 /**
+ * Parses Platform self-service signup configuration from realm config array.
+ * Admin-realm-only single-row switch (DEC-009/013); missing row → false
+ * (fail-closed), matching the public status endpoint's behavior.
+ */
+export function parsePlatformSignupConfig(
+  configs: RealmConfigResponse[]
+): PlatformSignupConfigForm {
+  const enabledConfig = configs.find(
+    (c) => c.configType === 'platform_signup' && c.configKey === 'enabled'
+  )
+  return {
+    enabled: enabledConfig?.configValue === 'true',
+  }
+}
+
+/**
  * Builds TOTP config request for upsert operation
  * Converts frontend camelCase to backend snake_case
  */
@@ -94,6 +111,22 @@ export function buildRegistrationConfigRequest(config: RegistrationConfigForm) {
       configType: 'registration' as const,
       configKey: 'require_email_verification',
       configValue: config.requireEmailVerification ? 'true' : 'false',
+      isSecret: false,
+      enabled: true,
+    },
+  ]
+}
+
+/**
+ * Builds Platform self-service signup config request for upsert operation.
+ * Single row: configType=platform_signup, configKey=enabled (DEC-013).
+ */
+export function buildPlatformSignupConfigRequest(config: PlatformSignupConfigForm) {
+  return [
+    {
+      configType: 'platform_signup' as const,
+      configKey: 'enabled',
+      configValue: config.enabled ? 'true' : 'false',
       isSecret: false,
       enabled: true,
     },

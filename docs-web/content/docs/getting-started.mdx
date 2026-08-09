@@ -65,3 +65,5 @@ If the backend fails to start, check that PostgreSQL and Redis containers are ru
 ## Next Steps
 
 Once everything is running, open http://localhost:3000 to access the frontend. The admin user specified during realm creation has super admin permissions, and can invite users and configure permissions. See [Architecture](/docs/architecture) for what each module does.
+
+Realms are normally created by an Admin Realm admin from the management console. The admin realm can also open a public self-service signup entry — toggle *Settings → Platform → Allow Public Self-Service Signup* in the admin realm. When enabled, visitors can open `/admin/auth/signup`, fill in the form, and a new realm is provisioned on the spot with the visitor as its admin. The entry is fail-closed: a missing or off toggle refuses signups, and the same-IP 24-hour quota (2 realms) plus Cloudflare Turnstile (bound to the admin-web-console Client App) guard the public endpoint.

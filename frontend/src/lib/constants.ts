@@ -59,6 +59,7 @@ export const QUERY_KEYS = {
   TURNSTILE_STATUS: 'turnstile-status',
   EMAIL_OTP_STATUS: 'email-otp-status',
   PASSKEY_STATUS: 'passkey-status',
+  SIGNUP_STATUS: 'signup-status',
   EMAIL_OTP_REALM_CONFIG: 'email-otp-realm-config',
   USER_SUBSCRIPTIONS: 'user-subscriptions',
   SUBSCRIPTION_DETAILS: 'subscription-details',
