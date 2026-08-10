@@ -25,9 +25,8 @@ Fields on each Credit Account:
 | `name` | Display name |
 | `display_order` | Display order |
 | `enabled` | Whether it is enabled. When disabled, it is hidden from new users and cannot be purchased; users who already hold the account can still spend the remaining credits |
-| `receives_registration_credits` | Whether this is the Realm's registration-credits receiving account |
 
-Registration-credits receiving pool: at most one Credit Account per Realm can be flagged `receives_registration_credits`, enforced by a partial unique index `uq_credit_buckets_registration_pool`. Credits granted at user registration, and free periodic credits, both go into this account. If the Realm has no receiving pool configured, these system-granted credits have nowhere to go and are simply not granted — they do not silently fall into some implicit default account. Herald has no concept of a "default Credit Account"; every Credit Account must be explicitly created by an admin.
+Routing of registration and free-periodic credits is driven by `points_distribution_rules` (`owner_type=realm_registration`): a Realm can configure zero or more registration rules, each independently targeting one Credit Account and one grant policy (fixed periodic credits or a rolling-window quota). A single registration or free-periodic event can match multiple rules and fan out to multiple accounts at once. With no enabled rules, no credits are granted, and nothing falls into an implicit default account — Herald has no concept of a "default Credit Account"; every Credit Account must be explicitly created by an admin.
 
 The Credit Account catalog management API lives under `/api/realms/{realmId}/billing/credit-buckets`, with list, detail, create, update, delete, plus an `overview` endpoint that returns the balance matrix for each Credit Account × each credit type, along with a cross-account total. All of them require the Realm Admin's `points.manage` permission.
 
@@ -84,7 +83,7 @@ The billing period (from Stripe) and the quota rolling window (`quota_windows`, 
 
 Mappings are produced in three ways:
 
-1. **Admin manual sync**: calls the provider's Product API, pulls all products, and auto-creates or updates mappings. Newly created mappings are first bound to this Realm's registration receiving pool; afterwards the admin can move them to another Credit Account. Applies to Stripe and Creem.
+1. **Admin manual sync**: calls the provider's Product API, pulls all products, and auto-creates or updates mappings. Each newly created mapping must be bound to a Credit Account in this Realm (required; the admin can reassign it to another account afterwards). Applies to Stripe and Creem.
 2. **Admin manual create**: IAP providers (App Store / Google Play) have no catalog sync, so the admin creates the mapping directly with the store product ID.
 3. **Webhook incremental update**: when a payment event fires, info is extracted from the webhook payload to update the cache.
 

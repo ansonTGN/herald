@@ -141,7 +141,7 @@ Herald 使用 Stripe 的 inline pricing 创建 Checkout Session，不需要在 S
 - External Product ID（如 `prod_xxxx`）
 - External Price ID（如 `price_xxxx`）
 - 自动生成的 Entitlement Key（格式为 `stripe-{normalized_product_id}`）
-- 归属的积分账户（新同步的映射默认挂在 Realm 的注册接收池）
+- 归属的积分账户（必填；新同步的映射需要管理员绑定到一个积分账户，之后可改挂）
 - 积分策略状态
 
 列表的主标签是 Stripe 商品的产品名（Product name）。产品名缺失时回退到 External Product ID，再不行给占位，不会出现空标签。产品过滤器按产品名匹配，外部 ID 命中也算。
@@ -170,7 +170,7 @@ Herald 使用 Stripe 的 inline pricing 创建 Checkout Session，不需要在 S
 
 ### 归属积分账户
 
-每条映射必须挂在某个积分账户上。同步进来的映射默认挂在本 Realm 的注册接收池账户。如果这个套餐属于某条独立业务线，去 **积分账户** 页面把它挪到对应的积分账户。
+每条映射必须显式挂在某个积分账户上（必填）。同步进来的映射如果在创建时没有指定账户，需由管理员补绑；如果这个套餐属于某条独立业务线，去 **积分账户** 页面把它挂到对应的积分账户。积分账户决定用户购买后积分进哪个池、哪些 Client App 能消费这些积分。
 
 积分账户决定了两件事：用户购买后积分进哪个池、哪些 Client App 能消费这些积分。积分账户的概念见[计费架构](/docs/billing-overview#积分账户)。
 

@@ -106,7 +106,7 @@ Herald 当前支持已登录的 Admin Realm 管理员在管理后台手动创建
 
 - **自助注册**：无需任何平台权限，任何未登录访客均可访问注册页面（开关开启时）。
 - **访问新 realm**：注册者开通后仅可访问其新 realm，访问其他 realm 资源被拒绝（沿用 `docs/prd/core/realm.md` 的 realm 隔离原则）。
-- **平台开关控制**：需要 Admin Realm 的平台级管理权限（`realm.manage` 在 admin realm 中）。
+- **平台开关控制**：需要 Admin Realm 管理员对本 Realm 的设置管理权限（`settings.manage`）。平台开关作为 admin realm 的 `realm_config` 行承载，开关的查询与更新复用既有 Realm Settings 配置管理端点（见 `.ai/design/realm-create.md` §4.2.1/§4.5）；该端点按 `settings.manage` 授权。仅 admin realm 持有该开关配置行，因此实际可操作者仍限于 Admin Realm 管理员。
 
 **平台开关**
 
@@ -160,7 +160,7 @@ Herald 当前支持已登录的 Admin Realm 管理员在管理后台手动创建
 **适用性**: 适用
 
 - **接口能力范围**：自助开通注册接口供未登录访客调用，完成注册信息校验与 realm 开通；平台开关的查询与更新接口供 Admin Realm 管理员操作。新 realm 的初始化沿用既有 realm 创建能力，不在本 PRD 中重复定义接口契约。
-- **访问控制原则**：自助注册接口要求访客未登录且平台开关为开启状态；平台开关接口要求 Admin Realm 的平台级管理权限。
+- **访问控制原则**：自助注册接口要求访客未登录且平台开关为开启状态；平台开关接口复用既有 Realm Settings 配置管理端点，按 `settings.manage` 授权（见 §4.1）。
 - **租户 / realm 数据边界**：开通的新 realm 与其他 realm 严格隔离；注册者仅被授权其开通的 realm，访问其他 realm 资源被拒绝。
 - **安全性**：注册信息（含密码）的传输与存储遵循既有安全要求；实施同一 IP 24 小时 2 个的注册限额（DEC-realm-create-007），并按绑定 Client App 的 Turnstile 配置强制人机验证（DEC-realm-create-008）；IP 识别、计数实现等细节下沉技术设计。
 - 详细接口契约、校验规则与错误模型应在技术设计文档中维护。

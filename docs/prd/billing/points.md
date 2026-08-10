@@ -126,6 +126,8 @@
 
 ### 3.2 关键特性
 
+> **积分分发规则（`points_distribution_rules`）**：注册、免费周期、订阅等自动发放不再各自只把一次触发路由到单一账户和一组积分策略，而是由统一的 `points_distribution_rules` 承载。一次触发可命中多条规则，每条规则指定一个目标积分账户和发放策略（fixed 周期积分 **或** 滚动窗口 quota），向多个账户扇出发放。决策账本 `DEC-multi-wallet-grant-rules-011` 已显式推翻本 PRD 早期基线中"订阅/免费周期仅可用 quota 滑动窗口"的约束——fixed 周期积分现为可配置策略。下方仍保留的"滑动窗口配额"描述指的是 quota 策略本身的能力，不再表示唯一允许的模型。详见 `.ai/decision-log/multi-wallet-grant-rules.md`。
+
 - **按积分账户多池账户**: 每个用户对每个持有的积分账户拥有独立积分池，支持同一用户多池并存（池组织见 `docs/prd/billing/credit-bucket.md`）
 - **SDK 授权消费接口**: 提供基于 API Key 授权的 SDK，供第三方应用安全调用积分消耗接口
 - **多时间窗滚动配额**: 订阅/免费周期额度支持叠加多个时间窗（如 5 小时/周/月），可用额度取各窗口剩余最小值
@@ -359,14 +361,14 @@
 
 **适用性**: 适用
 
-- 接口能力范围包括：积分账户查询类（含窗口剩余 + 充值余额双维度）、积分消费类（SDK，含混合消费协调）、积分充值/发放类、交易历史查询类、套餐积分配置管理类（含多窗口配额）、Realm 默认配置管理类（含免费周期多窗口配额）、Webhook 回调处理类
+- 接口能力范围包括：积分账户查询类（含窗口剩余 + 充值余额双维度）、积分消费类（SDK，含混合消费协调）、积分充值/发放类、交易历史查询类、Entitlement Mapping 积分策略配置类（随 mapping 管理的 `points_distribution_rules`）、Realm 注册积分分发规则管理类（`registration-rules`，`owner_type=realm_registration`）、Webhook 回调处理类
 - 访问控制：SDK 消耗接口需 API Key 授权（ThirdParty 身份）；管理类接口需 Realm Admin 权限；用户查询类接口仅允许查询本人数据
 - SDK 消耗积分时校验 API Key 对 client_app 的作用域（client_app_scope），确保 API Key 只能操作其授权范围内的 client_app 积分
 - 限流策略：realm 级别 100 次/分钟，user 级别 20 次/分钟
 - 管理接口权限：所有管理端点使用 `require_authenticated_user_in_realm` + `require_permission` 进行权限控制：
-  - 积分数据查询（wallets、transactions、user_configs）：`points.view`
-  - 积分配置管理（plan_configs、grant、quota_windows）：`points.manage`
-  - Realm 默认积分配置（realm_default_config）：读操作 `settings.view`，写操作 `settings.manage`
+  - 积分数据查询（wallets、transactions）：`points.view`
+  - Entitlement Mapping 的积分分发规则（随 mapping 的 `point_rules`）：随 mapping CRUD，`billing.manage`（带 `point_rules` 时额外要 `points.manage`）
+  - Realm 注册积分分发规则（`registration-rules`，`owner_type=realm_registration`）：读操作 `points.view`，写操作 `points.manage`
 - 积分变更必须可追溯，所有发放、消费、回收操作创建交易记录
 - 消费原子性：单次消费的窗口额度扣减与池子扣减必须在同一事务内原子完成
 - Realm 隔离：所有接口严格遵守 realm 数据边界，防止跨 realm 操作
@@ -378,11 +380,11 @@
 
 **适用性**: 适用
 
-- 管理入口：租户管理员可在管理后台访问积分套餐配置、积分报表、Realm 默认配置管理页面
+- 管理入口：租户管理员可在管理后台访问 Entitlement Mapping 积分策略配置（随 mapping 的分发规则）、积分报表、Realm 注册积分分发规则管理页面
 - 用户入口：用户可在个人中心查看积分余额（窗口剩余 + 充值余额双展示）和交易历史
 - 积分充值页面：展示套餐兑换积分的比例和预期获得积分数
 - 套餐/积分策略配置页：积分策略支持配置多时间窗滚动配额（窗口长度 × 上限的集合）
-- Realm 默认积分配置页：免费周期配置支持多时间窗滚动配额
+- Realm 注册积分分发规则页：注册与免费周期发放按 `points_distribution_rules`（`owner_type=realm_registration`）配置，每条规则指定目标账户和发放策略（fixed 周期积分或滚动窗口 quota），支持多时间窗滚动配额
 - 交易历史：支持按时间范围、交易类型、来源应用筛选
 - 状态反馈：积分变更时（发放、消费、过期、回收、配额权益授予/撤销）提供明确的状态提示
 - 免费用户积分：展示窗口剩余额度与恢复时间
@@ -396,6 +398,8 @@
 ---
 
 ## 8. 已确认决策
+
+> **被后续决策覆盖的条款**：下列关于"subscription_credit / free_periodic_credit 采用 usage-based 滑动窗口配额"和"配额定义归属 entitlement mapping（订阅）与 realm default config（免费周期），不挂账户"的描述，已被 `DEC-multi-wallet-grant-rules-006`（移除单一钱包/单一积分策略字段）和 `DEC-multi-wallet-grant-rules-011`（允许订阅/免费周期规则同时配置 fixed 周期积分或滚动窗口 quota）显式推翻并扩展。当前权威规则以 `.ai/decision-log/multi-wallet-grant-rules.md` 为准：发放策略由 `points_distribution_rules` 承载，每条规则按 owner（entitlement mapping / realm registration）× trigger × policy（fixed 或 quota）路由到目标账户，一次触发可多账户扇出。本节保留历史决策以记录演进，不作为当前唯一约束。
 
 ### 8.1 已确认决策
 

@@ -95,6 +95,7 @@
 - **Provider 启用条件**：Realm 必须配置并启用 Apple Provider，否则 Herald 拒绝校验 native 凭证
 - **凭证校验严格性**：Herald 必须在服务端校验 Apple identityToken 的签名（使用 Apple JWKS 公钥）、签发者（`https://appleid.apple.com`）、受众（等于该 Realm 配置的 Apple Client ID）和有效期，不得信任 App 传来的任何明文用户信息
 - **用户匹配策略**：与现有 Apple web 跳转登录完全一致——通过 Apple 用户唯一标识（sub）匹配 → 邮箱匹配 → 创建新用户；Apple 不提供 union_id（与微信不同）
+- **自动建号受 Realm 注册政策门控（注册政策优先）**：当 Apple identityToken 未命中已有用户、需要新建账号时，必须先检查当前 Realm 的注册开关（`registration.enabled` / `is_registration_enabled`）。Realm 未开启自动注册时，native 路径**不得**绕过注册政策自动建号，返回注册未开放提示（实现上以 `409 conflict` 表达），引导用户走显式注册入口。已命中已有用户的关联登录不受此门控影响。该原则与邮箱验证码登录、其他 OAuth Provider 一致（见 `docs/prd/auth/email-otp-login.md` §4.1「注册政策优先」、`docs/prd/auth/oauth.md` §4.1）。
 - **邮箱处理规则**（与 Apple web 跳转登录有意不同，详见 §8 DEC-005）：
   - Apple 中转邮箱（`@privaterelay.appleid.apple.com`）是合法可收信地址，作真实邮箱处理，不生成占位邮箱
   - 凭证未返回邮箱 + Apple 用户唯一标识未命中已有 provider 记录（首次建号）→ 生成 `{sub}@apple.placeholder` 占位邮箱并标记未验证后建号（对齐微信占位邮箱策略）
@@ -112,6 +113,7 @@
 - **Apple JWKS 不可达**：Herald 无法获取 Apple 公钥时返回服务暂时不可用（属基础设施异常，不得静默跳过校验）
 - **用户取消 Apple 授权**：用户在 iOS 系统弹窗中取消或不允许授权 → App 不向 Herald 提交凭证，Herald 不介入
 - **未在 Apple Developer 启用 capability**：iOS App 未配置 Sign in with Apple capability → 系统弹窗无法拉起，属接入方配置问题，不在 Herald 范围
+- **Realm 未开启自动注册**：未注册用户首次通过 native 登录时，若 Realm 注册开关关闭，不创建账号并返回 `409 conflict`（注册未开放），引导用户走显式注册入口；已命中已有用户的登录不受影响
 
 ---
 
@@ -135,7 +137,7 @@
 
 - iOS App 内用户通过苹果系统弹窗完成 Apple 授权后，提交 identityToken 给 Herald，Herald 校验通过并签发该 App 的会话或下游授权码，全程不离开 App
 - Herald 后端正确校验 Apple identityToken 的签名、签发者、受众、有效期，拒绝篡改/伪造/过期的凭证
-- 未注册用户通过 native 登录自动创建 Herald 账号并登录成功；首次建号且邮箱缺失时仍能建号（占位邮箱、未验证），不被拒绝
+- 未注册用户通过 native 登录自动创建 Herald 账号并登录成功（仅在 Realm 已开启自动注册时；未开启时返回 `409 conflict` 并引导至显式注册入口）；首次建号且邮箱缺失时仍能建号（占位邮箱、未验证），不被拒绝
 - 已有 Herald 账号的用户（之前通过 Apple web 跳转或其他方式注册）通过 native 登录时关联到已有账号，不产生重复账号
 - native 登录在下游 Code+PKCE 场景中，校验通过后正确签发一次性授权码，接入方可凭 PKCE 换取令牌
 - 未配置 Apple Provider 的 Realm 返回明确错误

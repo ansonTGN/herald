@@ -25,9 +25,8 @@ Herald 的计费系统不维护本地商品目录。Stripe、Creem 这些支付�
 | `name` | 展示名 |
 | `display_order` | 展示顺序 |
 | `enabled` | 是否启用。禁用后对新用户不可见、不可购；已持有该账户的用户仍能消费剩余积分 |
-| `receives_registration_credits` | 是否是本 Realm 的注册积分接收账户 |
 
-注册积分接收池：每个 Realm 至多一个积分账户标为 `receives_registration_credits`，数据库用部分唯一索引 `uq_credit_buckets_registration_pool` 保证唯一。用户注册时发放的积分、免费的周期性积分，都进这个账户。如果 Realm 没配接收池，这些系统发放的积分无处可去，直接不发放——不会偷偷落到某个隐式默认账户。Herald 没有"默认积分账户"这个概念，每一个积分账户都必须是管理员显式建出来的。
+注册与免费周期积分的入账路由由 `points_distribution_rules`（`owner_type=realm_registration`）承载：Realm 可配置零到多条注册规则，每条规则独立指定一个目标积分账户和发放策略（fixed 周期积分或滚动窗口 quota）。一次注册或免费周期事件可命中多条规则，同时向多个账户扇出发放。没有启用规则时不发积分，也不会落到某个隐式默认账户——Herald 没有"默认积分账户"这个概念，每一个积分账户都必须是管理员显式建出来的。
 
 积分账户目录的管理 API 在 `/api/realms/{realmId}/billing/credit-buckets` 下，包含列表、详情、创建、更新、删除，外加一个 `overview` 接口返回每个积分账户 × 每种积分类型的余额矩阵和跨账户合计。全部需要 Realm Admin 的 `points.manage` 权限。
 
@@ -84,7 +83,7 @@ Entitlement Mapping 是一张映射表，把支付方的外部商品 ID 映射�
 
 映射通过三种方式产生：
 
-1. **管理员手动同步**：调用支付方 Product API，拉取所有商品，自动创建或更新映射。新建的映射先绑定到本 Realm 的注册接收池，之后管理员可以把它挪到别的积分账户。适用于 Stripe 和 Creem。
+1. **管理员手动同步**：调用支付方 Product API，拉取所有商品，自动创建或更新映射。新建的映射需绑定到本 Realm 的一个积分账户（必填，管理员可在同步后改挂到别的账户）。适用于 Stripe 和 Creem。
 2. **管理员手工创建**：IAP 支付方（App Store / Google Play）没有商品目录同步，管理员直接用商店商品 ID 建映射。
 3. **Webhook 增量更新**：支付事件触发时从 webhook payload 提取信息更新缓存。
 

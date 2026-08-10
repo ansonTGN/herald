@@ -10,11 +10,11 @@
 |-------|----------|--------------|
 | 租户与运营 | 创建 Realm → 配置 → Dashboard 运营 → 审计 | [Admin Realm](core/admin-realm.md)、[自助开通 Realm](core/realm-create.md)、[Realm Admin](core/realm-admin.md)、[审计](core/audit.md)、[内置保护](core/builtin-protection.md) |
 | 用户生命周期与合规 | 注册/登录 → 资料维护 → 协议确认 → 账户注销 | [普通用户](core/regular-user.md)、[合规适配](core/legal-consent-account-deletion.md) |
-| 登录体验与品牌 | 第三方登录 → 品牌页面 → 自定义域名 → 多语言 | [OAuth 应用](auth/third-party-app.md)、[OAuth 扩展](auth/oauth-extension.md)、[微信 OAuth](auth/wechat-oauth.md)、[Apple native 登录](auth/support-mobile-apple-login.md)、[White-label](core/white-label.md)、[自定义域名](core/realm-custom-domain.md)、[i18n](core/i18n.md) |
+| 登录体验与品牌 | 第三方登录 → 品牌页面 → 自定义域名 → 多语言 | [OAuth 应用](auth/third-party-app.md)、[OAuth 扩展](auth/oauth-extension.md)、[微信 OAuth](auth/wechat-oauth.md)、[邮箱验证码登录](auth/email-otp-login.md)、[Google One Tap](auth/google-one-tap.md)、[Apple native 登录](auth/support-mobile-apple-login.md)、[White-label](core/white-label.md)、[自定义域名](core/realm-custom-domain.md)、[i18n](core/i18n.md) |
 | 强认证 | 管理员配置 → 用户绑定 → 登录/恢复 | [TOTP](auth/totp.md)、[Passkey](auth/passkey.md)、[Device Code](auth/device-code.md) |
 | 授权与应用接入 | RBAC 配置 → Client App/API Key → SDK 调用 → 自建用户 UI | [Realm Admin](core/realm-admin.md)、[Client App 设置](auth/client-app-settings.md)、[SDK](integration/sdk.md)、[自建用户 UI](integration/custom-user-ui.md) |
-| 商品、支付与权益履约 | Provider 配置/同步 → 下单 → 支付 → 订阅或权益生效 → 补偿 | [支付平台](billing/payment-provider.md)、[Entitlement Mapping](billing/entitlement-mapping.md)、[支付尝试](billing/payment-attempt.md)、[订阅](billing/subscription.md)、[Paywall](billing/support-paywall.md)、[Webhook 补偿](billing/webhook-compensation.md)、[IAP](billing/support-iap.md) |
-| 积分与余额 | 策略配置 → 免费/付费发放 → 分账户持有和消费 → 查询历史 | [积分管理](billing/points-admin.md)、[免费积分](billing/points-free-user.md)、[积分包购买](billing/points-package-purchase.md)、[用户积分](billing/points-user.md)、[异步支付积分](billing/async-payment-points.md)、[积分账户](billing/credit-bucket.md) |
+| 商品、支付与权益履约 | Provider 配置/同步 → 下单 → 支付 → 订阅或权益生效 → 补偿 | [支付平台](billing/payment-provider.md)、[Entitlement Mapping](billing/entitlement-mapping.md)、[支付尝试](billing/payment-attempt.md)、[订阅](billing/subscription.md)、[履约模型扩展（买断/非续期订阅）](billing/pay_model.md)、[Paywall](billing/support-paywall.md)、[Webhook 补偿](billing/webhook-compensation.md)、[IAP](billing/support-iap.md) |
+| 积分与余额 | 策略配置 → 免费/付费发放 → 分账户持有和消费 → 查询历史 | [积分管理](billing/points-admin.md)、[免费积分](billing/points-free-user.md)、[积分包购买](billing/points-package-purchase.md)、[用户积分](billing/points-user.md)、[异步支付积分](billing/async-payment-points.md)、[积分账户](billing/credit-bucket.md)、[多钱包分发规则](billing/multi-wallet-grant-rules.md) |
 | 发票与退款凭证 | 支付归属 → 发票同步/开具 → 退款和 Credit Note | [发票与 Provider Fallback](billing/invoice.md)、[支付-发票归属](billing/payment-invoice-mapping.md) |
 
 ### 故事边界
@@ -115,6 +115,12 @@
 | US-AL-001 | 在 iOS App 内使用 Apple 账号一键登录 | Regular User | P0 | [auth/support-mobile-apple-login](auth/support-mobile-apple-login.md#故事-1在-ios-app-内使用-apple-账号一键登录-us-al-001) |
 | US-AL-002 | 接入方在 iOS App 中集成 Apple native 登录 | Third-Party App | P0 | [auth/support-mobile-apple-login](auth/support-mobile-apple-login.md#故事-2接入方在-ios-app-中集成-apple-native-登录-us-al-002) |
 | US-AL-003 | Apple native 登录与已有账号关联 | Regular User | P1 | [auth/support-mobile-apple-login](auth/support-mobile-apple-login.md#故事-3apple-native-登录与已有账号关联-us-al-003) |
+| US-EO-001 | 用户用邮箱验证码登录已有账号 | Regular User | P0 | [auth/email-otp-login](auth/email-otp-login.md#故事-1用户用邮箱验证码登录已有账号-us-eo-001) |
+| US-EO-002 | 未注册邮箱验证成功后自动注册（受 Realm 注册政策门控） | Regular User | P0 | [auth/email-otp-login](auth/email-otp-login.md#故事-2未注册邮箱验证成功后自动注册-us-eo-002) |
+| US-EO-003 | Realm 管理员配置邮箱验证码登录与自动注册 | Realm Admin | P0 | [auth/email-otp-login](auth/email-otp-login.md#故事-3realm-管理员配置邮箱验证码登录与自动注册-us-eo-003) |
+| US-OT-001 | 通过 One Tap 在第三方应用一键登录 | Regular User | P0 | [auth/google-one-tap](auth/google-one-tap.md#故事-1通过-one-tap-在第三方应用一键登录-us-ot-001) |
+| US-OT-002 | 第三方应用集成 One Tap | 第三方应用开发者 | P0 | [auth/google-one-tap](auth/google-one-tap.md#故事-2第三方应用集成-one-tap-us-ot-002) |
+| US-OT-003 | One Tap 用户与已有账号关联 | Regular User | P1 | [auth/google-one-tap](auth/google-one-tap.md#故事-3one-tap-用户与已有账号关联-us-ot-003) |
 | US-BI-006 | 查看订阅列表 | Billing User | P0 | [billing/subscription](billing/subscription.md#故事-6查看订阅列表-us-bi-006) |
 | US-BI-007 | 第三方应用查询套餐状态（SDK 集成） | Billing User | P0 | [billing/subscription](billing/subscription.md#故事-7第三方应用查询套餐状态sdk-集成-us-bi-007) |
 | US-BI-008 | 查看订阅变更历史 | Billing User | P1 | [billing/subscription](billing/subscription.md#故事-8查看订阅变更历史-us-bi-008) |
@@ -185,6 +191,10 @@
 | US-CB-006 | 查看积分账户维度的交易历史 | Regular User | P1 | [billing/credit-bucket](billing/credit-bucket.md#故事-6查看积分账户维度的交易历史-us-cb-006) |
 | US-CB-007 | SDK 按 Client App 跨积分账户消费 | Third-Party App | P0 | [billing/credit-bucket](billing/credit-bucket.md#故事-7sdk-按-client-app-跨积分账户消费-us-cb-007) |
 | US-CB-008 | 订阅生命周期按账户池发放与回收 | System | P0 | [billing/credit-bucket](billing/credit-bucket.md#故事-8订阅生命周期按账户池发放与回收-us-cb-008) |
+| US-MWGR-001 | 为一个购买配置多条积分分发规则 | Realm Admin | P0 | [billing/multi-wallet-grant-rules](billing/multi-wallet-grant-rules.md#故事-1为一个购买配置多条积分分发规则-us-mwgr-001) |
+| US-MWGR-002 | 为注册配置多条积分分发规则 | Realm Admin | P0 | [billing/multi-wallet-grant-rules](billing/multi-wallet-grant-rules.md#故事-2为注册配置多条积分分发规则-us-mwgr-002) |
+| US-MWGR-003 | 一次业务事件完整执行多条积分规则 | System | P0 | [billing/multi-wallet-grant-rules](billing/multi-wallet-grant-rules.md#故事-3一次业务事件完整执行多条积分规则-us-mwgr-003) |
+| US-MWGR-004 | 查看和停用积分分发规则 | Realm Admin | P1 | [billing/multi-wallet-grant-rules](billing/multi-wallet-grant-rules.md#故事-4查看和停用积分分发规则-us-mwgr-004) |
 | US-PM-001 | 订阅续费记录每一次支付 | System | P0 | [billing/payment-invoice-mapping](billing/payment-invoice-mapping.md#故事-1订阅续费记录每一次支付-us-pm-001) |
 | US-PM-002 | Creem 订阅续费同步发票 | System | P0 | [billing/payment-invoice-mapping](billing/payment-invoice-mapping.md#故事-2creem-订阅续费同步发票-us-pm-002) |
 | US-PM-003 | 外部发票归属本地支付或订阅 | System | P1 | [billing/payment-invoice-mapping](billing/payment-invoice-mapping.md#故事-3外部发票归属本地支付或订阅-us-pm-003) |
@@ -230,6 +240,22 @@
 | US-IAP-004 | Apple 服务端通知驱动生命周期与兜底 | System | P0 | [billing/support-iap](billing/support-iap.md#故事-4apple-服务端通知驱动生命周期与兜底-us-iap-004) |
 | US-IAP-005 | 查询 IAP 订阅与权益状态 | Third-Party App | P1 | [billing/support-iap](billing/support-iap.md#故事-5查询-iap-订阅与权益状态-us-iap-005) |
 | US-IAP-006 | 定时拉取对账（Google 生命周期主驱动 / Apple 补偿） | System | P0 | [billing/support-iap](billing/support-iap.md#故事-6定时拉取对账google-生命周期主驱动--apple-补偿us-iap-006) |
+| US-BM-001 | 配置买断商品映射 | Realm Admin | P0 | [billing/pay_model](billing/pay_model.md#故事-1配置买断商品映射-us-bm-001) |
+| US-BM-002 | 购买卖断商品 | Regular User | P0 | [billing/pay_model](billing/pay_model.md#故事-4购买买断商品-us-bm-002) |
+| US-BM-003 | 恢复买断购买 | Regular User | P0 | [billing/pay_model](billing/pay_model.md#故事-5恢复买断购买-us-bm-003) |
+| US-BM-004 | 查询买断权益（与 US-NR-004 同场景） | Third-Party App | P1 | [billing/pay_model](billing/pay_model.md#故事-7查询权益非续期订阅与买断us-nr-004买断部分对应-us-bm-004) |
+| US-BM-005 | 退款或撤销买断（回收支付来源角色） | System | P0 | [billing/pay_model](billing/pay_model.md#故事-8退款或撤销买断-us-bm-005) |
+| US-NR-001 | 配置非续期订阅映射 | Realm Admin | P0 | [billing/pay_model](billing/pay_model.md#故事-2配置非续期订阅映射-us-nr-001) |
+| US-NR-002 | 管理非续期订阅（区分计费类型与截止时间） | Realm Admin | P1 | [billing/pay_model](billing/pay_model.md#故事-3管理非续期订阅-us-nr-002) |
+| US-NR-003 | 购买非续期订阅 | Regular User | P0 | [billing/pay_model](billing/pay_model.md#故事-6购买非续期订阅-us-nr-003) |
+| US-NR-004 | 查询非续期订阅（与 US-BM-004 同场景） | Third-Party App | P1 | [billing/pay_model](billing/pay_model.md#故事-7查询权益非续期订阅与买断us-nr-004买断部分对应-us-bm-004) |
+| US-NR-005 | 处理非续期订阅生命周期 | System | P0 | [billing/pay_model](billing/pay_model.md#故事-9处理非续期订阅生命周期-us-nr-005) |
+| US-PW-001 | 配置 entitlement 映射的 role 授予维度 | Realm Admin | P0 | [billing/support-paywall](billing/support-paywall.md#故事-1配置-entitlement-映射的-role-授予维度-us-pw-001) |
+| US-PW-002 | 一次性纯权益购买成功且不报错 | Realm Admin | P1 | [billing/support-paywall](billing/support-paywall.md#故事-2一次性纯权益购买成功且不报错-us-pw-002) |
+| US-PW-003 | 支付成功自动授予 role | System | P0 | [billing/support-paywall](billing/support-paywall.md#故事-3支付成功自动授予-role-us-pw-003) |
+| US-PW-004 | 一次性永久权益一人一次防重复购买 | Regular User | P0 | [billing/support-paywall](billing/support-paywall.md#故事-4一次性永久权益一人一次防重复购买-us-pw-004) |
+| US-PW-005 | 支付事件触发 role 撤销 | System | P0 | [billing/support-paywall](billing/support-paywall.md#故事-5支付事件触发-role-撤销-us-pw-005) |
+| US-PW-006 | 第三方应用凭 role 一行判断解锁功能 | Third-Party App | P1 | [billing/support-paywall](billing/support-paywall.md#故事-6第三方应用凭-role-一行判断解锁功能-us-pw-006) |
 
 ---
 
@@ -256,6 +282,7 @@
 | TOTP User | [auth/totp.md](auth/totp.md) | [TOTP PRD](/docs/prd/auth/totp.md) |
 | Passkey User | [auth/passkey.md](auth/passkey.md) | [Passkey PRD](/docs/prd/auth/passkey.md) |
 | OAuth Extension | [auth/oauth-extension.md](auth/oauth-extension.md) | [OAuth PRD](/docs/prd/auth/oauth.md) |
+| Google One Tap | [auth/google-one-tap.md](auth/google-one-tap.md) | [Google One Tap PRD](/docs/prd/auth/google-one-tap.md) |
 | WeChat OAuth | [auth/wechat-oauth.md](auth/wechat-oauth.md) | [WeChat OAuth PRD](/docs/prd/auth/wechat-oauth.md) |
 | Apple Native Login | [auth/support-mobile-apple-login.md](auth/support-mobile-apple-login.md) | [Apple native 登录 PRD](/docs/prd/auth/support-mobile-apple-login.md) |
 | Device Code | [auth/device-code.md](auth/device-code.md) | [Device Code PRD](/docs/prd/auth/device-code.md) |

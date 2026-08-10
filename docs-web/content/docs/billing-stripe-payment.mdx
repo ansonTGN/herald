@@ -141,7 +141,7 @@ After sync you will see the list of products pulled from Stripe. Each record con
 - External Product ID (e.g. `prod_xxxx`)
 - External Price ID (e.g. `price_xxxx`)
 - An auto-generated Entitlement Key (format `stripe-{normalized_product_id}`)
-- The owning Credit Account (newly synced mappings default to the Realm's registration receiving pool)
+- The owning Credit Account (required; newly synced mappings must be bound to a Credit Account by the admin, and can be reassigned afterwards)
 - Points policy state
 
 The list's primary label is the Stripe product name. When the product name is missing, it falls back to the External Product ID, then a placeholder — never an empty label. The product filter matches on product name; hitting the external ID also counts.
@@ -170,7 +170,7 @@ Each mapping tells Herald: "this Stripe product = this Herald entitlement".
 
 ### Anchor to a Credit Account
 
-Each mapping must be attached to a Credit Account. Synced mappings default to this Realm's registration receiving-pool account. If this plan belongs to a separate business line, go to the **Credit Accounts** page and move it to the right account.
+Each mapping must be explicitly attached to a Credit Account (required). If a synced mapping was created without an account, the admin must bind one; if this plan belongs to a separate business line, go to the **Credit Accounts** page and attach it to the right account.
 
 The Credit Account decides two things: which pool the user's credits land in after purchase, and which Client Apps can spend those credits. See [Billing Architecture](/docs/billing-overview) for the Credit Account concept.
 

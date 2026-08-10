@@ -19,6 +19,7 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "i18n:check-orphans": "node scripts/find-orphan-messages.mjs",
     "type-check": "paraglide-js compile --project ./project.inlang --outdir ./src/paraglide --strategy localStorage baseLocale --emit-ts-declarations && tsc --noEmit"
   },
   "dependencies": {

@@ -1,4 +1,5 @@
 import js from '@eslint/js'
+import globals from 'globals'
 import tseslint from '@typescript-eslint/eslint-plugin'
 import tsparser from '@typescript-eslint/parser'
 import react from 'eslint-plugin-react'
@@ -117,6 +118,15 @@ export default [
     files: ['src/components/client-apps/wizard-form-context.tsx'],
     rules: {
       'react-hooks/refs': 'off',
+    },
+  },
+  // Node 工具脚本运行在 Node 而非浏览器，注入 Node 全局以通过 no-undef
+  {
+    files: ['scripts/**/*.mjs'],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+      },
     },
   },
 ]

@@ -87,6 +87,7 @@ Google One Tap 允许第三方应用在自己的页面上直接弹出 Google 账
 - **凭证验证严格性**：Herald 必须在服务端验证 Google ID Token 的签名（使用 Google JWKS 公钥）、issuer、audience（等于该 Realm 配置的 client_id）和 expiry，不得信任前端传来的任何明文用户信息
 - **邮箱验证要求**：Google 返回的凭证中邮箱未验证时，Herald 拒绝创建用户或登录
 - **用户匹配策略**：与现有跳转式 Google 登录完全一致——通过 Google 用户 ID（open_id）匹配 → 邮箱匹配 → 创建新用户
+- **自动建号受 Realm 注册政策门控（注册政策优先）**：当 Google 凭证未命中已有用户、需要新建账号时，必须先检查当前 Realm 的注册开关（`registration.enabled` / `is_registration_enabled`）。Realm 未开启自动注册时，One Tap 路径**不得**绕过注册政策自动建号，返回注册未开放提示（实现上以 `409 conflict` 表达），引导用户走显式注册入口。已命中已有用户的关联登录不受此门控影响。该原则与邮箱验证码登录、其他 OAuth Provider 一致（见 `docs/prd/auth/email-otp-login.md` §4.1「注册政策优先」、`docs/prd/auth/oauth.md` §4.1）。
 - **一次性凭证**：Google ID Token 有有效期（约 1 小时），过期后验证失败
 - **共存原则**：One Tap 与跳转式 Google 登录按钮共存，互不影响；用户可通过任一方式登录
 - **下游授权码模式绑定**：当请求携带 `downstream_state` 时，必须指向一个已存在、未消费、与当前 realm/client_id/redirect_uri/code_challenge 完整绑定的下游授权事务（与 OAuth brokered redirect 共用校验）
@@ -99,6 +100,7 @@ Google One Tap 允许第三方应用在自己的页面上直接弹出 Google 账
 - **One Tap 浮层频率**：用户关闭浮层后由 Google SDK 控制不再弹出（Cool-down），Herald 不介入此行为
 - **未登录 Google 账号**：浏览器未登录 Google 时浮层不弹出，属正常降级，用户使用其他登录方式
 - **邮箱未验证**：Google 凭证中 `email_verified` 为 false 时拒绝创建用户或登录
+- **Realm 未开启自动注册**：未注册用户首次通过 One Tap 登录时，若 Realm 注册开关关闭，不创建账号并返回 `409 conflict`（注册未开放），引导用户走显式注册入口；已命中已有用户的登录不受影响
 
 ---
 
@@ -120,7 +122,7 @@ Google One Tap 允许第三方应用在自己的页面上直接弹出 Google 账
 
 - 第三方应用网站嵌入 One Tap 后，已登录 Google 的用户能看到浮层并一键完成登录，全程无页面跳转
 - Herald 后端正确验证 Google 凭证的签名、issuer、audience、expiry，拒绝篡改/伪造/过期的凭证
-- 未注册用户通过 One Tap 自动创建 Herald 账号并登录成功
+- 未注册用户通过 One Tap 自动创建 Herald 账号并登录成功（仅在 Realm 已开启自动注册时；未开启时返回 `409 conflict` 并引导至显式注册入口）
 - 已有 Herald 账号（邮箱一致）的用户通过 One Tap 登录时关联到已有账号，不产生重复账号
 - One Tap 在下游 Code+PKCE 场景中，验证通过后正确签发授权码，第三方应用可正常换取 token
 - 未配置 Google Provider 的 Realm 返回明确错误

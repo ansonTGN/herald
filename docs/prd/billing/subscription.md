@@ -240,6 +240,15 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 
 > **退款说明**：`refund.created`（Creem）/ `charge.refunded`（Stripe）事件不作为独立订阅状态。退款事件记录订阅历史事件（`SubscriptionHistoryEvent`，类型 `Refunded`）并触发积分回收（按退款类型比例撤销），不改变订阅状态。详见 `docs/prd/billing/points.md`。
 
+**用户自助取消（Provider-driven self-service cancel）**：
+
+- 用户可在「我的订阅」页主动取消自己的订阅；取消请求由 Herald 转发到对应 Provider 的取消 API，而不是仅做本地状态翻转。
+- **Stripe**：调用 Stripe 订阅取消接口；Provider 返回立即生效（`Canceled`）或周期末生效（`Scheduled Cancel`），Herald 按 Provider 返回结果落账。
+- **Creem**：调用 Creem 取消接口；按 Provider 响应区分立即取消（`Canceled`）与预定取消（`Scheduled Cancel`）。
+- **Apple / Google（IAP）订阅**：Herald 不支持用户在应用内直接取消 IAP 订阅，对该渠道的自助取消请求返回明确错误（`400`），引导用户前往 App Store / Google Play 系统设置完成取消；IAP 取消由商店服务端通知驱动后续状态流转。
+- 取消结果（立即或周期末）同步为订阅历史事件（`canceled` 或 `scheduled_cancel`），与 Provider webhook 推送的状态保持一致。
+- 管理员侧的订阅管理能力不受影响；本条仅描述终端用户自助入口。
+
 **订阅变更事件类型**：
 
 | 类型 | 说明 | 触发场景 |

@@ -105,7 +105,7 @@ Herald does not automatically know what products you created in Creem. The next 
 3. Select provider **Creem**
 4. Wait for sync to finish
 
-After sync you will see the list of products pulled from Creem. Each record contains the External Product ID, an auto-generated Entitlement Key (format `creem-{normalized_product_id}`), and its default owning Credit Account (the Realm's registration receiving pool). The list's primary label is the product name; when missing it falls back to the External Product ID.
+After sync you will see the list of products pulled from Creem. Each record contains the External Product ID, an auto-generated Entitlement Key (format `creem-{normalized_product_id}`), and its owning Credit Account (each mapping must be explicitly bound to a Credit Account). The list's primary label is the product name; when missing it falls back to the External Product ID.
 
 Creem prices are shown as-is. The price Creem returns is already a display value (a string like `"9.99"`); it is used directly, with no Stripe-style smallest-currency-unit (cents) divide-by-100 conversion. Currency follows the Creem return value. The two conversion branches (Stripe and Creem) are separate and never pollute each other.
 
@@ -127,7 +127,7 @@ This step is the main difference between Creem and Stripe integration. Stripe ca
 
 ### Anchor to a Credit Account
 
-Each mapping must be attached to a Credit Account. Synced mappings default to this Realm's registration receiving-pool account. If this plan belongs to a separate business line, go to the **Credit Accounts** page and move it to the right account.
+Each mapping must be explicitly attached to a Credit Account (required). If a synced mapping was created without an account, the admin must bind one; if this plan belongs to a separate business line, go to the **Credit Accounts** page and attach it to the right account.
 
 The Credit Account decides two things: which pool the user's credits land in after purchase, and which Client Apps can spend those credits. See [Billing Architecture](/docs/billing-overview) for the Credit Account concept.
 
