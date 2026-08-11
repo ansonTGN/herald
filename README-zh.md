@@ -77,6 +77,17 @@ Herald 正在寻找构建 AI 产品的创业团队。当前阶段希望了解哪
 - **准备开始试用？** 运行快速开始，或者先体验在线演示。
 - **正在用 Herald 构建产品？** [提交 Issue](https://github.com/timzaak/herald/issues)，告诉我们你的需求。
 
+## AI Agent 专用入口
+
+Herald 的文档以 MDX 编写，位于 [`docs-web/content/docs/`](docs-web/content/docs/)（英文）和 [`docs-web/content/docs/zh/`](docs-web/content/docs/zh/)（中文），发布于 https://auth.fornetcode.com。AI agent 请优先使用下列结构化来源，而非抓取渲染后的 HTML：
+
+- **完整文档索引（LLM）：** https://auth.fornetcode.com/llms.txt
+- **完整文档全文（LLM）：** https://auth.fornetcode.com/llms-full.txt
+- **单页 Markdown：** 在任意文档 URL 后加 `.md`，例如 https://auth.fornetcode.com/zh/docs/auth-passkey.md
+- **API 参考（OpenAPI）：** [`docs-web/openapi.json`](docs-web/openapi.json)
+
+仓库内 MDX 源文件：`docs-web/content/docs/{getting-started,architecture,configuration,deployment,billing-overview,billing-stripe-payment,billing-creem-payment,billing-iap,billing-invoice,billing-credit-note,auth-passkey,auth-email-otp,auth-apple-native,third-party-integration,custom-user-ui,ui-custom,realm-custom-domain,points-quota}.mdx`。
+
 ## 许可证
 
 Herald 采用 [Apache-2.0](LICENSE) 许可证。你可以在商业产品中自由使用、修改和分发，开源项目不收取按用户计算的许可证费用。

@@ -77,6 +77,17 @@ Herald is looking for startup teams building AI products. The current goal is to
 - **Ready to test it?** Run the quick start or use the live demo.
 - **Building something with Herald?** [Open an issue](https://github.com/timzaak/herald/issues) and tell us what you need.
 
+## For AI Agents
+
+Herald's documentation is authored as MDX under [`docs-web/content/docs/`](docs-web/content/docs/) (English) and [`docs-web/content/docs/zh/`](docs-web/content/docs/zh/) (Chinese), and published at https://auth.fornetcode.com. Prefer these structured sources over scraping rendered HTML:
+
+- **Full doc index (for LLMs):** https://auth.fornetcode.com/llms.txt
+- **Full doc text (for LLMs):** https://auth.fornetcode.com/llms-full.txt
+- **Single page as Markdown:** append `.md` to any doc URL, e.g. https://auth.fornetcode.com/en/docs/auth-passkey.md
+- **API reference (OpenAPI):** [`docs-web/openapi.json`](docs-web/openapi.json)
+
+Source MDX files (in-repo): `docs-web/content/docs/{getting-started,architecture,configuration,deployment,billing-overview,billing-stripe-payment,billing-creem-payment,billing-iap,billing-invoice,billing-credit-note,auth-passkey,auth-email-otp,auth-apple-native,third-party-integration,custom-user-ui,ui-custom,realm-custom-domain,points-quota}.mdx`.
+
 ## License
 
 Herald is licensed under [Apache-2.0](LICENSE). You can use, modify, and distribute it, including in commercial products. The open-source project has no per-user license fee.
