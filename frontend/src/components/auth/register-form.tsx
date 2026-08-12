@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { register } from '@/lib/api-generated'
 import type { RegisterRequest } from '@/lib/api-generated'
 import { FIRST_PARTY_CLIENT_ID } from '@/lib/auth-utils'
+import { DEFAULT_PASSWORD_CONFIG } from '@/lib/password-strength'
 import { useFormMutation } from '@/hooks/use-form-mutation'
 import { PasswordStrengthMeter } from './password-strength-meter'
 import { TurnstileWidget } from './turnstile-widget'
@@ -51,14 +52,6 @@ interface RegisterFormProps {
   realmId: string
   onSuccess: (verificationRequired: boolean) => void
 }
-
-const PASSWORD_CONFIG = {
-  minLength: PASSWORD_MIN_LENGTH,
-  requireUppercase: true,
-  requireLowercase: true,
-  requireNumber: true,
-  requireSpecialChar: true,
-} as const
 
 export function RegisterForm({ realmId, onSuccess }: RegisterFormProps) {
   const { data: turnstileStatus, isLoading: loadingTurnstile } = useQuery(
@@ -149,7 +142,10 @@ export function RegisterForm({ realmId, onSuccess }: RegisterFormProps) {
                 field.state.meta.errors.length > 0 && (
                   <p className="text-sm text-red-500">{getFieldErrorMessage(field.state.meta)}</p>
                 )}
-              <PasswordStrengthMeter password={field.state.value ?? ''} config={PASSWORD_CONFIG} />
+              <PasswordStrengthMeter
+                password={field.state.value ?? ''}
+                config={DEFAULT_PASSWORD_CONFIG}
+              />
             </div>
           )}
         </form.Field>

@@ -26,6 +26,13 @@ function translateUnmet(item: { key: PasswordStrengthMessageKey; length?: number
 }
 
 export function PasswordStrengthMeter({ password, config }: PasswordStrengthMeterProps) {
+  // An empty field is not a "violation" worth flagging — surface the meter and
+  // its rules only once the user has typed something, so we don't dump all five
+  // requirements on load.
+  if (password.length === 0) {
+    return null
+  }
+
   const strength = calculatePasswordStrength(password, config)
   const colorClass = COLOR_CLASSES[strength.color]
 

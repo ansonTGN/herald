@@ -37,10 +37,20 @@ export function isCustomDomainPath(pathname: string): boolean {
 
 export function getLegacyRealmId(pathname: string): string {
   const first = firstPathSegment(pathname)
-  if (first && SESSION_SCOPED_ROOT_SEGMENTS.has(first)) {
+  if (!first) return 'admin'
+  // Session-scoped roots (/manage, /user, /subscription) carry no realm in the
+  // URL — their realm comes from the session store.
+  if (SESSION_SCOPED_ROOT_SEGMENTS.has(first)) {
     return useAuthStore.getState().realmId || 'admin'
   }
-  return first || 'admin'
+  // Public realm-scoped roots (/auth, /legal, /device) are prefix-less on the
+  // main domain and resolve to the default 'admin' realm. Returning the segment
+  // name itself (e.g. 'auth') would yield an invalid realm id.
+  if (REALM_SCOPED_PUBLIC_ROOT_SEGMENTS.has(first)) {
+    return 'admin'
+  }
+  // Legacy realm-prefixed URLs (e.g. /admin/auth/login) — first segment is the realm.
+  return first
 }
 
 export function getCachedCustomDomainRealm(): ResolvedRealmContext | null {
@@ -64,9 +74,18 @@ export async function resolveRealmContext(pathname: string): Promise<ResolvedRea
     query: host ? { host } : {},
   })
   if (response.error) {
-    // Main-domain session routes have no realm prefix. Their realm is loaded
-    // from /api/auth/status by the root loader, not from custom-domain DNS.
-    if (pathname === '/' || SESSION_SCOPED_ROOT_SEGMENTS.has(firstPathSegment(pathname) ?? '')) {
+    // On a non-custom-domain host the resolve endpoint deterministically 404s.
+    // For main-domain paths that carry no realm prefix ('/', session-scoped
+    // /manage /user /subscription, public /auth /legal /device), fall back to
+    // the legacy realm model via getLegacyRealmId so the app still renders
+    // instead of throwing. getLegacyRealmId is the single source of truth for
+    // the fallback realm id across both entry points.
+    const firstSeg = firstPathSegment(pathname) ?? ''
+    const isUnprefixedMainDomainPath =
+      pathname === '/' ||
+      SESSION_SCOPED_ROOT_SEGMENTS.has(firstSeg) ||
+      REALM_SCOPED_PUBLIC_ROOT_SEGMENTS.has(firstSeg)
+    if (isUnprefixedMainDomainPath) {
       // Cache the fallback so subsequent renders/loads don't re-fetch the same
       // 404ing resolve endpoint on every navigation (the host is stable within
       // a page session; a non-custom-domain host deterministically 404s). Without

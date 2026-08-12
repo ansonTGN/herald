@@ -171,4 +171,27 @@ describe('RegistrationConfigForm', () => {
     const requireEmailSwitch = screen.getByTestId('reg-require-email-switch')
     expect(requireEmailSwitch).not.toBeDisabled()
   })
+
+  // email 失效时开关视觉应反映"实际生效状态"(OFF),而非 DB 存储值(ON)。
+  // 后端 is_email_verification_required 已对 email 未配置做 fail-safe 降级,
+  // UI 必须与之同态:emailConfigured=false 时,即使 DB require_email_verification=true,
+  // 开关也应显示 OFF(且禁用),避免"ON+灰色禁用"的歧义视觉。
+  it('GIVEN email not configured and DB requireEmailVerification=true WHEN rendering THEN should show switch OFF (not ON+disabled)', async () => {
+    const initialConfig: RegistrationConfigFormData = {
+      enabled: true,
+      requireEmailVerification: true,
+    }
+
+    const screen = render(
+      <RegistrationConfigForm
+        {...defaultProps}
+        initialConfig={initialConfig}
+        emailConfigured={false}
+      />
+    )
+
+    const requireEmailSwitch = screen.getByTestId('reg-require-email-switch')
+    expect(requireEmailSwitch).toBeDisabled()
+    expect(requireEmailSwitch).not.toBeChecked()
+  })
 })

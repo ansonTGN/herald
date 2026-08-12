@@ -23,6 +23,7 @@ interface ConfigSwitchFieldProps {
   description: string
   disabled?: boolean
   errorTestId?: string
+  checked?: boolean
 }
 
 /**
@@ -37,6 +38,7 @@ export function ConfigSwitchField({
   description,
   disabled,
   errorTestId,
+  checked,
 }: ConfigSwitchFieldProps) {
   return (
     <div className="space-y-2">
@@ -47,7 +49,7 @@ export function ConfigSwitchField({
         </div>
         <Switch
           id={id}
-          checked={field.state.value}
+          checked={checked ?? field.state.value}
           onCheckedChange={field.handleChange}
           disabled={disabled}
           data-testid={`${id}-switch`}

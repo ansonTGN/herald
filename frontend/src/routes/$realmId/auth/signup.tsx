@@ -45,7 +45,7 @@ export function SignupPage() {
 
   if (isLoading) {
     return (
-      <AuthPageWrapper whiteLabel={whiteLabel} realmName={publicConfig?.realmName}>
+      <AuthPageWrapper whiteLabel={whiteLabel}>
         <div className="text-gray-600">{m['common.loading']()}</div>
       </AuthPageWrapper>
     )
@@ -55,7 +55,7 @@ export function SignupPage() {
   // disabled (DEC-013), matching the backend's missing-config → false behavior.
   if (statusError || !signupEnabled) {
     return (
-      <AuthPageWrapper whiteLabel={whiteLabel} realmName={publicConfig?.realmName}>
+      <AuthPageWrapper whiteLabel={whiteLabel}>
         <Card className="max-w-md w-full">
           <CardHeader>
             <CardTitle data-testid="signup-disabled-notice">
@@ -77,7 +77,7 @@ export function SignupPage() {
   }
 
   return (
-    <AuthPageWrapper whiteLabel={whiteLabel} realmName={publicConfig?.realmName}>
+    <AuthPageWrapper whiteLabel={whiteLabel}>
       <Card className="max-w-md w-full" data-testid="signup-card">
         <CardHeader>
           <CardTitle data-testid="signup-title">{m['auth.signup.title']()}</CardTitle>
@@ -87,18 +87,6 @@ export function SignupPage() {
         </CardHeader>
         <CardContent>
           <SignupForm onSuccess={handleSignupSuccess} />
-          <div className="mt-4 text-center">
-            <span className="text-sm text-gray-500">
-              {m['auth.signup.already_have_account']()}{' '}
-            </span>
-            <Link
-              to={realmPath(realmContext, '/auth/login')}
-              className="text-sm font-medium text-primary hover:text-primary/80"
-              data-testid="login-link"
-            >
-              {m['auth.signup.login_link']()}
-            </Link>
-          </div>
         </CardContent>
       </Card>
     </AuthPageWrapper>

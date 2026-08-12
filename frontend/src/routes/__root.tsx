@@ -14,6 +14,7 @@ import {
 } from '@/lib/constants/auth-constants'
 import { useIsAuthenticated, useRealmId } from '@/stores/auth-store'
 import { ReconsentDialog } from '@/components/legal/ReconsentDialog'
+import { RootRouteError } from '@/components/route-error'
 import {
   consentStatusQueryOptions,
   recordConsentMutation,
@@ -148,6 +149,7 @@ export const Route = createRootRouteWithContext<RouterContext>()({
   },
 
   component: RootComponent,
+  errorComponent: RootRouteError,
 })
 
 function RootComponent() {

@@ -3,6 +3,7 @@ import { signup } from '@/lib/api-generated'
 import type { SignupRequest } from '@/lib/api-generated'
 import { completeSignup } from '@/lib/auth-utils'
 import { ADMIN_REALM_ID, ADMIN_WEB_CONSOLE_CLIENT_ID } from '@/lib/constants/auth-constants'
+import { DEFAULT_PASSWORD_CONFIG } from '@/lib/password-strength'
 import { useFormMutation } from '@/hooks/use-form-mutation'
 import { PasswordStrengthMeter } from './password-strength-meter'
 import { TurnstileWidget } from './turnstile-widget'
@@ -21,13 +22,6 @@ import { signupSchema, type SignupFormValues } from '@/lib/schemas/realm-signup'
 // calls are fixed to the admin realm regardless of the URL the page was opened
 // under, and the Turnstile probe targets the admin-web-console Client App
 // (DEC-008) — not the user-account-center default of `turnstileStatusQueryOptions`.
-const PASSWORD_CONFIG = {
-  minLength: 8,
-  requireUppercase: true,
-  requireLowercase: true,
-  requireNumber: true,
-  requireSpecialChar: true,
-} as const
 
 interface SignupFormProps {
   /** Called after the new realm's session is hydrated, with the redirect path. */
@@ -155,7 +149,10 @@ export function SignupForm({ onSuccess }: SignupFormProps) {
                 field.state.meta.errors.length > 0 && (
                   <p className="text-sm text-red-500">{getFieldErrorMessage(field.state.meta)}</p>
                 )}
-              <PasswordStrengthMeter password={field.state.value ?? ''} config={PASSWORD_CONFIG} />
+              <PasswordStrengthMeter
+                password={field.state.value ?? ''}
+                config={DEFAULT_PASSWORD_CONFIG}
+              />
             </div>
           )}
         </form.Field>

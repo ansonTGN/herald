@@ -26,6 +26,21 @@ export interface PasswordConfig {
   requireSpecialChar: boolean
 }
 
+/**
+ * Default password rules the strength meter advertises. Shared by the signup
+ * and register forms so they stay in sync. The backend does not yet expose a
+ * per-realm password policy (its public-config endpoint returns only
+ * registration-enabled / email-verification flags), so this is the single
+ * source of truth for now.
+ */
+export const DEFAULT_PASSWORD_CONFIG: PasswordConfig = {
+  minLength: 8,
+  requireUppercase: true,
+  requireLowercase: true,
+  requireNumber: true,
+  requireSpecialChar: true,
+}
+
 type PasswordLevel = {
   level: PasswordStrengthLevel
   color: PasswordStrength['color']

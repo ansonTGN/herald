@@ -13,8 +13,14 @@ describe('PasswordStrengthMeter', () => {
   }
 
   describe('rendering', () => {
-    it('GIVEN weak password WHEN rendering THEN displays Weak label', async () => {
+    it('GIVEN empty password WHEN rendering THEN renders nothing', async () => {
       const screen = render(<PasswordStrengthMeter password="" config={defaultConfig} />)
+      expect(screen.container.textContent).toBe('')
+      expect(screen.container.querySelector('ul')).not.toBeInTheDocument()
+    })
+
+    it('GIVEN weak password WHEN rendering THEN displays Weak label', async () => {
+      const screen = render(<PasswordStrengthMeter password="abc" config={defaultConfig} />)
       expect(screen.getByText('Weak')).toBeInTheDocument()
     })
 

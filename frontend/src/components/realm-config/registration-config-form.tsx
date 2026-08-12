@@ -87,6 +87,7 @@ export function RegistrationConfigForm({
                   id="reg-require-email"
                   label={m['realm_config.registration_email_verify_label']()}
                   description={m['realm_config.registration_email_verify_description']()}
+                  checked={emailConfigured ? field.state.value : false}
                   disabled={disabled || !emailConfigured}
                   errorTestId="reg-require-email-error"
                 />
