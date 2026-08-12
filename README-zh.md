@@ -79,11 +79,11 @@ Herald 正在寻找构建 AI 产品的创业团队。当前阶段希望了解哪
 
 ## AI Agent 专用入口
 
-Herald 的文档以 MDX 编写，位于 [`docs-web/content/docs/`](docs-web/content/docs/)（英文）和 [`docs-web/content/docs/zh/`](docs-web/content/docs/zh/)（中文），发布于 https://auth.fornetcode.com。AI agent 请优先使用下列结构化来源，而非抓取渲染后的 HTML：
+Herald 的文档以 MDX 编写，位于 [`docs-web/content/docs/`](docs-web/content/docs/)（英文）和 [`docs-web/content/docs/zh/`](docs-web/content/docs/zh/)（中文），发布于 https://www.fornetcode.com。AI agent 请优先使用下列结构化来源，而非抓取渲染后的 HTML：
 
-- **完整文档索引（LLM）：** https://auth.fornetcode.com/llms.txt
-- **完整文档全文（LLM）：** https://auth.fornetcode.com/llms-full.txt
-- **单页 Markdown：** 在任意文档 URL 后加 `.md`，例如 https://auth.fornetcode.com/zh/docs/auth-passkey.md
+- **完整文档索引（LLM）：** https://www.fornetcode.com/llms.txt
+- **完整文档全文（LLM）：** https://www.fornetcode.com/llms-full.txt
+- **单页 Markdown：** 在任意文档 URL 后加 `.md`，例如 https://www.fornetcode.com/zh/docs/auth-passkey.md
 - **API 参考（OpenAPI）：** [`docs-web/openapi.json`](docs-web/openapi.json)
 
 仓库内 MDX 源文件：`docs-web/content/docs/{getting-started,architecture,configuration,deployment,billing-overview,billing-stripe-payment,billing-creem-payment,billing-iap,billing-invoice,billing-credit-note,auth-passkey,auth-email-otp,auth-apple-native,third-party-integration,custom-user-ui,ui-custom,realm-custom-domain,points-quota}.mdx`。
