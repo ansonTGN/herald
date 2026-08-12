@@ -3,7 +3,7 @@ pub mod app_state;
 
 use axum::routing::{get, post};
 use axum::{
-    Json, Router,
+    Extension, Json, Router,
     extract::State,
     http::{
         HeaderName, Method, Request,
@@ -347,6 +347,7 @@ pub fn create_router(
     state: Arc<AppState>,
     frontend_url: String,
     static_dir: Option<String>,
+    real_ip_config: herald_api_base::application::http::real_ip::RealIpConfig,
 ) -> Router {
     // Build CORS layer
     // Note: frontend_url is validated in main.rs before calling this function
@@ -490,7 +491,10 @@ pub fn create_router(
                     }),
                 )
                 .layer(cors),
-        );
+        )
+        // Real-IP config consumed by the `ClientIp` extractor. Applied last so it
+        // is present for every route (health, swagger, static fallback included).
+        .layer(Extension(real_ip_config));
 
     // println!("{router:?}");
     if let Some(dir) = static_dir {

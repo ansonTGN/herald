@@ -75,6 +75,17 @@ pub struct ServerConfig {
     pub log_level: String,
     #[serde(default = "default_app_env")]
     pub app_env: String,
+    /// Trusted reverse-proxy CIDRs. When the connection's socket peer falls in
+    /// one of these, forwarded IP headers are trusted; otherwise they are
+    /// ignored and the socket peer IP is used. Empty (default) = trust nothing
+    /// (most secure; correct for direct exposure).
+    #[serde(default)]
+    pub trusted_proxies: Vec<String>,
+    /// Header a trusted proxy writes the real client IP into.
+    /// `"X-Forwarded-For"` (default) → rightmost-untrusted chain algorithm;
+    /// `"CF-Connecting-IP"` / `"X-Real-IP"` → read a single value.
+    #[serde(default = "default_real_ip_header")]
+    pub real_ip_header: String,
 }
 
 #[derive(serde::Deserialize, Clone)]
@@ -213,6 +224,10 @@ fn default_app_env() -> String {
     "production".to_string()
 }
 
+fn default_real_ip_header() -> String {
+    "X-Forwarded-For".to_string()
+}
+
 fn default_frontend_url() -> String {
     "http://localhost:5173".to_string()
 }
@@ -295,5 +310,41 @@ url = "postgres://test:test@localhost/test"
             "missing [observability] section MUST default to traces off (baseline isolation)"
         );
         assert_eq!(cfg.observability.sqlx_slow_statement_ms, 200);
+    }
+
+    /// User Story: Technical invariant — `[server]` without the new
+    /// `trusted_proxies` / `real_ip_header` fields still parses, resolving to
+    /// the secure defaults (trust nothing, X-Forwarded-For).
+    ///
+    /// WHY: existing deployments ship config.toml files written before
+    /// trusted-proxy support existed. A rollout MUST NOT break them, and MUST
+    /// NOT silently widen trust — the missing fields must resolve to the exact
+    /// secure defaults (empty trusted_proxies → socket IP only). This fails if
+    /// anyone removes the `#[serde(default)]` on either field.
+    #[test]
+    fn config_server_real_ip_defaults_when_section_empty() {
+        let toml = r#"
+[database]
+url = "postgres://test:test@localhost/test"
+
+[redis]
+
+[server]
+
+[frontend]
+"#;
+        let cfg: ApiConfig = toml::from_str(toml).expect(
+            "ApiConfig MUST parse a config with an empty [server] section — \
+             both new fields have #[serde(default)]",
+        );
+        assert!(
+            cfg.server.trusted_proxies.is_empty(),
+            "missing trusted_proxies MUST default to empty (trust nothing)"
+        );
+        assert_eq!(
+            cfg.server.real_ip_header.as_str(),
+            "X-Forwarded-For",
+            "missing real_ip_header MUST default to X-Forwarded-For"
+        );
     }
 }

@@ -2,6 +2,7 @@ use axum::extract::FromRequestParts;
 use serde::Deserialize;
 use tokio::time::{Duration, timeout};
 
+use crate::application::http::real_ip::RealIpConfig;
 use crate::application::http::server::api_entities::ApiError;
 use crate::application::http::state::AppState;
 use herald_core::domain::authorization::permission_service::PermissionService;
@@ -21,10 +22,24 @@ pub fn user_agent_from_headers(headers: &axum::http::HeaderMap) -> Option<String
         .map(|s| s.to_string())
 }
 
-/// Extract client IP from request with three-level fallback:
-/// 1. X-Real-IP header (set by nginx/traefik)
-/// 2. X-Forwarded-For header (first entry)
-/// 3. ConnectInfo<SocketAddr> (direct connection)
+/// Extract the client IP using a trusted-proxy-aware algorithm.
+///
+/// Reads `RealIpConfig` from request extensions (injected by `create_router`
+/// via `axum::Extension`). Behaviour:
+///
+/// 1. **No `RealIpConfig`** (e.g. test routers that bypass `create_router`):
+///    use the socket peer IP and ignore all forwarded headers — the safe
+///    default so a misconfigured test harness cannot accidentally trust a
+///    client-supplied header.
+/// 2. **Socket peer NOT in `trusted_proxies`**: ignore all forwarded headers
+///    (they may be client-forged) and use the socket peer IP.
+/// 3. **Socket peer IS in `trusted_proxies`**: trust the configured header:
+///    - `X-Forwarded-For` — walk the chain right-to-left, skip IPs inside
+///      `trusted_proxies`, return the first non-trusted IP.
+///    - otherwise (`CF-Connecting-IP`, `X-Real-IP`, ...) — return that
+///      header's value verbatim.
+/// 4. Fallback at any step: the socket peer IP, or empty string if it is
+///    unavailable (e.g. oneshot test requests without `ConnectInfo`).
 ///
 /// Usage in handlers: `client_ip: ClientIp` then `client_ip.0` for the IP string.
 #[derive(Debug)]
@@ -37,36 +52,176 @@ impl<S: Send + Sync> FromRequestParts<S> for ClientIp {
         parts: &mut axum::http::request::Parts,
         _state: &S,
     ) -> Result<Self, Self::Rejection> {
-        let headers = &parts.headers;
-
-        // 1. Prefer X-Real-IP header (set by nginx/traefik)
-        if let Some(real_ip) = headers
-            .get("X-Real-IP")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.trim().parse::<std::net::IpAddr>().ok())
-        {
-            return Ok(ClientIp(real_ip.to_string()));
-        }
-
-        // 2. Fall back to first entry in X-Forwarded-For
-        if let Some(xff) = headers.get("X-Forwarded-For").and_then(|v| v.to_str().ok())
-            && let Some(first) = xff.split(',').next()
-        {
-            let trimmed = first.trim();
-            if !trimmed.is_empty() {
-                return Ok(ClientIp(trimmed.to_string()));
-            }
-        }
-
-        // 3. Fall back to direct connection IP (ConnectInfo<SocketAddr>)
-        if let Some(connect_info) = parts
+        let socket_ip = parts
             .extensions
             .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
-        {
-            return Ok(ClientIp(connect_info.0.ip().to_string()));
-        }
+            .map(|ci| ci.0.ip());
+        let cfg = parts.extensions.get::<RealIpConfig>();
+        Ok(ClientIp(resolve_client_ip(socket_ip, &parts.headers, cfg)))
+    }
+}
 
-        Ok(ClientIp(String::new()))
+/// Pure trust-resolution core of the `ClientIp` extractor.
+///
+/// Extracted from `from_request_parts` so the security-critical trust logic is
+/// unit-testable without constructing an axum router. See the `ClientIp` doc
+/// comment for the behavioural spec.
+fn resolve_client_ip(
+    socket_ip: Option<std::net::IpAddr>,
+    headers: &axum::http::HeaderMap,
+    cfg: Option<&RealIpConfig>,
+) -> String {
+    // No trusted-proxy config injected → safe default: socket IP only
+    // (empty if the socket peer is unknown, e.g. oneshot test requests).
+    let Some(cfg) = cfg else {
+        return socket_ip.map(|ip| ip.to_string()).unwrap_or_default();
+    };
+    // Socket peer unknown → cannot establish trust → must not read headers.
+    let Some(socket_ip) = socket_ip else {
+        return String::new();
+    };
+    // Socket peer NOT a trusted proxy → forwarded headers may be forged.
+    if !cfg.trusts(socket_ip) {
+        return socket_ip.to_string();
+    }
+    // Trusted proxy → resolve via the configured header.
+    let resolved = if cfg.is_xff_chain() {
+        headers
+            .get("X-Forwarded-For")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|xff| first_untrusted_in_xff(xff, cfg))
+    } else {
+        headers
+            .get(&cfg.real_ip_header)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.trim().parse::<std::net::IpAddr>().ok())
+    };
+    resolved
+        .map(|ip| ip.to_string())
+        .unwrap_or_else(|| socket_ip.to_string())
+}
+
+/// Walk an `X-Forwarded-For` chain right-to-left and return the first IP that
+/// is NOT inside the trusted-proxy CIDRs. Returns `None` if every IP in the
+/// chain is a trusted proxy (degenerate/empty chain) — callers fall back to the
+/// socket peer IP.
+fn first_untrusted_in_xff(xff: &str, cfg: &RealIpConfig) -> Option<std::net::IpAddr> {
+    xff.split(',')
+        .rev()
+        .map(|s| s.trim())
+        .filter_map(|s| s.parse::<std::net::IpAddr>().ok())
+        .find(|ip| !cfg.trusts(*ip))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cfg(trusted: &[&str], header: &str) -> RealIpConfig {
+        RealIpConfig::new(
+            &trusted.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+            header,
+        )
+        .expect("test fixture CIDRs are valid")
+    }
+
+    fn headers(pairs: &[(&str, &str)]) -> axum::http::HeaderMap {
+        let mut h = axum::http::HeaderMap::new();
+        for (k, v) in pairs {
+            h.insert(
+                axum::http::HeaderName::from_bytes(k.as_bytes()).unwrap(),
+                v.parse().unwrap(),
+            );
+        }
+        h
+    }
+
+    /// WHY: with no `RealIpConfig` injected, the extractor MUST ignore every
+    /// forwarded header and return the socket peer. Otherwise a router that
+    /// forgets the extension (a misconfigured test harness, or a new entry
+    /// point that bypasses `create_router`) would silently start trusting
+    /// client-supplied X-Real-IP, recreating the original spoofing bug. This
+    /// safe default is what the whole change hinges on.
+    #[test]
+    fn no_config_ignores_headers_returns_socket_ip() {
+        let h = headers(&[("X-Real-IP", "9.9.9.9"), ("X-Forwarded-For", "9.9.9.9")]);
+        let ip = resolve_client_ip(Some("1.2.3.4".parse().unwrap()), &h, None);
+        assert_eq!(ip, "1.2.3.4");
+    }
+
+    /// WHY: a client connecting directly (socket peer NOT in trusted_proxies)
+    /// can set X-Real-IP / X-Forwarded-For / even CF-Connecting-IP to anything
+    /// — the extractor MUST ignore those forged headers and return the real
+    /// socket peer. This is the core anti-spoofing guarantee; a regression
+    /// here lets anyone bypass rate-limiting and corrupt audit IPs by setting
+    /// a header.
+    #[test]
+    fn untrusted_socket_ignores_forged_headers() {
+        let cfg = cfg(&["10.0.0.0/8"], "CF-Connecting-IP");
+        let h = headers(&[
+            ("X-Real-IP", "9.9.9.9"),
+            ("X-Forwarded-For", "9.9.9.9"),
+            ("CF-Connecting-IP", "8.8.8.8"),
+        ]);
+        // Socket 5.5.5.5 is NOT in 10.0.0.0/8 → all forwarded headers ignored.
+        let ip = resolve_client_ip(Some("5.5.5.5".parse().unwrap()), &h, Some(&cfg));
+        assert_eq!(ip, "5.5.5.5");
+    }
+
+    /// WHY: behind Cloudflare the socket peer IS a CF IP and CF writes the real
+    /// client IP into CF-Connecting-IP — the extractor MUST return that value.
+    /// This is the production happy path behind the orange cloud.
+    #[test]
+    fn trusted_socket_reads_cf_connecting_ip() {
+        let cfg = cfg(&["10.0.0.0/8"], "CF-Connecting-IP");
+        let h = headers(&[("CF-Connecting-IP", "203.0.113.42")]);
+        // Socket 10.0.0.1 (Caddy) is trusted.
+        let ip = resolve_client_ip(Some("10.0.0.1".parse().unwrap()), &h, Some(&cfg));
+        assert_eq!(ip, "203.0.113.42");
+    }
+
+    /// WHY: for the default X-Forwarded-For header, the extractor walks the
+    /// chain right-to-left skipping trusted proxies and returns the first
+    /// non-trusted IP. The leftmost entry (client-set, possibly forged) MUST
+    /// never be returned — otherwise an attacker prepends a fake IP and
+    /// defeats the trust check. This mirrors what nginx/Cloudflare themselves do.
+    #[test]
+    fn trusted_socket_xff_rightmost_untrusted() {
+        let cfg = cfg(&["10.0.0.0/8"], "X-Forwarded-For");
+        // Chain: 1.1.1.1(client-forged leftmost), 203.0.113.55(real), 10.0.0.2(trusted proxy).
+        let h = headers(&[("X-Forwarded-For", "1.1.1.1, 203.0.113.55, 10.0.0.2")]);
+        let ip = resolve_client_ip(Some("10.0.0.1".parse().unwrap()), &h, Some(&cfg));
+        // Skip 10.0.0.2 (trusted), return 203.0.113.55 (first non-trusted from right).
+        // 1.1.1.1 (client-forged leftmost) is never returned.
+        assert_eq!(ip, "203.0.113.55");
+    }
+
+    /// WHY: if a trusted proxy forwards but the configured header is missing
+    /// (misconfigured proxy, or a health check), the extractor MUST fall back
+    /// to the socket peer rather than return empty — empty would corrupt
+    /// audit records and create unkeyable rate-limit buckets.
+    #[test]
+    fn trusted_socket_missing_header_falls_back_to_socket() {
+        let cfg = cfg(&["10.0.0.0/8"], "CF-Connecting-IP");
+        let h = headers(&[]); // no CF-Connecting-IP present
+        let ip = resolve_client_ip(Some("10.0.0.1".parse().unwrap()), &h, Some(&cfg));
+        assert_eq!(ip, "10.0.0.1");
+    }
+
+    /// WHY: if the socket peer is unknown (e.g. a test harness using oneshot
+    /// without ConnectInfo) but a config IS present, the extractor cannot
+    /// decide trust — so it MUST return empty rather than read any header.
+    /// Returning a header value here would let a test-only code path trust
+    /// client-supplied data.
+    #[test]
+    fn unknown_socket_returns_empty_even_with_config() {
+        let cfg = cfg(&["10.0.0.0/8"], "CF-Connecting-IP");
+        let h = headers(&[("CF-Connecting-IP", "203.0.113.99")]);
+        let ip = resolve_client_ip(None, &h, Some(&cfg));
+        assert_eq!(
+            ip, "",
+            "unknown socket + present config must not trust any header"
+        );
     }
 }
 

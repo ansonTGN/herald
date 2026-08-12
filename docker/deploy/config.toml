@@ -24,6 +24,20 @@ url = "redis://redis:6379"
 bind_address = "0.0.0.0:3000"
 log_level = "info"
 app_env = "production"
+# Trusted reverse-proxy CIDRs. When the connection's socket peer falls in one
+# of these, forwarded IP headers are trusted; otherwise they are IGNORED and
+# the socket peer IP is used (drives audit logs + rate limiting). Empty
+# (default) = trust nothing, correct when Herald is exposed directly.
+#
+# Behind Cloudflare (orange cloud): set this to the CF IP ranges
+# (https://www.cloudflare.com/ips/) and set real_ip_header = "CF-Connecting-IP"
+# below. Invalid CIDR aborts startup (fail loud).
+trusted_proxies = []
+# Which header a trusted proxy writes the real client IP into:
+#   "X-Forwarded-For" (default) → rightmost-untrusted chain algorithm
+#   "CF-Connecting-IP"          → single value (Cloudflare)
+#   "X-Real-IP"                 → single value (nginx/traefik)
+real_ip_header = "X-Forwarded-For"
 
 [frontend]
 # CORS allowlist origin. Change to your real domain, e.g. "https://app.example.com".

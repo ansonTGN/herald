@@ -21,3 +21,4 @@ toml = { workspace = true }
 redis = { workspace = true }
 tokio = { workspace = true }
 reqwest = { workspace = true }
+ipnetwork = { workspace = true }

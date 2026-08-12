@@ -535,6 +535,9 @@ impl SchemaTestContext {
             self.app_state.clone(),
             frontend_url.to_owned(),
             None,
+            // No trusted proxies in tests → ClientIp falls back to socket IP.
+            // CORS tests don't depend on real-IP extraction.
+            herald_api::RealIpConfig::default(),
         )
     }
 

@@ -30,6 +30,10 @@ pub use application::http::server::create_api_routes;
 
 // Re-export AppState and WebhookEventProcessorImpl for assembly in main.rs
 pub use application::http::state::AppState;
+// Re-export RealIpConfig so callers that assemble the production router
+// (the app crate, test-support's create_cors_test_router) can construct a
+// default without depending on herald_api_base directly.
+pub use herald_api_base::application::http::real_ip::RealIpConfig;
 pub use herald_api_billing::WebhookEventProcessorImpl;
 
 use application::http::oauth::device_token::init_device_token_function;
@@ -566,8 +570,25 @@ pub async fn start_server(state: Arc<AppState>, config: ApiConfig) -> Result<()>
         })?;
     tracing::info!("Frontend URL validated: {}", config.frontend.url);
 
+    // Parse trusted-proxy real-IP config. Fail loud on invalid CIDR/header: a
+    // typo in `trusted_proxies` must abort startup rather than silently narrow
+    // the trust set (which would degrade audit/rate-limit IP correctness).
+    let real_ip_config = RealIpConfig::new(
+        &config.server.trusted_proxies,
+        &config.server.real_ip_header,
+    )
+    .map_err(|e| {
+        tracing::error!("Invalid [server].trusted_proxies / real_ip_header: {e}");
+        anyhow::anyhow!("Invalid real IP config: {e}")
+    })?;
+
     // Create router
-    let app = server::create_router(state, config.frontend.url, config.frontend.static_dir);
+    let app = server::create_router(
+        state,
+        config.frontend.url,
+        config.frontend.static_dir,
+        real_ip_config,
+    );
 
     // Start server
     let listener = tokio::net::TcpListener::bind(&config.server.bind_address).await?;
