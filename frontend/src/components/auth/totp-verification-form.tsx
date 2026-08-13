@@ -113,7 +113,9 @@ export function TotpVerificationForm({
           },
         })
       )
-      return response.data as VerifyTotpResponse
+      // verify-totp returns BrowserTokenResponse on success or a
+      // VerifyTotpResponse body on consent/oauth branches; discriminated below.
+      return response.data as unknown as VerifyTotpResponse
     },
     onSuccess: (data) => {
       if (isConsentRequired(data)) {

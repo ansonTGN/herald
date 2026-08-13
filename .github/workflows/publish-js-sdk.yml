@@ -1,0 +1,80 @@
+name: Publish JS SDK
+
+# Publishes the browser JS SDK (`@herald/web`, in sdk-js/) to the public npm
+# registry. Manual only (workflow_dispatch) — mirrors the Rust `publish-sdk.yml`
+# trigger model. Version comes from sdk-js/package.json; bump it there, commit,
+# then run this workflow.
+#
+# Build prerequisite: the typed client under sdk-js/src/generated/ is gitignored
+# and must be regenerated from the backend OpenAPI spec (needs cargo + backend),
+# exactly like frontend-ci. We therefore install Rust before building.
+on:
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Run npm publish in dry-run mode (builds & validates, no upload)'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  publish-js-sdk:
+    name: Publish @herald/web to npm
+    runs-on: ubuntu-latest
+    env:
+      RUSTC_WRAPPER: ""
+      CARGO_BUILD_RUSTC_WRAPPER: ""
+      SCCACHE_DISABLE: "true"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: "1.96.1"
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend -> target
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: sdk-js/package-lock.json
+          # Writes ~/.npmrc auth from NODE_AUTH_TOKEN on the publish step.
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        working-directory: sdk-js
+        run: npm ci
+
+      - name: Generate API client
+        working-directory: sdk-js
+        run: npm run generate-api
+
+      - name: Type check
+        working-directory: sdk-js
+        run: npm run type-check
+
+      - name: Test
+        working-directory: sdk-js
+        run: npm run test:run
+
+      - name: Build
+        working-directory: sdk-js
+        run: npm run build
+
+      - name: Publish to npm
+        working-directory: sdk-js
+        run: |
+          args=(--access public)
+          if [ "${{ inputs.dry-run }}" = "true" ]; then
+            args+=(--dry-run)
+          fi
+          npm publish "${args[@]}"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

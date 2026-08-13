@@ -12,7 +12,7 @@
 | 用户生命周期与合规 | 注册/登录 → 资料维护 → 协议确认 → 账户注销 | [普通用户](core/regular-user.md)、[合规适配](core/legal-consent-account-deletion.md) |
 | 登录体验与品牌 | 第三方登录 → 品牌页面 → 自定义域名 → 多语言 | [OAuth 应用](auth/third-party-app.md)、[OAuth 扩展](auth/oauth-extension.md)、[微信 OAuth](auth/wechat-oauth.md)、[邮箱验证码登录](auth/email-otp-login.md)、[Google One Tap](auth/google-one-tap.md)、[Apple native 登录](auth/support-mobile-apple-login.md)、[White-label](core/white-label.md)、[自定义域名](core/realm-custom-domain.md)、[i18n](core/i18n.md) |
 | 强认证 | 管理员配置 → 用户绑定 → 登录/恢复 | [TOTP](auth/totp.md)、[Passkey](auth/passkey.md)、[Device Code](auth/device-code.md) |
-| 授权与应用接入 | RBAC 配置 → Client App/API Key → SDK 调用 → 自建用户 UI | [Realm Admin](core/realm-admin.md)、[Client App 设置](auth/client-app-settings.md)、[SDK](integration/sdk.md)、[自建用户 UI](integration/custom-user-ui.md) |
+| 授权与应用接入 | RBAC 配置 → Client App/API Key → SDK 调用 → 自建用户 UI | [Realm Admin](core/realm-admin.md)、[Client App 设置](auth/client-app-settings.md)、[SDK](integration/sdk.md)、[JS 浏览器 SDK](integration/js-sdk.md)、[自建用户 UI](integration/custom-user-ui.md) |
 | 商品、支付与权益履约 | Provider 配置/同步 → 下单 → 支付 → 订阅或权益生效 → 补偿 | [支付平台](billing/payment-provider.md)、[Entitlement Mapping](billing/entitlement-mapping.md)、[支付尝试](billing/payment-attempt.md)、[订阅](billing/subscription.md)、[履约模型扩展（买断/非续期订阅）](billing/pay_model.md)、[Paywall](billing/support-paywall.md)、[Webhook 补偿](billing/webhook-compensation.md)、[IAP](billing/support-iap.md) |
 | 积分与余额 | 策略配置 → 免费/付费发放 → 分账户持有和消费 → 查询历史 | [积分管理](billing/points-admin.md)、[免费积分](billing/points-free-user.md)、[积分包购买](billing/points-package-purchase.md)、[用户积分](billing/points-user.md)、[异步支付积分](billing/async-payment-points.md)、[积分账户](billing/credit-bucket.md)、[多钱包分发规则](billing/multi-wallet-grant-rules.md) |
 | 发票与退款凭证 | 支付归属 → 发票同步/开具 → 退款和 Credit Note | [发票与 Provider Fallback](billing/invoice.md)、[支付-发票归属](billing/payment-invoice-mapping.md) |
@@ -224,6 +224,14 @@
 | US-CUI-007 | 集成方前端完成积分与交易查看 | Third-Party App | P0 | [integration/custom-user-ui](integration/custom-user-ui.md#故事-7集成方前端完成积分与交易查看-us-cui-007) |
 | US-CUI-008 | 集成方前端完成充值/购买 | Third-Party App | P0 | [integration/custom-user-ui](integration/custom-user-ui.md#故事-8集成方前端完成充值购买-us-cui-008) |
 | US-CUI-009 | 集成方前端完成发票与订阅查看 | Third-Party App | P1 | [integration/custom-user-ui](integration/custom-user-ui.md#故事-9集成方前端完成发票与订阅查看-us-cui-009) |
+| US-JS-001 | 初始化与跨域接入 | Third-Party App | P0 | [integration/js-sdk](integration/js-sdk.md#故事-1初始化与跨域接入-us-js-001) |
+| US-JS-002 | 注册与邮箱验证 | Third-Party App | P0 | [integration/js-sdk](integration/js-sdk.md#故事-2注册与邮箱验证-us-js-002) |
+| US-JS-003 | 找回与重置密码 | Third-Party App | P0 | [integration/js-sdk](integration/js-sdk.md#故事-3找回与重置密码-us-js-003) |
+| US-JS-004 | 登录与多因素编排 | Third-Party App | P0 | [integration/js-sdk](integration/js-sdk.md#故事-4登录与多因素编排-us-js-004) |
+| US-JS-005 | 自动静默刷新 | Third-Party App | P0 | [integration/js-sdk](integration/js-sdk.md#故事-5自动静默刷新-us-js-005) |
+| US-JS-006 | 会话状态与登出 | Third-Party App | P1 | [integration/js-sdk](integration/js-sdk.md#故事-6会话状态与登出-us-js-006) |
+| US-JS-007 | 可配置凭证存储 | Third-Party App | P1 | [integration/js-sdk](integration/js-sdk.md#故事-7可配置凭证存储-us-js-007) |
+| US-JS-008 | 可区分的错误反馈 | Third-Party App | P1 | [integration/js-sdk](integration/js-sdk.md#故事-8可区分的错误反馈-us-js-008) |
 | US-I18N-001 | 切换界面语言 | All Users | P0 | [core/i18n](core/i18n.md#故事-1切换界面语言-us-i18n-001) |
 | US-I18N-002 | 查看翻译后的错误消息 | All Users | P0 | [core/i18n](core/i18n.md#故事-2查看翻译后的错误消息-us-i18n-002) |
 | US-I18N-003 | 所有 UI 文本完成翻译 | All Users | P1 | [core/i18n](core/i18n.md#故事-3所有-ui-文本完成翻译-us-i18n-003) |
@@ -309,6 +317,7 @@
 | 角色 | 文档 | 相关 PRD |
 |------|------|---------|
 | SDK | [integration/sdk.md](integration/sdk.md) | [SDK PRD](/docs/prd/integration/sdk.md) |
+| JS 浏览器 SDK | [integration/js-sdk.md](integration/js-sdk.md) | [JS 浏览器 SDK PRD](/docs/prd/integration/js-sdk.md) |
 | 自建用户 UI | [integration/custom-user-ui.md](integration/custom-user-ui.md) | [自建用户 UI PRD](/docs/prd/integration/custom-user-ui.md) |
 
 ## 特殊文档

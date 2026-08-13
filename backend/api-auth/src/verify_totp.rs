@@ -133,7 +133,7 @@ struct TempSessionData {
     ),
     request_body = VerifyTotpRequest,
     responses(
-        (status = 200, description = "TOTP verification successful", body = VerifyTotpResponse),
+        (status = 200, description = "TOTP verification successful", body = BrowserTokenResponse),
         (status = 400, description = "Bad request", body = ErrorResponse),
         (status = 401, description = "Invalid TOTP code or backup code", body = ErrorResponse),
         (status = 429, description = "Too many attempts", body = ErrorResponse),

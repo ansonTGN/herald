@@ -108,7 +108,7 @@ pub struct LoginResponse {
   ),
   request_body = LoginRequestPayload,
   responses(
-    (status = 200, description = "Successful login.", body = LoginResponse),
+    (status = 200, description = "Successful login.", body = BrowserTokenResponse),
     (status = 400, description = "Bad request", body = ErrorResponse),
     (status = 401, description = "Unauthorized", body = ErrorResponse),
     (status = 403, description = "Forbidden", body = ErrorResponse),

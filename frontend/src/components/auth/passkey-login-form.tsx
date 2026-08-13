@@ -121,7 +121,9 @@ export function PasskeyLoginForm({
     if (response.error) {
       throw new Error(m['auth.login.passkey_verification_failed']())
     }
-    return response.data as PasskeyVerifyResponse
+    // passkey verify returns BrowserTokenResponse on success or a
+    // PasskeyVerifyResponse body on consent/oauth branches; discriminated below.
+    return response.data as unknown as PasskeyVerifyResponse
   }
 
   /**

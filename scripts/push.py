@@ -68,6 +68,8 @@ def detect_areas(files: list[str]) -> set[str]:
             areas.add("frontend")
         elif path.startswith("demo/"):
             areas.add("demo")
+        elif path.startswith("sdk-js/"):
+            areas.add("sdk-js")
     return areas
 
 
@@ -273,6 +275,26 @@ def demo_steps() -> list[Step]:
     return steps
 
 
+def sdk_js_steps() -> list[Step]:
+    # `sdk-js/` is the Herald browser SDK package (DEC-js-sdk-005): a separate
+    # npm package with its own type-check/build/test, so it is its own CI area
+    # rather than part of `frontend/`.
+    sdk_dir = REPO_ROOT / "sdk-js"
+    steps: list[Step] = []
+    format_fix = npm_format_fix_step("SDK-JS format fix", sdk_dir, optional=True)
+    if format_fix:
+        steps.append(format_fix)
+    for name, script, optional in (
+        ("SDK-JS type check", "type-check", False),
+        ("SDK-JS build", "build", False),
+        ("SDK-JS tests", "test:run", True),
+    ):
+        step = npm_script_step(name, sdk_dir, script, optional=optional)
+        if step:
+            steps.append(step)
+    return steps
+
+
 def run_steps(area: str, steps: list[Step]) -> None:
     for step in steps:
         rel_cwd = step.cwd.relative_to(REPO_ROOT)
@@ -287,6 +309,7 @@ def run_ci(areas: set[str], *, ci_session: str, force_checks: bool = False) -> N
         "backend": backend_steps,
         "frontend": frontend_steps,
         "demo": demo_steps,
+        "sdk-js": sdk_js_steps,
     }
     cache = {} if force_checks else load_ci_cache(ci_session)
     selected: dict[str, list[Step]] = {}
@@ -302,7 +325,7 @@ def run_ci(areas: set[str], *, ci_session: str, force_checks: bool = False) -> N
         if areas:
             print("All selected CI areas are unchanged since their last successful run in this t-push session.", flush=True)
         else:
-            print("No backend/frontend/demo changes detected; skipping local CI.", flush=True)
+            print("No backend/frontend/demo/sdk-js changes detected; skipping local CI.", flush=True)
         return
 
     failures: list[str] = []

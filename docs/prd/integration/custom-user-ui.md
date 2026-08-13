@@ -90,7 +90,7 @@
 - **服务端静默滑动续期**：业界标准用旋转 refresh token。
 - **隐藏 iframe silent auth**：依赖第三方 cookie。
 - **JWT 本地校验（首期）**：首期用不透明 session token + Redis；JWT 形态为后续可选增强。
-- **官方 JS/浏览器 SDK**：本轮不交付。集成方用标准 `fetch` + `Authorization: Bearer`。
+- **官方 JS/浏览器 SDK**：原「本轮不交付」（D-SCOPE-03）已由 [js-sdk PRD](/docs/prd/integration/js-sdk.md) 取代（DEC-js-sdk-003）；官方 JS 浏览器 SDK 现作为独立能力交付，封装认证生命周期子集。
 - **头像编辑能力**：本轮只复用现有昵称编辑，不新增头像上传或编辑。
 - **refresh token 浏览器集成契约**：refresh token 的浏览器存储位置、多标签页并发、网络失败恢复与重试规则由后续集成文档承接；服务端旋转、复用检测、绝对上限和吊销在 Scope 内。
 
@@ -235,13 +235,13 @@
 
 **适用性**: 适用
 
-- **页面入口**：集成方在自家前端（标准 `fetch` + `Authorization: Bearer`，无官方 SDK）自建全套用户 UI；页面布局与交互由集成方决定，Herald 不托管这些页面。Herald 自有前端变为可选参考实现。
+- **页面入口**：集成方在自家前端自建全套用户 UI（可使用官方 [JS 浏览器 SDK](/docs/prd/integration/js-sdk.md) 封装认证生命周期，或用标准 `fetch` + `Authorization: Bearer` 自行实现）；页面布局与交互由集成方决定，Herald 不托管这些页面。Herald 自有前端变为可选参考实现。
 - **未认证流程入口**：注册/登录/找回密码页面由集成方自建，直接调 Herald 公开端点；登录成功返回 `CustomUserUi` token set。
 - **登录后入口**：个人中心（资料/安全/积分/充值/发票/订阅）由集成方自建，用浏览器 token 跨域调用。
 - **状态反馈**：token 失效时引导重新登录；origin 未配置、权限不足、Passkey RP 不匹配或需要重新认证时返回可区分的错误；注销账号不可逆需明确确认。
 - **Herald 自有前端**：经 Authorization Code + PKCE 换取 `FirstParty` token，access token 内存持有、refresh token 与 PKCE 状态持久化、启动时刷新恢复、统一 client 注入 Bearer、单次 401 静默刷新、token-only 登出。作为可选参考实现保留。
 
-> 本轮不交付官方 JS SDK。
+> 官方 JS 浏览器 SDK 已作为独立能力交付，见 [js-sdk PRD](/docs/prd/integration/js-sdk.md)（原「本轮不交付官方 JS SDK」由 DEC-js-sdk-003 取代）。
 
 ---
 
@@ -260,7 +260,7 @@
 - **D-RETURN-01（安全回跳）**：邮箱验证与密码恢复绑定 Client App，只使用预登记回跳目标；不接受任意 URL。
 - **D-CLIENT-01（禁用联动）**：Client App 禁用后拒绝其新身份流程并吊销其浏览器 token 家族，不影响其他 Client App。
 - **D-RESP-01（责任边界）**：token 进入前端后，XSS 防护与 token 存储策略由集成方前端负责；Herald 通过权限上限、短时效 access token、旋转 refresh token、复用检测和吊销限制爆炸半径。refresh token 的浏览器存储、并发和失败恢复契约由后续集成文档承接。
-- **D-SCOPE-03（不交付官方 JS SDK）**：本轮不交付官方 JS SDK。集成方用标准 `fetch` + `Authorization: Bearer`。
+- **D-SCOPE-03（不交付官方 JS SDK）**：原决策「本轮不交付官方 JS SDK；集成方用标准 `fetch` + `Authorization: Bearer`」**已由 DEC-js-sdk-003 取代**。官方 JS 浏览器 SDK 已作为独立能力交付，封装认证生命周期子集，见 [js-sdk PRD](/docs/prd/integration/js-sdk.md)。
 
 ---
 

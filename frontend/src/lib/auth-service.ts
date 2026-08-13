@@ -106,7 +106,9 @@ export async function performLogin(
   if (!data) {
     throw new Error('Login failed: no response data')
   }
-  return data
+  // /login returns BrowserTokenResponse on success but a LoginResponse-shaped
+  // body on 2FA/consent/oauth branches; callers discriminate via fall-through.
+  return data as unknown as LoginResponse
 }
 
 /**

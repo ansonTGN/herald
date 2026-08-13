@@ -227,7 +227,7 @@ pub async fn handle_passkey_options(
     ),
     request_body = PasskeyVerifyRequest,
     responses(
-        (status = 200, description = "Passkey login successful", body = PasskeyVerifyResponse),
+        (status = 200, description = "Passkey login successful", body = BrowserTokenResponse),
         (status = 400, description = "Bad request", body = ErrorResponse),
         (status = 401, description = "Passkey verification failed", body = ErrorResponse),
         (status = 429, description = "Too many requests", body = ErrorResponse),
@@ -371,7 +371,7 @@ pub async fn handle_passkey_2fa_options(
     ),
     request_body = Passkey2faVerifyRequest,
     responses(
-        (status = 200, description = "Passkey second-factor verification successful", body = PasskeyVerifyResponse),
+        (status = 200, description = "Passkey second-factor verification successful", body = BrowserTokenResponse),
         (status = 400, description = "Bad request", body = ErrorResponse),
         (status = 401, description = "Passkey verification failed", body = ErrorResponse),
         (status = 429, description = "Too many requests", body = ErrorResponse),

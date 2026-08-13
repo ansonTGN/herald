@@ -1,0 +1,34 @@
+{
+  "name": "@herald/web",
+  "version": "0.1.0",
+  "description": "Herald official browser JavaScript SDK for third-party web integration. Framework-agnostic, zero runtime dependencies.",
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "unpkg": "./dist/index.global.js",
+  "jsdelivr": "./dist/index.global.js",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "generate-api": "node scripts/generate-api.mjs",
+    "build": "tsup",
+    "type-check": "tsc --noEmit",
+    "test": "vitest",
+    "test:run": "vitest run"
+  },
+  "devDependencies": {
+    "@hey-api/openapi-ts": "^0.92.3",
+    "jsdom": "^28.1.0",
+    "msw": "^2.7.1",
+    "tsup": "^8.3.5",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.7"
+  }
+}

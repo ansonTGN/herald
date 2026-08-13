@@ -1,0 +1,6 @@
+node_modules/
+dist/
+# Generated from the backend OpenAPI spec via `npm run generate-api`.
+api.json
+src/generated/
+*.tsbuildinfo
