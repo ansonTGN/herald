@@ -57,11 +57,15 @@ export const resetPasswordSearchSchema = z.object({
  * back here with `attemptId` (so the page can resume polling) and `status`
  * (`success` for a completed checkout bounce, `cancel` for a Stripe cancel
  * bounce — Creem has no cancel_url). Payment status itself is confirmed via
- * webhook; these params only drive the UX bounce.
+ * webhook; these params only drive the UX bounce. `wechatOpenid` is the
+ * caller-provided openid required for WeChat JSAPI payment inside WeChat
+ * (e.g. appended by a WeChat official-account menu link); without it the
+ * in-WeChat flow refuses to order instead of falling back to a QR.
  */
 export const purchasePointsSearchSchema = z.object({
   attemptId: z.string().uuid().optional(),
   status: z.enum(['success', 'cancel']).optional(),
+  wechatOpenid: z.string().min(1).optional(),
 })
 
 export type ResetPasswordSearchParams = z.infer<typeof resetPasswordSearchSchema>

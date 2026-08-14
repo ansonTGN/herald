@@ -10,6 +10,10 @@ describe('formatProviderName', () => {
     expect(formatProviderName('google')).toBe('Google Play')
   })
 
+  it("returns 'WeChat Pay' for 'wechat' (wechat-support)", () => {
+    expect(formatProviderName('wechat')).toBe('WeChat Pay')
+  })
+
   // Regression: the IAP additions must not have disturbed the existing
   // explicit provider-name map.
   it('preserves the existing stripe/creem explicit mappings (regression)', () => {

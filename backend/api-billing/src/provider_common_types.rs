@@ -53,7 +53,7 @@ pub struct GenericErrorResponse {
 /// status/lookup queries even though IAP receipt submission itself goes through
 /// a dedicated endpoint (§4.2.1).
 pub fn validate_payment_provider_value(provider: &str) -> Result<(), validator::ValidationError> {
-    if matches!(provider, "stripe" | "creem" | "apple" | "google") {
+    if matches!(provider, "stripe" | "creem" | "apple" | "google" | "wechat") {
         Ok(())
     } else {
         Err(validator::ValidationError::new("invalid_payment_provider"))

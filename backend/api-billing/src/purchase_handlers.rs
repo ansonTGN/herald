@@ -40,6 +40,13 @@ pub struct CreatePaymentAttemptRequest {
     pub payment_provider: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
+    /// WeChat-only checkout scene: `"native"` (default) or `"jsapi"`. Ignored
+    /// by other providers (DEC-wechat-support-009).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub payment_scene: Option<String>,
+    /// WeChat JSAPI payer openid; required when `paymentScene = "jsapi"`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub openid: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -68,6 +75,13 @@ pub struct PaymentContextResponse {
     pub creem_checkout_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client_secret: Option<String>,
+    /// WeChat Native (PC scan) `code_url` rendered as a QR code.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wechat_code_url: Option<String>,
+    /// WeChat JSAPI invocation params (DEC-wechat-support-011).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wechat_jsapi_params:
+        Option<herald_core::domain::payment_attempt::entities::WechatJsapiParams>,
 }
 
 /// Structured 409 body emitted when a one-time+role entitlement is already
@@ -221,6 +235,8 @@ fn payment_context_to_response(
         stripe_checkout_url: context.stripe_checkout_url,
         creem_checkout_url: context.creem_checkout_url,
         client_secret: context.client_secret,
+        wechat_code_url: context.wechat_code_url,
+        wechat_jsapi_params: context.wechat_jsapi_params,
     }
 }
 
@@ -303,6 +319,8 @@ pub async fn create_payment_attempt(
             target_type: input.target_type.clone(),
             target_id: input.target_id,
             metadata: input.metadata,
+            payment_scene: input.payment_scene,
+            openid: input.openid,
         })
         .await
         .map_err(|e| map_purchase_error_to_api_error(e, "Create payment attempt"))?;

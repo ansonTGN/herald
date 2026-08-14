@@ -55,12 +55,12 @@ Entitlement Mapping 是一张映射表，把支付方的外部商品 ID 映射�
 
 | 字段 | 说明 |
 |------|------|
-| `payment_provider` | 支付方名称（stripe、creem、apple、google） |
+| `payment_provider` | 支付方名称（stripe、creem、apple、google、wechat） |
 | `external_product_id` | 支付方侧的商品 ID（如 `prod_xxxx`；IAP 为商店商品 ID） |
 | `external_price_id` | 支付方侧的价格 ID（Stripe 有，Creem 和 IAP 不适用） |
 | `entitlement_key` | Herald 内部的权益标识（如 `pro-plan`） |
 | `bucket_id` | 归属的积分账户。购买该商品后积分进入这个积分账户的池 |
-| `billing_type` | 计费类型：Recurring 或 OneTime |
+| `billing_type` | 计费类型：Recurring、OneTime 或 Non-renewing |
 | `points_per_period` | 每个周期发放的积分数 |
 | `grant_on_subscribe` | 首次订阅是否发放积分 |
 | `validity_days` | 积分有效期（天） |
@@ -71,9 +71,9 @@ Entitlement Mapping 是一张映射表，把支付方的外部商品 ID 映射�
 | 字段 | 说明 |
 |------|------|
 | 产品名 | 列表和分组的主标签优先用它。缺失时回退到外部产品 id，再不行给占位，不显示空标签 |
-| 价格 | 展示时按支付方区分单位。Stripe 同步的是最小货币单位整数（例如 999 表示 9.99），换算成主货币单位展示；Creem 直接用原值（字符串如 `"9.99"`），不再统一除以 100。单位换算由支付方来源驱动，不跨支付方共用同一条换算分支 |
+| 价格 | 展示时按支付方区分单位。Stripe 同步的是最小货币单位整数（例如 999 表示 9.99），换算成主货币单位展示；Creem 直接用原值（字符串如 `"9.99"`），不再统一除以 100。WeChat Pay 没有可同步的目录——价格直接配置在映射上，以分为单位的整数，下单时直接作为订单金额。单位换算由支付方来源驱动，不跨支付方共用同一条换算分支 |
 | 币种 | 商品币种，跟随同步覆盖 |
-| 计费类型 | recurring / one_time，来自支付方 |
+| 计费类型 | recurring / one_time / non_renewing；Stripe 和 Creem 从支付方同步，无目录的支付方（IAP、WeChat Pay）由管理员设置 |
 | 计费周期 | Stripe 取 `Price.recurring.interval`（day/week/month/year），只读，不接受人工输入，重新同步以 Stripe 当前值为准。Creem 取其产品响应里的 `billing_period`（形如 `every-month`，前端做文案映射），缺失时显示"—"，不伪造 |
 | metadata | 同步 Stripe `Product.metadata` 和 `Price.metadata`（商户自定义键值对），只读展示。Creem Product 无原生 metadata，按空处理，不伪造 |
 
@@ -84,7 +84,7 @@ Entitlement Mapping 是一张映射表，把支付方的外部商品 ID 映射�
 映射通过三种方式产生：
 
 1. **管理员手动同步**：调用支付方 Product API，拉取所有商品，自动创建或更新映射。新建的映射需绑定到本 Realm 的一个积分账户（必填，管理员可在同步后改挂到别的账户）。适用于 Stripe 和 Creem。
-2. **管理员手工创建**：IAP 支付方（App Store / Google Play）没有商品目录同步，管理员直接用商店商品 ID 建映射。
+2. **管理员手工创建**：IAP 支付方（App Store / Google Play）和 WeChat Pay 没有商品目录同步，管理员直接建映射——IAP 用商店商品 ID，WeChat Pay 自定商品 ID 并在映射上配价格。
 3. **Webhook 增量更新**：支付事件触发时从 webhook payload 提取信息更新缓存。
 
 同步失败时本地缓存继续服务，不会静默降级。
@@ -187,8 +187,9 @@ flowchart LR
 | Creem | Product API | Checkout | Checkout | Checkout metadata，webhook 返回 |
 | Apple App Store IAP | App Store Connect（无同步，手工建映射） | StoreKit 2 + 服务端通知 V2 | 消耗型，凭 receipt 提交履约 | 经 `appAccountToken` 绑定用户 |
 | Google Play Billing | Play Console（无同步，手工建映射） | Play Billing + 定时轮询（无 RTDN） | 消耗型，凭 receipt 提交履约 | 经 `obfuscatedExternalAccountId` 绑定用户 |
+| WeChat Pay | 无（按订单定价，手工建映射） | 仅 non-renewing——固定期、单次付款、不自动续费 | 统一下单（PC 扫码 Native / 微信内 JSAPI） | 无目录 metadata；价格与币种配置在映射上 |
 
-Stripe、Creem 是发起式平台，通过 PaymentAttempt 统一管理支付过程。IAP 同样经 PaymentAttempt 入账，但履约由移动 App 提交购买凭证（Apple `jwsRepresentation` / Google `purchaseToken`）触发，而不是 checkout webhook——平台通知（Apple）和定时轮询（Google）只负责之后的生命周期。详见 [IAP 对接指南](/docs/billing-iap)。
+Stripe、Creem、WeChat Pay 是发起式平台，通过 PaymentAttempt 统一管理支付过程。WeChat 订阅到固定截止日为止——没有续费扣款，用户重新购买续期。IAP 同样经 PaymentAttempt 入账，但履约由移动 App 提交购买凭证（Apple `jwsRepresentation` / Google `purchaseToken`）触发，而不是 checkout webhook——平台通知（Apple）和定时轮询（Google）只负责之后的生命周期。详见 [IAP 对接指南](/docs/zh/billing-iap) 与 [WeChat Pay 对接指南](/docs/zh/billing-wechat-payment)。
 
 ## 相关文档
 
@@ -196,4 +197,5 @@ Stripe、Creem 是发起式平台，通过 PaymentAttempt 统一管理支付过�
 - [Stripe 对接指南](/docs/billing-stripe-payment) — Stripe 支付方配置和 Webhook 处理
 - [Creem 对接指南](/docs/billing-creem-payment) — Creem 支付方配置和 Webhook 处理
 - [IAP 对接指南](/docs/billing-iap) — App Store / Google Play 内购配置、receipt 提交与生命周期处理
+- [WeChat Pay 对接指南](/docs/zh/billing-wechat-payment) — WeChat Pay 配置、按订单定价的映射与 Native / JSAPI 购买流程
 - [发票管理](/docs/billing-invoice) — 发票创建、开票、PDF 生成

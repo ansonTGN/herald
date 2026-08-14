@@ -172,6 +172,53 @@ export async function seedStripeConfig(
 }
 
 // ---------------------------------------------------------------------------
+// WeChat Pay
+// Key set mirrors `backend/infra/src/wechatpay/mod.rs::REQUIRED_KEYS` plus the
+// two optional keys: `base_url` (points the v3 client at a local mock) and
+// `platform_public_key` (callback-verification override).
+// ---------------------------------------------------------------------------
+
+export interface WechatSeedInput {
+  appId: string
+  mchId: string
+  privateKeyPem: string
+  serialNo: string
+  /** Exactly 32 bytes (WechatPayClient enforces the length). */
+  apiV3Key: string
+  notifyUrl: string
+  platformPublicKeyPem?: string
+  baseUrl?: string
+}
+
+export async function seedWechatConfig(
+  request: APIRequestContext,
+  realmId: string,
+  input: WechatSeedInput,
+): Promise<void> {
+  const configs: BatchConfigItem[] = [
+    { configType: 'wechat', configKey: 'app_id', configValue: input.appId, isSecret: false },
+    { configType: 'wechat', configKey: 'mch_id', configValue: input.mchId, isSecret: false },
+    { configType: 'wechat', configKey: 'private_key', configValue: input.privateKeyPem, isSecret: true },
+    { configType: 'wechat', configKey: 'serial_no', configValue: input.serialNo, isSecret: false },
+    { configType: 'wechat', configKey: 'v3_key', configValue: input.apiV3Key, isSecret: true },
+    { configType: 'wechat', configKey: 'notify_url', configValue: input.notifyUrl, isSecret: false },
+  ]
+  if (input.platformPublicKeyPem) {
+    configs.push({
+      configType: 'wechat', configKey: 'platform_public_key',
+      configValue: input.platformPublicKeyPem, isSecret: false,
+    })
+  }
+  if (input.baseUrl) {
+    configs.push({
+      configType: 'wechat', configKey: 'base_url',
+      configValue: input.baseUrl, isSecret: false,
+    })
+  }
+  await seedBatchConfigs(request, realmId, configs)
+}
+
+// ---------------------------------------------------------------------------
 // Email (SMTP)
 // POST /api/configs/{realmId}/batch  (config_type='email', snake_case keys)
 // Key set mirrors herald_core::third::email::read_email_config expectations.

@@ -1,0 +1,27 @@
+[package]
+name = "herald-infra-wechatpay"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+reqwest = { workspace = true, features = ["json"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+base64 = { workspace = true }
+sha2 = { workspace = true, features = ["oid"] }
+aes-gcm = { workspace = true }
+moka = { workspace = true }
+once_cell = { workspace = true }
+# Pure-Rust crypto stack (no openssl / native-tls / third-party WeChat SDK —
+# DEC-wechat-support-004). `rsa` is declared directly, mirroring `infra-iap`.
+rsa = "0.9"
+
+[dev-dependencies]
+tokio = { workspace = true }
+wiremock = { workspace = true }
+rand = { workspace = true }

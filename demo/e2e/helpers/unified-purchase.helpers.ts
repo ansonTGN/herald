@@ -72,6 +72,7 @@ export const TEST_DATA = {
   PAYMENT_PROVIDERS: {
     STRIPE: 'stripe',
     CREEM: 'creem',
+    WECHAT: 'wechat',
   } as const,
 } as const
 
@@ -198,10 +199,11 @@ export async function selectFirstMappingAndProceed(
 /**
  * Selects a specific price card by priceId and proceeds to the payment step.
  *
- * No current importer calls this; it is preserved for parity and any future
- * price-pinned caller. `priceId` is `externalPriceId ?? mappingId` (Creem
- * NULL-price rows use mappingId); targets `purchase-price-card-${priceId}`
- * (period-invariant under the section IA).
+ * Used via `initiatePurchaseFlow`'s `priceId` opt by demos pinned to a seeded
+ * card in realms that also carry other providers' cards. `priceId` is
+ * `externalPriceId ?? mappingId` (Creem NULL-price rows use mappingId);
+ * targets `purchase-price-card-${priceId}` (period-invariant under the
+ * section IA).
  */
 export async function selectMappingAndProceed(
   page: Page,
@@ -254,7 +256,7 @@ export async function initiatePurchaseFlow(
   page: Page,
   provider: PaymentProvider,
   realmId: string = TEST_DATA.REALMS.REALM_001,
-  opts?: { period?: PurchasePeriod }
+  opts?: { period?: PurchasePeriod; priceId?: string }
 ): Promise<string> {
   await page.evaluate(() => localStorage.removeItem('cas-purchase-flow'))
   await page.goto(`/user/purchase-points`)
@@ -263,8 +265,13 @@ export async function initiatePurchaseFlow(
   // Precondition: realm must have at least one purchasable price card in the
   // target period pane. If none exist, the page shows the empty state and this
   // helper will fail. Callers in conditional test contexts should check for
-  // price cards first.
-  await selectFirstMappingAndProceed(page, opts)
+  // price cards first. `priceId` pins a specific seeded card instead of
+  // "first card" (realms with cards from multiple providers need this).
+  if (opts?.priceId) {
+    await selectMappingAndProceed(page, opts.priceId)
+  } else {
+    await selectFirstMappingAndProceed(page, opts)
+  }
 
   // After selecting a price and clicking Next, the page either shows the
   // `payment` step (multi-provider / explicit choice) or auto-advances straight

@@ -28,7 +28,7 @@ Herald 不只是认证服务。它在同一套代码中把身份、支付、权�
 |------|--------------|
 | **多租户身份** | 相互隔离的 Realm、邮箱密码、Google、GitHub、Apple、Facebook 和微信登录、Passkey、TOTP 双因素认证、人机验证 |
 | **授权与应用** | Realm 级 RBAC、客户端应用、API Key、OAuth 2.0、设备授权、跨应用单点登录 |
-| **计费与支付** | Stripe 与 Creem、订阅、一次性购买、发票、支付到权益的映射 |
+| **计费与支付** | Stripe、Creem、WeChat Pay，App Store / Google Play 内购，订阅、一次性购买、发票、支付到权益的映射 |
 | **积分与用量** | 预付余额、充值、退款、过期、用户账本、积分发放、多时间窗滚动配额 |
 | **后台与运营** | 用户、角色、计费、积分、应用、租户设置、审计轨迹和账号生命周期管理 |
 | **产品定制** | 自定义域名、白标品牌、交易邮件、版本化用户协议、API 文档和 SDK |
@@ -40,6 +40,8 @@ Herald 不只是认证服务。它在同一套代码中把身份、支付、权�
 Herald 为 AI 编程工具提供一套完整、可运行的产品底座，而不是一个空仓库或一组彼此割裂的 API。你可以在统一的身份、计费和用量模型之上，继续调整流程、角色、集成、品牌和业务规则。
 
 Herald 本身也采用 Claude Code、GLM 和 Codex 混合协作的 AI 辅助开发流程，开发工具基于 [web-dev-skills](https://github.com/timzaak/web-dev-skills) 构建。
+
+[herald-app-example](https://github.com/timzaak/herald-app-example) 是一个完整的、全 AI 开发的 Flutter App，集成了 Herald 认证，可作为这种开发方式的参考实现。
 
 ## 快速开始
 
@@ -86,7 +88,7 @@ Herald 的文档以 MDX 编写，位于 [`docs-web/content/docs/`](docs-web/cont
 - **单页 Markdown：** 在任意文档 URL 后加 `.md`，例如 https://www.fornetcode.com/zh/docs/auth-passkey.md
 - **API 参考（OpenAPI）：** [`docs-web/openapi.json`](docs-web/openapi.json)
 
-仓库内 MDX 源文件：`docs-web/content/docs/{getting-started,architecture,configuration,deployment,billing-overview,billing-stripe-payment,billing-creem-payment,billing-iap,billing-invoice,billing-credit-note,auth-passkey,auth-email-otp,auth-apple-native,third-party-integration,custom-user-ui,ui-custom,realm-custom-domain,points-quota}.mdx`。
+仓库内 MDX 源文件：`docs-web/content/docs/{getting-started,architecture,configuration,deployment,billing-overview,billing-stripe-payment,billing-creem-payment,billing-iap,billing-wechat-payment,billing-invoice,billing-credit-note,auth-passkey,auth-email-otp,auth-apple-native,third-party-integration,custom-user-ui,ui-custom,realm-custom-domain,points-quota}.mdx`。
 
 ## 许可证
 

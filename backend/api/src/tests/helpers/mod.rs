@@ -28,6 +28,7 @@ pub mod subscription_test_helpers;
 pub mod test_setup_helpers;
 pub mod user_helpers;
 pub mod webhook_helpers;
+pub mod wechat_mocks;
 
 // Email OTP test-only helpers (Redis code injection for deterministic verify
 // flows). Not exported via `pub use` — imported explicitly by the OTP

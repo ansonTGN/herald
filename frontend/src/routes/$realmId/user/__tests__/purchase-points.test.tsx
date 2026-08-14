@@ -100,10 +100,14 @@ function makeWrapper(client: QueryClient) {
   }
 }
 
-function renderPage(items: PurchaseOptionView[], client?: QueryClient) {
+function renderPage(
+  items: PurchaseOptionView[],
+  client?: QueryClient,
+  pageProps?: { wechatOpenid?: string }
+) {
   const qc = client ?? makeQueryClient()
   seedOptions(qc, items)
-  const view = render(<PurchasePointsPage realmId="realm-1" clientAppId="app-1" />, {
+  const view = render(<PurchasePointsPage realmId="realm-1" clientAppId="app-1" {...pageProps} />, {
     wrapper: makeWrapper(qc),
   })
   return { qc, ...view }
@@ -300,5 +304,84 @@ describe('PurchasePointsPage', () => {
     expect(call.body.targetType).toBe('entitlement_mapping')
     expect(call.body.targetId).toBe('m-1')
     expect(call.body.paymentProvider).toBe('stripe')
+  })
+
+  describe('WeChat provider branch', () => {
+    const WECHAT_UA =
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.40(0x18002830)'
+
+    function renderWechatPage(props?: { wechatOpenid?: string }) {
+      return renderPage(
+        [makeOption({ mappingId: 'm-wx', externalPriceId: 'price_wx', paymentProvider: 'wechat' })],
+        undefined,
+        props
+      )
+    }
+
+    it('orders Native (no scene/openid fields) and stays on the processing step instead of redirecting', async () => {
+      // Outside WeChat's browser the scene defaults server-side to native, so
+      // the request carries no scene override; unlike stripe/creem there is no
+      // checkout URL to redirect to — the QR IS the pending UI, so the page
+      // must settle on the processing step.
+      const user = userEvent.setup()
+      renderWechatPage()
+
+      await user.click(screen.getByTestId('purchase-price-card-price_wx'))
+      await waitFor(() => {
+        expect(screen.getByTestId('purchase-next-button')).not.toBeDisabled()
+      })
+      await user.click(screen.getByTestId('purchase-next-button'))
+
+      await waitFor(() => {
+        expect(mockCreatePaymentAttempt).toHaveBeenCalledTimes(1)
+      })
+      const call = mockCreatePaymentAttempt.mock.calls[0][0] as {
+        body: Record<string, unknown>
+      }
+      expect(call.body.paymentProvider).toBe('wechat')
+      expect(call.body).not.toHaveProperty('paymentScene')
+      expect(call.body).not.toHaveProperty('openid')
+      expect(await screen.findByTestId('purchase-step-processing')).toBeInTheDocument()
+    })
+
+    it('orders JSAPI with the caller-provided openid inside WeChat', async () => {
+      const uaSpy = vi.spyOn(Navigator.prototype, 'userAgent', 'get').mockReturnValue(WECHAT_UA)
+      const user = userEvent.setup()
+      renderWechatPage({ wechatOpenid: 'openid-1' })
+
+      await user.click(screen.getByTestId('purchase-price-card-price_wx'))
+      await waitFor(() => {
+        expect(screen.getByTestId('purchase-next-button')).not.toBeDisabled()
+      })
+      await user.click(screen.getByTestId('purchase-next-button'))
+
+      await waitFor(() => {
+        expect(mockCreatePaymentAttempt).toHaveBeenCalledTimes(1)
+      })
+      const call = mockCreatePaymentAttempt.mock.calls[0][0] as {
+        body: Record<string, unknown>
+      }
+      expect(call.body.paymentScene).toBe('jsapi')
+      expect(call.body.openid).toBe('openid-1')
+      uaSpy.mockRestore()
+    })
+
+    it('refuses to order inside WeChat without an openid and keeps the user on the selection step', async () => {
+      // The same device cannot scan a Native QR and JSAPI cannot be created
+      // without an openid, so ordering must be blocked, not downgraded.
+      const uaSpy = vi.spyOn(Navigator.prototype, 'userAgent', 'get').mockReturnValue(WECHAT_UA)
+      const user = userEvent.setup()
+      renderWechatPage()
+
+      await user.click(screen.getByTestId('purchase-price-card-price_wx'))
+      await waitFor(() => {
+        expect(screen.getByTestId('purchase-next-button')).not.toBeDisabled()
+      })
+      await user.click(screen.getByTestId('purchase-next-button'))
+
+      expect(mockCreatePaymentAttempt).not.toHaveBeenCalled()
+      expect(await screen.findByTestId('purchase-step-packages')).toBeInTheDocument()
+      uaSpy.mockRestore()
+    })
   })
 })

@@ -108,7 +108,7 @@ A user can download PDFs for their own invoices, provided the invoice is in a do
 
 ## External invoices
 
-Invoices produced by a payment provider (Stripe, Creem, WeChat) are external invoices. Herald only stores basic info and a redirect link (`externalHostedUrl`); it does not generate a local PDF.
+Invoices produced by a payment provider (Stripe, Creem) are external invoices. Herald only stores basic info and a redirect link (`externalHostedUrl`); it does not generate a local PDF. WeChat Pay has no invoice API for third parties, so its transactions never enter the invoice system.
 
 An external invoice shows a provider tag in the list (e.g. "Stripe"); clicking through redirects to the provider's own invoice page.
 

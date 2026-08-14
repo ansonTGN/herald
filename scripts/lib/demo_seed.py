@@ -133,6 +133,7 @@ def ensure_demo_seed_data(logger: "Logger | None" = None) -> bool:
         # US-PW-001 expects to exist before the demo test opens the page.
         _ensure_realm001_subscription_data(user_id, logger)
         _ensure_multi_wallet_grant_demo_data(logger)
+        _ensure_wechat_pay_demo_data(logger)
 
         # Ensure payment provider credentials (realm_config only). This function
         # does NOT seed entitlement mappings; the realm-001 recurring mapping is
@@ -1116,6 +1117,137 @@ END $$;
 """
     _sql_exec(sql)
     _info(logger, "[OK] Multi-wallet mapping and registration rules ready")
+
+
+def _ensure_wechat_pay_demo_data(logger: "Logger | None") -> None:
+    """Seed the WeChat Pay mappings exercised by the wechat demos.
+
+    WeChat Pay v3 is order-based with no hosted product catalog, so the mapping
+    rows are seeded directly like the multi-wallet demo mapping: price and
+    currency live in ``provider_product_info`` JSONB. ``external_price_id`` is
+    a fixed string so the demo purchase price-card testids are deterministic
+    (``purchase-price-card-demo-wechat-pay-points-price`` and
+    ``purchase-price-card-demo-wechat-pay-membership-30d``).
+
+    Two products:
+    - one_time points pack (1000 fen -> 100 points into the primary bucket);
+    - non_renewing 30-day membership (2000 fen, no points rule — fulfilment
+      creates a fixed-period subscription row; repeatable by design, which the
+      demo's repurchase scenario exercises).
+
+    Credentials are NOT seeded here: the v3 ``base_url`` must point at a
+    test-runtime local mock (dynamic port) and the platform keypair is
+    generated per run — the demo tests seed realm_config via
+    ``demo/e2e/secrets/realm-seed.ts::seedWechatConfig`` instead.
+    """
+    primary_id = _bucket_id(POINTS_REALM_ID, CREDIT_BUCKET_KEY_PRIMARY)
+    sql = f"""
+DO $$
+DECLARE
+    v_mapping_id UUID;
+BEGIN
+    INSERT INTO provider_entitlement_mappings (
+        id, realm_id, payment_provider, external_product_id, external_price_id,
+        entitlement_key, billing_type, enabled, provider_product_info, synced_at
+    ) VALUES (
+        '0198f21a-4444-7000-8000-000000000001'::uuid,
+        '{POINTS_REALM_ID}',
+        'wechat',
+        'demo-wechat-pay-points',
+        'demo-wechat-pay-points-price',
+        'wechat-pay-points',
+        'one_time',
+        TRUE,
+        '{{
+          "name": "WeChat Pay demo credit pack",
+          "description": "One-time points pack purchased via WeChat Pay demo flow",
+          "price": 1000,
+          "currency": "cny",
+          "billing_type": "one_time",
+          "product_metadata": {{}},
+          "price_metadata": {{}}
+        }}'::jsonb,
+        NOW()
+    )
+    ON CONFLICT (realm_id, payment_provider, external_product_id, external_price_id)
+    DO UPDATE SET
+        entitlement_key = EXCLUDED.entitlement_key,
+        billing_type = EXCLUDED.billing_type,
+        enabled = TRUE,
+        provider_product_info = EXCLUDED.provider_product_info,
+        synced_at = NOW()
+    RETURNING id INTO v_mapping_id;
+
+    INSERT INTO provider_entitlement_mappings (
+        id, realm_id, payment_provider, external_product_id, external_price_id,
+        entitlement_key, billing_type, service_duration_days, enabled,
+        provider_product_info, synced_at
+    ) VALUES (
+        '0198f21a-4444-7000-8000-000000000002'::uuid,
+        '{POINTS_REALM_ID}',
+        'wechat',
+        'demo-wechat-pay-membership',
+        'demo-wechat-pay-membership-30d',
+        'wechat-pay-membership',
+        'non_renewing',
+        30,
+        TRUE,
+        '{{
+          "name": "WeChat Pay demo membership (30 days)",
+          "description": "Fixed-period membership via WeChat Pay demo flow; no auto-renewal, repeatable",
+          "price": 2000,
+          "currency": "cny",
+          "billing_type": "non_renewing",
+          "product_metadata": {{}},
+          "price_metadata": {{}}
+        }}'::jsonb,
+        NOW()
+    )
+    ON CONFLICT (realm_id, payment_provider, external_product_id, external_price_id)
+    DO UPDATE SET
+        entitlement_key = EXCLUDED.entitlement_key,
+        billing_type = EXCLUDED.billing_type,
+        service_duration_days = EXCLUDED.service_duration_days,
+        enabled = TRUE,
+        provider_product_info = EXCLUDED.provider_product_info,
+        synced_at = NOW();
+
+    INSERT INTO points_distribution_rules (
+        id, realm_id, owner_type, entitlement_mapping_id, bucket_id,
+        trigger_sources, grant_mode, points_amount, validity_days,
+        enabled, display_order
+    ) VALUES
+    (
+        '0198f21a-4444-7000-8000-000000000011'::uuid,
+        '{POINTS_REALM_ID}',
+        'entitlement_mapping',
+        v_mapping_id,
+        '{primary_id}'::uuid,
+        ARRAY['topup']::text[],
+        'fixed',
+        100,
+        0,
+        TRUE,
+        10
+    )
+    ON CONFLICT (id) DO UPDATE SET
+        realm_id = EXCLUDED.realm_id,
+        owner_type = EXCLUDED.owner_type,
+        entitlement_mapping_id = EXCLUDED.entitlement_mapping_id,
+        bucket_id = EXCLUDED.bucket_id,
+        trigger_sources = EXCLUDED.trigger_sources,
+        grant_mode = EXCLUDED.grant_mode,
+        points_amount = EXCLUDED.points_amount,
+        validity_days = EXCLUDED.validity_days,
+        quota_windows = NULL,
+        grant_period_type = NULL,
+        enabled = TRUE,
+        display_order = EXCLUDED.display_order,
+        updated_at = NOW();
+END $$;
+"""
+    _sql_exec(sql)
+    _info(logger, "[OK] WeChat Pay demo mappings and grant rule ready")
 
 
 def _load_demo_env() -> dict[str, str]:

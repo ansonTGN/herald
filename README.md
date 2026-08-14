@@ -28,7 +28,7 @@ Herald is more than an auth provider. It connects identity to payments, entitlem
 |------|-----------------------|
 | **Multi-tenant identity** | Isolated Realms, email/password, Google, GitHub, Apple, Facebook and WeChat login, passkeys, TOTP 2FA, bot protection |
 | **Authorization & apps** | Realm-level RBAC, Client Apps, API keys, OAuth 2.0, device authorization, cross-app SSO |
-| **Billing & payments** | Stripe and Creem, subscriptions, one-time purchases, invoices, payment-to-entitlement mapping |
+| **Billing & payments** | Stripe, Creem, and WeChat Pay, App Store / Google Play in-app purchases, subscriptions, one-time purchases, invoices, payment-to-entitlement mapping |
 | **Credits & usage** | Prepaid balances, top-ups, refunds, expiry, per-user ledgers, grants, and rolling quota windows |
 | **Admin & operations** | Users, roles, billing, credits, apps, tenant settings, audit trails, and account lifecycle management |
 | **Product customization** | Custom domains, white-label branding, transactional email, versioned legal agreements, API docs and SDKs |
@@ -40,6 +40,8 @@ This foundation is especially useful for AI products with free allowances, paid 
 Herald gives AI coding tools a complete, working product foundation to modify instead of a blank repository or a collection of disconnected APIs. Use it to adapt workflows, roles, integrations, branding, and business rules while preserving a shared model for identity, billing, and usage.
 
 The project itself is developed with a hybrid AI-assisted workflow using Claude Code, GLM, and Codex. Its development toolkit builds on [web-dev-skills](https://github.com/timzaak/web-dev-skills).
+
+[herald-app-example](https://github.com/timzaak/herald-app-example) is a complete, fully AI-developed Flutter app that integrates Herald authentication — a working reference for this approach.
 
 ## Quick Start
 
@@ -86,7 +88,7 @@ Herald's documentation is authored as MDX under [`docs-web/content/docs/`](docs-
 - **Single page as Markdown:** append `.md` to any doc URL, e.g. https://www.fornetcode.com/en/docs/auth-passkey.md
 - **API reference (OpenAPI):** [`docs-web/openapi.json`](docs-web/openapi.json)
 
-Source MDX files (in-repo): `docs-web/content/docs/{getting-started,architecture,configuration,deployment,billing-overview,billing-stripe-payment,billing-creem-payment,billing-iap,billing-invoice,billing-credit-note,auth-passkey,auth-email-otp,auth-apple-native,third-party-integration,custom-user-ui,ui-custom,realm-custom-domain,points-quota}.mdx`.
+Source MDX files (in-repo): `docs-web/content/docs/{getting-started,architecture,configuration,deployment,billing-overview,billing-stripe-payment,billing-creem-payment,billing-iap,billing-wechat-payment,billing-invoice,billing-credit-note,auth-passkey,auth-email-otp,auth-apple-native,third-party-integration,custom-user-ui,ui-custom,realm-custom-domain,points-quota}.mdx`.
 
 ## License
 

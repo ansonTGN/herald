@@ -1,8 +1,10 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import { userEvent } from '@testing-library/user-event'
 import { PaymentAttemptStatus } from '../payment-attempt-status'
 import { mockPaymentAttempts, makePaymentContext } from '@/test/fixtures/unified-purchase'
-import type { PaymentAttemptStatusResponse } from '@/lib/api-generated'
+import type { PaymentAttemptStatusResponse, WechatJsapiParams } from '@/lib/api-generated'
+import { m } from '@/paraglide/messages'
 
 const FUTURE_EXPIRES = new Date(Date.now() + 3600 * 1000).toISOString()
 const PAST_EXPIRES = new Date(Date.now() - 3600 * 1000).toISOString()
@@ -103,11 +105,120 @@ describe('PaymentAttemptStatus provider-specific conditional branches', () => {
     })
   })
 
+  describe('WeChat Native QR branch', () => {
+    it('renders the QR payment block when provider=wechat and wechatCodeUrl exists', () => {
+      render(
+        <PaymentAttemptStatus
+          status={makeStatusResponse()}
+          paymentProvider="wechat"
+          paymentContext={makePaymentContext({
+            wechatCodeUrl: 'weixin://wxpay/bizpayurl?pr=test',
+          })}
+          onCancel={() => {}}
+        />
+      )
+
+      expectPresent('wechat-qr-payment', 'wechat-qr-code', 'payment-cancel-button')
+      expectAbsent('payment-context-degraded', 'payment-redirect-prompt', 'wechat-qr-expired')
+    })
+
+    it('replaces the QR with the expired state and regenerate entry once the countdown ends', () => {
+      render(
+        <PaymentAttemptStatus
+          status={makeStatusResponse({
+            status: 'Pending',
+            expiresAt: PAST_EXPIRES,
+          })}
+          paymentProvider="wechat"
+          paymentContext={makePaymentContext({
+            wechatCodeUrl: 'weixin://wxpay/bizpayurl?pr=test',
+          })}
+          onRetry={() => {}}
+        />
+      )
+
+      expectPresent('wechat-qr-expired', 'wechat-regenerate-button')
+      expectAbsent('wechat-qr-code', 'wechat-qr-countdown')
+    })
+  })
+
+  describe('WeChat JSAPI branch', () => {
+    const jsapiParams: WechatJsapiParams = {
+      appId: 'wx1234',
+      timeStamp: '1723600000',
+      nonceStr: 'nonce',
+      package: 'prepay_id=wx123',
+      signType: 'RSA',
+      paySign: 'signature',
+    }
+
+    afterEach(() => {
+      delete window.WeixinJSBridge
+      vi.restoreAllMocks()
+    })
+
+    it('renders the invoke UI when provider=wechat and jsapi params exist', () => {
+      render(
+        <PaymentAttemptStatus
+          status={makeStatusResponse()}
+          paymentProvider="wechat"
+          paymentContext={makePaymentContext({ wechatJsapiParams: jsapiParams })}
+        />
+      )
+
+      expectPresent('wechat-jsapi-pending', 'wechat-jsapi-invoke-button')
+      expectAbsent('payment-context-degraded', 'wechat-qr-payment')
+    })
+
+    it('surfaces bridge feedback per invoke outcome instead of leaving a dead button', async () => {
+      const user = userEvent.setup()
+      window.WeixinJSBridge = {
+        invoke: (_api, _params, callback) => callback({ err_msg: 'get_brand_wcpay_request:ok' }),
+      }
+      render(
+        <PaymentAttemptStatus
+          status={makeStatusResponse()}
+          paymentProvider="wechat"
+          paymentContext={makePaymentContext({ wechatJsapiParams: jsapiParams })}
+        />
+      )
+
+      await user.click(screen.getByTestId('wechat-jsapi-invoke-button'))
+      expect(screen.getByTestId('wechat-jsapi-result-ok')).toBeInTheDocument()
+
+      // The bridge result is feedback only — the attempt itself stays Pending
+      // until the server-side callback confirms, so no status change is forced.
+      expect(screen.queryByTestId('payment-status-succeeded')).toBeNull()
+    })
+
+    it('reports bridge unavailability outside a real WeChat webview', async () => {
+      const user = userEvent.setup()
+      delete window.WeixinJSBridge
+      render(
+        <PaymentAttemptStatus
+          status={makeStatusResponse()}
+          paymentProvider="wechat"
+          paymentContext={makePaymentContext({ wechatJsapiParams: jsapiParams })}
+        />
+      )
+
+      await user.click(screen.getByTestId('wechat-jsapi-invoke-button'))
+      expect(screen.getByTestId('wechat-jsapi-result-fail')).toHaveTextContent(
+        m['points.payment_wechat_jsapi_bridge_unavailable']()
+      )
+    })
+  })
+
   describe('Degraded UI', () => {
     it.each([
       {
         label: 'stripe with null context',
         provider: 'stripe',
+        context: null,
+      },
+      {
+        label: 'wechat with null context',
+        provider: 'wechat',
         context: null,
       },
     ] as const)('renders degraded UI when $label (context is null)', ({ provider, context }) => {
@@ -134,6 +245,11 @@ describe('PaymentAttemptStatus provider-specific conditional branches', () => {
         context: makePaymentContext({
           stripeCheckoutUrl: null,
         }),
+      },
+      {
+        label: 'wechat with neither code URL nor jsapi params',
+        provider: 'wechat',
+        context: makePaymentContext({}),
       },
     ] as const)('renders degraded UI when $label', ({ provider, context }) => {
       render(

@@ -351,6 +351,23 @@ pub enum ConfigType {
     /// with `config_key == "service_account_json"` exists.
     Google,
 
+    /// WeChat Pay v3 merchant configuration (DEC-wechat-support-007).
+    ///
+    /// Valid config_key values (all stored in `realm_config` with
+    /// `config_type = "wechat"`):
+    /// - `app_id`: WeChat AppID (non-secret)
+    /// - `mch_id`: Merchant ID (non-secret)
+    /// - `private_key`: Merchant RSA private key PEM (secret, `is_secret=true`)
+    /// - `serial_no`: Merchant certificate serial number (non-secret)
+    /// - `v3_key`: APIv3 Key, 32 bytes (secret, `is_secret=true`)
+    /// - `notify_url`: Public callback URL (non-secret)
+    /// - `platform_public_key`: Optional manual platform public-key override
+    ///   PEM for callback verification (non-secret)
+    ///
+    /// `list_payment_providers` treats WeChat as configured iff a config row
+    /// with `config_key == "mch_id"` exists.
+    Wechat,
+
     /// Email provider configuration
     ///
     /// Valid config_key values:
@@ -477,6 +494,7 @@ impl ConfigType {
             "stripe" => ConfigType::Stripe,
             "apple" => ConfigType::Apple,
             "google" => ConfigType::Google,
+            "wechat" => ConfigType::Wechat,
             "email" => ConfigType::Email,
             "invoice_policy" => ConfigType::InvoicePolicy,
             "email_otp" => ConfigType::EmailOtp,
@@ -503,6 +521,7 @@ impl ConfigType {
             ConfigType::Stripe => "stripe",
             ConfigType::Apple => "apple",
             ConfigType::Google => "google",
+            ConfigType::Wechat => "wechat",
             ConfigType::Email => "email",
             ConfigType::InvoicePolicy => "invoice_policy",
             ConfigType::EmailOtp => "email_otp",

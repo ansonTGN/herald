@@ -42,8 +42,10 @@ export class PaymentProvidersPage extends BasePage {
   // --- Provider rows + row actions ------------------------------------------
   readonly appleProviderRow: Locator
   readonly googleProviderRow: Locator
+  readonly wechatProviderRow: Locator
   readonly editAppleButton: Locator
   readonly editGoogleButton: Locator
+  readonly editWechatButton: Locator
   readonly deleteAppleButton: Locator
   readonly deleteGoogleButton: Locator
 
@@ -59,8 +61,10 @@ export class PaymentProvidersPage extends BasePage {
 
     this.appleProviderRow = page.locator(SELECTORS.iap.appleProviderRow)
     this.googleProviderRow = page.locator(SELECTORS.iap.googleProviderRow)
+    this.wechatProviderRow = page.locator(SELECTORS.iap.wechatProviderRow)
     this.editAppleButton = page.locator(SELECTORS.iap.editAppleButton)
     this.editGoogleButton = page.locator(SELECTORS.iap.editGoogleButton)
+    this.editWechatButton = page.locator(SELECTORS.iap.editWechatButton)
     this.deleteAppleButton = page.locator(SELECTORS.iap.deleteAppleButton)
     this.deleteGoogleButton = page.locator(SELECTORS.iap.deleteGoogleButton)
 
@@ -83,28 +87,29 @@ export class PaymentProvidersPage extends BasePage {
    * is visible). Returns false if the provider is unconfigured (only the
    * `add-${provider}-button` is present).
    */
-  async isConfigured(provider: 'apple' | 'google'): Promise<boolean> {
-    const editButton = this.page.locator(
-      provider === 'apple' ? SELECTORS.iap.editAppleButton : SELECTORS.iap.editGoogleButton,
-    )
-    return this.isVisible(editButton)
+  async isConfigured(provider: 'apple' | 'google' | 'wechat'): Promise<boolean> {
+    return this.isVisible(this.getEditButton(provider))
   }
 
   /**
    * Get the locator for a provider's add button (rendered only when the
    * provider is unconfigured).
    */
-  getAddButton(provider: 'apple' | 'google'): Locator {
+  getAddButton(provider: 'apple' | 'google' | 'wechat'): Locator {
     return this.page.getByTestId(`add-${provider}-button`)
   }
 
   /**
    * Get the locator for a provider's edit button.
    */
-  getEditButton(provider: 'apple' | 'google'): Locator {
-    return this.page.locator(
-      provider === 'apple' ? SELECTORS.iap.editAppleButton : SELECTORS.iap.editGoogleButton,
-    )
+  getEditButton(provider: 'apple' | 'google' | 'wechat'): Locator {
+    const selector =
+      provider === 'apple'
+        ? SELECTORS.iap.editAppleButton
+        : provider === 'google'
+          ? SELECTORS.iap.editGoogleButton
+          : SELECTORS.iap.editWechatButton
+    return this.page.locator(selector)
   }
 
   /**
@@ -150,6 +155,29 @@ export class PaymentProvidersPage extends BasePage {
         skipSensitive: editSensitiveLeaveEmpty,
       })
     }
+  }
+
+  /**
+   * Configure (create or edit) the WeChat Pay provider. Same branching,
+   * retention and return-to-list contract as `configureIapProvider`; the
+   * sensitive leave-empty-to-keep fields are the merchant private key PEM and
+   * the APIv3 key (`is_secret` keys per `is_empty_secret_to_preserve`).
+   */
+  async configureWechatProvider(
+    fields: WechatFields,
+    opts?: { editSensitiveLeaveEmpty?: boolean },
+  ): Promise<void> {
+    const configured = await this.isConfigured('wechat')
+    const skipSensitive = opts?.editSensitiveLeaveEmpty ?? false
+
+    if (configured) {
+      await this.smartClick(this.getEditButton('wechat'))
+    } else {
+      await this.smartClick(this.getAddButton('wechat'))
+    }
+
+    await this.page.waitForURL('**/payment-providers/wechat', { timeout: 10000 })
+    await this.fillWechatForm(fields, { isEdit: configured, skipSensitive })
   }
 
   /**
@@ -243,6 +271,41 @@ export class PaymentProvidersPage extends BasePage {
   }
 
   /**
+   * Fill the WeChat Pay config form. In create mode all required fields are
+   * filled; in edit mode with `skipSensitive`, the merchant private key and
+   * APIv3 key are left empty to assert retention of the prior secrets.
+   */
+  private async fillWechatForm(
+    fields: WechatFields,
+    opts: { isEdit: boolean; skipSensitive: boolean },
+  ): Promise<void> {
+    await expect(this.page.getByTestId('wechat-config-form-page')).toBeVisible()
+
+    await this.fillField(this.page.getByTestId('wechat-app-id-input'), fields.appId)
+    await this.fillField(this.page.getByTestId('wechat-mch-id-input'), fields.mchId)
+    await this.fillField(this.page.getByTestId('wechat-serial-no-input'), fields.serialNo)
+    await this.fillField(this.page.getByTestId('wechat-notify-url-input'), fields.notifyUrl)
+
+    // The merchant private key and APIv3 key are secrets. On create they are
+    // required; on edit with skipSensitive they are intentionally left empty
+    // (leave-empty-to-keep).
+    if (!opts.isEdit || !opts.skipSensitive) {
+      await this.fillField(this.page.getByTestId('wechat-private-key-input'), fields.privateKeyPem)
+      await this.fillField(this.page.getByTestId('wechat-v3-key-input'), fields.apiV3Key)
+    }
+
+    if (fields.platformPublicKeyPem) {
+      await this.fillField(
+        this.page.getByTestId('wechat-platform-public-key-input'),
+        fields.platformPublicKeyPem,
+      )
+    }
+
+    await this.page.getByTestId('wechat-config-page-submit-button').click()
+    await this.page.waitForURL('**/payment-providers', { timeout: 15000 })
+  }
+
+  /**
    * Select the Apple notification environment (production/sandbox) via the
    * Radix Select trigger + option.
    *
@@ -288,4 +351,21 @@ export interface GoogleFields {
   packageName: string
   /** Service-account JSON literal. Required on create; leave empty on edit. */
   serviceAccountJson: string
+}
+
+/**
+ * WeChat Pay config form fields (WechatConfigForm.tsx).
+ */
+export interface WechatFields {
+  appId: string
+  mchId: string
+  /** Merchant certificate serial number. */
+  serialNo: string
+  /** Merchant private key PEM. Required on create; leave empty on edit. */
+  privateKeyPem: string
+  /** APIv3 key, exactly 32 chars. Required on create; leave empty on edit. */
+  apiV3Key: string
+  notifyUrl: string
+  /** Optional manual platform-public-key override (non-secret). */
+  platformPublicKeyPem?: string
 }

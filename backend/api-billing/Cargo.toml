@@ -12,6 +12,7 @@ herald-core = { path = "../core" }
 herald-infra-iap = { path = "../infra-iap" }
 herald-infra-stripe = { path = "../infra-stripe" }
 herald-infra-creem = { path = "../infra-creem" }
+herald-infra-wechatpay = { path = "../infra-wechatpay" }
 axum = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

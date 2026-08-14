@@ -24,19 +24,21 @@ import {
   type PaymentProvider,
 } from '@/lib/billing-constants'
 import { CREEM_CONFIG_KEYS } from '@/lib/creem-config-utils'
+import { WECHAT_CONFIG_KEYS } from '@/lib/wechat-config-utils'
 import { formatProviderName } from '@/components/billing/format-provider-name'
 import { queryKeys } from '@/data/query-options'
 import { m } from '@/paraglide/messages'
 import { realmPath, useResolvedRealmContext } from '@/lib/realm-routing'
 
 /** Display order for the providers table and "add provider" buttons. */
-const PROVIDER_TYPES: readonly PaymentProvider[] = ['stripe', 'creem', 'apple', 'google']
+const PROVIDER_TYPES: readonly PaymentProvider[] = ['stripe', 'creem', 'apple', 'google', 'wechat']
 
 const CONFIG_KEYS_BY_PROVIDER: Record<PaymentProvider, readonly string[]> = {
   stripe: Object.values(STRIPE_CONFIG_KEYS),
   creem: Object.values(CREEM_CONFIG_KEYS),
   apple: Object.values(APPLE_CONFIG_KEYS),
   google: Object.values(GOOGLE_CONFIG_KEYS),
+  wechat: Object.values(WECHAT_CONFIG_KEYS),
 }
 
 function ProviderRow({

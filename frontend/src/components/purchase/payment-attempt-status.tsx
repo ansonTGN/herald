@@ -1,8 +1,14 @@
 import { m } from '@/paraglide/messages'
 import { useEffect, useState, useMemo } from 'react'
-import { type PaymentAttemptStatusResponse, type PaymentContextResponse } from '@/lib/api-generated'
+import {
+  type PaymentAttemptStatusResponse,
+  type PaymentContextResponse,
+  type WechatJsapiParams,
+} from '@/lib/api-generated'
 import { Button } from '@/components/ui/button'
 import { AlertCircle, CheckCircle2, Clock, XCircle, RefreshCw, X, ExternalLink } from 'lucide-react'
+import { WechatQrCodePayment } from '@/components/purchase/WechatQrCodePayment'
+import { invokeWechatJsapiPay, type WechatJsapiInvokeResult } from '@/lib/wechat-pay-utils'
 
 interface PaymentAttemptStatusProps {
   status: PaymentAttemptStatusResponse
@@ -47,6 +53,60 @@ function CountdownTimer({
     <span className={`font-mono font-bold ${colorClass}`} data-testid="payment-countdown-timer">
       {formattedTime}
     </span>
+  )
+}
+
+/**
+ * JSAPI (in-WeChat) pending state: invokes WeChat's built-in payment sheet
+ * via WeixinJSBridge. The bridge result is user feedback only — the attempt
+ * stays Pending until the server-side callback confirms the outcome, so
+ * polling continues regardless of the bridge result.
+ */
+function WechatJsapiPayment({ params }: { params: WechatJsapiParams }) {
+  const [invokeState, setInvokeState] = useState<'idle' | 'invoking' | WechatJsapiInvokeResult>(
+    'idle'
+  )
+
+  const handleInvoke = async () => {
+    setInvokeState('invoking')
+    const result = await invokeWechatJsapiPay(params)
+    setInvokeState(result)
+  }
+
+  return (
+    <div data-testid="wechat-jsapi-payment" className="space-y-4">
+      <div className="text-lg font-semibold">{m['points.payment_wechat_jsapi_title']()}</div>
+      <p className="text-sm text-muted-foreground">
+        {m['points.payment_wechat_jsapi_description']()}
+      </p>
+      <Button
+        onClick={handleInvoke}
+        disabled={invokeState === 'invoking'}
+        data-testid="wechat-jsapi-invoke-button"
+      >
+        <RefreshCw className="mr-2 h-4 w-4" />
+        {invokeState === 'invoking'
+          ? m['points.payment_wechat_jsapi_invoking']()
+          : m['points.payment_wechat_jsapi_invoke']()}
+      </Button>
+      {invokeState === 'ok' && (
+        <p className="text-sm text-muted-foreground" data-testid="wechat-jsapi-result-ok">
+          {m['points.payment_wechat_jsapi_ok']()}
+        </p>
+      )}
+      {invokeState === 'cancel' && (
+        <p className="text-sm text-muted-foreground" data-testid="wechat-jsapi-result-cancel">
+          {m['points.payment_wechat_jsapi_cancelled']()}
+        </p>
+      )}
+      {(invokeState === 'fail' || invokeState === 'bridge_unavailable') && (
+        <p className="text-sm text-destructive" data-testid="wechat-jsapi-result-fail">
+          {invokeState === 'bridge_unavailable'
+            ? m['points.payment_wechat_jsapi_bridge_unavailable']()
+            : m['points.payment_wechat_jsapi_failed']()}
+        </p>
+      )}
+    </div>
   )
 }
 
@@ -149,6 +209,29 @@ export function PaymentAttemptStatus({
 
     if (paymentProvider === 'creem' && paymentContext.creemCheckoutUrl) {
       return renderRedirectPrompt('Creem', paymentContext.creemCheckoutUrl)
+    }
+
+    if (paymentProvider === 'wechat' && paymentContext.wechatCodeUrl) {
+      return (
+        <div className="space-y-4" data-testid="wechat-native-pending">
+          <WechatQrCodePayment
+            codeUrl={paymentContext.wechatCodeUrl}
+            timeRemaining={timeRemaining}
+            formattedTime={formattedTime}
+            onRegenerate={onRetry}
+          />
+          <CancelButton onCancel={onCancel} isCancelling={isCancelling} />
+        </div>
+      )
+    }
+
+    if (paymentProvider === 'wechat' && paymentContext.wechatJsapiParams) {
+      return (
+        <div className="space-y-4" data-testid="wechat-jsapi-pending">
+          <WechatJsapiPayment params={paymentContext.wechatJsapiParams} />
+          <CancelButton onCancel={onCancel} isCancelling={isCancelling} />
+        </div>
+      )
     }
 
     return renderDegradedUI()

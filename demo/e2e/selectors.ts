@@ -684,6 +684,41 @@ export const SELECTORS = {
   },
 
   /**
+   * WeChat Pay Native (QR) pending payment
+   * (frontend/src/components/purchase/WechatQrCodePayment.tsx)
+   */
+  wechatQrPayment: {
+    container: '[data-testid="wechat-qr-payment"]',
+    code: '[data-testid="wechat-qr-code"]',
+    countdown: '[data-testid="wechat-qr-countdown"]',
+  },
+
+  /**
+   * WeChat Pay JSAPI (in-WeChat) pending payment
+   * (frontend/src/components/purchase/payment-attempt-status.tsx)
+   */
+  wechatJsapiPayment: {
+    pending: '[data-testid="wechat-jsapi-pending"]',
+    invokeButton: '[data-testid="wechat-jsapi-invoke-button"]',
+    // fail and bridge_unavailable share the same destructive feedback region
+    resultFail: '[data-testid="wechat-jsapi-result-fail"]',
+  },
+
+  /**
+   * WeChat Pay provider configuration form
+   * (frontend/src/components/billing/WechatConfigForm.tsx). Fields used only
+   * by the page object (`fillWechatForm`) are inlined there, matching the
+   * Apple/Google form convention.
+   */
+  wechatConfigForm: {
+    page: '[data-testid="wechat-config-form-page"]',
+    appIdInput: '[data-testid="wechat-app-id-input"]',
+    privateKeyInput: '[data-testid="wechat-private-key-input"]',
+    v3KeyInput: '[data-testid="wechat-v3-key-input"]',
+    notifyUrlInput: '[data-testid="wechat-notify-url-input"]',
+  },
+
+  /**
    * Email Configuration Selectors (Settings > Email tab)
    */
   emailConfig: {
@@ -1260,8 +1295,10 @@ export const SELECTORS = {
     providerList: '[data-testid="provider-list"]',
     appleProviderRow: '[data-testid="apple-provider-row"]',
     googleProviderRow: '[data-testid="google-provider-row"]',
+    wechatProviderRow: '[data-testid="wechat-provider-row"]',
     editAppleButton: '[data-testid="edit-apple-button"]',
     editGoogleButton: '[data-testid="edit-google-button"]',
+    editWechatButton: '[data-testid="edit-wechat-button"]',
     deleteAppleButton: '[data-testid="delete-apple-button"]',
     deleteGoogleButton: '[data-testid="delete-google-button"]',
     // `add-${type}-button` is rendered per unconfigured provider type.

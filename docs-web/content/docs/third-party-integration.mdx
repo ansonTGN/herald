@@ -13,6 +13,8 @@ Browser -> Your Frontend -> Your Backend -> Herald SDK -> Herald Service
 
 Herald never sets a cookie. After the OAuth callback, your backend returns the token set to the frontend as JSON; the frontend holds it (access token in memory, refresh token in `localStorage`) and sends it as `Authorization: Bearer` on every call. Your backend never connects to Herald's database -- all interaction goes through HTTP API, with SDK-side caching.
 
+> Want a complete, runnable example? [herald-app-example](https://github.com/timzaak/herald-app-example) is a fully AI-developed Flutter app that integrates Herald authentication.
+
 ## 1. Prerequisites
 
 Complete these steps in the Herald admin console before writing code:

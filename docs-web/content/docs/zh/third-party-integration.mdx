@@ -13,6 +13,8 @@ Herald 处理用户、登录、权限、计费，并签发 Bearer access/refresh
 
 Herald 不会设置任何 Cookie。OAuth 回调之后，你的后端把 token 集合以 JSON 形式返回给前端；前端自己持有（access token 存内存，refresh token 存 `localStorage`），并在每次请求时带上 `Authorization: Bearer`。你的后端不直连 Herald 的数据库，所有交互走 HTTP API，SDK 内部带缓存。
 
+> 想要完整可运行的示例？[herald-app-example](https://github.com/timzaak/herald-app-example) 是一个全 AI 开发、集成了 Herald 认证的 Flutter App。
+
 ## 1. 前置准备
 
 在 Herald 管理后台完成以下操作，不需要写代码：

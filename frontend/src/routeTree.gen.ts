@@ -102,6 +102,7 @@ import { Route as RealmIdManageClientAppsIndexRouteImport } from './routes/$real
 import { Route as RealmIdManageAuditIndexRouteImport } from './routes/$realmId/manage/audit/index'
 import { Route as RealmIdManageApiKeysIndexRouteImport } from './routes/$realmId/manage/api-keys/index'
 import { Route as ManageClientAppsClientAppIdEditRouteImport } from './routes/manage/client-apps/$clientAppId.edit'
+import { Route as ManageBillingPaymentProvidersWechatRouteImport } from './routes/manage/billing/payment-providers/wechat'
 import { Route as ManageBillingPaymentProvidersStripeRouteImport } from './routes/manage/billing/payment-providers/stripe'
 import { Route as ManageBillingPaymentProvidersGoogleRouteImport } from './routes/manage/billing/payment-providers/google'
 import { Route as ManageBillingPaymentProvidersCreemRouteImport } from './routes/manage/billing/payment-providers/creem'
@@ -127,6 +128,7 @@ import { Route as RealmIdManageBillingInvoicesIndexRouteImport } from './routes/
 import { Route as RealmIdManageBillingCreditBucketsIndexRouteImport } from './routes/$realmId/manage/billing/credit-buckets/index'
 import { Route as ManageBillingInvoicesInvoiceIdEditRouteImport } from './routes/manage/billing/invoices/$invoiceId.edit'
 import { Route as RealmIdManageClientAppsClientAppIdEditRouteImport } from './routes/$realmId/manage/client-apps/$clientAppId.edit'
+import { Route as RealmIdManageBillingPaymentProvidersWechatRouteImport } from './routes/$realmId/manage/billing/payment-providers/wechat'
 import { Route as RealmIdManageBillingPaymentProvidersStripeRouteImport } from './routes/$realmId/manage/billing/payment-providers/stripe'
 import { Route as RealmIdManageBillingPaymentProvidersGoogleRouteImport } from './routes/$realmId/manage/billing/payment-providers/google'
 import { Route as RealmIdManageBillingPaymentProvidersCreemRouteImport } from './routes/$realmId/manage/billing/payment-providers/creem'
@@ -624,6 +626,12 @@ const ManageClientAppsClientAppIdEditRoute =
     path: '/$clientAppId/edit',
     getParentRoute: () => ManageClientAppsRoute,
   } as any)
+const ManageBillingPaymentProvidersWechatRoute =
+  ManageBillingPaymentProvidersWechatRouteImport.update({
+    id: '/wechat',
+    path: '/wechat',
+    getParentRoute: () => ManageBillingPaymentProvidersRoute,
+  } as any)
 const ManageBillingPaymentProvidersStripeRoute =
   ManageBillingPaymentProvidersStripeRouteImport.update({
     id: '/stripe',
@@ -771,6 +779,12 @@ const RealmIdManageClientAppsClientAppIdEditRoute =
     id: '/$clientAppId/edit',
     path: '/$clientAppId/edit',
     getParentRoute: () => RealmIdManageClientAppsRoute,
+  } as any)
+const RealmIdManageBillingPaymentProvidersWechatRoute =
+  RealmIdManageBillingPaymentProvidersWechatRouteImport.update({
+    id: '/wechat',
+    path: '/wechat',
+    getParentRoute: () => RealmIdManageBillingPaymentProvidersRoute,
   } as any)
 const RealmIdManageBillingPaymentProvidersStripeRoute =
   RealmIdManageBillingPaymentProvidersStripeRouteImport.update({
@@ -926,6 +940,7 @@ export interface FileRoutesByFullPath {
   '/manage/billing/payment-providers/creem': typeof ManageBillingPaymentProvidersCreemRoute
   '/manage/billing/payment-providers/google': typeof ManageBillingPaymentProvidersGoogleRoute
   '/manage/billing/payment-providers/stripe': typeof ManageBillingPaymentProvidersStripeRoute
+  '/manage/billing/payment-providers/wechat': typeof ManageBillingPaymentProvidersWechatRoute
   '/manage/client-apps/$clientAppId/edit': typeof ManageClientAppsClientAppIdEditRoute
   '/$realmId/manage/api-keys/': typeof RealmIdManageApiKeysIndexRoute
   '/$realmId/manage/audit/': typeof RealmIdManageAuditIndexRoute
@@ -942,6 +957,7 @@ export interface FileRoutesByFullPath {
   '/$realmId/manage/billing/payment-providers/creem': typeof RealmIdManageBillingPaymentProvidersCreemRoute
   '/$realmId/manage/billing/payment-providers/google': typeof RealmIdManageBillingPaymentProvidersGoogleRoute
   '/$realmId/manage/billing/payment-providers/stripe': typeof RealmIdManageBillingPaymentProvidersStripeRoute
+  '/$realmId/manage/billing/payment-providers/wechat': typeof RealmIdManageBillingPaymentProvidersWechatRoute
   '/$realmId/manage/client-apps/$clientAppId/edit': typeof RealmIdManageClientAppsClientAppIdEditRoute
   '/manage/billing/invoices/$invoiceId/edit': typeof ManageBillingInvoicesInvoiceIdEditRoute
   '/$realmId/manage/billing/credit-buckets/': typeof RealmIdManageBillingCreditBucketsIndexRoute
@@ -1036,6 +1052,7 @@ export interface FileRoutesByTo {
   '/manage/billing/payment-providers/creem': typeof ManageBillingPaymentProvidersCreemRoute
   '/manage/billing/payment-providers/google': typeof ManageBillingPaymentProvidersGoogleRoute
   '/manage/billing/payment-providers/stripe': typeof ManageBillingPaymentProvidersStripeRoute
+  '/manage/billing/payment-providers/wechat': typeof ManageBillingPaymentProvidersWechatRoute
   '/manage/client-apps/$clientAppId/edit': typeof ManageClientAppsClientAppIdEditRoute
   '/$realmId/manage/api-keys': typeof RealmIdManageApiKeysIndexRoute
   '/$realmId/manage/audit': typeof RealmIdManageAuditIndexRoute
@@ -1052,6 +1069,7 @@ export interface FileRoutesByTo {
   '/$realmId/manage/billing/payment-providers/creem': typeof RealmIdManageBillingPaymentProvidersCreemRoute
   '/$realmId/manage/billing/payment-providers/google': typeof RealmIdManageBillingPaymentProvidersGoogleRoute
   '/$realmId/manage/billing/payment-providers/stripe': typeof RealmIdManageBillingPaymentProvidersStripeRoute
+  '/$realmId/manage/billing/payment-providers/wechat': typeof RealmIdManageBillingPaymentProvidersWechatRoute
   '/$realmId/manage/client-apps/$clientAppId/edit': typeof RealmIdManageClientAppsClientAppIdEditRoute
   '/manage/billing/invoices/$invoiceId/edit': typeof ManageBillingInvoicesInvoiceIdEditRoute
   '/$realmId/manage/billing/credit-buckets': typeof RealmIdManageBillingCreditBucketsIndexRoute
@@ -1165,6 +1183,7 @@ export interface FileRoutesById {
   '/manage/billing/payment-providers/creem': typeof ManageBillingPaymentProvidersCreemRoute
   '/manage/billing/payment-providers/google': typeof ManageBillingPaymentProvidersGoogleRoute
   '/manage/billing/payment-providers/stripe': typeof ManageBillingPaymentProvidersStripeRoute
+  '/manage/billing/payment-providers/wechat': typeof ManageBillingPaymentProvidersWechatRoute
   '/manage/client-apps/$clientAppId/edit': typeof ManageClientAppsClientAppIdEditRoute
   '/$realmId/manage/api-keys/': typeof RealmIdManageApiKeysIndexRoute
   '/$realmId/manage/audit/': typeof RealmIdManageAuditIndexRoute
@@ -1181,6 +1200,7 @@ export interface FileRoutesById {
   '/$realmId/manage/billing/payment-providers/creem': typeof RealmIdManageBillingPaymentProvidersCreemRoute
   '/$realmId/manage/billing/payment-providers/google': typeof RealmIdManageBillingPaymentProvidersGoogleRoute
   '/$realmId/manage/billing/payment-providers/stripe': typeof RealmIdManageBillingPaymentProvidersStripeRoute
+  '/$realmId/manage/billing/payment-providers/wechat': typeof RealmIdManageBillingPaymentProvidersWechatRoute
   '/$realmId/manage/client-apps/$clientAppId/edit': typeof RealmIdManageClientAppsClientAppIdEditRoute
   '/manage/billing/invoices/$invoiceId/edit': typeof ManageBillingInvoicesInvoiceIdEditRoute
   '/$realmId/manage/billing/credit-buckets/': typeof RealmIdManageBillingCreditBucketsIndexRoute
@@ -1295,6 +1315,7 @@ export interface FileRouteTypes {
     | '/manage/billing/payment-providers/creem'
     | '/manage/billing/payment-providers/google'
     | '/manage/billing/payment-providers/stripe'
+    | '/manage/billing/payment-providers/wechat'
     | '/manage/client-apps/$clientAppId/edit'
     | '/$realmId/manage/api-keys/'
     | '/$realmId/manage/audit/'
@@ -1311,6 +1332,7 @@ export interface FileRouteTypes {
     | '/$realmId/manage/billing/payment-providers/creem'
     | '/$realmId/manage/billing/payment-providers/google'
     | '/$realmId/manage/billing/payment-providers/stripe'
+    | '/$realmId/manage/billing/payment-providers/wechat'
     | '/$realmId/manage/client-apps/$clientAppId/edit'
     | '/manage/billing/invoices/$invoiceId/edit'
     | '/$realmId/manage/billing/credit-buckets/'
@@ -1405,6 +1427,7 @@ export interface FileRouteTypes {
     | '/manage/billing/payment-providers/creem'
     | '/manage/billing/payment-providers/google'
     | '/manage/billing/payment-providers/stripe'
+    | '/manage/billing/payment-providers/wechat'
     | '/manage/client-apps/$clientAppId/edit'
     | '/$realmId/manage/api-keys'
     | '/$realmId/manage/audit'
@@ -1421,6 +1444,7 @@ export interface FileRouteTypes {
     | '/$realmId/manage/billing/payment-providers/creem'
     | '/$realmId/manage/billing/payment-providers/google'
     | '/$realmId/manage/billing/payment-providers/stripe'
+    | '/$realmId/manage/billing/payment-providers/wechat'
     | '/$realmId/manage/client-apps/$clientAppId/edit'
     | '/manage/billing/invoices/$invoiceId/edit'
     | '/$realmId/manage/billing/credit-buckets'
@@ -1533,6 +1557,7 @@ export interface FileRouteTypes {
     | '/manage/billing/payment-providers/creem'
     | '/manage/billing/payment-providers/google'
     | '/manage/billing/payment-providers/stripe'
+    | '/manage/billing/payment-providers/wechat'
     | '/manage/client-apps/$clientAppId/edit'
     | '/$realmId/manage/api-keys/'
     | '/$realmId/manage/audit/'
@@ -1549,6 +1574,7 @@ export interface FileRouteTypes {
     | '/$realmId/manage/billing/payment-providers/creem'
     | '/$realmId/manage/billing/payment-providers/google'
     | '/$realmId/manage/billing/payment-providers/stripe'
+    | '/$realmId/manage/billing/payment-providers/wechat'
     | '/$realmId/manage/client-apps/$clientAppId/edit'
     | '/manage/billing/invoices/$invoiceId/edit'
     | '/$realmId/manage/billing/credit-buckets/'
@@ -2220,6 +2246,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ManageClientAppsClientAppIdEditRouteImport
       parentRoute: typeof ManageClientAppsRoute
     }
+    '/manage/billing/payment-providers/wechat': {
+      id: '/manage/billing/payment-providers/wechat'
+      path: '/wechat'
+      fullPath: '/manage/billing/payment-providers/wechat'
+      preLoaderRoute: typeof ManageBillingPaymentProvidersWechatRouteImport
+      parentRoute: typeof ManageBillingPaymentProvidersRoute
+    }
     '/manage/billing/payment-providers/stripe': {
       id: '/manage/billing/payment-providers/stripe'
       path: '/stripe'
@@ -2395,6 +2428,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RealmIdManageClientAppsClientAppIdEditRouteImport
       parentRoute: typeof RealmIdManageClientAppsRoute
     }
+    '/$realmId/manage/billing/payment-providers/wechat': {
+      id: '/$realmId/manage/billing/payment-providers/wechat'
+      path: '/wechat'
+      fullPath: '/$realmId/manage/billing/payment-providers/wechat'
+      preLoaderRoute: typeof RealmIdManageBillingPaymentProvidersWechatRouteImport
+      parentRoute: typeof RealmIdManageBillingPaymentProvidersRoute
+    }
     '/$realmId/manage/billing/payment-providers/stripe': {
       id: '/$realmId/manage/billing/payment-providers/stripe'
       path: '/stripe'
@@ -2546,6 +2586,7 @@ interface RealmIdManageBillingPaymentProvidersRouteChildren {
   RealmIdManageBillingPaymentProvidersCreemRoute: typeof RealmIdManageBillingPaymentProvidersCreemRoute
   RealmIdManageBillingPaymentProvidersGoogleRoute: typeof RealmIdManageBillingPaymentProvidersGoogleRoute
   RealmIdManageBillingPaymentProvidersStripeRoute: typeof RealmIdManageBillingPaymentProvidersStripeRoute
+  RealmIdManageBillingPaymentProvidersWechatRoute: typeof RealmIdManageBillingPaymentProvidersWechatRoute
   RealmIdManageBillingPaymentProvidersIndexRoute: typeof RealmIdManageBillingPaymentProvidersIndexRoute
 }
 
@@ -2559,6 +2600,8 @@ const RealmIdManageBillingPaymentProvidersRouteChildren: RealmIdManageBillingPay
       RealmIdManageBillingPaymentProvidersGoogleRoute,
     RealmIdManageBillingPaymentProvidersStripeRoute:
       RealmIdManageBillingPaymentProvidersStripeRoute,
+    RealmIdManageBillingPaymentProvidersWechatRoute:
+      RealmIdManageBillingPaymentProvidersWechatRoute,
     RealmIdManageBillingPaymentProvidersIndexRoute:
       RealmIdManageBillingPaymentProvidersIndexRoute,
   }
@@ -2838,6 +2881,7 @@ interface ManageBillingPaymentProvidersRouteChildren {
   ManageBillingPaymentProvidersCreemRoute: typeof ManageBillingPaymentProvidersCreemRoute
   ManageBillingPaymentProvidersGoogleRoute: typeof ManageBillingPaymentProvidersGoogleRoute
   ManageBillingPaymentProvidersStripeRoute: typeof ManageBillingPaymentProvidersStripeRoute
+  ManageBillingPaymentProvidersWechatRoute: typeof ManageBillingPaymentProvidersWechatRoute
   ManageBillingPaymentProvidersIndexRoute: typeof ManageBillingPaymentProvidersIndexRoute
 }
 
@@ -2851,6 +2895,8 @@ const ManageBillingPaymentProvidersRouteChildren: ManageBillingPaymentProvidersR
       ManageBillingPaymentProvidersGoogleRoute,
     ManageBillingPaymentProvidersStripeRoute:
       ManageBillingPaymentProvidersStripeRoute,
+    ManageBillingPaymentProvidersWechatRoute:
+      ManageBillingPaymentProvidersWechatRoute,
     ManageBillingPaymentProvidersIndexRoute:
       ManageBillingPaymentProvidersIndexRoute,
   }

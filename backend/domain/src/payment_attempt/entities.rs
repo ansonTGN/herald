@@ -2,6 +2,7 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::common::entities::app_errors::CoreError;
@@ -216,6 +217,25 @@ pub struct PaymentContext {
     pub stripe_checkout_url: Option<String>, // Checkout URL for Stripe
     pub creem_checkout_url: Option<String>,  // Checkout URL for Creem
     pub client_secret: Option<String>,       // For Stripe elements
+    /// WeChat Native (PC scan) `code_url` rendered as a QR code.
+    pub wechat_code_url: Option<String>,
+    /// WeChat JSAPI invocation params for in-WeChat-browser payment.
+    pub wechat_jsapi_params: Option<WechatJsapiParams>,
+}
+
+/// Parameters returned to the browser for the WeChat JSAPI
+/// `WeixinJSBridge.invoke('getBrandWCPayRequest', ...)` call. Flat provider
+/// field on `PaymentContext` per DEC-wechat-support-011 (no generic payload).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct WechatJsapiParams {
+    pub app_id: String,
+    pub time_stamp: String,
+    pub nonce_str: String,
+    /// `prepay_id=...`
+    pub package: String,
+    pub sign_type: String,
+    pub pay_sign: String,
 }
 
 /// Purchase history row returned by the repository's list_purchase_history query.

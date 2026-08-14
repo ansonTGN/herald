@@ -48,12 +48,13 @@ pub async fn list_payment_providers(
         "list payment providers",
     )?;
 
-    // The four provider-config lookups are independent; run them concurrently
-    // rather than as four sequential DB roundtrips. A provider appears in the
+    // The provider-config lookups are independent; run them concurrently
+    // rather than as sequential DB roundtrips. A provider appears in the
     // directory iff its "configured-signal" key is present in realm_config:
     //   stripe → publishable_key, creem → api_key,
-    //   apple  → issuer_id,        google → service_account_json.
-    let (stripe, creem, apple, google) = tokio::try_join!(
+    //   apple  → issuer_id,        google → service_account_json,
+    //   wechat → mch_id.
+    let (stripe, creem, apple, google, wechat) = tokio::try_join!(
         load_configured_provider(
             &state,
             &realm_id,
@@ -76,8 +77,15 @@ pub async fn list_payment_providers(
             Some(format!("/api/third/pay/{}/apple/webhooks", realm_id)),
         ),
         load_configured_provider(&state, &realm_id, "google", "service_account_json", None,),
+        load_configured_provider(
+            &state,
+            &realm_id,
+            "wechat",
+            "mch_id",
+            Some(format!("/api/third/pay/{}/wechat/webhooks", realm_id)),
+        ),
     )?;
-    let providers: Vec<PaymentProviderInfo> = [stripe, creem, apple, google]
+    let providers: Vec<PaymentProviderInfo> = [stripe, creem, apple, google, wechat]
         .into_iter()
         .flatten()
         .collect();

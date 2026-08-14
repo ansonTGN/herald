@@ -20,6 +20,8 @@ import { PaymentAttemptStatus } from '@/components/purchase/payment-attempt-stat
 import { usePurchaseFlowActions, usePaymentAttempt } from '@/stores/purchase-flow-store'
 import { usePurchaseFlowStore } from '@/stores/purchase-flow-store'
 import { useAuthStore } from '@/stores/auth-store'
+import { PAYMENT_PROVIDERS } from '@/lib/billing-constants'
+import { resolveWechatScene } from '@/lib/wechat-pay-utils'
 import { formatInvoiceAmount } from '@/lib/invoice-utils'
 import { deriveSharedKeyColor } from '@/components/billing/shared-key-color'
 import { toast } from 'sonner'
@@ -71,9 +73,14 @@ export function PurchasePointsRoute() {
   // the query string after a checkout. This is a UX bounce only — payment
   // status is confirmed via webhook + the polling in PurchasePointsPage. See
   // purchasePointsSearchSchema.
-  const { attemptId: queryAttemptId, status: queryStatus } = useCurrentSearch<{
+  const {
+    attemptId: queryAttemptId,
+    status: queryStatus,
+    wechatOpenid,
+  } = useCurrentSearch<{
     attemptId?: string
     status?: 'success' | 'cancel'
+    wechatOpenid?: string
   }>()
 
   const clientAppId = useAuthStore((state) => state.clientAppId) ?? ''
@@ -94,6 +101,7 @@ export function PurchasePointsRoute() {
       clientAppId={clientAppId}
       queryAttemptId={queryAttemptId}
       queryStatus={queryStatus}
+      wechatOpenid={wechatOpenid}
     />
   )
 }
@@ -212,14 +220,17 @@ export function PurchasePointsPage({
   clientAppId,
   queryAttemptId,
   queryStatus,
+  wechatOpenid,
 }: {
   realmId: string
   clientAppId: string
   // Carried from the route's validated search params on a provider redirect
   // bounce. `queryAttemptId` resumes polling; `queryStatus: 'cancel'` steps
-  // back to payment. Undefined on normal navigation.
+  // back to payment. Undefined on normal navigation. `wechatOpenid` is the
+  // caller-provided openid that unlocks WeChat JSAPI ordering in-WeChat.
   queryAttemptId?: string
   queryStatus?: 'success' | 'cancel'
+  wechatOpenid?: string
 }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -237,6 +248,15 @@ export function PurchasePointsPage({
   const paymentAttempt = usePaymentAttempt()
   const { attemptId } = paymentAttempt
   const paymentProvider = usePurchaseFlowStore((state) => state.paymentProvider)
+
+  // WeChat scene: JSAPI only inside WeChat's browser and only with a
+  // caller-provided openid; everything else uses the Native QR flow. Inside
+  // WeChat without an openid, ordering must be refused (a QR cannot be scanned
+  // by the same device).
+  const wechatSceneDecision = useMemo(
+    () => resolveWechatScene(wechatOpenid, navigator.userAgent),
+    [wechatOpenid]
+  )
 
   // Fetch purchase options (price-granularity flat list, replaces the former
   // entitlement-key-grouped one-time-mappings source).
@@ -284,6 +304,16 @@ export function PurchasePointsPage({
         status?.status === 'Failed' ||
         status?.status === 'Cancelled' ||
         status?.status === 'Expired'
+      ) {
+        return false
+      }
+      // WeChat Native: once the attempt's own payment window has passed the QR
+      // is dead, so stop polling even if the server still reports Pending
+      // (the expired QR UI offers a regenerate entry instead).
+      if (
+        paymentProvider === PAYMENT_PROVIDERS.WECHAT &&
+        status?.expiresAt &&
+        new Date(status.expiresAt).getTime() <= Date.now()
       ) {
         return false
       }
@@ -374,6 +404,9 @@ export function PurchasePointsPage({
           targetType: 'entitlement_mapping',
           targetId: data.mappingId,
           paymentProvider: data.provider,
+          ...(data.provider === PAYMENT_PROVIDERS.WECHAT && wechatSceneDecision.scene === 'jsapi'
+            ? { paymentScene: 'jsapi', openid: wechatSceneDecision.openid }
+            : {}),
         },
       })
       if (response.error) throw response.error
@@ -401,9 +434,11 @@ export function PurchasePointsPage({
         // Same-tab redirect to the provider's checkout page — no "processing"
         // interstitial, no new tab. The provider bounces the user back to this
         // route with `?attemptId=...`, which re-enters the processing step
-        // solely to poll for the webhook-confirmed final status. When no
-        // checkout URL was returned (degraded), fall back to the processing
-        // step so its degraded UI can offer retry/cancel.
+        // solely to poll for the webhook-confirmed final status. WeChat never
+        // redirects: its pending UI (Native QR / JSAPI invoke) is the
+        // processing step itself. When no checkout URL was returned
+        // (degraded), fall back to the processing step so its degraded UI can
+        // offer retry/cancel.
         const provider = selectedOption?.paymentProvider ?? null
         const checkoutUrl =
           provider === 'stripe'
@@ -440,6 +475,20 @@ export function PurchasePointsPage({
     },
   })
 
+  // Single gate for dispatching a payment attempt. WeChat inside WeChat's
+  // browser without a caller-provided openid must not order at all: a Native
+  // QR cannot be scanned by the same device and JSAPI cannot be created.
+  const initiatePayment = (mappingId: string, provider: string) => {
+    if (
+      provider === PAYMENT_PROVIDERS.WECHAT &&
+      wechatSceneDecision.scene === 'jsapi_unavailable'
+    ) {
+      toast.error(m['points.payment_wechat_jsapi_missing_openid']())
+      return
+    }
+    createPaymentMutation.mutate({ mappingId, provider })
+  }
+
   const handleNextStep = () => {
     if (currentStep === 'packages' && selectedMappingId) {
       const provider = selectedOption?.paymentProvider
@@ -449,15 +498,12 @@ export function PurchasePointsPage({
       // redundant; proceed straight to creating the payment attempt. Only show
       // the payment step when more than one provider actually matches.
       if (provider && availableForOption.length <= 1) {
-        createPaymentMutation.mutate({ mappingId: selectedMappingId, provider })
+        initiatePayment(selectedMappingId, provider)
       } else {
         setCurrentStep('payment')
       }
     } else if (currentStep === 'payment' && selectedMappingId && selectedOption?.paymentProvider) {
-      createPaymentMutation.mutate({
-        mappingId: selectedMappingId,
-        provider: selectedOption.paymentProvider,
-      })
+      initiatePayment(selectedMappingId, selectedOption.paymentProvider)
     }
   }
 

@@ -3,6 +3,7 @@ export const PAYMENT_PROVIDERS = {
   STRIPE: 'stripe',
   APPLE: 'apple',
   GOOGLE: 'google',
+  WECHAT: 'wechat',
 } as const
 
 export const STRIPE_CONFIG_KEYS = {

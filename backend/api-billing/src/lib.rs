@@ -22,6 +22,7 @@ pub mod stripe_webhook_handlers;
 pub mod types;
 pub mod types_history;
 pub mod webhook_handlers;
+pub mod wechat_webhook_handlers;
 
 /// OpenAPI specification for billing module
 #[derive(utoipa::OpenApi)]
@@ -42,6 +43,7 @@ pub mod webhook_handlers;
         crate::entitlement_mapping_handlers::create_entitlement_mapping,
         crate::iap_handlers::submit_iap_receipt,
         crate::iap_handlers::handle_apple_webhook,
+        crate::wechat_webhook_handlers::handle_wechat_webhook,
         crate::handlers::list_subscriptions,
         crate::handlers::get_subscription,
         crate::handlers::get_subscription_for_client_app,
@@ -137,6 +139,7 @@ pub mod webhook_handlers;
         crate::purchase_handlers::CreatePaymentAttemptRequest,
         crate::purchase_handlers::CreatePaymentAttemptResponse,
         crate::purchase_handlers::PaymentContextResponse,
+        herald_core::domain::payment_attempt::entities::WechatJsapiParams,
         crate::purchase_handlers::PaymentAttemptStatusResponse,
         crate::purchase_handlers::FulfillmentResultResponse,
         crate::purchase_handlers::PointGrantResponse,

@@ -36,6 +36,12 @@ impl WebhookEventProcessor for WebhookEventProcessorImpl {
                 payload,
                 event_type,
             )),
+            "wechat" => Box::pin(crate::wechat_webhook_handlers::reprocess_wechat_event(
+                self.app_state.clone(),
+                realm_id.to_string(),
+                payload.clone(),
+                event_type.to_string(),
+            )),
             // IAP compensation (design support-iap §5.7). BE-D03 ships only the
             // skeleton signatures; the full "lookup + replay" implementation
             // (Apple getNotificationHistory / Google subscriptionsv2.get polling)

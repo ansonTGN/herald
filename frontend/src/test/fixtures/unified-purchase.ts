@@ -135,6 +135,7 @@ export function makePaymentContext(
 ): PaymentContextResponse {
   return {
     wechatCodeUrl: null,
+    wechatJsapiParams: null,
     stripeCheckoutUrl: null,
     creemCheckoutUrl: null,
     clientSecret: null,

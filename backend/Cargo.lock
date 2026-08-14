@@ -2019,6 +2019,7 @@ dependencies = [
  "herald-infra-creem",
  "herald-infra-iap",
  "herald-infra-stripe",
+ "herald-infra-wechatpay",
  "hex",
  "hmac",
  "rsa",
@@ -2188,6 +2189,7 @@ dependencies = [
  "herald-infra-creem",
  "herald-infra-iap",
  "herald-infra-stripe",
+ "herald-infra-wechatpay",
  "herald-test-db",
  "ironpress",
  "jsonwebtoken 9.3.1",
@@ -2274,6 +2276,27 @@ dependencies = [
  "tokio",
  "tracing",
  "url",
+ "uuid",
+ "wiremock",
+]
+
+[[package]]
+name = "herald-infra-wechatpay"
+version = "0.4.1"
+dependencies = [
+ "aes-gcm",
+ "base64 0.22.1",
+ "chrono",
+ "moka",
+ "once_cell",
+ "rand 0.8.5",
+ "reqwest 0.12.28",
+ "rsa",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.19",
+ "tokio",
  "uuid",
  "wiremock",
 ]

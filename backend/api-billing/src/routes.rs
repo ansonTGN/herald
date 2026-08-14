@@ -36,6 +36,7 @@ use crate::purchase_handlers::{
 };
 use crate::stripe_webhook_handlers::handle_stripe_webhook;
 use crate::webhook_handlers::handle_creem_webhook;
+use crate::wechat_webhook_handlers::handle_wechat_webhook;
 use herald_api_base::application::http::internal_auth::internal_api_key_middleware;
 use herald_api_base::application::http::state::AppState;
 
@@ -55,6 +56,12 @@ pub fn billing_public_routes() -> Router<AppState> {
         .route(
             "/api/third/pay/{realmId}/apple/webhooks",
             post(handle_apple_webhook),
+        )
+        // WeChat Pay v3 payment-result callback. Unauthenticated HTTP; the
+        // WeChat platform certificate signature is the trust root.
+        .route(
+            "/api/third/pay/{realmId}/wechat/webhooks",
+            post(handle_wechat_webhook),
         )
         // ===== Internal Fulfillment Webhook =====
         .route(
@@ -126,11 +133,6 @@ pub fn billing_routes() -> Router<AppState> {
             "/api/bill/{realmId}/subscriptions/history",
             get(list_subscription_history),
         )
-        // ===== Purchase Flow =====
-        .route(
-            "/api/bill/{realmId}/purchase/payment-attempts/{attemptId}/cancel",
-            post(cancel_payment_attempt),
-        )
         // ===== Invoice Management =====
         .route(
             "/api/bill/{realmId}/invoice-seller-config",
@@ -199,6 +201,15 @@ pub fn billing_browser_routes() -> Router<AppState> {
         .route(
             "/api/bill/{realmId}/purchase/payment-attempts/{attemptId}",
             get(get_payment_attempt_status),
+        )
+        // User self-service attempt cancel: the purchase page renders a cancel
+        // entry on the pending payment step (QR / redirect prompt). The handler
+        // enforces realm membership + attempt ownership, so it belongs on the
+        // browser router alongside create/get — the admin router mount 403'd
+        // CustomUserUi tokens.
+        .route(
+            "/api/bill/{realmId}/purchase/payment-attempts/{attemptId}/cancel",
+            post(cancel_payment_attempt),
         )
         // IAP receipt submission (design support-iap §5.2). CustomUserUi token
         // + `PurchaseInitiate` scope enforced inside the handler.

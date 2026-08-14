@@ -271,6 +271,10 @@ impl ProviderApiPort for ConfiguredProviderProductApi {
             match payment_provider.as_str() {
                 "stripe" => self.fetch_stripe_products(&realm_id).await,
                 "creem" => self.fetch_creem_products(&realm_id).await,
+                // WeChat Pay v3 is order-based and has no hosted product
+                // catalogue (DEC-wechat-support-006): skip sync as a harmless
+                // no-op so catalogue refresh does not error.
+                "wechat" => Ok(Vec::new()),
                 other => Err(CoreError::BadRequest(format!(
                     "Provider product sync is not supported for {}",
                     other

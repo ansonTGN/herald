@@ -57,6 +57,7 @@ fn is_empty_secret_to_preserve(
         ConfigType::Creem => config_key == "api_key",
         ConfigType::Apple => config_key == "private_key_p8",
         ConfigType::Google => config_key == "service_account_json",
+        ConfigType::Wechat => matches!(config_key, "private_key" | "v3_key"),
         _ => false,
     };
     if is_preservable_secret {
@@ -71,9 +72,11 @@ fn is_empty_secret_to_preserve(
 /// config types so the caller can skip the guard entirely.
 fn provider_string_for_config_type(config_type: &ConfigType) -> Option<&'static str> {
     match config_type {
-        ConfigType::Stripe | ConfigType::Creem | ConfigType::Apple | ConfigType::Google => {
-            Some(config_type.as_static_str())
-        }
+        ConfigType::Stripe
+        | ConfigType::Creem
+        | ConfigType::Apple
+        | ConfigType::Google
+        | ConfigType::Wechat => Some(config_type.as_static_str()),
         _ => None,
     }
 }

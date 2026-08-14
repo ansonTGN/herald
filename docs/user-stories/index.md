@@ -13,7 +13,7 @@
 | 登录体验与品牌 | 第三方登录 → 品牌页面 → 自定义域名 → 多语言 | [OAuth 应用](auth/third-party-app.md)、[OAuth 扩展](auth/oauth-extension.md)、[微信 OAuth](auth/wechat-oauth.md)、[邮箱验证码登录](auth/email-otp-login.md)、[Google One Tap](auth/google-one-tap.md)、[Apple native 登录](auth/support-mobile-apple-login.md)、[White-label](core/white-label.md)、[自定义域名](core/realm-custom-domain.md)、[i18n](core/i18n.md) |
 | 强认证 | 管理员配置 → 用户绑定 → 登录/恢复 | [TOTP](auth/totp.md)、[Passkey](auth/passkey.md)、[Device Code](auth/device-code.md) |
 | 授权与应用接入 | RBAC 配置 → Client App/API Key → SDK 调用 → 自建用户 UI | [Realm Admin](core/realm-admin.md)、[Client App 设置](auth/client-app-settings.md)、[SDK](integration/sdk.md)、[JS 浏览器 SDK](integration/js-sdk.md)、[自建用户 UI](integration/custom-user-ui.md) |
-| 商品、支付与权益履约 | Provider 配置/同步 → 下单 → 支付 → 订阅或权益生效 → 补偿 | [支付平台](billing/payment-provider.md)、[Entitlement Mapping](billing/entitlement-mapping.md)、[支付尝试](billing/payment-attempt.md)、[订阅](billing/subscription.md)、[履约模型扩展（买断/非续期订阅）](billing/pay_model.md)、[Paywall](billing/support-paywall.md)、[Webhook 补偿](billing/webhook-compensation.md)、[IAP](billing/support-iap.md) |
+| 商品、支付与权益履约 | Provider 配置/同步 → 下单 → 支付 → 订阅或权益生效 → 补偿 | [支付平台](billing/payment-provider.md)、[Entitlement Mapping](billing/entitlement-mapping.md)、[支付尝试](billing/payment-attempt.md)、[订阅](billing/subscription.md)、[履约模型扩展（买断/非续期订阅）](billing/pay_model.md)、[Paywall](billing/support-paywall.md)、[Webhook 补偿](billing/webhook-compensation.md)、[IAP](billing/support-iap.md)、[WeChat Pay](billing/wechat-support.md) |
 | 积分与余额 | 策略配置 → 免费/付费发放 → 分账户持有和消费 → 查询历史 | [积分管理](billing/points-admin.md)、[免费积分](billing/points-free-user.md)、[积分包购买](billing/points-package-purchase.md)、[用户积分](billing/points-user.md)、[异步支付积分](billing/async-payment-points.md)、[积分账户](billing/credit-bucket.md)、[多钱包分发规则](billing/multi-wallet-grant-rules.md) |
 | 发票与退款凭证 | 支付归属 → 发票同步/开具 → 退款和 Credit Note | [发票与 Provider Fallback](billing/invoice.md)、[支付-发票归属](billing/payment-invoice-mapping.md) |
 
@@ -248,6 +248,11 @@
 | US-IAP-004 | Apple 服务端通知驱动生命周期与兜底 | System | P0 | [billing/support-iap](billing/support-iap.md#故事-4apple-服务端通知驱动生命周期与兜底-us-iap-004) |
 | US-IAP-005 | 查询 IAP 订阅与权益状态 | Third-Party App | P1 | [billing/support-iap](billing/support-iap.md#故事-5查询-iap-订阅与权益状态-us-iap-005) |
 | US-IAP-006 | 定时拉取对账（Google 生命周期主驱动 / Apple 补偿） | System | P0 | [billing/support-iap](billing/support-iap.md#故事-6定时拉取对账google-生命周期主驱动--apple-补偿us-iap-006) |
+| US-WP-001 | 配置 WeChat Pay 凭据 | Realm Admin | P0 | [billing/wechat-support](billing/wechat-support.md#故事-1配置-wechat-pay-凭据-us-wp-001) |
+| US-WP-002 | PC 扫码 Native 支付 | Regular User | P0 | [billing/wechat-support](billing/wechat-support.md#故事-2pc-扫码-native-支付-us-wp-002) |
+| US-WP-003 | 微信内 JSAPI 唤起支付 | Regular User | P1 | [billing/wechat-support](billing/wechat-support.md#故事-3微信内-jsapi-唤起支付-us-wp-003) |
+| US-WP-004 | WeChat 回调验签、解密与幂等履约 | System | P0 | [billing/wechat-support](billing/wechat-support.md#故事-4wechat-回调验签解密与幂等履约-us-wp-004) |
+| US-WP-005 | 平台证书自动获取与刷新 | System | P0 | [billing/wechat-support](billing/wechat-support.md#故事-5平台证书自动获取与刷新-us-wp-005) |
 | US-BM-001 | 配置买断商品映射 | Realm Admin | P0 | [billing/pay_model](billing/pay_model.md#故事-1配置买断商品映射-us-bm-001) |
 | US-BM-002 | 购买卖断商品 | Regular User | P0 | [billing/pay_model](billing/pay_model.md#故事-4购买买断商品-us-bm-002) |
 | US-BM-003 | 恢复买断购买 | Regular User | P0 | [billing/pay_model](billing/pay_model.md#故事-5恢复买断购买-us-bm-003) |
@@ -310,6 +315,7 @@
 | Payment Invoice Mapping | [billing/payment-invoice-mapping.md](billing/payment-invoice-mapping.md) | [Invoice PRD](/docs/prd/billing/invoice.md) |
 | Entitlement Mapping | [billing/entitlement-mapping.md](billing/entitlement-mapping.md) | [Subscription PRD](/docs/prd/billing/subscription.md) |
 | IAP | [billing/support-iap.md](billing/support-iap.md) | [IAP PRD](/docs/prd/billing/support-iap.md) |
+| WeChat Pay | [billing/wechat-support.md](billing/wechat-support.md) | [WeChat Pay PRD](/docs/prd/billing/wechat-support.md) |
 | 积分账户 | [billing/credit-bucket.md](billing/credit-bucket.md) | [Points PRD](/docs/prd/billing/points.md) |
 
 ### Integration 集成

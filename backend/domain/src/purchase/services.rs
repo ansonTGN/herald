@@ -23,6 +23,13 @@ pub struct PreparePaymentAttemptInput {
     pub target_type: String,
     pub target_id: Uuid,
     pub metadata: Option<serde_json::Value>,
+    /// WeChat-only checkout scene: `"native"` (default) or `"jsapi"`. Ignored
+    /// by other providers (DEC-wechat-support-009/010).
+    pub payment_scene: Option<String>,
+    /// WeChat JSAPI payer openid; required when `payment_scene = "jsapi"`
+    /// (DEC-wechat-support-009). Obtained out-of-band via the WeChat OAuth
+    /// login flow.
+    pub openid: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

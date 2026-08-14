@@ -55,12 +55,12 @@ Each mapping includes:
 
 | Field | Description |
 |------|------|
-| `payment_provider` | Provider name (stripe, creem, apple, google) |
+| `payment_provider` | Provider name (stripe, creem, apple, google, wechat) |
 | `external_product_id` | Product ID on the provider side (e.g. `prod_xxxx`; store product ID for IAP) |
 | `external_price_id` | Price ID on the provider side (Stripe has this; not applicable to Creem or IAP) |
 | `entitlement_key` | Internal Herald entitlement identifier (e.g. `pro-plan`) |
 | `bucket_id` | Owning Credit Account. After purchasing this product, credits go into this account's pool |
-| `billing_type` | Billing type: Recurring or OneTime |
+| `billing_type` | Billing type: Recurring, OneTime, or Non-renewing |
 | `points_per_period` | Number of credits granted per period |
 | `grant_on_subscribe` | Whether to grant credits on first subscription |
 | `validity_days` | Credit validity in days |
@@ -71,9 +71,9 @@ The mapping also carries a copy of display info synced from the provider (`provi
 | Field | Description |
 |------|------|
 | Product name | The list and grouping use it as the primary label. When missing, falls back to the external product id, then a placeholder — never an empty label |
-| Price | Display respects the provider's unit. Stripe syncs the smallest currency unit as an integer (e.g. 999 means 9.99), converted to the major unit for display; Creem uses the value as-is (a string like `"9.99"`), with no extra divide-by-100. The unit conversion is driven by the provider source and is not shared across providers |
+| Price | Display respects the provider's unit. Stripe syncs the smallest currency unit as an integer (e.g. 999 means 9.99), converted to the major unit for display; Creem uses the value as-is (a string like `"9.99"`), with no extra divide-by-100. WeChat Pay has no catalog to sync from — the price is set on the mapping itself as an integer in fen and used directly as the order amount. The unit conversion is driven by the provider source and is not shared across providers |
 | Currency | Product currency, follows the sync override |
-| Billing type | recurring / one_time, from the provider |
+| Billing type | recurring / one_time / non_renewing; synced from the provider for Stripe and Creem, set by the admin for providers without a catalog (IAP, WeChat Pay) |
 | Billing period | Stripe takes `Price.recurring.interval` (day/week/month/year), read-only, no manual input; re-sync uses Stripe's current value. Creem takes its product response's `billing_period` (e.g. `every-month`, mapped to display copy by the frontend); when missing, shows "—", never fabricated |
 | Metadata | Syncs Stripe `Product.metadata` and `Price.metadata` (merchant-defined key/value pairs), read-only display. Creem Product has no native metadata, treated as empty, never fabricated |
 
@@ -84,7 +84,7 @@ The billing period (from Stripe) and the quota rolling window (`quota_windows`, 
 Mappings are produced in three ways:
 
 1. **Admin manual sync**: calls the provider's Product API, pulls all products, and auto-creates or updates mappings. Each newly created mapping must be bound to a Credit Account in this Realm (required; the admin can reassign it to another account afterwards). Applies to Stripe and Creem.
-2. **Admin manual create**: IAP providers (App Store / Google Play) have no catalog sync, so the admin creates the mapping directly with the store product ID.
+2. **Admin manual create**: IAP providers (App Store / Google Play) and WeChat Pay have no catalog sync, so the admin creates the mapping directly — IAP with the store product ID, WeChat Pay with a product ID and price of its own.
 3. **Webhook incremental update**: when a payment event fires, info is extracted from the webhook payload to update the cache.
 
 When sync fails, the local cache keeps serving — there is no silent degradation.
@@ -187,8 +187,9 @@ When a third-party app spends credits through the SDK, it passes only the Client
 | Creem | Product API | Checkout | Checkout | Checkout metadata, returned in webhook |
 | Apple App Store IAP | App Store Connect (no sync; manual mapping) | StoreKit 2 + Server Notifications V2 | Consumable, fulfilled on receipt submission | User binding via `appAccountToken` |
 | Google Play Billing | Play Console (no sync; manual mapping) | Play Billing + scheduled polling (no RTDN) | Consumable, fulfilled on receipt submission | User binding via `obfuscatedExternalAccountId` |
+| WeChat Pay | None (order-based pricing; manual mapping) | Non-renewing only — fixed period, single payment, no auto-renew | Unified order (Native QR on PC / JSAPI inside WeChat) | No catalog metadata; price and currency set on the mapping |
 
-Stripe and Creem are initiator-style platforms; the payment process is unified through PaymentAttempt. IAP also settles through PaymentAttempt, but fulfillment is triggered by the mobile app submitting the purchase proof (Apple `jwsRepresentation` / Google `purchaseToken`) instead of a checkout webhook — the platform notifications (Apple) and the scheduled polling (Google) only drive the lifecycle after that. See the [IAP integration guide](/docs/billing-iap).
+Stripe, Creem, and WeChat Pay are initiator-style platforms; the payment process is unified through PaymentAttempt. WeChat subscriptions stop at a fixed end date — there is no renewal charge, the user buys again to extend. IAP also settles through PaymentAttempt, but fulfillment is triggered by the mobile app submitting the purchase proof (Apple `jwsRepresentation` / Google `purchaseToken`) instead of a checkout webhook — the platform notifications (Apple) and the scheduled polling (Google) only drive the lifecycle after that. See the [IAP integration guide](/docs/billing-iap) and the [WeChat Pay integration guide](/docs/billing-wechat-payment).
 
 ## Related docs
 
@@ -196,4 +197,5 @@ Stripe and Creem are initiator-style platforms; the payment process is unified t
 - [Stripe integration guide](/docs/billing-stripe-payment) — Stripe provider configuration and webhook handling
 - [Creem integration guide](/docs/billing-creem-payment) — Creem provider configuration and webhook handling
 - [IAP integration guide](/docs/billing-iap) — App Store / Google Play in-app purchase configuration, receipt submission, and lifecycle handling
+- [WeChat Pay integration guide](/docs/billing-wechat-payment) — WeChat Pay configuration, order-priced mappings, and the Native / JSAPI purchase flow
 - [Invoice management](/docs/billing-invoice) — Invoice creation, issuance, and PDF generation

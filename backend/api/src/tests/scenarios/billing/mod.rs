@@ -160,6 +160,11 @@ pub mod iap_receipt_scenarios;
 // User Story: US-IAP-004 (Apple server notifications drive lifecycle + catch-up)
 pub mod apple_webhook_scenarios;
 
+// WeChat Pay v3 webhook scenario tests (verify → decrypt → idempotency →
+// amount-guard → unified fulfilment; OneTime + NonRenewing; openid requirement).
+// User Story: docs/user-stories/billing/wechat-support.md (US-WP-002 / US-WP-003 / US-WP-004)
+pub mod wechat_webhook_scenarios;
+
 // IAP entitlement mapping create scenario tests (POST /entitlement-mappings;
 // 201 / 409 duplicate / 403 billing.manage / 403 credit fields w/o points.manage).
 // User Story: US-IAP-002 (build IAP product → entitlement mapping)

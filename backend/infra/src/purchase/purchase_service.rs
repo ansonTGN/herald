@@ -153,6 +153,8 @@ where
                     stripe_checkout_url: None,
                     creem_checkout_url: None,
                     client_secret: None,
+                    wechat_code_url: None,
+                    wechat_jsapi_params: None,
                 },
             )
             .await?;
@@ -165,7 +167,10 @@ where
         input: PreparePaymentAttemptInput,
     ) -> PurchaseResult<CreatedPaymentAttempt> {
         let user_email = input.user_email.clone();
+        let payment_scene = input.payment_scene.clone();
+        let openid = input.openid.clone();
         let prepared = self.prepare_payment_attempt(input).await?;
+        let attempt_expires_at = prepared.attempt.expires_at;
         let (provider_reference, context) = self
             .build_payment_context(
                 &prepared.attempt.realm_id,
@@ -176,6 +181,9 @@ where
                 &prepared.target,
                 prepared.attempt.id,
                 user_email.as_deref(),
+                payment_scene.as_deref(),
+                openid.as_deref(),
+                attempt_expires_at,
             )
             .await?;
 
@@ -257,6 +265,8 @@ where
                     stripe_checkout_url: None,
                     creem_checkout_url: None,
                     client_secret: None,
+                    wechat_code_url: None,
+                    wechat_jsapi_params: None,
                 },
             )
             .await?;
@@ -452,6 +462,9 @@ where
         target: &PurchaseTargetSnapshot,
         attempt_id: Uuid,
         user_email: Option<&str>,
+        payment_scene: Option<&str>,
+        openid: Option<&str>,
+        attempt_expires_at: chrono::DateTime<chrono::Utc>,
     ) -> PurchaseResult<(Option<String>, PaymentContext)> {
         match payment_provider {
             "creem" => {
@@ -475,6 +488,16 @@ where
                     target,
                     attempt_id,
                     user_email,
+                )
+                .await
+            }
+            "wechat" => {
+                self.build_wechat_payment_context(
+                    realm_id,
+                    target,
+                    payment_scene,
+                    openid,
+                    attempt_expires_at,
                 )
                 .await
             }
@@ -534,6 +557,8 @@ where
                 stripe_checkout_url: None,
                 creem_checkout_url: Some(session.checkout_url),
                 client_secret: None,
+                wechat_code_url: None,
+                wechat_jsapi_params: None,
             },
         ))
     }
@@ -613,6 +638,89 @@ where
                 stripe_checkout_url: Some(session.url),
                 creem_checkout_url: None,
                 client_secret,
+                wechat_code_url: None,
+                wechat_jsapi_params: None,
+            },
+        ))
+    }
+
+    async fn build_wechat_payment_context(
+        &self,
+        realm_id: &str,
+        target: &PurchaseTargetSnapshot,
+        payment_scene: Option<&str>,
+        openid: Option<&str>,
+        attempt_expires_at: chrono::DateTime<chrono::Utc>,
+    ) -> PurchaseResult<(Option<String>, PaymentContext)> {
+        use herald_domain::payment_attempt::entities::WechatJsapiParams;
+        use herald_infra_wechatpay::{CreateOrderResult, CreateOrderScene, generate_out_trade_no};
+
+        let client = crate::wechatpay::get_wechat_client_for_realm(&self.pool, realm_id).await?;
+        let out_trade_no = generate_out_trade_no(realm_id);
+
+        let scene = match payment_scene.unwrap_or("native") {
+            "jsapi" => {
+                let openid = openid.ok_or_else(|| {
+                    CoreError::BadRequest("openid is required for WeChat jsapi payment".to_string())
+                })?;
+                CreateOrderScene::Jsapi {
+                    openid: openid.to_string(),
+                }
+            }
+            _ => CreateOrderScene::Native,
+        };
+
+        let amount_fen = if target.amount > 0 {
+            target.amount
+        } else {
+            return Err(CoreError::BadRequest(
+                "WeChat order requires a positive amount".to_string(),
+            ));
+        };
+
+        let description = if target.title.is_empty() {
+            "Herald purchase".to_string()
+        } else {
+            target.title.clone()
+        };
+
+        let result = client
+            .create_order(
+                scene,
+                &out_trade_no,
+                &description,
+                amount_fen,
+                &target.currency,
+                attempt_expires_at,
+            )
+            .await
+            .map_err(|e| {
+                CoreError::InternalServerError(format!("WeChat create_order failed: {e}"))
+            })?;
+
+        let (wechat_code_url, wechat_jsapi_params) = match result {
+            CreateOrderResult::Native { code_url } => (Some(code_url), None),
+            CreateOrderResult::Jsapi(params) => (
+                None,
+                Some(WechatJsapiParams {
+                    app_id: params.app_id,
+                    time_stamp: params.time_stamp,
+                    nonce_str: params.nonce_str,
+                    package: params.package,
+                    sign_type: params.sign_type,
+                    pay_sign: params.pay_sign,
+                }),
+            ),
+        };
+
+        Ok((
+            Some(out_trade_no),
+            PaymentContext {
+                stripe_checkout_url: None,
+                creem_checkout_url: None,
+                client_secret: None,
+                wechat_code_url,
+                wechat_jsapi_params,
             },
         ))
     }
@@ -687,7 +795,10 @@ where
             // boundary #2: the short names `apple` / `google` flow through
             // every `payment_provider` match arm alongside `stripe` / `creem`.
             PaymentCompletionSource::ProviderWebhook { provider }
-                if matches!(provider.as_str(), "stripe" | "creem" | "apple" | "google") =>
+                if matches!(
+                    provider.as_str(),
+                    "stripe" | "creem" | "apple" | "google" | "wechat"
+                ) =>
             {
                 Ok(())
             }
