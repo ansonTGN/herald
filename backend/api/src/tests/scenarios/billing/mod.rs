@@ -8,6 +8,10 @@
 
 pub mod entitlement_mapping_crud_scenarios;
 
+// WeChat manual-price mapping scenario tests (wechat-support PRD: no hosted
+// catalog, price configured by hand in the mapping)
+pub mod wechat_entitlement_mapping_create_scenarios;
+
 // Paywall M1 role-grant config dimension scenario tests (support-paywall)
 // User Story: US-PW-001 (entitlement→role mapping configuration)
 //         §4.3.2 (UUID[] column), §5.2 (three-state + RoleNotInRealm), §6.1 M1, §6.3
@@ -193,3 +197,12 @@ pub mod iap_provider_check_migration_scenarios;
 //             US-PM-009 (Apple non-renewing accepted risk).
 //         §5.2 (fulfill_non_renewing_purchase), §5.4 (Google ack-only),
 pub mod pay_model_fulfillment_scenarios;
+
+// Multiple-currency preference & resolution scenario tests: realm default
+// currency (realm_config billing/default_currency, ISO-validated writes),
+// user preferred currency tri-state PUT, purchase-options realmDefaultCurrency,
+// api-ext currency set + by-currency default-price resolution (hit/404/409),
+// purchase creation fail-loud on price-less mapping rows.
+// User Story: docs/user-stories/billing/payment-attempt.md (US-PA-001),
+//             docs/user-stories/billing/entitlement-mapping.md (US-EM-008)
+pub mod multiple_currency_scenarios;

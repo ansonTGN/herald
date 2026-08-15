@@ -86,7 +86,7 @@ import type {
   EntitlementMappingResponse,
   SubscriptionListResponse,
   SubscriptionDetailResponse,
-  PurchaseOptionView,
+  PurchaseOptionListResponse,
   PurchaseHistoryResponse,
   BucketResponse,
   BucketDetailResponse,
@@ -985,7 +985,15 @@ export const purchaseOptionsQueryOptions = (realmId: string, clientAppId: string
         path: { realmId, clientAppId },
       })
       if (response.error) throw response.error
-      return (response.data as { items?: PurchaseOptionView[] } | undefined)?.items ?? []
+      // Full response, not just `items`: the top-level `realmDefaultCurrency`
+      // lets the purchase page compute the effective preferred currency
+      // without a settings-scoped realm_config query.
+      return (
+        (response.data as PurchaseOptionListResponse | undefined) ?? {
+          items: [],
+          realmDefaultCurrency: null,
+        }
+      )
     },
     retry: RETRY_COUNT,
     staleTime: STALE_TIME_2_MIN,

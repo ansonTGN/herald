@@ -16,12 +16,16 @@
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, extname, relative } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const FRONTEND_ROOT = new URL('../', import.meta.url).pathname
+// URL.pathname yields "/C:/..." on Windows, which Node resolves against the
+// current drive root (producing "C:\C:\..."). fileURLToPath returns a native
+// absolute path on every platform.
+const FRONTEND_ROOT = fileURLToPath(new URL('../', import.meta.url))
 const SOURCE_LOCALE = JSON.parse(
   readFileSync(new URL('../messages/en.json', import.meta.url), 'utf8')
 )
-const SRC_ROOT = new URL('../src/', import.meta.url).pathname
+const SRC_ROOT = fileURLToPath(new URL('../src/', import.meta.url))
 const SKIP_DIRS = new Set(['paraglide', '__tests__', 'node_modules'])
 const SCAN_EXTS = new Set(['.tsx', '.ts', '.jsx', '.js'])
 const verbose = process.argv.includes('--verbose')

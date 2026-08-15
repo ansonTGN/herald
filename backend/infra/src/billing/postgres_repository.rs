@@ -1873,6 +1873,29 @@ impl BillingRepository for PostgresBillingRepository {
             .collect())
     }
 
+    async fn find_enabled_stripe_mappings_by_entitlement(
+        &self,
+        realm_id: &str,
+        entitlement_key: &str,
+    ) -> Result<Vec<EntitlementMapping>, CoreError> {
+        use sea_orm::QueryFilter;
+
+        let results = provider_entitlement_mapping::Entity::find()
+            .filter(provider_entitlement_mapping::Column::RealmId.eq(realm_id))
+            .filter(provider_entitlement_mapping::Column::EntitlementKey.eq(entitlement_key))
+            .filter(provider_entitlement_mapping::Column::PaymentProvider.eq("stripe"))
+            .filter(provider_entitlement_mapping::Column::Enabled.eq(true))
+            .order_by_asc(provider_entitlement_mapping::Column::CreatedAt)
+            .all(&self.db)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        Ok(results
+            .into_iter()
+            .map(Self::model_to_entitlement_mapping)
+            .collect())
+    }
+
     async fn find_external_subscription_id_by_payment_intent(
         &self,
         payment_intent: &str,

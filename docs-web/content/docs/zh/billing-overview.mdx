@@ -191,10 +191,15 @@ flowchart LR
 
 Stripe、Creem、WeChat Pay 是发起式平台，通过 PaymentAttempt 统一管理支付过程。WeChat 订阅到固定截止日为止——没有续费扣款，用户重新购买续期。IAP 同样经 PaymentAttempt 入账，但履约由移动 App 提交购买凭证（Apple `jwsRepresentation` / Google `purchaseToken`）触发，而不是 checkout webhook——平台通知（Apple）和定时轮询（Google）只负责之后的生命周期。详见 [IAP 对接指南](/docs/zh/billing-iap) 与 [WeChat Pay 对接指南](/docs/zh/billing-wechat-payment)。
 
+### 多货币
+
+货币挂在目录本身：每个 Stripe Price 自带货币，一个产品卖多种货币就是多行映射。Realm 默认货币加可选的用户个人偏好决定购买页高亮哪种货币；按货币解析是严格的——不回退第二个货币，不产生零金额扣款。Creem、IAP、WeChat Pay 保持单一价格（WeChat 的手工价格与币种配置在映射上）。详见[多货币定价指南](/docs/zh/billing-multi-currency)。
+
 ## 相关文档
 
 - [积分账户用户故事](https://github.com/timzaak/cas-2/blob/main/docs/user-stories/billing/credit-bucket.md) — 积分账户目录、覆盖集、购买入池、跨池消费、订阅生命周期的验收场景
 - [Stripe 对接指南](/docs/billing-stripe-payment) — Stripe 支付方配置和 Webhook 处理
+- [多货币定价指南](/docs/zh/billing-multi-currency) — 货币偏好、购买页分组与按货币解析价格
 - [Creem 对接指南](/docs/billing-creem-payment) — Creem 支付方配置和 Webhook 处理
 - [IAP 对接指南](/docs/billing-iap) — App Store / Google Play 内购配置、receipt 提交与生命周期处理
 - [WeChat Pay 对接指南](/docs/zh/billing-wechat-payment) — WeChat Pay 配置、按订单定价的映射与 Native / JSAPI 购买流程

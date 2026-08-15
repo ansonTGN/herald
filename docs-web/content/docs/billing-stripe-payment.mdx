@@ -128,6 +128,10 @@ Herald uses Stripe's inline pricing to create the Checkout Session, so you don't
 2. Set the price to **One time**
 3. Note the Product ID
 
+### Prices in multiple currencies (optional)
+
+One product can carry Prices in several currencies — add one Price per currency in the Stripe Dashboard (e.g. $9.99/month and €9.99/month), re-run the sync, and each Price lands as its own mapping row. The purchase page then groups prices by currency and highlights the user's preferred one. Realm/user currency preferences and the api-ext resolution endpoints are covered in the [Multi-Currency Pricing guide](/docs/billing-multi-currency).
+
 ## Step 4: Sync Stripe products into Herald
 
 Sync Stripe products into Entitlement Mappings in Herald.
@@ -193,6 +197,8 @@ After configuration, the user-side flow is as follows.
 7. Stripe fires `checkout.session.completed` and `customer.subscription.created` Webhooks
 8. Herald parses the entitlement_key from metadata, creates the subscription projection, and grants credits
 9. On each subsequent billing period, Stripe charges automatically and fires `invoice.payment_succeeded`; Herald grants renewal credits
+
+When the product carries Prices in several currencies, the Herald purchase page groups them by currency and highlights the user's effective preferred currency (personal preference, else the realm default). The user picks a currency, picks a billing period inside that group, and the payment attempt targets that exact row — the charge currency always matches what was shown.
 
 ### One-time payment (credit pack / Payment Intent)
 

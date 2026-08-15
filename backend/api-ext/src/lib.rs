@@ -27,6 +27,8 @@ use herald_api_base::application::http::state::AppState;
         crate::subscription::get_subscription,
         crate::billing::get_subscription,
         crate::billing::get_one_time_mappings,
+        crate::billing::get_entitlement_currencies,
+        crate::billing::resolve_default_price,
         crate::points::get_balance_ext,
         crate::points::consume_points_ext,
         crate::points::grant_points_ext,
@@ -48,7 +50,9 @@ use herald_api_base::application::http::state::AppState;
         crate::subscription::SubscriptionResponse,
         crate::billing::SubscriptionDetail,
         crate::billing::OneTimeMappingExtResponse,
-        crate::billing::OneTimeMappingItem,
+        crate::billing::ExtOneTimeMappingItem,
+        crate::billing::EntitlementCurrenciesResponse,
+        crate::billing::EntitlementPriceView,
         crate::points::ExtPointsBalanceResponse,
         crate::points::ExtConsumePointsRequest,
         crate::points::ExtConsumePointsResponse,
@@ -97,6 +101,14 @@ pub fn create_router(state: AppState) -> Router<AppState> {
         .route(
             "/{realmId}/one-time-mappings",
             axum::routing::get(billing::get_one_time_mappings),
+        )
+        .route(
+            "/{realmId}/entitlements/{entitlementKey}/currencies",
+            axum::routing::get(billing::get_entitlement_currencies),
+        )
+        .route(
+            "/{realmId}/entitlements/{entitlementKey}/default-price",
+            axum::routing::get(billing::resolve_default_price),
         )
         .route(
             "/points/{realmId}/balance",

@@ -50,23 +50,20 @@ vi.mock('@/components/purchase/payment-method-selector', () => ({
   ),
 }))
 
-import { PurchasePointsPage, disabledReason } from '../purchase-points'
+import { PurchasePointsPage } from '../purchase-points'
+import { disabledReason } from '@/components/billing/currency-purchase-group'
+import { makePurchaseOption } from '@/test/fixtures/purchase-option'
 
 // --- Fixtures --------------------------------------------------------------
 
+// This suite's baseline row differs from the shared factory: a "prod_pro"
+// product with the monthly price and one active point rule, matching the
+// page-level fixtures the assertions below target.
 function makeOption(overrides: Partial<PurchaseOptionView>): PurchaseOptionView {
-  return {
-    mappingId: overrides.mappingId ?? 'map-1',
+  return makePurchaseOption({
     externalProductId: 'prod_pro',
-    externalPriceId: overrides.externalPriceId ?? 'price_monthly',
-    paymentProvider: overrides.paymentProvider ?? 'stripe',
-    entitlementKey: overrides.entitlementKey ?? 'pro-plan',
-    billingType: overrides.billingType ?? 'recurring',
-    billingPeriod: overrides.billingPeriod ?? 'month',
-    displayName: overrides.displayName ?? 'Pro',
-    amount: overrides.amount ?? 1000,
-    currency: overrides.currency ?? 'usd',
-    pointRules: overrides.pointRules ?? [
+    externalPriceId: 'price_monthly',
+    pointRules: [
       {
         id: 'rule-1',
         bucketId: 'bucket-a',
@@ -78,9 +75,8 @@ function makeOption(overrides: Partial<PurchaseOptionView>): PurchaseOptionView 
         displayOrder: 0,
       },
     ],
-    enabled: overrides.enabled ?? true,
     ...overrides,
-  } as PurchaseOptionView
+  })
 }
 
 function makeQueryClient() {
@@ -90,8 +86,22 @@ function makeQueryClient() {
 }
 
 function seedOptions(client: QueryClient, items: PurchaseOptionView[]) {
-  client.setQueryData(['purchase-options', 'realm-1', 'app-1'], items)
+  // The purchase-options query returns the full list response (items +
+  // realmDefaultCurrency), not a bare array.
+  client.setQueryData(['purchase-options', 'realm-1', 'app-1'], {
+    items,
+    realmDefaultCurrency: null,
+  })
   client.setQueryData(['payment-providers', 'realm-1'], [{ platform: 'stripe', name: 'Stripe' }])
+  // The purchase page also reads the profile for the preferred-currency
+  // override; seed it so no real profile request fires.
+  client.setQueryData(['profile'], {
+    id: 'user-1',
+    email: 'user@example.com',
+    nickname: null,
+    preferredCurrency: null,
+    status: 1,
+  })
 }
 
 function makeWrapper(client: QueryClient) {

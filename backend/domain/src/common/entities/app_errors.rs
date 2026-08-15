@@ -62,6 +62,8 @@ pub enum CoreError {
     NoCoveredPointsPool { client_app_id: Uuid },
     #[error("Points grant requires an explicit target bucket")]
     GrantBucketRequired,
+    #[error("Price info missing for entitlement mapping (entitlement_key={entitlement_key})")]
+    PriceInfoMissing { entitlement_key: String },
 }
 
 // From impls for external error types
@@ -222,6 +224,13 @@ impl IntoResponse for CoreError {
             CoreError::GrantBucketRequired => (
                 StatusCode::BAD_REQUEST,
                 "Points grant requires an explicit target bucket".to_string(),
+            ),
+            CoreError::PriceInfoMissing { entitlement_key } => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                format!(
+                    "Price info missing for the selected entitlement mapping ({})",
+                    entitlement_key
+                ),
             ),
         };
 

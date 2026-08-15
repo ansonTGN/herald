@@ -66,19 +66,14 @@ WeChat 映射手工创建，和 IAP 一样，因为没有可同步的目录。
    - **Entitlement Key**：便于识别的键，如 `membership`。用于 SDK 查询和积分策略
    - **Credit Account**：购买积分落入的池
    - **Billing Type**：积分包和买断选 `OneTime`，固定期会员选 `Non-renewing`
+   - **Price / Currency**（WeChat 必填）：订单金额，主单位填写（`19.9` 收 ¥19.90），以及 3 位 ISO 4217 货币码（`CNY`）
    - **Service Duration Days**（仅 non-renewing）：固定服务期，必填，如 `30`
    - **Points Per Period / Grant On Purchase**：积分策略；纯会员可不配
 4. 提交
 
-有一个需要知道的缺口：创建弹窗没有价格字段，映射 API 也不接受价格。订单金额从映射的 `provider_product_info` 读取：`price` 是以分为单位的整数（`1000` 即 10.00 元），`currency` 通常为 `cny`。这段 JSON 目前需要直接写进数据库：
+WeChat 没有托管目录，订单金额来自映射而不是 provider 的 Price——**Price** 和 **Currency** 两个字段就是干这个的。WeChat 是唯一接受手工价格的 provider：在其他 provider 的映射上填价格会被 API 拒绝。它也是单一价格渠道——无论用户货币偏好是什么，购买页都只展示一个价格、没有货币切换器（见[多货币定价指南](/docs/zh/billing-multi-currency)）。
 
-```sql
-UPDATE provider_entitlement_mappings
-SET provider_product_info = '{"name":"Membership 30d","price":2000,"currency":"cny"}'::jsonb
-WHERE realm_id = '<realm>' AND payment_provider = 'wechat' AND external_product_id = 'membership-30d';
-```
-
-没配价格的映射也能卖——订单会带 1 分的哨兵金额以满足支付尝试的约束。测试订单显示 0.01 元，就是这个原因。
+早于价格字段出现前创建（或直接写库）的映射可能没有价格；这类映射仍能卖——订单会带 1 分的哨兵金额以满足支付尝试的约束。测试订单显示 0.01 元，就是这个原因。
 
 ## 第 3 步：购买流程
 
@@ -139,7 +134,7 @@ WeChat 交易不进入 Herald 发票体系。微信支付没有面向第三方�
 ## 验证结果
 
 1. 在 **Payment Providers** 确认 WeChat Pay 显示为已配置
-2. 在 **Entitlement Mappings** 确认映射行存在，计费类型正确、`provider_product_info` 里有价格、（会员类）服务天数已设置
+2. 在 **Entitlement Mappings** 确认映射行存在，计费类型正确、价格与币种已填、（会员类）服务天数已设置
 3. 在 PC 打开购买页，选择 WeChat Pay 商品，确认二维码带倒计时渲染出来
 4. 用绑定商户沙箱的微信扫码支付，确认页面翻转为成功、积分或订阅出现
 5. 再付一次，然后重发同一回调（或等重发）：第二次不得发放任何东西
@@ -149,7 +144,7 @@ WeChat 交易不进入 Herald 发票体系。微信支付没有面向第三方�
 
 ### 订单创建成功但显示 0.01 元
 
-映射的 `provider_product_info` 里没有 `price`。Herald 发送 1 分哨兵金额让支付尝试行通过 `amount > 0` 约束。补上价格（见第 2 步）后重新下单——旧尝试保持原金额。
+映射没有配置价格。Herald 发送 1 分哨兵金额让支付尝试行通过 `amount > 0` 约束。在第 2 步补上价格后重新下单——旧尝试保持原金额。
 
 ### 回调被拒、验签失败
 
@@ -178,7 +173,7 @@ Notify URL 必须是带正确 `{realmId}` 的公网 HTTPS 地址，微信服务�
 - [ ] Payment Providers 页已配置 WeChat Pay（App ID、商户号、私钥、证书序列号、APIv3 Key、Notify URL）
 - [ ] Notify URL 为带正确 `{realmId}` 的公网 HTTPS，生产环境未设置 `base_url` 覆盖
 - [ ] 每个商品都已创建 Entitlement Mapping（provider、商品 ID、entitlement key、计费类型、积分账户）
-- [ ] `provider_product_info` 已设置价格与币种（最小单位整数；用测试订单金额验证）
+- [ ] 创建弹窗已填写价格与币种（用测试订单金额验证）
 - [ ] non-renewing 映射已设置 Service Duration Days
 - [ ] 一笔 Native 购买端到端走通：二维码渲染、支付完成、尝试成功、积分或订阅可见
 - [ ] 观察过一次重复回调，确认未重复发放

@@ -8,6 +8,7 @@ pub struct Model {
     pub id: Uuid,
     pub realm_id: Option<String>,
     pub nickname: Option<String>,
+    pub preferred_currency: Option<String>,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
 }

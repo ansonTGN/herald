@@ -55,6 +55,45 @@ export const BILLING_PERIODS = {
 
 export type BillingPeriod = (typeof BILLING_PERIODS)[keyof typeof BILLING_PERIODS]
 
+// ---------------------------------------------------------------------------
+// Provider-scoped mapping-form rules (single decision point — the create
+// dialog and its schema consume these; do not re-test provider strings inline).
+// ---------------------------------------------------------------------------
+
+/** Providers whose external price id / price come from a hosted catalog that
+ *  Herald syncs from the provider dashboard (Stripe / Creem). */
+const CATALOG_SYNC_PROVIDERS: ReadonlySet<string> = new Set([
+  PAYMENT_PROVIDERS.STRIPE,
+  PAYMENT_PROVIDERS.CREEM,
+])
+
+/**
+ * Whether the mapping form shows the "External Price ID" field. Catalog
+ * providers take the id from their dashboard; IAP store ids and WeChat's
+ * self-defined product ids have no price-id counterpart.
+ */
+export function providerShowsExternalPriceId(provider?: string | null): boolean {
+  return !!provider && CATALOG_SYNC_PROVIDERS.has(provider)
+}
+
+/**
+ * Whether the mapping price/currency are configured by hand in the form.
+ * WeChat Pay v3 has no hosted product catalog (wechat-support PRD §2.2), so
+ * the manual price drives the WeChat order amount.
+ */
+export function providerRequiresManualPrice(provider?: string | null): boolean {
+  return provider === PAYMENT_PROVIDERS.WECHAT
+}
+
+/**
+ * Whether the provider can fulfill `recurring` billing (auto-renewal).
+ * WeChat has no merchant-initiated deduction in scope — recurring mappings
+ * are rejected server-side, so the form hides the option up front.
+ */
+export function providerAllowsRecurringBilling(provider?: string | null): boolean {
+  return provider !== PAYMENT_PROVIDERS.WECHAT
+}
+
 export const PLAN_TIERS = {
   FREE: 'free',
   PRO: 'pro',

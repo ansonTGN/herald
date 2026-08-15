@@ -37,6 +37,13 @@ pub struct CreateEntitlementMappingInput {
     pub point_rules: Vec<RuleUpsert>,
     /// Roles auto-granted on payment success.
     pub granted_role_ids: Vec<uuid::Uuid>,
+    /// Manually configured price in minor units (e.g. fen for CNY). WeChat
+    /// only — it has no hosted catalog to sync from, so these land in the
+    /// same `provider_product_info` keys the Stripe/Creem sync writes.
+    /// Rejected for every other provider.
+    pub price: Option<i64>,
+    /// ISO 4217 currency code for the manual price. WeChat only.
+    pub currency: Option<String>,
     pub enabled: bool,
 }
 
@@ -143,7 +150,7 @@ where
         Self::validate_entitlement_key(&input.entitlement_key)?;
         if !matches!(
             input.payment_provider.as_str(),
-            "stripe" | "creem" | "apple" | "google"
+            "stripe" | "creem" | "apple" | "google" | "wechat"
         ) {
             return Err(CoreError::BadRequest(format!(
                 "Unsupported payment provider: {}",
@@ -159,6 +166,20 @@ where
                 "billing_period is required for recurring billing_type".to_string(),
             ));
         }
+        // WeChat has no auto-renewal (merchant-initiated deduction is a
+        // separate future feature), so a recurring mapping could never be
+        // fulfilled as configured. PRD models WeChat subscriptions as
+        // non_renewing.
+        if input.payment_provider == "wechat"
+            && matches!(
+                input.billing_type,
+                crate::billing::entities::BillingType::Recurring
+            )
+        {
+            return Err(CoreError::BadRequest(
+                "recurring billing_type is not supported for WeChat; use non_renewing".to_string(),
+            ));
+        }
 
         //   - service_duration_days must be present and >= 1 (US-PM-002 scene 2 → 400)
         //   - billing_period must be empty (mutually exclusive billing semantics → 400)
@@ -167,6 +188,22 @@ where
             input.service_duration_days,
             input.billing_period.as_deref(),
         )?;
+
+        // Resolve the manual price (WeChat only) before the struct below
+        // consumes `input.entitlement_key`.
+        let provider_product_info = validate_manual_price(
+            &input.payment_provider,
+            input.price,
+            input.currency.as_deref(),
+        )?
+        .map(|mut info| {
+            // `name` backs the purchase-page display_name; WeChat has
+            // no catalog name to use, so seed it from the key.
+            info.as_object_mut()
+                .unwrap()
+                .insert("name".to_string(), serde_json::json!(input.entitlement_key));
+            info
+        });
 
         let now = chrono::Utc::now();
         // Only non_renewing carries a service duration; other types store None
@@ -198,7 +235,7 @@ where
             billing_period: input.billing_period,
             service_duration_days,
             enabled: input.enabled,
-            provider_product_info: None,
+            provider_product_info,
             granted_role_ids: input.granted_role_ids,
             synced_at: None,
             created_at: now,
@@ -295,6 +332,48 @@ fn validate_non_renewing(
     Ok(())
 }
 
+///
+/// WeChat is the only provider whose mapping price is configured by hand
+/// (no hosted catalog to sync from), so the price/currency the caller sends
+/// must land in `provider_product_info` using the same keys the Stripe/Creem
+/// sync writes. Every other provider rejects manual price fields outright —
+/// their price truth lives in the provider catalog.
+///
+/// Pure/free function for the same testability reason as
+/// `validate_non_renewing`. Returns the JSONB fragment (without `name`; the
+/// caller seeds it) or `None` when the provider is not WeChat and no manual
+/// price was supplied.
+fn validate_manual_price(
+    payment_provider: &str,
+    price: Option<i64>,
+    currency: Option<&str>,
+) -> Result<Option<serde_json::Value>, CoreError> {
+    if payment_provider != "wechat" {
+        if price.is_some() || currency.is_some() {
+            return Err(CoreError::BadRequest(
+                "price/currency can only be configured for WeChat mappings".to_string(),
+            ));
+        }
+        return Ok(None);
+    }
+    // A WeChat mapping without a positive price can never produce a valid
+    // order (the create-order call requires a positive amount), so fail at
+    // write time instead of at checkout.
+    let price = price.filter(|&p| p >= 1).ok_or_else(|| {
+        CoreError::BadRequest(
+            "price (minor units) is required and must be >= 1 for WeChat mappings".to_string(),
+        )
+    })?;
+    let currency = currency.ok_or_else(|| {
+        CoreError::BadRequest("currency is required for WeChat mappings".to_string())
+    })?;
+    crate::billing::validate_currency_code(currency)?;
+    Ok(Some(serde_json::json!({
+        "price": price,
+        "currency": currency,
+    })))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -353,5 +432,57 @@ mod tests {
         // (Execised via validate_non_renewing with the resolved type.)
         assert!(validate_non_renewing(&BillingType::Recurring, None, None,).is_ok());
         assert!(validate_non_renewing(&BillingType::NonRenewing, None, None,).is_err());
+    }
+
+    #[test]
+    fn manual_price_rejects_non_wechat_providers() {
+        // Stripe/Creem/IAP price truth lives in the provider catalog; a manual
+        // price on those rows would create a second, unsynced source → 400.
+        for provider in ["stripe", "creem", "apple", "google"] {
+            let err = validate_manual_price(provider, Some(1990), Some("CNY")).unwrap_err();
+            assert!(
+                matches!(err, CoreError::BadRequest(_)),
+                "{provider} accepted"
+            );
+        }
+        assert!(
+            validate_manual_price("stripe", None, None)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn manual_price_wechat_requires_positive_price_and_currency() {
+        // Without a positive price the WeChat create-order call can never
+        // succeed, so the write itself must fail loud.
+        for bad in [None, Some(0), Some(-1)] {
+            let err = validate_manual_price("wechat", bad, Some("CNY")).unwrap_err();
+            assert!(matches!(err, CoreError::BadRequest(_)), "{bad:?} accepted");
+        }
+        let err = validate_manual_price("wechat", Some(1990), None).unwrap_err();
+        assert!(matches!(err, CoreError::BadRequest(_)));
+        let err = validate_manual_price("wechat", Some(1990), Some("cny")).unwrap_err();
+        assert!(
+            matches!(err, CoreError::BadRequest(_)),
+            "lowercase code accepted"
+        );
+        let err = validate_manual_price("wechat", Some(1990), Some("XTS")).unwrap_err();
+        assert!(
+            matches!(err, CoreError::BadRequest(_)),
+            "reserved code accepted"
+        );
+    }
+
+    #[test]
+    fn manual_price_wechat_emits_sync_compatible_jsonb() {
+        // The fragment must use the exact keys the Stripe/Creem sync writes so
+        // every read path (purchase snapshot, purchase options, WeChat order
+        // amount) treats it identically.
+        let info = validate_manual_price("wechat", Some(1990), Some("CNY"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(info["price"], serde_json::json!(1990));
+        assert_eq!(info["currency"], serde_json::json!("CNY"));
     }
 }

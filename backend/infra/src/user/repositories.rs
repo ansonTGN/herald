@@ -60,6 +60,7 @@ impl PostgresUserRepository {
             id: model.id,
             realm_id: model.realm_id.clone().unwrap_or_default(),
             nickname: model.nickname.clone(),
+            preferred_currency: model.preferred_currency.clone(),
             created_at: model.created_at.into(),
             updated_at: model.updated_at.into(),
         }
@@ -262,6 +263,7 @@ impl UserRepository for PostgresUserRepository {
             id: sea_orm::Set(profile.id),
             realm_id: sea_orm::Set(Some(profile.realm_id.clone())),
             nickname: sea_orm::Set(profile.nickname.clone()),
+            preferred_currency: sea_orm::Set(profile.preferred_currency.clone()),
             created_at: sea_orm::Set(profile.created_at.into()),
             updated_at: sea_orm::Set(profile.updated_at.into()),
         };
@@ -282,8 +284,13 @@ impl UserRepository for PostgresUserRepository {
     async fn update_profile(
         &self,
         user_id: Uuid,
-        nickname: Option<String>,
+        nickname: Option<Option<String>>,
+        preferred_currency: Option<Option<String>>,
     ) -> Result<Profile, CoreError> {
+        if let Some(Some(code)) = &preferred_currency {
+            herald_domain::billing::validate_currency_code(code)?;
+        }
+
         let mut active_model: profile::ActiveModel = profile::Entity::find_by_id(user_id)
             .one(&*self.db)
             .await?
@@ -291,7 +298,10 @@ impl UserRepository for PostgresUserRepository {
             .into();
 
         if let Some(nickname) = nickname {
-            active_model.nickname = sea_orm::Set(Some(nickname));
+            active_model.nickname = sea_orm::Set(nickname);
+        }
+        if let Some(currency) = preferred_currency {
+            active_model.preferred_currency = sea_orm::Set(currency);
         }
 
         active_model.updated_at = sea_orm::Set(chrono::Utc::now().into());

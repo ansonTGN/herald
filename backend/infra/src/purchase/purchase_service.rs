@@ -415,10 +415,18 @@ where
             }
         }
 
-        let (amount, currency, title) = mapping
-            .provider_product_info
-            .as_ref()
-            .and_then(|info| {
+        // Price resolution is provider-scoped. Stripe is the only provider
+        // whose mapping price drives the charge (Checkout line price), so a
+        // Stripe row without readable price/currency is a data anomaly and
+        // fails loud (422) instead of fabricating an amount/currency.
+        // Store/provider-priced flows (apple/google/wechat, creem product
+        // pricing) legitimately map without price info — e.g.
+        // `create_iap_payment_attempt` coerces amount 0→1 as a sentinel — and
+        // keep the historical zero-amount snapshot. The stored currency code
+        // passes through as-is (Stripe stores lowercase like "usd").
+        let stripe_priced = mapping.payment_provider == "stripe";
+        let (amount, currency, title) =
+            match mapping.provider_product_info.as_ref().and_then(|info| {
                 let price = info.get("price")?.as_i64()?;
                 let curr = info.get("currency")?.as_str()?.to_string();
                 let name = info
@@ -427,14 +435,15 @@ where
                     .unwrap_or(&mapping.entitlement_key)
                     .to_string();
                 Some((price, curr, name))
-            })
-            .unwrap_or_else(|| {
-                (
-                    0, // No price info available
-                    "usd".to_string(),
-                    mapping.entitlement_key.clone(),
-                )
-            });
+            }) {
+                Some(triple) => triple,
+                None if stripe_priced => {
+                    return Err(CoreError::PriceInfoMissing {
+                        entitlement_key: mapping.entitlement_key.clone(),
+                    });
+                }
+                None => (0, "usd".to_string(), mapping.entitlement_key.clone()),
+            };
 
         Ok(PurchaseTargetSnapshot {
             target_type: parsed_target_type,

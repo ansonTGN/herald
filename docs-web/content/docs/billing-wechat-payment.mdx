@@ -66,19 +66,14 @@ WeChat mappings are created manually, like IAP mappings, because there is no cat
    - **Entitlement Key**: something you recognize, e.g. `membership`. Used in SDK queries and points policy
    - **Credit Account**: which pool the purchased credits land in
    - **Billing Type**: `OneTime` for credit packs and buyouts, `Non-renewing` for fixed-period memberships
+   - **Price / Currency** (required for WeChat): the order amount in major units (`19.9` charges ¥19.90) and a 3-letter ISO 4217 code (`CNY`)
    - **Service Duration Days** (non-renewing only): the fixed period, required, e.g. `30`
    - **Points Per Period / Grant On Purchase**: the credit policy, or none for a pure membership
 4. Submit
 
-There is a gap you should know about: the create dialog has no price field, and the mapping API does not accept one either. The order amount is read from the mapping's `provider_product_info`: `price` as an integer in the smallest currency unit (fen, so `1000` = 10.00 CNY) and `currency` (typically `cny`). Today that JSON is written directly against the database:
+WeChat has no hosted catalog, so the order amount comes from the mapping rather than a provider Price — that's what the **Price** and **Currency** fields are for. WeChat is the only provider whose mappings accept a manual price: entering one on any other provider's mapping is rejected by the API. It is also a single-price channel — the purchase page shows one price with no currency switcher, whatever the user's currency preference is (see the [Multi-Currency Pricing guide](/docs/billing-multi-currency)).
 
-```sql
-UPDATE provider_entitlement_mappings
-SET provider_product_info = '{"name":"Membership 30d","price":2000,"currency":"cny"}'::jsonb
-WHERE realm_id = '<realm>' AND payment_provider = 'wechat' AND external_product_id = 'membership-30d';
-```
-
-A mapping without a price still sells: the order goes out with a 1-fen sentinel amount to satisfy the payment attempt constraint. If a test order shows 0.01 CNY, this is why.
+Mappings created before the price field existed (or written straight to the database) may carry none; those still sell — the order goes out with a 1-fen sentinel amount to satisfy the payment attempt constraint. If a test order shows 0.01 CNY, this is why.
 
 ## Step 3: The purchase flow
 
@@ -139,7 +134,7 @@ WeChat transactions do not enter Herald's invoice system. WeChat Pay has no invo
 ## Verify the result
 
 1. On **Payment Providers**, confirm WeChat Pay shows as configured
-2. On **Entitlement Mappings**, confirm the mapping row exists with the right billing type, price in `provider_product_info`, and (for memberships) service duration days
+2. On **Entitlement Mappings**, confirm the mapping row exists with the right billing type, price and currency filled in, and (for memberships) service duration days
 3. Open the purchase page on a PC, select the WeChat Pay product, and confirm the QR code renders with a countdown
 4. Scan with a WeChat account wired to your merchant sandbox, pay, and confirm the page flips to success and the credits or subscription appear
 5. Repeat the payment, then resend the same callback (or wait for a redelivery): the second run must not grant anything
@@ -149,7 +144,7 @@ WeChat transactions do not enter Herald's invoice system. WeChat Pay has no invo
 
 ### Order created but shows 0.01 CNY
 
-The mapping has no `price` in `provider_product_info`. Herald sends a 1-fen sentinel so the attempt row passes its `amount > 0` constraint. Set the price (see Step 2) and place a new order — the old attempt keeps its original amount.
+The mapping has no price set. Herald sends a 1-fen sentinel so the attempt row passes its `amount > 0` constraint. Set the price (see Step 2) and place a new order — the old attempt keeps its original amount.
 
 ### Callback rejected with signature verification failure
 
@@ -178,7 +173,7 @@ The Notify URL must be public HTTPS with the right realm ID, reachable from WeCh
 - [ ] WeChat Pay configured on the Payment Providers page (App ID, Merchant ID, private key, certificate serial, APIv3 key, Notify URL)
 - [ ] Notify URL is public HTTPS with the correct `{realmId}`, and no `base_url` override is set in production
 - [ ] Entitlement Mapping created per product (provider, product ID, entitlement key, billing type, credit account)
-- [ ] Price and currency set in `provider_product_info` (integer smallest unit; verified by a test order's amount)
+- [ ] Price and currency filled in the create dialog (verified by a test order's amount)
 - [ ] Non-renewing mappings have Service Duration Days set
 - [ ] One Native purchase completed end to end: QR rendered, payment made, attempt succeeded, credits or subscription visible
 - [ ] A duplicate callback observed to grant nothing

@@ -21,6 +21,7 @@ import { EmailConfigForm as EmailConfigFormComponent } from '@/components/realm-
 import { TurnstileConfigForm as TurnstileConfigFormComponent } from '@/components/realm-config/turnstile-config-form'
 import { WhiteLabelConfigForm as WhiteLabelConfigFormComponent } from '@/components/realm-config/white-label-config-form'
 import { CustomDomainConfigForm as CustomDomainConfigFormComponent } from '@/components/realm-config/custom-domain-config-form'
+import { BillingCurrencyConfigForm as BillingCurrencyConfigFormComponent } from '@/components/realm-config/billing-currency-config-form'
 import { ProviderConfigPage } from '@/components/oauth-config/provider-config-page'
 import { LegalAgreementTab } from '@/components/settings/LegalAgreementTab'
 import { useAuth } from '@/hooks/use-auth'
@@ -37,6 +38,7 @@ import type {
   EmailOtpConfigForm,
   WhiteLabelConfigForm as WhiteLabelConfigFormValues,
   CustomDomainConfigForm as CustomDomainConfigFormValues,
+  BillingCurrencyConfigForm,
 } from '@/lib/schemas/realm-config'
 import {
   parseTOTPConfig,
@@ -53,6 +55,8 @@ import {
   toUpdateWhiteLabelConfigRequest,
   normalizeCustomDomainConfig,
   toUpdateCustomDomainConfigRequest,
+  parseBillingCurrencyConfig,
+  buildBillingCurrencyConfigRequest,
 } from '@/lib/realm-config-utils'
 import { useState, useEffect } from 'react'
 import { PageHeader, AccessDenied } from '@/components/shared'
@@ -476,6 +480,7 @@ export function SettingsPage() {
   // Platform self-service signup is an admin-realm-only switch (DEC-001/009).
   // Parsed unconditionally; the tab/UI is gated on `realmId === 'admin'`.
   const platformSignupConfig = parsePlatformSignupConfig(configs || [])
+  const billingCurrencyConfig = parseBillingCurrencyConfig(configs || [])
 
   // Derive Passkey form values from the dedicated endpoint response.
   // The API returns `userVerification` as a generic string; narrow it to the
@@ -537,6 +542,15 @@ export function SettingsPage() {
 
     await mutation.mutateAsync(buildEmailConfigRequest(config)).catch(() => {})
     queryClient.invalidateQueries({ queryKey: queryKeys.emailStatus(realmId) })
+  }
+
+  async function saveBillingCurrencyConfig(config: BillingCurrencyConfigForm) {
+    if (!canUpdateConfig) {
+      toast.error(m['settings.config_modify_denied']())
+      return
+    }
+
+    await mutation.mutateAsync(buildBillingCurrencyConfigRequest(config)).catch(() => {})
   }
 
   async function savePasskeyConfig(config: PasskeyConfigForm) {
@@ -617,6 +631,9 @@ export function SettingsPage() {
           <TabsTrigger value="general" data-testid="general-tab">
             {m['settings.tab_general']()}
           </TabsTrigger>
+          <TabsTrigger value="billing" data-testid="billing-tab">
+            {m['settings.tab_billing']()}
+          </TabsTrigger>
           <TabsTrigger value="totp" data-testid="totp-tab">
             {m['settings.tab_totp']()}
           </TabsTrigger>
@@ -653,6 +670,15 @@ export function SettingsPage() {
 
         <TabsContent value="general">
           <GeneralTab realmId={realmId} />
+        </TabsContent>
+
+        <TabsContent value="billing">
+          <BillingCurrencyConfigFormComponent
+            initialConfig={billingCurrencyConfig}
+            onSave={saveBillingCurrencyConfig}
+            isLoading={isLoading}
+            disabled={!canUpdateConfig}
+          />
         </TabsContent>
 
         <TabsContent value="totp">

@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest'
 import {
   createEntitlementMappingSchema,
   getCreateEntitlementMappingDefaults,
+  majorUnitsToMinor,
+  minorToMajorUnits,
 } from '../create-entitlement-mapping'
 
 /**
@@ -306,5 +308,122 @@ describe('createEntitlementMappingSchema', () => {
     })
 
     expect(result.success).toBe(true)
+  })
+
+  describe('WeChat manual price (wechat-support PRD §2.2 / §8.1)', () => {
+    // WeChat has no hosted catalog, so the mapping price is entered by hand;
+    // a WeChat mapping without a positive price can never produce a valid
+    // order (the backend create-order call requires a positive amount), and
+    // WeChat has no auto-renewal in scope, so recurring must be stopped at
+    // the schema boundary — the backend rejects both with a 400.
+
+    function makeValidWechatForm(overrides: Record<string, unknown> = {}) {
+      return makeValidForm({
+        paymentProvider: 'wechat',
+        billingType: 'non_renewing',
+        billingPeriod: null,
+        serviceDurationDays: 30,
+        priceYuan: '19.9',
+        currency: 'CNY',
+        ...overrides,
+      })
+    }
+
+    it('accepts a WeChat non_renewing form with a valid manual price', () => {
+      const result = createEntitlementMappingSchema.safeParse(makeValidWechatForm())
+      expect(result.success).toBe(true)
+    })
+
+    it.each([
+      ['missing', undefined],
+      ['empty', ''],
+      ['zero', '0'],
+      ['malformed', '19.999'],
+      ['negative', '-5'],
+    ])('rejects a WeChat form when the price is %s', (_label, priceYuan) => {
+      const result = createEntitlementMappingSchema.safeParse(
+        makeValidWechatForm({ priceYuan: priceYuan as unknown })
+      )
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        const paths = result.error.issues.map((issue) => String(issue.path[0]))
+        expect(paths).toContain('priceYuan')
+      }
+    })
+
+    it.each([
+      ['missing', undefined],
+      ['empty', ''],
+      ['lowercase', 'cny'],
+      ['too long', 'CNYX'],
+    ])('rejects a WeChat form when the currency is %s', (_label, currency) => {
+      const result = createEntitlementMappingSchema.safeParse(
+        makeValidWechatForm({ currency: currency as unknown })
+      )
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        const paths = result.error.issues.map((issue) => String(issue.path[0]))
+        expect(paths).toContain('currency')
+      }
+    })
+
+    it('rejects recurring for WeChat at the billingType path', () => {
+      const result = createEntitlementMappingSchema.safeParse(
+        makeValidWechatForm({ billingType: 'recurring', billingPeriod: 'monthly' })
+      )
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        const paths = result.error.issues.map((issue) => String(issue.path[0]))
+        expect(paths).toContain('billingType')
+      }
+    })
+
+    it('does not require the manual price for non-WeChat providers (cross-provider isolation)', () => {
+      // Catalog/IAP providers price via sync or the store; the refinement must
+      // stay scoped to WeChat so existing forms keep parsing unchanged.
+      const result = createEntitlementMappingSchema.safeParse(makeValidForm())
+      expect(result.success).toBe(true)
+    })
+  })
+
+  describe('major-unit ↔ minor-unit conversion', () => {
+    // The manual price is read by a human in major units but stored/sent in
+    // integer minor units (fen). String-split parsing must be exact — float
+    // math would turn 19.9 into 1989.99… and silently misprice the order.
+    it.each([
+      ['19.9', 1990],
+      ['19.90', 1990],
+      ['19', 1900],
+      ['0.01', 1],
+      ['123456.78', 12345678],
+    ])('converts %s yuan to %s fen exactly', (input, expected) => {
+      expect(majorUnitsToMinor(input)).toBe(expected)
+    })
+
+    it.each([
+      ['', null],
+      ['abc', null],
+      ['19.999', null],
+      ['-3', null],
+      [null, null],
+      [undefined, null],
+    ])('returns null for %s (schema gates validity first)', (input, expected) => {
+      expect(majorUnitsToMinor(input as string | null | undefined)).toBe(expected)
+    })
+
+    it.each([
+      [1990, '19.90'],
+      [1900, '19.00'],
+      [1, '0.01'],
+      [12345678, '123456.78'],
+    ])('renders %s fen as %s for the edit input', (input, expected) => {
+      expect(minorToMajorUnits(input)).toBe(expected)
+    })
+
+    it('round-trips minor units through both converters without drift', () => {
+      for (const fen of [1, 99, 100, 1990, 12345678]) {
+        expect(majorUnitsToMinor(minorToMajorUnits(fen))).toBe(fen)
+      }
+    })
   })
 })

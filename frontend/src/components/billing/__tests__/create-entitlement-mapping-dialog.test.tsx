@@ -485,3 +485,120 @@ describe('CreateEntitlementMappingDialog — non-renewing interaction', () => {
     expect(body.serviceDurationDays).toBeNull()
   })
 })
+
+//
+// WeChat has no hosted catalog (wechat-support PRD §2.2): the form prices the
+// mapping by hand, hides the catalog-only external price id, and cannot offer
+// recurring (no auto-renewal in scope, PRD §8.1 — the backend rejects it, so
+// the schema must stop it first). These branches are Demo-unreachable, so
+// Vitest is the coverage.
+
+async function fillCreateFormWechat(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByTestId('create-mapping-provider-select'))
+  await user.click(await screen.findByRole('option', { name: 'WeChat Pay' }))
+
+  await user.type(screen.getByTestId('create-mapping-external-product-id-input'), 'wx_prod_1')
+  await user.type(screen.getByTestId('create-mapping-entitlement-key-input'), 'wechat-pro')
+
+  await user.click(screen.getByTestId('create-mapping-billing-type-select'))
+  await user.click(await screen.findByRole('option', { name: /non-renewing/i }))
+  await user.type(screen.getByTestId('create-mapping-service-duration-days-input'), '30')
+
+  // Currency is prefilled CNY by the defaults; type the manual price.
+  await user.type(screen.getByTestId('create-mapping-price-input'), '19.9')
+}
+
+describe('CreateEntitlementMappingDialog — WeChat provider-aware form', () => {
+  it('shows manual price/currency + notice and hides the catalog price id for WeChat', async () => {
+    const user = userEvent.setup()
+    renderDialog()
+
+    await user.click(screen.getByTestId('create-mapping-provider-select'))
+    await user.click(await screen.findByRole('option', { name: 'WeChat Pay' }))
+
+    // Manual price fields + the scenes notice appear.
+    expect(screen.getByTestId('create-mapping-price-input')).toBeInTheDocument()
+    expect(screen.getByTestId('create-mapping-currency-input')).toBeInTheDocument()
+    expect(screen.getByTestId('create-mapping-currency-input')).toHaveValue('CNY')
+    expect(screen.getByTestId('create-mapping-wechat-notice')).toBeInTheDocument()
+
+    // No hosted catalog ⇒ no external price id field.
+    expect(screen.queryByTestId('create-mapping-external-price-id-input')).toBeNull()
+
+    // No auto-renewal in scope ⇒ recurring must not be offered at all.
+    await user.click(screen.getByTestId('create-mapping-billing-type-select'))
+    expect(screen.queryByRole('option', { name: /^recurring$/i })).toBeNull()
+    expect(await screen.findByRole('option', { name: /non-renewing/i })).toBeInTheDocument()
+  })
+
+  it('keeps the external price id for catalog providers (stripe regression)', async () => {
+    const user = userEvent.setup()
+    renderDialog()
+
+    await user.click(screen.getByTestId('create-mapping-provider-select'))
+    await user.click(await screen.findByRole('option', { name: 'Stripe' }))
+
+    expect(screen.getByTestId('create-mapping-external-price-id-input')).toBeInTheDocument()
+    expect(screen.queryByTestId('create-mapping-price-input')).toBeNull()
+    expect(screen.queryByTestId('create-mapping-wechat-notice')).toBeNull()
+  })
+
+  it('converts the major-unit price to integer minor units in the payload', async () => {
+    mockCreateMutate.mockImplementation(
+      (_req: unknown, opts: { onSuccess?: () => void; onError?: (error: unknown) => void }) => {
+        opts.onSuccess?.()
+      }
+    )
+
+    const user = userEvent.setup()
+    renderDialog()
+
+    await fillCreateFormWechat(user)
+    await user.click(screen.getByTestId('create-mapping-submit-button'))
+
+    await waitFor(() => {
+      expect(mockCreateMutate).toHaveBeenCalledTimes(1)
+    })
+    const body = mockCreateMutate.mock.calls[0]?.[0] as Record<string, unknown>
+    // 19.9 yuan → 1990 fen (string-split parsing, no float drift).
+    expect(body.price).toBe(1990)
+    expect(body.currency).toBe('CNY')
+    expect(body.paymentProvider).toBe('wechat')
+  })
+
+  it('blocks submit when the manual price is missing', async () => {
+    const user = userEvent.setup()
+    renderDialog()
+
+    await fillCreateFormWechat(user)
+    await user.clear(screen.getByTestId('create-mapping-price-input'))
+    await user.click(screen.getByTestId('create-mapping-submit-button'))
+
+    expect(mockCreateMutate).not.toHaveBeenCalled()
+    await waitFor(() => {
+      expect(screen.getAllByRole('alert').length).toBeGreaterThan(0)
+    })
+  })
+
+  it('resets a recurring billing type when switching the provider to WeChat', async () => {
+    const user = userEvent.setup()
+    renderDialog()
+
+    // Stripe + recurring first (a fully legal catalog combination).
+    await user.click(screen.getByTestId('create-mapping-provider-select'))
+    await user.click(await screen.findByRole('option', { name: 'Stripe' }))
+    await user.click(screen.getByTestId('create-mapping-billing-type-select'))
+    await user.click(await screen.findByRole('option', { name: /^recurring$/i }))
+
+    // Switching to WeChat must drop the now-unreachable recurring selection.
+    await user.click(screen.getByTestId('create-mapping-provider-select'))
+    await user.click(await screen.findByRole('option', { name: 'WeChat Pay' }))
+
+    const trigger = screen.getByTestId('create-mapping-billing-type-select')
+    await waitFor(() => {
+      expect(trigger).toHaveTextContent(
+        String(m['billing.create_mapping_billing_type_placeholder']())
+      )
+    })
+  })
+})

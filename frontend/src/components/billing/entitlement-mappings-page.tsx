@@ -50,6 +50,8 @@ import {
   toPointDistributionRuleFormData,
   type PriceMappingUpdateFormData,
 } from '@/lib/schemas/billing-forms'
+import { majorUnitsToMinor, minorToMajorUnits } from '@/lib/schemas/create-entitlement-mapping'
+import { providerRequiresManualPrice } from '@/lib/billing-constants'
 import {
   isProtectedPriceError,
   extractActiveSubscriptions,
@@ -461,6 +463,26 @@ function PriceEditRow({
   const info = readProviderProductInfo(price.providerProductInfo)
   const metadataEntries = buildMetadataEntries(info.productMetadata, info.priceMetadata)
 
+  // WeChat rows price by hand (no catalog to sync from): editable major-unit
+  // price + currency, saved through the same single-row PUT path as
+  // serviceDurationDays (decoupled from the batch save).
+  const isWechat = providerRequiresManualPrice(price.paymentProvider)
+  const [wechatPriceText, setWechatPriceText] = useState(() => minorToMajorUnits(info.price))
+  const [wechatCurrency, setWechatCurrency] = useState(info.currency ?? 'CNY')
+  // Resync the editors when a refetch lands a new stored value (e.g. after a
+  // save round-trip or an external change). Adjust-during-render (with a
+  // tracked snapshot of the stored value) instead of an effect, so the reset
+  // happens before paint rather than as a cascading post-render update.
+  const [syncedPrice, setSyncedPrice] = useState({
+    price: info.price,
+    currency: info.currency,
+  })
+  if (syncedPrice.price !== info.price || syncedPrice.currency !== info.currency) {
+    setSyncedPrice({ price: info.price, currency: info.currency })
+    setWechatPriceText(minorToMajorUnits(info.price))
+    setWechatCurrency(info.currency ?? 'CNY')
+  }
+
   // `RoleResponse[]` directly (not a paged envelope); builtin roles are filtered
   // out so only admin-defined roles are assignable — mirrors the API-key roles
   // dialog usage. The query is realm-scoped and cached (staleTime 5min).
@@ -510,24 +532,60 @@ function PriceEditRow({
           />
         </Field>
 
-        <Field
-          label={m['billing.field_price']()}
-          // `== null` (not `!info.price`): a synced $0.00 free price is a real
-          // value, not an unsynced state — only show the sync hint when price
-          // is genuinely absent. Mirrors the value-rendering `price != null` check.
-          hint={info.price == null ? m['billing.field_billing_type_sync_hint']() : undefined}
-        >
-          <Input
-            value={
-              info.price != null && info.currency
-                ? formatInvoiceAmount(info.price, info.currency)
-                : ''
-            }
-            readOnly
-            placeholder="—"
-            className="bg-muted/40 text-sm text-muted-foreground"
-          />
-        </Field>
+        {isWechat ? (
+          <Field
+            label={m['billing.create_mapping_price_label']()}
+            hint={m['billing.create_mapping_price_hint']()}
+          >
+            <div className="flex gap-2">
+              <Input
+                inputMode="decimal"
+                value={wechatPriceText}
+                onChange={(e) => setWechatPriceText(e.target.value)}
+                onBlur={() => {
+                  const minor = majorUnitsToMinor(wechatPriceText)
+                  if (minor !== null && minor >= 1 && minor !== info.price) {
+                    updateMappingMutation.mutate({ price: minor })
+                  }
+                }}
+                disabled={editDisabled || updateMappingMutation.isPending}
+                placeholder="—"
+                data-testid={`price-manual-price-${price.id}`}
+              />
+              <Input
+                className="w-24"
+                value={wechatCurrency}
+                onChange={(e) => setWechatCurrency(e.target.value.toUpperCase())}
+                onBlur={() => {
+                  if (wechatCurrency && wechatCurrency !== info.currency) {
+                    updateMappingMutation.mutate({ currency: wechatCurrency })
+                  }
+                }}
+                disabled={editDisabled || updateMappingMutation.isPending}
+                data-testid={`price-manual-currency-${price.id}`}
+              />
+            </div>
+          </Field>
+        ) : (
+          <Field
+            label={m['billing.field_price']()}
+            // `== null` (not `!info.price`): a synced $0.00 free price is a real
+            // value, not an unsynced state — only show the sync hint when price
+            // is genuinely absent. Mirrors the value-rendering `price != null` check.
+            hint={info.price == null ? m['billing.field_billing_type_sync_hint']() : undefined}
+          >
+            <Input
+              value={
+                info.price != null && info.currency
+                  ? formatInvoiceAmount(info.price, info.currency)
+                  : ''
+              }
+              readOnly
+              placeholder="—"
+              className="bg-muted/40 text-sm text-muted-foreground"
+            />
+          </Field>
+        )}
 
         {!isOneTime && (
           <Field

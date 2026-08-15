@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { isValidCurrencyCode } from '@/lib/currency-utils'
 
 // TOTP 配置 Schema
 // ✅ 前端 Schema 使用 camelCase（符合 JavaScript 约定）
@@ -96,6 +97,16 @@ export const customDomainConfigSchema = z.object({
   hostname: z.string().nullable(),
 })
 
+// Billing 配置 Schema（Realm 默认货币）
+// ✅ 存于 realm_config(billing/default_currency) 单行字符串值；空字符串表示
+//    尚未配置。非空值必须是 3 位大写 ISO 4217 码且非保留码（XXX/XTS），
+//    与后端写入路径的校验一致；空值允许通过 schema（表单在提交门控中拦截）。
+export const billingCurrencyConfigSchema = z.object({
+  defaultCurrency: z.string().refine((v) => v === '' || isValidCurrencyCode(v), {
+    message: 'invalid ISO 4217 currency code',
+  }),
+})
+
 // 类型导出
 export type TOTPConfigForm = z.infer<typeof totpConfigSchema>
 export type PasskeyConfigForm = z.infer<typeof passkeyConfigSchema>
@@ -107,3 +118,4 @@ export type EmailConfigForm = z.infer<typeof emailConfigSchema>
 export type WhiteLabelBackgroundForm = z.infer<typeof whiteLabelBackgroundSchema>
 export type WhiteLabelConfigForm = z.infer<typeof whiteLabelConfigSchema>
 export type CustomDomainConfigForm = z.infer<typeof customDomainConfigSchema>
+export type BillingCurrencyConfigForm = z.infer<typeof billingCurrencyConfigSchema>

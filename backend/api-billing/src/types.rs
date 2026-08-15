@@ -179,6 +179,14 @@ pub struct UpdateEntitlementMappingRequest {
     /// triggers the `points.manage` credit-field permission gate.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub point_rules: Option<Vec<PointDistributionRuleWrite>>,
+    /// Manual price in minor units — WeChat mappings only (WeChat has no
+    /// hosted catalog to sync from). Merges into the stored
+    /// `provider_product_info`. Rejected for every other provider.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub price: Option<i64>,
+    /// ISO 4217 currency code for the manual price — WeChat mappings only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub currency: Option<String>,
 }
 
 ///
@@ -189,7 +197,7 @@ pub struct UpdateEntitlementMappingRequest {
 #[derive(Debug, Deserialize, ToSchema, validator::Validate)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateEntitlementMappingRequest {
-    /// `"apple"` / `"google"` / `"stripe"` / `"creem"`.
+    /// `"apple"` / `"google"` / `"stripe"` / `"creem"` / `"wechat"`.
     #[validate(custom(function = "validate_payment_provider_value"))]
     pub payment_provider: String,
     pub external_product_id: String,
@@ -216,6 +224,15 @@ pub struct CreateEntitlementMappingRequest {
     /// Roles auto-granted on payment success.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub granted_role_ids: Vec<Uuid>,
+    /// Manual price in minor units (e.g. fen for CNY) — required for WeChat
+    /// (no hosted catalog to sync from; the price drives the WeChat order
+    /// amount) and rejected for every other provider.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub price: Option<i64>,
+    /// ISO 4217 currency code for the manual price — required for WeChat,
+    /// rejected for every other provider.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub currency: Option<String>,
     #[serde(default = "default_true")]
     pub enabled: bool,
 }
@@ -489,4 +506,10 @@ pub struct PurchaseOptionView {
 #[serde(rename_all = "camelCase")]
 pub struct PurchaseOptionListResponse {
     pub items: Vec<PurchaseOptionView>,
+    /// Realm default currency (realm_config `billing/default_currency`),
+    /// `null` when the realm has none. Lets the purchase page compute the
+    /// effective preferred currency (user override ?? realm default) without
+    /// requiring `settings.view` on realm_config.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub realm_default_currency: Option<String>,
 }

@@ -128,6 +128,10 @@ Herald 使用 Stripe 的 inline pricing 创建 Checkout Session，不需要在 S
 2. 价格设为 **One time**
 3. 记下 Product ID
 
+### 多货币价格（可选）
+
+一个产品可以挂多个货币的 Price——在 Stripe Dashboard 为每个货币加一个 Price（比如 $9.99/月 和 €9.99/月），重新同步后每个 Price 各成一行映射。购买页会按货币分组并高亮用户的偏好货币。Realm/用户两级货币偏好和 api-ext 按货币解析接口见[多货币定价指南](/docs/zh/billing-multi-currency)。
+
 ## Step 4: 同步 Stripe 商品到 Herald
 
 在 Herald 中把 Stripe 的商品同步为 Entitlement Mapping。
@@ -193,6 +197,8 @@ Stripe Product 和 Price 支持 metadata。如果在 Stripe Dashboard 中给 Pro
 7. Stripe 发 `checkout.session.completed` 和 `customer.subscription.created` Webhook
 8. Herald 从 metadata 解析 entitlement_key，创建订阅投影、发放积分
 9. 后续每个计费周期，Stripe 自动扣款并发 `invoice.payment_succeeded`，Herald 发放续费积分
+
+产品带多个货币的 Price 时，Herald 购买页按货币分组，并高亮用户的生效偏好货币（个人偏好，否则 Realm 默认）。用户先选货币，再在组内选计费周期，支付尝试指向选中的那一行——扣款货币始终与展示一致。
 
 ### 一次性支付（积分包 / Payment Intent）
 

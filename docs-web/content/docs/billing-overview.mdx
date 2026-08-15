@@ -191,10 +191,15 @@ When a third-party app spends credits through the SDK, it passes only the Client
 
 Stripe, Creem, and WeChat Pay are initiator-style platforms; the payment process is unified through PaymentAttempt. WeChat subscriptions stop at a fixed end date — there is no renewal charge, the user buys again to extend. IAP also settles through PaymentAttempt, but fulfillment is triggered by the mobile app submitting the purchase proof (Apple `jwsRepresentation` / Google `purchaseToken`) instead of a checkout webhook — the platform notifications (Apple) and the scheduled polling (Google) only drive the lifecycle after that. See the [IAP integration guide](/docs/billing-iap) and the [WeChat Pay integration guide](/docs/billing-wechat-payment).
 
+### Multi-currency
+
+Currency rides on the catalog itself: each Stripe Price carries its currency, and a product sold in several currencies simply has several mapping rows. A realm default currency plus an optional per-user preference decide which currency the purchase page highlights; resolution by currency is strict — no fallback to a second currency, no zero-amount charges. Creem, IAP, and WeChat Pay stay single-price (WeChat's manual price and currency live on the mapping). See the [Multi-Currency Pricing guide](/docs/billing-multi-currency).
+
 ## Related docs
 
 - [Credit Account user stories](https://github.com/timzaak/cas-2/blob/main/docs/user-stories/billing/credit-bucket.md) — acceptance scenarios for the Credit Account catalog, coverage sets, purchase-to-pool, cross-pool consumption, and the subscription lifecycle
 - [Stripe integration guide](/docs/billing-stripe-payment) — Stripe provider configuration and webhook handling
+- [Multi-Currency Pricing guide](/docs/billing-multi-currency) — currency preferences, purchase-page grouping, and by-currency price resolution
 - [Creem integration guide](/docs/billing-creem-payment) — Creem provider configuration and webhook handling
 - [IAP integration guide](/docs/billing-iap) — App Store / Google Play in-app purchase configuration, receipt submission, and lifecycle handling
 - [WeChat Pay integration guide](/docs/billing-wechat-payment) — WeChat Pay configuration, order-priced mappings, and the Native / JSAPI purchase flow

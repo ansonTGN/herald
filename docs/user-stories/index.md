@@ -13,7 +13,7 @@
 | 登录体验与品牌 | 第三方登录 → 品牌页面 → 自定义域名 → 多语言 | [OAuth 应用](auth/third-party-app.md)、[OAuth 扩展](auth/oauth-extension.md)、[微信 OAuth](auth/wechat-oauth.md)、[邮箱验证码登录](auth/email-otp-login.md)、[Google One Tap](auth/google-one-tap.md)、[Apple native 登录](auth/support-mobile-apple-login.md)、[White-label](core/white-label.md)、[自定义域名](core/realm-custom-domain.md)、[i18n](core/i18n.md) |
 | 强认证 | 管理员配置 → 用户绑定 → 登录/恢复 | [TOTP](auth/totp.md)、[Passkey](auth/passkey.md)、[Device Code](auth/device-code.md) |
 | 授权与应用接入 | RBAC 配置 → Client App/API Key → SDK 调用 → 自建用户 UI | [Realm Admin](core/realm-admin.md)、[Client App 设置](auth/client-app-settings.md)、[SDK](integration/sdk.md)、[JS 浏览器 SDK](integration/js-sdk.md)、[自建用户 UI](integration/custom-user-ui.md) |
-| 商品、支付与权益履约 | Provider 配置/同步 → 下单 → 支付 → 订阅或权益生效 → 补偿 | [支付平台](billing/payment-provider.md)、[Entitlement Mapping](billing/entitlement-mapping.md)、[支付尝试](billing/payment-attempt.md)、[订阅](billing/subscription.md)、[履约模型扩展（买断/非续期订阅）](billing/pay_model.md)、[Paywall](billing/support-paywall.md)、[Webhook 补偿](billing/webhook-compensation.md)、[IAP](billing/support-iap.md)、[WeChat Pay](billing/wechat-support.md) |
+| 商品、支付与权益履约 | Provider 配置/同步 → 下单 → 支付 → 订阅或权益生效 → 补偿 | [支付平台](billing/payment-provider.md)、[Entitlement Mapping](billing/entitlement-mapping.md)、[支付尝试](billing/payment-attempt.md)、[订阅](billing/subscription.md)、[履约模型扩展（买断/非续期订阅）](billing/pay_model.md)、[Paywall](billing/support-paywall.md)、[Webhook 补偿](billing/webhook-compensation.md)、[IAP](billing/support-iap.md)、[WeChat Pay](billing/wechat-support.md)、[多货币](billing/multiple-currency.md) |
 | 积分与余额 | 策略配置 → 免费/付费发放 → 分账户持有和消费 → 查询历史 | [积分管理](billing/points-admin.md)、[免费积分](billing/points-free-user.md)、[积分包购买](billing/points-package-purchase.md)、[用户积分](billing/points-user.md)、[异步支付积分](billing/async-payment-points.md)、[积分账户](billing/credit-bucket.md)、[多钱包分发规则](billing/multi-wallet-grant-rules.md) |
 | 发票与退款凭证 | 支付归属 → 发票同步/开具 → 退款和 Credit Note | [发票与 Provider Fallback](billing/invoice.md)、[支付-发票归属](billing/payment-invoice-mapping.md) |
 
@@ -269,6 +269,12 @@
 | US-PW-004 | 一次性永久权益一人一次防重复购买 | Regular User | P0 | [billing/support-paywall](billing/support-paywall.md#故事-4一次性永久权益一人一次防重复购买-us-pw-004) |
 | US-PW-005 | 支付事件触发 role 撤销 | System | P0 | [billing/support-paywall](billing/support-paywall.md#故事-5支付事件触发-role-撤销-us-pw-005) |
 | US-PW-006 | 第三方应用凭 role 一行判断解锁功能 | Third-Party App | P1 | [billing/support-paywall](billing/support-paywall.md#故事-6第三方应用凭-role-一行判断解锁功能-us-pw-006) |
+| US-MC-001 | 配置 Realm 默认偏好货币 | Realm Admin | P0 | [billing/multiple-currency](billing/multiple-currency.md#故事-1配置-realm-默认偏好货币-us-mc-001) |
+| US-MC-002 | 设置个人偏好货币覆盖 | Regular User | P1 | [billing/multiple-currency](billing/multiple-currency.md#故事-2设置个人偏好货币覆盖-us-mc-002) |
+| US-MC-003 | 购买页按货币分组并高亮偏好货币 | Regular User | P0 | [billing/multiple-currency](billing/multiple-currency.md#故事-3购买页按货币分组并高亮偏好货币-us-mc-003) |
+| US-MC-004 | 按偏好货币解析价格行发起购买 | Regular User | P0 | [billing/multiple-currency](billing/multiple-currency.md#故事-4按偏好货币解析价格行发起购买-us-mc-004) |
+| US-MC-005 | 查询可购权益支持的货币集合 | Third-Party App | P0 | [billing/multiple-currency](billing/multiple-currency.md#故事-5查询可购权益支持的货币集合-us-mc-005) |
+| US-MC-006 | Creem / IAP / WeChat Pay 单一价格降级展示 | Regular User | P2 | [billing/multiple-currency](billing/multiple-currency.md#故事-6creem--iap--wechat-pay-单一价格降级展示-us-mc-006) |
 
 ---
 
@@ -316,6 +322,7 @@
 | Entitlement Mapping | [billing/entitlement-mapping.md](billing/entitlement-mapping.md) | [Subscription PRD](/docs/prd/billing/subscription.md) |
 | IAP | [billing/support-iap.md](billing/support-iap.md) | [IAP PRD](/docs/prd/billing/support-iap.md) |
 | WeChat Pay | [billing/wechat-support.md](billing/wechat-support.md) | [WeChat Pay PRD](/docs/prd/billing/wechat-support.md) |
+| 多货币 | [billing/multiple-currency.md](billing/multiple-currency.md) | [多货币 PRD](/docs/prd/billing/multiple-currency.md) |
 | 积分账户 | [billing/credit-bucket.md](billing/credit-bucket.md) | [Points PRD](/docs/prd/billing/points.md) |
 
 ### Integration 集成

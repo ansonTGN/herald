@@ -32,9 +32,16 @@ import {
 import {
   createEntitlementMappingSchema,
   getCreateEntitlementMappingDefaults,
+  majorUnitsToMinor,
   type CreateEntitlementMappingFormData,
 } from '@/lib/schemas/create-entitlement-mapping'
-import { PAYMENT_PROVIDERS, BILLING_PERIODS } from '@/lib/billing-constants'
+import {
+  PAYMENT_PROVIDERS,
+  BILLING_PERIODS,
+  providerAllowsRecurringBilling,
+  providerRequiresManualPrice,
+  providerShowsExternalPriceId,
+} from '@/lib/billing-constants'
 import type { CreateEntitlementMappingRequest } from '@/lib/api-generated'
 import { m } from '@/paraglide/messages'
 
@@ -122,6 +129,11 @@ export function CreateEntitlementMappingDialog({
   const isRecurring = values.billingType === 'recurring'
   const isOneTime = values.billingType === 'one_time'
   const isNonRenewing = values.billingType === 'non_renewing'
+  // Provider-scoped form rules (single decision points in billing-constants):
+  // WeChat prices by hand (no hosted catalog) and cannot be recurring.
+  const isWechat = providerRequiresManualPrice(values.paymentProvider)
+  const showExternalPriceId = providerShowsExternalPriceId(values.paymentProvider)
+  const canBeRecurring = providerAllowsRecurringBilling(values.paymentProvider)
 
   const update = <K extends keyof CreateEntitlementMappingFormData>(
     key: K,
@@ -134,6 +146,21 @@ export function CreateEntitlementMappingDialog({
       const { [key as string]: _removed, ...rest } = prev
       return rest
     })
+  }
+
+  // Switching provider invalidates provider-scoped selections: recurring is
+  // unreachable for WeChat (no auto-renewal), and a stale manual price must
+  // not silently ride along to a catalog provider.
+  const updateProvider = (provider: string) => {
+    setValues((prev) => ({
+      ...prev,
+      paymentProvider: provider,
+      ...(providerRequiresManualPrice(provider) ? {} : { priceYuan: '', currency: 'CNY' }),
+      ...(!providerAllowsRecurringBilling(provider) && prev.billingType === 'recurring'
+        ? { billingType: '', billingPeriod: null }
+        : {}),
+    }))
+    setFieldErrors({})
   }
 
   const handleSubmit = () => {
@@ -151,15 +178,22 @@ export function CreateEntitlementMappingDialog({
     }
 
     const v = parsed.data
+    const isWechat = providerRequiresManualPrice(v.paymentProvider)
     const body: CreateEntitlementMappingRequest = {
       paymentProvider: v.paymentProvider,
       externalProductId: v.externalProductId,
       entitlementKey: v.entitlementKey,
       billingType: v.billingType,
-      // externalPriceId: optional; IAP/Creem leave it empty.
+      // externalPriceId: optional; only catalog providers (Stripe/Creem) show it.
       externalPriceId: v.externalPriceId ? v.externalPriceId : null,
       billingPeriod: isRecurring ? (v.billingPeriod ?? null) : null,
       serviceDurationDays: isNonRenewing ? (v.serviceDurationDays ?? null) : null,
+      // Manual WeChat price: the schema's superRefine guarantees a valid
+      // major-unit price string and currency here; convert to integer minor
+      // units for the API. No fallback — if the guarantee ever breaks, the
+      // omitted field fails loud at the backend instead of silently writing
+      // a wrong price.
+      ...(isWechat ? { price: majorUnitsToMinor(v.priceYuan)!, currency: v.currency! } : {}),
       ...(canManagePoints ? { pointRules: v.pointRules } : {}),
       grantedRoleIds: v.grantedRoleIds,
       enabled: v.enabled,
@@ -208,10 +242,7 @@ export function CreateEntitlementMappingDialog({
             required
             error={fieldErrors.paymentProvider}
           >
-            <Select
-              value={values.paymentProvider ?? ''}
-              onValueChange={(v) => update('paymentProvider', v)}
-            >
+            <Select value={values.paymentProvider ?? ''} onValueChange={updateProvider}>
               <SelectTrigger
                 id="create-mapping-provider"
                 data-testid="create-mapping-provider-select"
@@ -229,7 +260,11 @@ export function CreateEntitlementMappingDialog({
           </Field>
 
           <Field
-            label={m['billing.create_mapping_external_product_id']()}
+            label={
+              isWechat
+                ? m['billing.create_mapping_external_product_id_wechat']()
+                : m['billing.create_mapping_external_product_id']()
+            }
             htmlFor="create-mapping-external-product-id"
             required
             error={fieldErrors.externalProductId}
@@ -240,22 +275,67 @@ export function CreateEntitlementMappingDialog({
               onChange={(e) => update('externalProductId', e.target.value)}
               data-testid="create-mapping-external-product-id-input"
             />
+            <p className="text-xs text-muted-foreground">
+              {isWechat
+                ? m['billing.create_mapping_external_product_id_wechat_hint']()
+                : m['billing.create_mapping_external_product_id_hint']()}
+            </p>
           </Field>
 
-          {/* External Price ID (optional; Stripe only) */}
-          <Field
-            label={m['billing.create_mapping_external_price_id']()}
-            htmlFor="create-mapping-external-price-id"
-          >
-            <Input
-              id="create-mapping-external-price-id"
-              value={values.externalPriceId ?? ''}
-              onChange={(e) =>
-                update('externalPriceId', e.target.value === '' ? null : e.target.value)
-              }
-              data-testid="create-mapping-external-price-id-input"
-            />
-          </Field>
+          {/* External Price ID — catalog providers only (Stripe/Creem take it
+              from their dashboard; IAP store ids and WeChat's self-defined
+              product ids have no price-id counterpart). */}
+          {showExternalPriceId && (
+            <Field
+              label={m['billing.create_mapping_external_price_id']()}
+              htmlFor="create-mapping-external-price-id"
+            >
+              <Input
+                id="create-mapping-external-price-id"
+                value={values.externalPriceId ?? ''}
+                onChange={(e) =>
+                  update('externalPriceId', e.target.value === '' ? null : e.target.value)
+                }
+                data-testid="create-mapping-external-price-id-input"
+              />
+            </Field>
+          )}
+
+          {isWechat && (
+            <>
+              <Field
+                label={m['billing.create_mapping_price_label']()}
+                htmlFor="create-mapping-price"
+                required
+                error={fieldErrors.priceYuan}
+              >
+                <Input
+                  id="create-mapping-price"
+                  inputMode="decimal"
+                  placeholder="19.9"
+                  value={values.priceYuan ?? ''}
+                  onChange={(e) => update('priceYuan', e.target.value)}
+                  data-testid="create-mapping-price-input"
+                />
+                <p className="text-xs text-muted-foreground">
+                  {m['billing.create_mapping_price_hint']()}
+                </p>
+              </Field>
+              <Field
+                label={m['billing.create_mapping_currency_label']()}
+                htmlFor="create-mapping-currency"
+                required
+                error={fieldErrors.currency}
+              >
+                <Input
+                  id="create-mapping-currency"
+                  value={values.currency ?? ''}
+                  onChange={(e) => update('currency', e.target.value.toUpperCase())}
+                  data-testid="create-mapping-currency-input"
+                />
+              </Field>
+            </>
+          )}
 
           <Field
             label={m['billing.create_mapping_entitlement_key']()}
@@ -290,7 +370,9 @@ export function CreateEntitlementMappingDialog({
                 <SelectValue placeholder={m['billing.create_mapping_billing_type_placeholder']()} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="recurring">{m['billing.billing_type_recurring']()}</SelectItem>
+                {canBeRecurring && (
+                  <SelectItem value="recurring">{m['billing.billing_type_recurring']()}</SelectItem>
+                )}
                 <SelectItem value="one_time">{m['billing.billing_type_one_time']()}</SelectItem>
                 <SelectItem value="non_renewing">
                   {m['billing.billing_type_non_renewing']()}
@@ -377,6 +459,15 @@ export function CreateEntitlementMappingDialog({
             </div>
           )}
         </div>
+
+        {isWechat && (
+          <div
+            className="rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
+            data-testid="create-mapping-wechat-notice"
+          >
+            {m['billing.create_mapping_wechat_notice']()}
+          </div>
+        )}
 
         {submitError && (
           <p

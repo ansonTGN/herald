@@ -71,10 +71,15 @@ pub trait UserRepository: Send + Sync {
     fn get_profile(&self, user_id: Uuid)
     -> impl Future<Output = Result<Profile, CoreError>> + Send;
 
+    /// Update profile fields. Both fields use `Option<Option<T>>` tri-state:
+    /// `None` leaves the value unchanged, `Some(None)` clears it,
+    /// `Some(Some(v))` sets it. An invalid currency code is rejected with
+    /// `CoreError::BadRequest` and leaves the stored value unchanged.
     fn update_profile(
         &self,
         user_id: Uuid,
-        nickname: Option<String>,
+        nickname: Option<Option<String>>,
+        preferred_currency: Option<Option<String>>,
     ) -> impl Future<Output = Result<Profile, CoreError>> + Send;
 
     /// Look up a soft-deleted account by the hash of its original email.

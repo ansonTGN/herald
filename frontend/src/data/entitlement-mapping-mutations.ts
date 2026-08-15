@@ -40,6 +40,14 @@ interface EntitlementMappingUpdateFormData {
    * backend leaves the stored value unchanged.
    */
   serviceDurationDays?: number | null
+  /**
+   * WeChat manual price (integer minor units; WeChat has no catalog to sync
+   * from). `undefined` ⟺ unchanged; a number merges into the stored
+   * `provider_product_info`. Rejected server-side for other providers.
+   */
+  price?: number
+  /** ISO 4217 code accompanying the WeChat manual price. */
+  currency?: string
 }
 
 // ==================== Protected-price 409 detection ====================
@@ -133,6 +141,10 @@ export function useUpdateEntitlementMapping(realmId: string, mappingId: string) 
           typeof values.serviceDurationDays === 'number' && values.serviceDurationDays >= 1
             ? values.serviceDurationDays
             : undefined,
+        // WeChat manual price/currency: forwarded only when supplied —
+        // the backend merges them into provider_product_info (WeChat only).
+        price: values.price,
+        currency: values.currency,
       }
       const response = await updateEntitlementMapping({
         path: { realmId, mappingId },

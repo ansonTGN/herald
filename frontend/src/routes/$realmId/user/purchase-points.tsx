@@ -2,19 +2,21 @@ import { m } from '@/paraglide/messages'
 import { useState, useEffect, useMemo } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { AlertCircle, ArrowLeft, ArrowRight, Loader2, Check, CheckCircle2 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { AlertCircle, ArrowLeft, ArrowRight, Loader2, CheckCircle2 } from 'lucide-react'
 import { createPaymentAttempt, cancelPaymentAttempt } from '@/lib/api-generated'
-import type { PaymentAttemptStatusResponse, PurchaseOptionView } from '@/lib/api-generated'
+import type { PaymentAttemptStatusResponse } from '@/lib/api-generated'
 import {
   purchaseOptionsQueryOptions,
   paymentProvidersQueryOptions,
   paymentAttemptStatusQueryOptions,
+  profileQueryOptions,
   queryKeys,
   requireUserFeature,
 } from '@/data/query-options'
+import { CurrencyPurchaseGroup } from '@/components/billing/currency-purchase-group'
+import { groupByEntitlement } from '@/components/billing/currency-utils'
 import { PaymentMethodSelector } from '@/components/purchase/payment-method-selector'
 import { PaymentAttemptStatus } from '@/components/purchase/payment-attempt-status'
 import { usePurchaseFlowActions, usePaymentAttempt } from '@/stores/purchase-flow-store'
@@ -23,7 +25,6 @@ import { useAuthStore } from '@/stores/auth-store'
 import { PAYMENT_PROVIDERS } from '@/lib/billing-constants'
 import { resolveWechatScene } from '@/lib/wechat-pay-utils'
 import { formatInvoiceAmount } from '@/lib/invoice-utils'
-import { deriveSharedKeyColor } from '@/components/billing/shared-key-color'
 import { toast } from 'sonner'
 import { purchasePointsSearchSchema } from '@/lib/schemas/search-params'
 import { useCurrentSearch, useResolvedRealmId } from '@/lib/realm-routing'
@@ -40,32 +41,6 @@ export const Route = createFileRoute('/$realmId/user/purchase-points')({
 })
 
 type PurchaseStep = 'packages' | 'payment' | 'processing' | 'complete'
-
-/**
- * Reason a price card is not purchasable, or null when it is purchasable.
- *
- * A card is disabled when the mapping is not enabled for purchase, or when no
- * payment provider is wired to it (the price exists but cannot be checked out).
- * A gated one-time+role card (design §4.2.2) is also disabled when the current
- * user already owns it — `grantsRole` is true only for `one_time` + non-empty
- * `granted_role_ids` (points/subscriptions are never gated), so the already-owned
- * branch is naturally scoped without the frontend re-checking billing_type.
- * Returns the matching message key so the caller renders the canonical copy via
- * Paraglide; returns null for purchasable cards so the caller can skip rendering
- * a reason row.
- */
-// eslint-disable-next-line react-refresh/only-export-components -- exported for unit testing
-export function disabledReason(
-  option: PurchaseOptionView
-): { key: 'purchase.not_enabled_reason' | 'purchase.already_owned_reason' } | null {
-  if (!option.enabled || !option.paymentProvider) {
-    return { key: 'purchase.not_enabled_reason' }
-  }
-  if (option.grantsRole && option.alreadyOwned) {
-    return { key: 'purchase.already_owned_reason' }
-  }
-  return null
-}
 
 export function PurchasePointsRoute() {
   const realmId = useResolvedRealmId()
@@ -103,115 +78,6 @@ export function PurchasePointsRoute() {
       queryStatus={queryStatus}
       wechatOpenid={wechatOpenid}
     />
-  )
-}
-
-function PriceCard({
-  option,
-  isSelected,
-  onSelect,
-}: {
-  option: PurchaseOptionView
-  isSelected: boolean
-  onSelect: () => void
-}) {
-  const reason = disabledReason(option)
-  const isDisabled = reason !== null
-  const color = deriveSharedKeyColor(option.entitlementKey)
-  // priceId falls back to mappingId for price-less providers (Creem) so the
-  // testid is always stable and non-empty.
-  const priceId = option.externalPriceId ?? option.mappingId
-
-  // Billing-type badge + period suffix (ui-spec §3.2). one_time renders an
-  // "One-time" badge + `once` suffix; recurring renders "Subscription" + a
-  // period suffix derived from billingPeriod.
-  const isOneTime = option.billingType !== 'recurring'
-  const periodSuffixKey = isOneTime
-    ? 'purchase.period_suffix_once'
-    : option.billingPeriod === 'year'
-      ? 'purchase.period_suffix_year'
-      : 'purchase.period_suffix_month'
-
-  return (
-    <Card
-      className={`cursor-pointer transition-all ${
-        isSelected
-          ? 'border-primary ring-2 ring-primary'
-          : 'border-muted-foreground/25 hover:border-muted-foreground/50'
-      } ${isDisabled ? 'opacity-60' : ''}`}
-      onClick={isDisabled ? undefined : onSelect}
-      data-testid={`purchase-price-card-${priceId}`}
-    >
-      <CardContent className="p-4">
-        <div className="flex w-full items-start justify-between gap-3">
-          <div className="flex-1 space-y-1">
-            <div className="flex items-center gap-2">
-              <span
-                className="inline-block h-3 w-3 rounded-full"
-                style={
-                  color.hue !== 0 ? { backgroundColor: `hsl(${color.hue} 70% 50%)` } : undefined
-                }
-                aria-hidden
-              />
-              <div className="font-medium">{option.displayName || option.entitlementKey}</div>
-            </div>
-            <Badge variant="secondary" data-testid={`price-card-billing-type-${priceId}`}>
-              {isOneTime
-                ? m['purchase.billing_type_one_time']()
-                : m['purchase.billing_type_subscription']()}
-            </Badge>
-            {option.pointRules.length > 0 && (
-              <div className="space-y-1 text-sm text-muted-foreground">
-                {option.pointRules.map((rule) => (
-                  <div
-                    key={rule.id}
-                    data-testid={`purchase-point-rule-${rule.id}`}
-                    className="rounded border px-2 py-1"
-                  >
-                    <span className="font-mono text-xs">{rule.bucketId}</span>
-                    {rule.grantMode === 'fixed' ? (
-                      <span> · {rule.pointsAmount?.toLocaleString() ?? 0} points</span>
-                    ) : (
-                      <span>
-                        {' '}
-                        ·{' '}
-                        {(rule.quotaWindows ?? [])
-                          .map(
-                            (window) =>
-                              `${window.limit.toLocaleString()} / ${window.windowSeconds}s`
-                          )
-                          .join(', ')}
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-            {option.amount != null && option.currency ? (
-              <div className="text-sm font-medium">
-                {formatInvoiceAmount(option.amount, option.currency)}{' '}
-                <span className="text-muted-foreground">{m[periodSuffixKey]()}</span>
-              </div>
-            ) : (
-              <div className="text-sm text-muted-foreground">{m['purchase.unavailable']()}</div>
-            )}
-            {isDisabled && reason && (
-              <div
-                className="text-xs text-muted-foreground"
-                data-testid={`purchase-price-card-${priceId}-reason`}
-              >
-                {m[reason.key]()}
-              </div>
-            )}
-          </div>
-          {isSelected && (
-            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary">
-              <Check className="h-4 w-4 text-primary-foreground" />
-            </div>
-          )}
-        </div>
-      </CardContent>
-    </Card>
   )
 }
 
@@ -259,10 +125,19 @@ export function PurchasePointsPage({
   )
 
   // Fetch purchase options (price-granularity flat list, replaces the former
-  // entitlement-key-grouped one-time-mappings source).
-  const { data: options, isLoading: optionsLoading } = useQuery(
+  // entitlement-key-grouped one-time-mappings source). The response also carries
+  // the realm default currency so the page can compute the effective preferred
+  // currency without a settings-scoped realm_config query.
+  const { data: optionsData, isLoading: optionsLoading } = useQuery(
     purchaseOptionsQueryOptions(realmId, clientAppId)
   )
+  const options = useMemo(() => optionsData?.items ?? [], [optionsData])
+  const realmDefaultCurrency = optionsData?.realmDefaultCurrency ?? null
+  // User-level preferred currency override (falls back to the realm default
+  // when unset). Only drives display highlighting — purchase always submits
+  // the explicitly selected price row's mapping id.
+  const { data: profile } = useQuery(profileQueryOptions)
+  const userPreferredCurrency = profile?.preferredCurrency ?? null
   // Providers are still fetched so the payment step can render provider context;
   // the selected option's own provider is the one used at submit.
   const { data: providers, isLoading: providersLoading } = useQuery(
@@ -270,23 +145,29 @@ export function PurchasePointsPage({
   )
 
   // Subscriptions section (recurring) shows all recurring options together;
-  // Credit packs section (one_time) is always shown when present.
+  // Credit packs section (one_time) is always shown when present. Within a
+  // section each entitlement renders as its own currency-switchable block.
   const subscriptionOptions = useMemo(
-    () => (options ?? []).filter((o) => o.billingType === 'recurring'),
+    () => options.filter((o) => o.billingType === 'recurring'),
     [options]
   )
   const creditPackOptions = useMemo(
-    () => (options ?? []).filter((o) => o.billingType !== 'recurring'),
+    () => options.filter((o) => o.billingType !== 'recurring'),
     [options]
   )
+  const subscriptionGroups = useMemo(
+    () => groupByEntitlement(subscriptionOptions),
+    [subscriptionOptions]
+  )
+  const creditPackGroups = useMemo(() => groupByEntitlement(creditPackOptions), [creditPackOptions])
   const hasRecurring = useMemo(
     () => (options ?? []).some((o) => o.billingType === 'recurring'),
     [options]
   )
-  const hasAnyOptions = (options?.length ?? 0) > 0
+  const hasAnyOptions = options.length > 0
 
   const selectedOption = useMemo(
-    () => options?.find((o) => o.mappingId === selectedMappingId),
+    () => options.find((o) => o.mappingId === selectedMappingId),
     [options, selectedMappingId]
   )
 
@@ -549,7 +430,9 @@ export function PurchasePointsPage({
             ) : (
               <>
                 {/* Subscriptions section — recurring only. All recurring options
-                    are shown together (monthly + annual); no period toggle. */}
+                    are shown together (monthly + annual); no period toggle.
+                    Each entitlement is its own block so multi-currency Stripe
+                    products get a currency switcher inside it. */}
                 {hasRecurring && (
                   <section className="space-y-4" data-testid="purchase-section-subscriptions">
                     <div>
@@ -561,16 +444,15 @@ export function PurchasePointsPage({
                       </p>
                     </div>
 
-                    <div
-                      className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3"
-                      data-testid="purchase-price-grid-subscriptions"
-                    >
-                      {subscriptionOptions.map((option) => (
-                        <PriceCard
-                          key={option.mappingId}
-                          option={option}
-                          isSelected={selectedMappingId === option.mappingId}
-                          onSelect={() => setSelectedMappingId(option.mappingId)}
+                    <div className="space-y-6" data-testid="purchase-price-grid-subscriptions">
+                      {subscriptionGroups.map((group) => (
+                        <CurrencyPurchaseGroup
+                          key={group.entitlementKey}
+                          group={group}
+                          userPreferredCurrency={userPreferredCurrency}
+                          realmDefaultCurrency={realmDefaultCurrency}
+                          selectedMappingId={selectedMappingId}
+                          onSelect={setSelectedMappingId}
                         />
                       ))}
                     </div>
@@ -588,16 +470,15 @@ export function PurchasePointsPage({
                         {m['purchase.section_credit_packs_meta']()}
                       </p>
                     </div>
-                    <div
-                      className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3"
-                      data-testid="purchase-price-grid-credit-packs"
-                    >
-                      {creditPackOptions.map((option) => (
-                        <PriceCard
-                          key={option.mappingId}
-                          option={option}
-                          isSelected={selectedMappingId === option.mappingId}
-                          onSelect={() => setSelectedMappingId(option.mappingId)}
+                    <div className="space-y-6" data-testid="purchase-price-grid-credit-packs">
+                      {creditPackGroups.map((group) => (
+                        <CurrencyPurchaseGroup
+                          key={group.entitlementKey}
+                          group={group}
+                          userPreferredCurrency={userPreferredCurrency}
+                          realmDefaultCurrency={realmDefaultCurrency}
+                          selectedMappingId={selectedMappingId}
+                          onSelect={setSelectedMappingId}
                         />
                       ))}
                     </div>

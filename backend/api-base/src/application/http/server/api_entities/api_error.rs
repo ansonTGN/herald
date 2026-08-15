@@ -298,6 +298,17 @@ impl From<herald_core::domain::common::entities::app_errors::CoreError> for ApiE
                 "grant_bucket_required",
                 "Points grant requires an explicit target bucket",
             ),
+            // Purchase resolution refuses to charge when the mapping row has
+            // no readable price/currency; surfacing as 422 keeps it a client
+            // visible data error rather than a 500.
+            CoreError::PriceInfoMissing { entitlement_key } => Self::with_error_code(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "price_info_missing",
+                format!(
+                    "Price info missing for the selected entitlement mapping ({entitlement_key})"
+                )
+                .as_str(),
+            ),
         }
     }
 }

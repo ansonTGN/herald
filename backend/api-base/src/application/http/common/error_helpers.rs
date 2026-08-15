@@ -84,6 +84,11 @@ pub fn core_error_to_api_error(e: CoreError, operation: &str) -> ApiError {
         CoreError::GrantBucketRequired => {
             ApiError::bad_request("Points grant requires an explicit target bucket".to_string())
         }
+        // Missing price/currency on the selected mapping is a data anomaly;
+        // fail loud (422) instead of silently charging a wrong currency/amount.
+        CoreError::PriceInfoMissing { entitlement_key } => ApiError::unprocessable_entity(format!(
+            "Price info missing for the selected entitlement mapping ({entitlement_key})"
+        )),
         _ => ApiError::internal(format!("Failed to {operation}: {e}")),
     }
 }

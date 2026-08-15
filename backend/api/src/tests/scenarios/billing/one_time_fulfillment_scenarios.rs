@@ -647,33 +647,23 @@ mod tests {
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let body_text = String::from_utf8(body.to_vec()).unwrap();
 
-        // Then: The response either returns an error or creates with amount=0
-        // Since resolve_target falls back to amount=0 when no provider_product_info,
-        // the request may succeed with amount=0 or fail depending on payment provider
-        // requirements. Either way, the amount should be 0 (no valid price configured).
-        if status == StatusCode::CREATED {
-            let body_json: serde_json::Value = serde_json::from_str(&body_text)
-                .unwrap_or_else(|e| panic!("Response is not valid JSON: {e}\nBody: {body_text}"));
-            let amount = body_json
-                .get("amount")
-                .expect("Response should contain amount")
-                .as_i64()
-                .expect("amount should be a number");
-            assert_eq!(
-                amount, 0,
-                "Without provider_product_info, amount should be 0"
-            );
-        } else {
-            // Error response is also acceptable
-            assert!(
-                status == StatusCode::CONFLICT
-                    || status == StatusCode::BAD_REQUEST
-                    || status == StatusCode::INTERNAL_SERVER_ERROR,
-                "Expected error or 201, got {}: {}",
-                status,
-                body_text
-            );
-        }
+        // Then: Stripe purchase resolution refuses a mapping row without
+        // price/currency info (422 fail-loud). The historical silent fallback
+        // (amount=0 / "usd") could never produce a legitimate charge and has
+        // been replaced by an explicit error; store-priced providers
+        // (apple/google/wechat/creem) are exempt and keep their sentinel
+        // amount semantics.
+        assert_eq!(
+            status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "stripe + no price info must fail 422, got {}: {}",
+            status,
+            body_text
+        );
+        assert!(
+            body_text.contains("Price info missing"),
+            "error should name the missing price info, got: {body_text}"
+        );
     }
 
     // =========================================================================

@@ -213,6 +213,16 @@ pub trait BillingRepository: Send + Sync {
         realm_id: &str,
     ) -> impl Future<Output = Result<Vec<EntitlementMapping>, CoreError>> + Send;
 
+    /// List enabled Stripe mapping rows for an entitlement key, scoped to the
+    /// realm. Backs the external currency-set aggregation and the by-currency
+    /// default-price resolution; Creem/IAP rows are excluded because their
+    /// pricing is provider/store-side.
+    fn find_enabled_stripe_mappings_by_entitlement(
+        &self,
+        realm_id: &str,
+        entitlement_key: &str,
+    ) -> impl Future<Output = Result<Vec<EntitlementMapping>, CoreError>> + Send;
+
     /// Find the external subscription ID associated with a payment intent,
     /// by tracing through previously stored payment events (e.g. checkout.session.completed).
     fn find_external_subscription_id_by_payment_intent(

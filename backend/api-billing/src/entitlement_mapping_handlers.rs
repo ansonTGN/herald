@@ -574,6 +574,8 @@ pub async fn create_entitlement_mapping(
                 service_duration_days: request.service_duration_days,
                 point_rules,
                 granted_role_ids: request.granted_role_ids,
+                price: request.price,
+                currency: request.currency,
                 enabled: request.enabled,
             },
         )
@@ -739,6 +741,45 @@ pub async fn update_entitlement_mapping(
         }
     }
 
+    // Manual price (WeChat only): PATCH carries price/currency independently
+    // (3-state — absent means leave unchanged), so merge into the stored
+    // `provider_product_info` instead of replacing it. Every other provider
+    // rejects the fields: its price truth is the provider catalog.
+    let provider_product_info = if request.price.is_some() || request.currency.is_some() {
+        if existing.payment_provider != "wechat" {
+            return Err(ApiError::bad_request(
+                "price/currency can only be configured for WeChat mappings".to_string(),
+            ));
+        }
+        if let Some(price) = request.price
+            && price < 1
+        {
+            return Err(ApiError::bad_request(
+                "price (minor units) must be >= 1".to_string(),
+            ));
+        }
+        if let Some(ref currency) = request.currency {
+            herald_core::domain::billing::validate_currency_code(currency)
+                .map_err(|e| ApiError::bad_request(format!("{e}")))?;
+        }
+        let mut info = existing
+            .provider_product_info
+            .clone()
+            .unwrap_or_else(|| serde_json::json!({}));
+        let obj = info.as_object_mut().ok_or_else(|| {
+            ApiError::bad_request("stored provider_product_info is malformed".to_string())
+        })?;
+        if let Some(price) = request.price {
+            obj.insert("price".to_string(), serde_json::json!(price));
+        }
+        if let Some(currency) = request.currency {
+            obj.insert("currency".to_string(), serde_json::json!(currency));
+        }
+        Some(info)
+    } else {
+        existing.provider_product_info.clone()
+    };
+
     let updated_mapping = EntitlementMapping {
         id: existing.id,
         realm_id: existing.realm_id.clone(),
@@ -750,7 +791,7 @@ pub async fn update_entitlement_mapping(
         billing_period: existing.billing_period,
         service_duration_days,
         enabled: request.enabled.unwrap_or(existing.enabled),
-        provider_product_info: existing.provider_product_info,
+        provider_product_info,
         granted_role_ids: existing.granted_role_ids,
         synced_at: existing.synced_at,
         created_at: existing.created_at,

@@ -46,11 +46,14 @@ vi.mock('@/data/query-options', () => ({
   }),
 }))
 
-const { batchMutate } = vi.hoisted(() => ({ batchMutate: vi.fn() }))
+const { batchMutate, updateMutate } = vi.hoisted(() => ({
+  batchMutate: vi.fn(),
+  updateMutate: vi.fn(),
+}))
 
 vi.mock('@/data/entitlement-mapping-mutations', () => ({
   useBatchUpdateEntitlementMappings: () => ({ mutate: batchMutate, isPending: false }),
-  useUpdateEntitlementMapping: () => ({ mutate: vi.fn(), isPending: false }),
+  useUpdateEntitlementMapping: () => ({ mutate: updateMutate, isPending: false }),
   useCreateEntitlementMapping: () => ({ mutate: vi.fn(), isPending: false }),
   isProtectedPriceError: () => false,
   extractActiveSubscriptions: () => null,
@@ -101,10 +104,10 @@ const mapping: EntitlementMappingResponse = {
   ],
 }
 
-function renderPage() {
+function renderPage(mappingOverride?: EntitlementMappingResponse) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   client.setQueryData(['entitlement-mappings', 'realm-1', {}], {
-    items: [mapping],
+    items: [mappingOverride ?? mapping],
     total: 1,
   })
   return render(
@@ -112,6 +115,23 @@ function renderPage() {
       <EntitlementMappingsPage realmId="realm-1" />
     </QueryClientProvider>
   )
+}
+
+// WeChat rows price by hand (no hosted catalog to sync from, PRD
+// wechat-support §2.2): the stored manual price lives in the same
+// provider_product_info JSONB keys sync writes.
+const wechatMapping: EntitlementMappingResponse = {
+  ...mapping,
+  id: 'mapping-wechat',
+  paymentProvider: 'wechat',
+  externalProductId: 'wx_prod_1',
+  externalPriceId: null,
+  entitlementKey: 'wechat-pro',
+  billingType: 'non_renewing',
+  billingPeriod: null,
+  serviceDurationDays: 30,
+  providerProductInfo: { price: 1990, currency: 'CNY', name: 'wechat-pro' },
+  pointRules: [],
 }
 
 describe('EntitlementMappingsPage distribution rules', () => {
@@ -141,5 +161,57 @@ describe('EntitlementMappingsPage distribution rules', () => {
     )
     expect(request.updates[0]).not.toHaveProperty('pointsPerPeriod')
     expect(request.updates[0]).not.toHaveProperty('bucketId')
+  })
+})
+
+describe('EntitlementMappingsPage WeChat manual price', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('edits the stored price in major units and PUTs integer minor units on blur', async () => {
+    const user = userEvent.setup()
+    renderPage(wechatMapping)
+
+    const priceInput = await screen.findByTestId('price-manual-price-mapping-wechat')
+    expect(priceInput).toHaveValue('19.90')
+
+    await user.clear(priceInput)
+    await user.type(priceInput, '29.9')
+    await user.tab()
+
+    expect(updateMutate).toHaveBeenCalledWith({ price: 2990 })
+  })
+
+  it('PUTs the currency when it changes on blur', async () => {
+    const user = userEvent.setup()
+    renderPage(wechatMapping)
+
+    const currencyInput = await screen.findByTestId('price-manual-currency-mapping-wechat')
+    expect(currencyInput).toHaveValue('CNY')
+
+    await user.clear(currencyInput)
+    await user.type(currencyInput, 'USD')
+    await user.tab()
+
+    expect(updateMutate).toHaveBeenCalledWith({ currency: 'USD' })
+  })
+
+  it('does not fire a price PUT when the value is unchanged or invalid', async () => {
+    const user = userEvent.setup()
+    renderPage(wechatMapping)
+
+    const priceInput = await screen.findByTestId('price-manual-price-mapping-wechat')
+    // Unchanged value on blur → no request.
+    await user.click(priceInput)
+    await user.tab()
+    expect(updateMutate).not.toHaveBeenCalled()
+
+    // Malformed input on blur → no request (the editor keeps the text; the
+    // stored value is untouched until a valid price replaces it).
+    await user.clear(priceInput)
+    await user.type(priceInput, 'abc')
+    await user.tab()
+    expect(updateMutate).not.toHaveBeenCalled()
   })
 })
