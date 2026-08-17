@@ -86,22 +86,10 @@ function makeQueryClient() {
 }
 
 function seedOptions(client: QueryClient, items: PurchaseOptionView[]) {
-  // The purchase-options query returns the full list response (items +
-  // realmDefaultCurrency), not a bare array.
-  client.setQueryData(['purchase-options', 'realm-1', 'app-1'], {
-    items,
-    realmDefaultCurrency: null,
-  })
+  // The purchase-options query returns the full list response (items), not a
+  // bare array.
+  client.setQueryData(['purchase-options', 'realm-1', 'app-1'], { items })
   client.setQueryData(['payment-providers', 'realm-1'], [{ platform: 'stripe', name: 'Stripe' }])
-  // The purchase page also reads the profile for the preferred-currency
-  // override; seed it so no real profile request fires.
-  client.setQueryData(['profile'], {
-    id: 'user-1',
-    email: 'user@example.com',
-    nickname: null,
-    preferredCurrency: null,
-    status: 1,
-  })
 }
 
 function makeWrapper(client: QueryClient) {

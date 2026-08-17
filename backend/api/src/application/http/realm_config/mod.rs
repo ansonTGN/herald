@@ -443,13 +443,6 @@ pub async fn upsert_realm_config(
         }
     }
 
-    // Realm default currency must be a valid ISO 4217 code (reserved codes
-    // XXX/XTS rejected); invalid codes leave the stored config untouched.
-    if request.config_type == ConfigType::Billing && request.config_key == "default_currency" {
-        herald_core::domain::billing::validate_currency_code(&request.config_value)
-            .map_err(|e| ApiError::bad_request(e.to_string()))?;
-    }
-
     let config = realm_config_service
         .upsert_config(identity, realm_id, request)
         .await

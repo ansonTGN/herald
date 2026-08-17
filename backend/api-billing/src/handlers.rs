@@ -29,7 +29,6 @@ use herald_core::domain::billing::entities::BillingType;
 use herald_core::domain::billing::{BillingRepository, EntitlementMapping, Subscription};
 use herald_core::domain::common::entities::app_errors::CoreError;
 use herald_core::domain::payment_attempt::PaymentAttemptRepository;
-use herald_core::domain::realm_config::RealmConfigRepository;
 use herald_core::domain::user::UserRoleRepository;
 
 fn subscription_to_response(sub: &Subscription) -> SubscriptionDetailResponse {
@@ -542,39 +541,14 @@ pub async fn list_purchase_options(
     // List ALL enabled price-granularity mappings for the realm (recurring +
     // one_time). Page size is set high to return the full purchasable set in a
     // single page; the purchase page expects a flat list, not pagination.
-    //
-    // The list and the realm default currency below are independent reads
-    // (both keyed only by the path realm id), so run them concurrently instead
-    // of stacking two DB round trips on the purchase-page request path.
-    let mappings_result = state.billing_repository.list_entitlement_mappings(
-        &realm_id,
-        None,
-        Some(true),
-        Some(1),
-        Some(200),
-    );
-    let default_currency_result = state.realm_config_repository.get(
-        realm_id.to_string(),
-        "billing".to_string(),
-        "default_currency".to_string(),
-    );
-    let (mappings_result, default_currency_result) =
-        tokio::join!(mappings_result, default_currency_result);
-
-    let (mappings, _total) = mappings_result.map_err(|e| {
-        tracing::error!(realm_id = %realm_id, error = %e, "Failed to list purchase options");
-        ApiError::internal("Failed to list purchase options".to_string())
-    })?;
-
-    // Internal read of the realm default currency (the purchase-page user
-    // must not need `settings.view` on realm_config). Absent config → None.
-    let realm_default_currency = default_currency_result
+    let (mappings, _total) = state
+        .billing_repository
+        .list_entitlement_mappings(&realm_id, None, Some(true), Some(1), Some(200))
+        .await
         .map_err(|e| {
-            tracing::error!(realm_id = %realm_id, error = %e, "Failed to load realm default currency");
-            ApiError::internal("Failed to load realm default currency".to_string())
-        })?
-        .filter(|rc| rc.enabled)
-        .map(|rc| rc.config_value);
+            tracing::error!(realm_id = %realm_id, error = %e, "Failed to list purchase options");
+            ApiError::internal("Failed to list purchase options".to_string())
+        })?;
 
     // Build the base views (sets `grants_role` from mapping fields), then for
     // the gated combo (one_time + non-empty granted_role_ids) compute
@@ -619,10 +593,7 @@ pub async fn list_purchase_options(
         items.push(view);
     }
 
-    Ok(Json(PurchaseOptionListResponse {
-        items,
-        realm_default_currency,
-    }))
+    Ok(Json(PurchaseOptionListResponse { items }))
 }
 
 #[cfg(test)]

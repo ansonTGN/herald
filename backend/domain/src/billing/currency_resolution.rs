@@ -288,7 +288,7 @@ mod tests {
         assert!(validate_currency_code("USDD").is_err());
         assert!(validate_currency_code("美元").is_err());
         assert!(validate_currency_code("Us1").is_err());
-        // ISO 4217 reserved codes must never be storable as a preference
+        // ISO 4217 reserved codes must never be accepted
         assert!(validate_currency_code("XXX").is_err());
         assert!(validate_currency_code("XTS").is_err());
     }

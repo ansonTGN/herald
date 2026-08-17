@@ -14,9 +14,7 @@ import {
   type WhiteLabelConfigForm,
   type WhiteLabelBackgroundForm,
   type CustomDomainConfigForm,
-  type BillingCurrencyConfigForm,
 } from '@/lib/schemas/realm-config'
-import { normalizeCurrencyCode } from '@/lib/currency-utils'
 
 /**
  * Parses TOTP configuration from realm config array
@@ -246,36 +244,6 @@ export function buildEmailConfigRequest(config: EmailConfigForm) {
     configValue: entry.configValue,
     isSecret: entry.isSecret,
   }))
-}
-
-// ==================== Billing（Realm 默认货币）配置 ====================
-
-/**
- * Parses the realm default currency from realm config rows. The value lives in
- * the single `billing/default_currency` row as a plain string; a missing row
- * means the realm has no default currency configured.
- */
-export function parseBillingCurrencyConfig(
-  configs: RealmConfigResponse[]
-): BillingCurrencyConfigForm {
-  const row = configs.find((c) => c.configType === 'billing' && c.configKey === 'default_currency')
-  return { defaultCurrency: row?.configValue ?? '' }
-}
-
-/**
- * Builds the billing currency config request for upsert operation. The code is
- * trimmed and uppercased to the canonical ISO 4217 form the backend validates
- * against (3 uppercase letters, reserved codes rejected).
- */
-export function buildBillingCurrencyConfigRequest(config: BillingCurrencyConfigForm) {
-  return [
-    {
-      configType: 'billing' as const,
-      configKey: 'default_currency',
-      configValue: normalizeCurrencyCode(config.defaultCurrency),
-      isSecret: false,
-    },
-  ]
 }
 
 // ==================== White-label 配置 ====================

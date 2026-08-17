@@ -269,10 +269,8 @@
 | US-PW-004 | 一次性永久权益一人一次防重复购买 | Regular User | P0 | [billing/support-paywall](billing/support-paywall.md#故事-4一次性永久权益一人一次防重复购买-us-pw-004) |
 | US-PW-005 | 支付事件触发 role 撤销 | System | P0 | [billing/support-paywall](billing/support-paywall.md#故事-5支付事件触发-role-撤销-us-pw-005) |
 | US-PW-006 | 第三方应用凭 role 一行判断解锁功能 | Third-Party App | P1 | [billing/support-paywall](billing/support-paywall.md#故事-6第三方应用凭-role-一行判断解锁功能-us-pw-006) |
-| US-MC-001 | 配置 Realm 默认偏好货币 | Realm Admin | P0 | [billing/multiple-currency](billing/multiple-currency.md#故事-1配置-realm-默认偏好货币-us-mc-001) |
-| US-MC-002 | 设置个人偏好货币覆盖 | Regular User | P1 | [billing/multiple-currency](billing/multiple-currency.md#故事-2设置个人偏好货币覆盖-us-mc-002) |
-| US-MC-003 | 购买页按货币分组并高亮偏好货币 | Regular User | P0 | [billing/multiple-currency](billing/multiple-currency.md#故事-3购买页按货币分组并高亮偏好货币-us-mc-003) |
-| US-MC-004 | 按偏好货币解析价格行发起购买 | Regular User | P0 | [billing/multiple-currency](billing/multiple-currency.md#故事-4按偏好货币解析价格行发起购买-us-mc-004) |
+| US-MC-003 | 购买页按货币分组、显式选择货币（无默认） | Regular User | P0 | [billing/multiple-currency](billing/multiple-currency.md#故事-3购买页按货币分组显式选择货币无默认-us-mc-003) |
+| US-MC-004 | 按（显式选定的）货币价格行发起购买 | Regular User | P0 | [billing/multiple-currency](billing/multiple-currency.md#故事-4按显式选定的货币价格行发起购买-us-mc-004) |
 | US-MC-005 | 查询可购权益支持的货币集合 | Third-Party App | P0 | [billing/multiple-currency](billing/multiple-currency.md#故事-5查询可购权益支持的货币集合-us-mc-005) |
 | US-MC-006 | Creem / IAP / WeChat Pay 单一价格降级展示 | Regular User | P2 | [billing/multiple-currency](billing/multiple-currency.md#故事-6creem--iap--wechat-pay-单一价格降级展示-us-mc-006) |
 

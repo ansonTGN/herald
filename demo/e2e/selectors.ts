@@ -201,22 +201,6 @@ export const SELECTORS = {
     nicknameInput: '[data-testid="nickname-input"]',
     statusField: '[data-testid="profile-status"]',
     saveButton: '[data-testid="save-profile-button"]',
-    /**
-     * Preferred-currency override card (self-service).
-     *
-     * Anchors calibrated against
-     * frontend/src/routes/$realmId/user/profile.tsx (PreferredCurrencyCard).
-     * `preferredCurrencyCurrent` shows the saved override (or the localized
-     * "not set" copy); `preferredCurrencyError` renders ONLY for a failed
-     * local ISO 4217 validation, and the mutation is never fired in that
-     * state — the assertion pair (error visible + current unchanged) is the
-     * load-bearing invalid-code check.
-     */
-    preferredCurrencyCurrent: '[data-testid="preferred-currency-current"]',
-    preferredCurrencyInput: '[data-testid="preferred-currency-input"]',
-    preferredCurrencySave: '[data-testid="preferred-currency-save"]',
-    preferredCurrencyClear: '[data-testid="preferred-currency-clear"]',
-    preferredCurrencyError: '[data-testid="preferred-currency-error"]',
     changePasswordHeading: '[data-testid="change-password-heading"]',
     oldPasswordInput: '[data-testid="change-password-old-input"]',
     newPasswordInput: '[data-testid="change-password-new-input"]',
@@ -810,28 +794,6 @@ export const SELECTORS = {
   },
 
   /**
-   * Billing default-currency configuration (Settings > Billing tab)
-   *
-   * Anchors calibrated against:
-   * - frontend/src/routes/$realmId/manage/settings.tsx (`billing-tab`)
-   * - frontend/src/components/realm-config/billing-currency-config-form.tsx
-   *   (all others)
-   *
-   * The Save button is disabled while the trimmed value is empty or locally
-   * invalid; `invalidHint` renders only for a malformed / reserved ISO 4217
-   * code (DEC-multiple_currency-010). There is no clear action — the effective
-   * default is left as-is when the form is never saved.
-   *
-   * User story: US-MC-001
-   */
-  billingCurrencyConfig: {
-    tab: '[data-testid="billing-tab"]',
-    input: '[data-testid="billing-default-currency-input"]',
-    invalidHint: '[data-testid="billing-currency-invalid-hint"]',
-    saveButton: '[data-testid="billing-currency-save-button"]',
-  },
-
-  /**
    * Custom-domain Configuration Selectors (Settings > Custom-domain tab)
    *
    * Anchors calibrated against:
@@ -1151,13 +1113,14 @@ export const SELECTORS = {
    * - The switcher renders ONLY for switchable groups (all rows Stripe-priced
    *   AND ≥2 currencies). Store-priced or single-currency groups degrade to a
    *   flat list — assert the ABSENCE of `switch(slug)` for the degrade story.
-   * - A switchable group renders ONLY the active currency's price cards, so
-   *   "which currency is highlighted" is asserted via visible price cards
-   *   (persistent page state), not via transient styling.
+   * - A switchable group renders NO price cards until the user explicitly
+   *   picks a currency (no default), then renders ONLY the picked currency's
+   *   price cards — asserted via visible price cards (persistent page state),
+   *   not via transient styling.
    * - `option(slug, currency)` takes an uppercase ISO code; the testid is
-   *   lowercase (DEC-multiple-currency-012 case normalization).
+   *   lowercase (DEC-multiple_currency-012 case normalization).
    *
-   * User stories: US-MC-003 (grouping + switch + unavailable hint),
+   * User stories: US-MC-003 (grouping + explicit selection),
    * US-MC-004 (explicit-row checkout), US-MC-006 (degrade display).
    */
   purchaseCurrencyGroup: {
@@ -1165,8 +1128,6 @@ export const SELECTORS = {
     switch: (slug: string) => `[data-testid="purchase-currency-switch-${slug}"]`,
     option: (slug: string, currency: string) =>
       `[data-testid="purchase-currency-option-${slug}-${currency.toLowerCase()}"]`,
-    preferredUnavailable: (slug: string) =>
-      `[data-testid="purchase-currency-preferred-unavailable-${slug}"]`,
     adaptivePricingNote: (slug: string) =>
       `[data-testid="purchase-adaptive-pricing-note-${slug}"]`,
   },

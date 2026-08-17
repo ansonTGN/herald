@@ -506,10 +506,4 @@ pub struct PurchaseOptionView {
 #[serde(rename_all = "camelCase")]
 pub struct PurchaseOptionListResponse {
     pub items: Vec<PurchaseOptionView>,
-    /// Realm default currency (realm_config `billing/default_currency`),
-    /// `null` when the realm has none. Lets the purchase page compute the
-    /// effective preferred currency (user override ?? realm default) without
-    /// requiring `settings.view` on realm_config.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub realm_default_currency: Option<String>,
 }

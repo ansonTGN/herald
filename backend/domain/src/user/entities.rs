@@ -98,9 +98,6 @@ pub struct Profile {
     pub id: Uuid,
     pub realm_id: String,
     pub nickname: Option<String>,
-    /// User-level preferred currency override (ISO 4217 code). `None` means
-    /// no override; currency resolution falls back to the realm default.
-    pub preferred_currency: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -126,7 +123,6 @@ impl Profile {
             id: user_id,
             realm_id,
             nickname,
-            preferred_currency: None,
             created_at: now,
             updated_at: now,
         }

@@ -11,7 +11,6 @@ import {
   purchaseOptionsQueryOptions,
   paymentProvidersQueryOptions,
   paymentAttemptStatusQueryOptions,
-  profileQueryOptions,
   queryKeys,
   requireUserFeature,
 } from '@/data/query-options'
@@ -125,19 +124,11 @@ export function PurchasePointsPage({
   )
 
   // Fetch purchase options (price-granularity flat list, replaces the former
-  // entitlement-key-grouped one-time-mappings source). The response also carries
-  // the realm default currency so the page can compute the effective preferred
-  // currency without a settings-scoped realm_config query.
+  // entitlement-key-grouped one-time-mappings source).
   const { data: optionsData, isLoading: optionsLoading } = useQuery(
     purchaseOptionsQueryOptions(realmId, clientAppId)
   )
   const options = useMemo(() => optionsData?.items ?? [], [optionsData])
-  const realmDefaultCurrency = optionsData?.realmDefaultCurrency ?? null
-  // User-level preferred currency override (falls back to the realm default
-  // when unset). Only drives display highlighting — purchase always submits
-  // the explicitly selected price row's mapping id.
-  const { data: profile } = useQuery(profileQueryOptions)
-  const userPreferredCurrency = profile?.preferredCurrency ?? null
   // Providers are still fetched so the payment step can render provider context;
   // the selected option's own provider is the one used at submit.
   const { data: providers, isLoading: providersLoading } = useQuery(
@@ -449,8 +440,6 @@ export function PurchasePointsPage({
                         <CurrencyPurchaseGroup
                           key={group.entitlementKey}
                           group={group}
-                          userPreferredCurrency={userPreferredCurrency}
-                          realmDefaultCurrency={realmDefaultCurrency}
                           selectedMappingId={selectedMappingId}
                           onSelect={setSelectedMappingId}
                         />
@@ -475,8 +464,6 @@ export function PurchasePointsPage({
                         <CurrencyPurchaseGroup
                           key={group.entitlementKey}
                           group={group}
-                          userPreferredCurrency={userPreferredCurrency}
-                          realmDefaultCurrency={realmDefaultCurrency}
                           selectedMappingId={selectedMappingId}
                           onSelect={setSelectedMappingId}
                         />

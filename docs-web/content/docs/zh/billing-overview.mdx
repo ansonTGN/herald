@@ -193,7 +193,7 @@ Stripe、Creem、WeChat Pay 是发起式平台，通过 PaymentAttempt 统一管
 
 ### 多货币
 
-货币挂在目录本身：每个 Stripe Price 自带货币，一个产品卖多种货币就是多行映射。Realm 默认货币加可选的用户个人偏好决定购买页高亮哪种货币；按货币解析是严格的——不回退第二个货币，不产生零金额扣款。Creem、IAP、WeChat Pay 保持单一价格（WeChat 的手工价格与币种配置在映射上）。详见[多货币定价指南](/docs/zh/billing-multi-currency)。
+货币挂在目录本身：每个 Stripe Price 自带货币，一个产品卖多种货币就是多行映射。没有默认货币——购买页展示全部已配置货币，由用户显式选择；按货币解析是严格的——不回退第二个货币，不产生零金额扣款。Creem、IAP、WeChat Pay 保持单一价格（WeChat 的手工价格与币种配置在映射上）。详见[多货币定价指南](/docs/zh/billing-multi-currency)。
 
 ## 相关文档
 

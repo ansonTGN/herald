@@ -193,7 +193,7 @@ Stripe, Creem, and WeChat Pay are initiator-style platforms; the payment process
 
 ### Multi-currency
 
-Currency rides on the catalog itself: each Stripe Price carries its currency, and a product sold in several currencies simply has several mapping rows. A realm default currency plus an optional per-user preference decide which currency the purchase page highlights; resolution by currency is strict — no fallback to a second currency, no zero-amount charges. Creem, IAP, and WeChat Pay stay single-price (WeChat's manual price and currency live on the mapping). See the [Multi-Currency Pricing guide](/docs/billing-multi-currency).
+Currency rides on the catalog itself: each Stripe Price carries its currency, and a product sold in several currencies simply has several mapping rows. There is no default currency — the purchase page shows every configured currency and the user explicitly picks one; resolution by currency is strict — no fallback to a second currency, no zero-amount charges. Creem, IAP, and WeChat Pay stay single-price (WeChat's manual price and currency live on the mapping). See the [Multi-Currency Pricing guide](/docs/billing-multi-currency).
 
 ## Related docs
 

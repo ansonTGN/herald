@@ -368,25 +368,6 @@ pub enum ConfigType {
     /// with `config_key == "mch_id"` exists.
     Wechat,
 
-    /// Billing preference configuration
-    ///
-    /// Valid config_key values:
-    /// - `default_currency`: Realm default currency as an ISO 4217 code
-    ///   (non-secret, e.g. "USD"). Validated on the write path
-    ///   (`^[A-Z]{3}$`, reserved codes XXX/XTS rejected).
-    ///
-    /// Example default currency configuration:
-    /// ```json
-    /// {
-    ///   "config_type": "billing",
-    ///   "config_key": "default_currency",
-    ///   "config_value": "USD",
-    ///   "is_secret": false,
-    ///   "enabled": true
-    /// }
-    /// ```
-    Billing,
-
     /// Email provider configuration
     ///
     /// Valid config_key values:
@@ -514,7 +495,6 @@ impl ConfigType {
             "apple" => ConfigType::Apple,
             "google" => ConfigType::Google,
             "wechat" => ConfigType::Wechat,
-            "billing" => ConfigType::Billing,
             "email" => ConfigType::Email,
             "invoice_policy" => ConfigType::InvoicePolicy,
             "email_otp" => ConfigType::EmailOtp,
@@ -542,7 +522,6 @@ impl ConfigType {
             ConfigType::Apple => "apple",
             ConfigType::Google => "google",
             ConfigType::Wechat => "wechat",
-            ConfigType::Billing => "billing",
             ConfigType::Email => "email",
             ConfigType::InvoicePolicy => "invoice_policy",
             ConfigType::EmailOtp => "email_otp",

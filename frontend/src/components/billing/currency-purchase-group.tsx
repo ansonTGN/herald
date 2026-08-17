@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Check } from 'lucide-react'
@@ -8,9 +8,6 @@ import { formatInvoiceAmount } from '@/lib/invoice-utils'
 import { deriveSharedKeyColor } from '@/components/billing/shared-key-color'
 import {
   isCurrencySwitchable,
-  isPreferredCurrencyUnavailable,
-  resolveEffectivePreferredCurrency,
-  resolveHighlightedCurrency,
   type EntitlementOptionGroup,
 } from '@/components/billing/currency-utils'
 
@@ -159,51 +156,38 @@ function entitlementSlug(entitlementKey: string): string {
  * the active currency. The switcher only renders when every row is
  * Stripe-priced and spans multiple currencies; store-priced providers (Creem /
  * Apple / Google / WeChat) and single-currency products degrade to the plain
- * price list with no switcher, and the preferred currency never filters what
- * the user may buy — it only picks the initially highlighted currency.
+ * price list with no switcher. There is no default currency: with multiple
+ * currencies the user must explicitly pick one before price rows show; a
+ * single currency is auto-selected because it is the only choice.
  */
 export function CurrencyPurchaseGroup({
   group,
-  userPreferredCurrency,
-  realmDefaultCurrency,
   selectedMappingId,
   onSelect,
 }: {
   group: EntitlementOptionGroup
-  userPreferredCurrency: string | null | undefined
-  realmDefaultCurrency: string | null | undefined
   selectedMappingId: string | null
   onSelect: (mappingId: string) => void
 }) {
   const slug = entitlementSlug(group.entitlementKey)
   const switchable = isCurrencySwitchable(group)
 
-  // Highlight chain: user preferred → realm default → first available. A
-  // manual pick overrides it until the picked currency disappears from the
-  // refreshed options, at which point the chain takes over again.
-  const highlightedCurrency = useMemo(
-    () => resolveHighlightedCurrency(group.currencies, userPreferredCurrency, realmDefaultCurrency),
-    [group.currencies, userPreferredCurrency, realmDefaultCurrency]
-  )
+  // No default selection: a manual pick holds until the picked currency
+  // disappears from the refreshed options. A single currency is the only
+  // choice, so it is active without requiring a click.
   const [manualCurrency, setManualCurrency] = useState<string | null>(null)
   const activeCurrency =
     manualCurrency && group.currencies.includes(manualCurrency)
       ? manualCurrency
-      : (highlightedCurrency ?? group.currencies[0])
+      : group.currencies.length === 1
+        ? group.currencies[0]
+        : null
 
   // Switchable groups render only the active currency's rows; degraded groups
   // render everything (single currency or store-priced rows carry no switch).
   const visibleOptions = switchable
     ? (group.currencyGroups.find((g) => g.currency === activeCurrency)?.options ?? [])
     : group.options
-
-  const effectivePreferred = resolveEffectivePreferredCurrency(
-    userPreferredCurrency,
-    realmDefaultCurrency
-  )
-  const preferredUnavailable =
-    switchable &&
-    isPreferredCurrencyUnavailable(group.currencies, userPreferredCurrency, realmDefaultCurrency)
 
   return (
     <div className="space-y-3" data-testid={`purchase-entitlement-${slug}`}>
@@ -238,24 +222,25 @@ export function CurrencyPurchaseGroup({
           </span>
         </div>
       )}
-      {preferredUnavailable && effectivePreferred && (
+      {switchable && activeCurrency === null ? (
         <p
           className="text-sm text-muted-foreground"
-          data-testid={`purchase-currency-preferred-unavailable-${slug}`}
+          data-testid={`purchase-currency-select-prompt-${slug}`}
         >
-          {m['purchase.currency_preferred_unavailable']({ currency: effectivePreferred })}
+          {m['purchase.currency_select_prompt']()}
         </p>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {visibleOptions.map((option) => (
+            <PriceCard
+              key={option.mappingId}
+              option={option}
+              isSelected={selectedMappingId === option.mappingId}
+              onSelect={() => onSelect(option.mappingId)}
+            />
+          ))}
+        </div>
       )}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {visibleOptions.map((option) => (
-          <PriceCard
-            key={option.mappingId}
-            option={option}
-            isSelected={selectedMappingId === option.mappingId}
-            onSelect={() => onSelect(option.mappingId)}
-          />
-        ))}
-      </div>
     </div>
   )
 }

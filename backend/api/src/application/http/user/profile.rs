@@ -29,10 +29,6 @@ pub struct UserProfile {
     pub id: Uuid,
     pub email: String,
     pub nickname: Option<String>,
-    /// User-level preferred currency override (ISO 4217 code); `None` means
-    /// no override and resolution falls back to the realm default currency.
-    #[serde(rename = "preferredCurrency")]
-    pub preferred_currency: Option<String>,
     pub status: i16,
 }
 
@@ -40,24 +36,6 @@ pub struct UserProfile {
 pub struct UpdateProfileRequest {
     #[validate(length(max = 50))]
     pub nickname: Option<String>,
-    /// Tri-state: absent = leave unchanged, `null` = clear the override,
-    /// value = set (must be a valid ISO 4217 code, reserved codes rejected).
-    #[serde(
-        default,
-        rename = "preferredCurrency",
-        deserialize_with = "deserialize_double_option"
-    )]
-    pub preferred_currency: Option<Option<String>>,
-}
-
-/// Serde collapses a JSON `null` and a missing field to `None` by default;
-/// this keeps them distinct so the PUT can express "clear" (null) vs
-/// "leave unchanged" (absent).
-fn deserialize_double_option<'de, D>(deserializer: D) -> Result<Option<Option<String>>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    Ok(Some(Option::<String>::deserialize(deserializer)?))
 }
 
 // ==================== Handler Functions ====================
@@ -94,17 +72,16 @@ pub async fn get_profile(
         ApiError::internal("Failed to get user profile")
     })?;
 
-    // Try to get profile for additional nickname / preferred currency
-    let (nickname, preferred_currency) = match user_repo.get_profile(user_id).await {
-        Ok(profile) => (profile.nickname, profile.preferred_currency),
-        Err(_) => (user.nickname.clone(), None), // Fallback to user.nickname if profile doesn't exist
+    // Try to get profile for additional nickname
+    let nickname = match user_repo.get_profile(user_id).await {
+        Ok(profile) => profile.nickname,
+        Err(_) => user.nickname.clone(), // Fallback to user.nickname if profile doesn't exist
     };
 
     Ok(ApiResult::ok(UserProfile {
         id: user.id,
         email: user.email,
         nickname,
-        preferred_currency,
         status: user.status.into(),
     }))
 }
@@ -138,26 +115,13 @@ pub async fn update_profile(
         ApiError::internal("Invalid user_id format")
     })?;
 
-    // Validate before touching stored data: an invalid currency code leaves
-    // the previous value untouched (rejected with 400).
-    if let Some(Some(code)) = payload.preferred_currency.as_ref() {
-        herald_core::domain::billing::validate_currency_code(code).map_err(|e| {
-            tracing::warn!(currency = %code, "Invalid preferred currency code");
-            ApiError::bad_request(e.to_string())
-        })?;
-    }
-
     // Update profile if any field is provided; create the row when missing.
     // Both write paths return the stored row, so the response is built from it
     // without re-reading the profile table.
     let mut updated_profile: Option<Profile> = None;
-    if payload.nickname.is_some() || payload.preferred_currency.is_some() {
+    if payload.nickname.is_some() {
         match user_repo
-            .update_profile(
-                user_id,
-                payload.nickname.clone().map(Some),
-                payload.preferred_currency.clone(),
-            )
+            .update_profile(user_id, payload.nickname.clone().map(Some))
             .await
         {
             Ok(profile) => updated_profile = Some(profile),
@@ -168,7 +132,6 @@ pub async fn update_profile(
                     id: user_id,
                     realm_id: identity.realm_id(),
                     nickname: payload.nickname.clone(),
-                    preferred_currency: payload.preferred_currency.clone().flatten(),
                     created_at: now,
                     updated_at: now,
                 };
@@ -191,11 +154,11 @@ pub async fn update_profile(
     })?;
 
     // The no-write path (no fields provided) still reads the stored profile.
-    let (nickname, preferred_currency) = match updated_profile {
-        Some(profile) => (profile.nickname, profile.preferred_currency),
+    let nickname = match updated_profile {
+        Some(profile) => profile.nickname,
         None => match user_repo.get_profile(user_id).await {
-            Ok(profile) => (profile.nickname, profile.preferred_currency),
-            Err(_) => (user.nickname.clone(), None),
+            Ok(profile) => profile.nickname,
+            Err(_) => user.nickname.clone(),
         },
     };
 
@@ -203,7 +166,6 @@ pub async fn update_profile(
         id: user.id,
         email: user.email,
         nickname,
-        preferred_currency,
         status: user.status.into(),
     }))
 }

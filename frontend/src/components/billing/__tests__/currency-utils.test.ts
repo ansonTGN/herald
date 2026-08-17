@@ -1,23 +1,15 @@
 import { describe, it, expect } from 'vitest'
 import { isValidCurrencyCode, normalizeCurrencyCode } from '@/lib/currency-utils'
-import {
-  groupByCurrency,
-  groupByEntitlement,
-  resolveEffectivePreferredCurrency,
-  resolveHighlightedCurrency,
-  isCurrencySwitchable,
-  isPreferredCurrencyUnavailable,
-} from '../currency-utils'
+import { groupByCurrency, groupByEntitlement, isCurrencySwitchable } from '../currency-utils'
 import { makePurchaseOption as makeOption } from '@/test/fixtures/purchase-option'
 
 // Contracts for the currency-selection helpers. The load-bearing rules:
-//   - Stripe-synced catalog rows carry lowercase codes ("usd") while
-//     preferences are uppercase ISO ("USD") — grouping and matching must be
-//     case-insensitive and normalized to uppercase.
-//   - The display-side highlight chain is user preferred → realm default →
-//     first available; it must never filter what the user can buy.
+//   - Stripe-synced catalog rows carry lowercase codes ("usd") — grouping
+//     must be case-insensitive and normalized to uppercase.
 //   - Only all-Stripe multi-currency entitlements get a currency switcher;
 //     store-priced providers and single-currency products degrade.
+//   - There is no default currency: the user explicitly picks one before
+//     price rows show (a single currency is the only choice).
 
 describe('isValidCurrencyCode', () => {
   it.each(['USD', 'EUR', 'CNY'])('accepts a real uppercase ISO code (%s)', (code) => {
@@ -59,7 +51,7 @@ describe('groupByCurrency', () => {
     ])
 
     // One group with both rows: a "usd" + "USD" split would render two
-    // switcher segments for the same currency and break preference matching.
+    // switcher segments for the same currency.
     expect(groups).toHaveLength(1)
     expect(groups[0].currency).toBe('USD')
     expect(groups[0].options.map((o) => o.mappingId)).toEqual(['m-1', 'm-2'])
@@ -100,40 +92,6 @@ describe('groupByEntitlement', () => {
   })
 })
 
-describe('resolveEffectivePreferredCurrency', () => {
-  it('prefers the user override over the realm default', () => {
-    expect(resolveEffectivePreferredCurrency('CNY', 'USD')).toBe('CNY')
-  })
-
-  it('falls back to the realm default when the override is unset', () => {
-    expect(resolveEffectivePreferredCurrency(null, 'usd')).toBe('USD')
-  })
-
-  it('returns null when neither is configured', () => {
-    expect(resolveEffectivePreferredCurrency(null, null)).toBeNull()
-  })
-})
-
-describe('resolveHighlightedCurrency', () => {
-  const available = ['USD', 'EUR']
-
-  it('highlights the user preferred currency when available (case-insensitive)', () => {
-    expect(resolveHighlightedCurrency(available, 'eur', 'USD')).toBe('EUR')
-  })
-
-  it('falls back to the realm default when the preference is unavailable', () => {
-    expect(resolveHighlightedCurrency(available, 'CNY', 'usd')).toBe('USD')
-  })
-
-  it('falls back to the first available currency when neither preference matches', () => {
-    expect(resolveHighlightedCurrency(available, 'CNY', 'JPY')).toBe('USD')
-  })
-
-  it('returns undefined when no priced currency exists', () => {
-    expect(resolveHighlightedCurrency([], 'CNY', 'USD')).toBeUndefined()
-  })
-})
-
 describe('isCurrencySwitchable', () => {
   it('is true for an all-Stripe entitlement spanning multiple currencies', () => {
     const [group] = groupByEntitlement([
@@ -165,20 +123,5 @@ describe('isCurrencySwitchable', () => {
       makeOption({ entitlementKey: 'pack', paymentProvider: 'wechat', currency: null }),
     ])
     expect(isCurrencySwitchable(group)).toBe(false)
-  })
-})
-
-describe('isPreferredCurrencyUnavailable', () => {
-  it('is true when an effective preference exists but the product lacks it', () => {
-    expect(isPreferredCurrencyUnavailable(['USD', 'EUR'], 'CNY', null)).toBe(true)
-    expect(isPreferredCurrencyUnavailable(['USD', 'EUR'], null, 'CNY')).toBe(true)
-  })
-
-  it('is false when the effective preference is available', () => {
-    expect(isPreferredCurrencyUnavailable(['USD', 'EUR'], 'usd', null)).toBe(false)
-  })
-
-  it('is false when no preference is configured at all', () => {
-    expect(isPreferredCurrencyUnavailable(['USD'], null, null)).toBe(false)
   })
 })
