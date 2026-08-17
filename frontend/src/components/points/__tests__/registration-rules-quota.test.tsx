@@ -25,9 +25,9 @@ vi.mock('@/hooks/use-auth', () => ({
 
 vi.mock('@/data/query-options', () => ({
   queryKeys: {
-    pointsDefaultConfig: (realmId: string) => ['registration-rules', realmId],
+    registrationRules: (realmId: string) => ['registration-rules', realmId],
   },
-  pointsDefaultConfigQueryOptions: (realmId: string) => ({
+  registrationRulesQueryOptions: (realmId: string) => ({
     queryKey: ['registration-rules', realmId],
     queryFn: async () => ({
       realmId,
@@ -77,16 +77,16 @@ vi.mock('@/data/query-options', () => ({
       },
     ],
   }),
-  updatePointsDefaultConfigMutation: updateRules,
+  updateRegistrationRulesMutation: updateRules,
 }))
 
-import { RealmConfigPage } from '@/routes/$realmId/manage/points/default-config'
+import { RegistrationRulesPage } from '@/routes/$realmId/manage/points/registration-rules'
 
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <RealmConfigPage />
+      <RegistrationRulesPage />
     </QueryClientProvider>
   )
 }
@@ -105,7 +105,7 @@ describe('registration distribution rules', () => {
     expect(screen.getByTestId('point-rule-quota-periodic-rule-editor')).toBeInTheDocument()
   })
 
-  it('submits the complete rule set without scalar default-config fields', async () => {
+  it('submits the complete rule set without legacy scalar config fields', async () => {
     const user = userEvent.setup()
     renderPage()
     await user.click(await screen.findByTestId('registration-rules-save'))

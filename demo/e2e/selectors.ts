@@ -753,8 +753,6 @@ export const SELECTORS = {
    * type select is set to `image` or `gradient` (NOT `none`).
    *
    * User stories: US-WL-001/002/003/004
-   * @see .ai/design/ui-custom.md §6.2
-   * @see .ai/user-stories/core/ui-custom.md (DRAFT)
    */
   whiteLabel: {
     tab: '[data-testid="white-label-tab"]',
@@ -1299,7 +1297,7 @@ export const SELECTORS = {
   },
 
   /**
-   * IAP (App Store / Google Play) — provider configuration + create-mapping dialog
+   * IAP (App Store / Google Play) — provider configuration + create-mapping page
    *
    * Anchors calibrated against shipped source (all `data-testid` verified in the
    * DE-D01 session):
@@ -1308,8 +1306,8 @@ export const SELECTORS = {
    * - frontend/src/components/billing/DeleteConfirmDialog.tsx (delete dialog)
    * - frontend/src/components/billing/AppleIapConfigForm.tsx (Apple config form)
    * - frontend/src/components/billing/GooglePlayConfigForm.tsx (Google config form)
-   * - frontend/src/components/billing/create-entitlement-mapping-dialog.tsx
-   *   (create-mapping dialog — consumed by DE-D02)
+   * - frontend/src/components/billing/create-entitlement-mapping-page.tsx
+   *   (create-mapping page — consumed by DE-D02)
    *
    * LOUD NOTE — Google form inputs ship canonical testids:
    * `google-package-name-input` and `google-service-account-json-input` are
@@ -1322,9 +1320,8 @@ export const SELECTORS = {
    *   .locator('input')`) and record the gap in the DE-D01 Handoff.
    *
    * User stories: US-IAP-001 (provider config), US-IAP-002 (create mapping —
-   * DE-D02 consumes the create-mapping dialog selectors below).
-   * @see .ai/design/support-iap.md §4.4 (provider config form testids), §6.2 (demo)
-   * @see .ai/user-stories/billing/support-iap.md (DRAFT — US-IAP-001 P0)
+   * DE-D02 consumes the create-mapping page selectors below).
+   * @see docs/user-stories/billing/support-iap.md
    */
   iap: {
     // --- Payment providers page shell (payment-providers-page.tsx) -----------
@@ -1371,11 +1368,12 @@ export const SELECTORS = {
     googleConfigSubmitButton: '[data-testid="google-config-page-submit-button"]',
     googleConfigCancelButton: '[data-testid="google-config-page-cancel-button"]',
 
-    // --- Create-mapping dialog (create-entitlement-mapping-dialog.tsx) -------
-    // The dialog is opened from the entitlement-mappings page via
-    // `create-mapping-button`. Billing period is conditionally rendered for a
+    // --- Create-mapping page (create-entitlement-mapping-page.tsx) ----------
+    // The page is reached from the entitlement-mappings list via
+    // `create-mapping-button` (navigates to /manage/billing/entitlement-mappings/new).
+    // Billing period is conditionally rendered for a
     // recurring mapping; points fields use the shared pointRule selectors.
-    createMappingDialog: '[data-testid="create-entitlement-mapping-dialog"]',
+    createMappingPage: '[data-testid="create-entitlement-mapping-page"]',
     createMappingButton: '[data-testid="create-mapping-button"]',
     createMappingProviderSelect: '[data-testid="create-mapping-provider-select"]',
     createMappingBillingTypeSelect: '[data-testid="create-mapping-billing-type-select"]',

@@ -70,12 +70,11 @@ export const grantPointsSchema = z.object({
 export type GrantPointsFormData = z.infer<typeof grantPointsSchema>
 
 /**
- * Schema for a single quota window (design §4.2.2 / §4.3.2).
+ * Schema for a single quota window.
  *
  * Mirrors {@link QuotaWindowInput}: `windowSeconds` is the sliding window
  * length in seconds (must be > 0) and `limit` is the quota cap (>= 0; 0 is a
- * valid "grants nothing" edge case). Used by `MultiWindowQuotaEditor` and by
- * `pointsDefaultConfigSchema.freePeriodicQuotaWindows` below.
+ * valid "grants nothing" edge case). Used by `MultiWindowQuotaEditor`.
  */
 export const quotaWindowSchema = z.object({
   windowSeconds: z
@@ -91,52 +90,9 @@ export const quotaWindowSchema = z.object({
 export type QuotaWindowFormData = z.infer<typeof quotaWindowSchema>
 
 /**
- * Schema for points default configuration
+ * Schema for the full multi-window quota array.
  *
- * Note: This schema matches the backend API response.
- * The backend uses freePeriodic* fields instead of dailyPoints* fields.
- * Use generated types from src/lib/api-generated/ as the source of truth.
- */
-export const pointsDefaultConfigSchema = z
-  .object({
-    registrationBonusPoints: z
-      .number()
-      .int({ error: () => m['points.validation_registration_bonus_integer']() })
-      .min(0, { error: () => m['points.validation_registration_bonus_non_negative']() }),
-    freePeriodicPointsAmount: z
-      .number()
-      .int({ error: () => m['points.validation_periodic_amount_integer']() })
-      .min(0, { error: () => m['points.validation_periodic_amount_non_negative']() }),
-    freePeriodicGrantPeriodType: z.enum(['once', 'daily', 'weekly', 'monthly'], {
-      error: () => m['points.validation_grant_period_type_invalid'](),
-    }),
-    freePeriodicValidityDays: z
-      .number()
-      .int({ error: () => m['points.validation_validity_days_integer']() })
-      .min(0, { error: () => m['points.validation_validity_days_non_negative']() }),
-    // Free-periodic quota windows (design §3.3 / §4.2.2). `None` ⟺ leave the
-    // stored value untouched (partial-update semantics on the backend);
-    // `Some([])` ⟺ clear; `Some([...]) ⟺ replace. Capped at 8 windows via
-    // `quotaWindowSchema`. Seeded from `effectiveConfig.freePeriodicQuotaWindows`
-    // and threaded through the form into `updatePointsDefaultConfigMutation`.
-    freePeriodicQuotaWindows: z.array(quotaWindowSchema).max(8).nullable().optional(),
-  })
-  .superRefine((data, ctx) => {
-    if (data.freePeriodicGrantPeriodType !== 'once' && data.freePeriodicValidityDays < 1) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: m['points.validation_validity_days_for_periodic'](),
-        path: ['freePeriodicValidityDays'],
-      })
-    }
-  })
-
-export type PointsDefaultConfigFormData = z.infer<typeof pointsDefaultConfigSchema>
-
-/**
- * Schema for the full multi-window quota array (design §4.2.2 / §4.3.2).
- *
- * Capped at 8 windows (PRD §4 business rule). Each element must satisfy
+ * Capped at 8 windows. Each element must satisfy
  * {@link quotaWindowSchema}. The count cap is enforced here via `max(8)` so
  * pages embedding `MultiWindowQuotaEditor` can rely on the editor's local
  * validation to disable the add button at the same threshold.

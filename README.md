@@ -8,9 +8,6 @@ Start with multi-tenant authentication, billing, payments, credits, and an admin
 
 [Website](https://www.fornetcode.com) · [Live Demo](https://auth.fornetcode.com) · [Get Started](https://www.fornetcode.com/en/docs/getting-started) · [Star on GitHub](https://github.com/timzaak/herald)
 
-> [!IMPORTANT]
-> Herald is in early-stage development and is looking for its first real-world users. Evaluate security, operations, and upgrade requirements before using it for production-critical workloads.
-
 ## Why Herald
 
 AI startup teams need to validate and iterate quickly, but every paid product still needs accounts, tenant isolation, permissions, subscriptions, usage credits, and operational tooling. Building those systems from scratch—or stitching together separate providers—takes time away from the experience that makes the product unique.
@@ -70,14 +67,6 @@ Password: Herald@2026Admin
 ```
 
 The demo lets you explore the admin experience before running Herald locally.
-
-## For Early Adopters
-
-Herald is looking for startup teams building AI products. The current goal is to learn which workflows matter most and whether teams need a hosted version, custom development, or paid technical support.
-
-- **Interested in the direction?** [Star the repository](https://github.com/timzaak/herald).
-- **Ready to test it?** Run the quick start or use the live demo.
-- **Building something with Herald?** [Open an issue](https://github.com/timzaak/herald/issues) and tell us what you need.
 
 ## For AI Agents
 

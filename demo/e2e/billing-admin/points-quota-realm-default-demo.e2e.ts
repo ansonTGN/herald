@@ -2,7 +2,7 @@
  * Realm registration distribution-rule editor Demo.
  *
  * Draft user story: US-MWGR-002
- * Source: .ai/user-stories/billing/multi-wallet-grant-rules.md
+ * Source: docs/user-stories/billing/multi-wallet-grant-rules.md
  */
 
 import { expect } from '@playwright/test'
@@ -42,7 +42,7 @@ test.describe('[Billing Admin] Realm 多账户注册规则 (US-MWGR-002)', () =>
     void demoLogger
 
     await test.step('Given: 打开 Realm 注册规则配置页', async () => {
-      await page.goto(`/manage/points/default-config`)
+      await page.goto(`/manage/points/registration-rules`)
       await expect(page.locator(SELECTORS.pointRule.row(PRIMARY_RULE_ID))).toBeVisible()
       await expect(page.locator(SELECTORS.pointRule.row(PROMO_RULE_ID))).toBeVisible()
     })

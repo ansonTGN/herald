@@ -8,6 +8,23 @@ vi.mock('@/hooks/use-permission', () => ({
   usePermission: () => ({ hasPermission: () => true }),
 }))
 
+// The page's Create Mapping button navigates via TanStack Router. Mock
+// useNavigate + realm routing so the component renders without a router
+// provider (mirrors the client-app-form-page test).
+vi.mock('@tanstack/react-router', async () => {
+  const actual =
+    await vi.importActual<typeof import('@tanstack/react-router')>('@tanstack/react-router')
+  return {
+    ...actual,
+    useNavigate: () => vi.fn(),
+  }
+})
+
+vi.mock('@/lib/realm-routing', () => ({
+  realmPath: (_ctx: unknown, path: string) => path,
+  useResolvedRealmContext: () => ({ realmId: 'admin', mode: 'default' }),
+}))
+
 vi.mock('@/data/query-options', () => ({
   queryKeys: {
     entitlementMappings: (realmId: string) => ['entitlement-mappings', realmId, {}],
@@ -117,9 +134,8 @@ function renderPage(mappingOverride?: EntitlementMappingResponse) {
   )
 }
 
-// WeChat rows price by hand (no hosted catalog to sync from, PRD
-// wechat-support §2.2): the stored manual price lives in the same
-// provider_product_info JSONB keys sync writes.
+// WeChat rows price by hand (no hosted catalog to sync from): the stored
+// manual price lives in the same provider_product_info JSONB keys sync writes.
 const wechatMapping: EntitlementMappingResponse = {
   ...mapping,
   id: 'mapping-wechat',

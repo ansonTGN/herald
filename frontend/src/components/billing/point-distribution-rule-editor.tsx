@@ -17,7 +17,7 @@ import type { PointDistributionRuleFormData } from '@/lib/schemas/billing-forms'
 import type { PointRuleTriggerOption } from '@/components/billing/provider-product-info'
 import { m } from '@/paraglide/messages'
 
-// Re-exported so existing importers (e.g. `default-config.tsx`) keep a stable path.
+// Re-exported so existing importers (e.g. `registration-rules.tsx`) keep a stable path.
 export type { PointRuleTriggerOption }
 
 // Localized labels for the grant-period select. Reuses the existing

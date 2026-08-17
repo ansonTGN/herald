@@ -103,21 +103,6 @@ export async function fillQuotaEditorRows(
 }
 
 /**
- * Fill the required non-quota fields on the realm default config form.
- *
- * The quota editor is embedded in a larger form; saving quota rows is gated by
- * these required fields as well as the row values.
- */
-export async function fillRealmDefaultRequiredFields(page: Page): Promise<void> {
-  await page.locator(SELECTORS.points.freePeriodicPointsAmountInput).fill('50')
-  await page.locator(SELECTORS.points.freePeriodicValidityDaysInput).fill('1')
-
-  const periodSelect = page.locator(SELECTORS.points.freePeriodicGrantPeriodTypeSelect)
-  await periodSelect.click()
-  await page.getByRole('option', { name: /daily/i }).click()
-}
-
-/**
  * Create (or overwrite) multi-window quota configuration on an entitlement
  * mapping by driving the NEW `PointDistributionRuleEditor` flow.
  *
@@ -196,27 +181,6 @@ export async function createEntitlementMappingWithQuotaWindows(
   await fillQuotaEditorRows(page, prefix, windows)
 
   await page.locator(SELECTORS.multiPriceMapping.saveMappingButton).click()
-  await page.waitForLoadState('networkidle')
-}
-
-/** Set the realm default free-periodic quota windows. */
-export async function setRealmDefaultFreePeriodicQuota(
-  page: Page,
-  realmId: string,
-  windows: QuotaWindowFixture[],
-): Promise<void> {
-  await loginAsAdmin(page, { realmId, waitNavigation: true })
-  await page.goto(`/manage/points/default-config`)
-  await expect(page.locator('[data-testid="points-default-config-form"]')).toBeVisible()
-
-  const prefix = 'realm-default-window'
-  await expect(page.locator(SELECTORS.pointsQuotaEditor.editor(prefix))).toBeVisible()
-
-  await fillRealmDefaultRequiredFields(page)
-  await clearQuotaEditorRows(page, prefix)
-  await fillQuotaEditorRows(page, prefix, windows)
-
-  await page.locator(SELECTORS.pointsQuotaEditor.saveConfigButton).click()
   await page.waitForLoadState('networkidle')
 }
 

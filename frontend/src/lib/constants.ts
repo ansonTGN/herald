@@ -73,7 +73,7 @@ export const QUERY_KEYS = {
   PURCHASE_HISTORY: 'purchase-history',
   PAYMENT_ATTEMPT_STATUS: 'payment-attempt-status',
   PAYMENT_PROVIDERS: 'payment-providers',
-  POINTS_DEFAULT_CONFIG: 'points-default-config',
+  REGISTRATION_RULES: 'registration-rules',
   REALM_CONFIGS: 'realm-configs',
   EMAIL_STATUS: 'email-status',
   AUDIT_EVENTS: 'audit-events',

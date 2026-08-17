@@ -12,16 +12,30 @@ interface ProviderSyncButtonProps {
   onSyncComplete?: () => void
 }
 
-// Render order for provider buttons when more than one is configured.
-const PROVIDER_ORDER = ['stripe', 'creem'] as const
+// Payment providers whose hosted product catalogue can be synced into
+// entitlement mappings.
+const SYNCABLE_PLATFORMS = ['stripe', 'creem'] as const
 
 export function ProviderSyncButton({ realmId, onSyncComplete }: ProviderSyncButtonProps) {
   const syncMutation = useSyncProviderProducts(realmId)
   const { data: providers } = useQuery(paymentProvidersQueryOptions(realmId))
 
-  const configured = PROVIDER_ORDER.filter((platform) =>
+  const configuredSyncable = SYNCABLE_PLATFORMS.filter((platform) =>
     (providers ?? []).some((p) => p.platform === platform)
   )
+  const configuredNonSyncable = (providers ?? []).filter(
+    (p) => !(SYNCABLE_PLATFORMS as readonly string[]).includes(p.platform)
+  )
+
+  // Sync genuinely does not apply to WeChat Pay (order-based, no hosted
+  // catalogue — DEC-wechat-support-006) or in-app purchase stores. Rendering
+  // a permanently-disabled "Sync provider" button there reads as broken, and
+  // the nothing-configured hint ("configure a provider first") would be a lie
+  // when providers ARE configured — so hide the affordance entirely. Manual
+  // creation via the Create Mapping button is the correct path for these.
+  if (configuredSyncable.length === 0 && configuredNonSyncable.length > 0) {
+    return null
+  }
 
   const handleSync = (paymentProvider: string) => {
     syncMutation.mutate(
@@ -54,8 +68,8 @@ export function ProviderSyncButton({ realmId, onSyncComplete }: ProviderSyncButt
 
   return (
     <div className="flex items-center gap-2" data-testid="provider-sync-button">
-      {configured.length > 0 ? (
-        configured.map(renderSyncButton)
+      {configuredSyncable.length > 0 ? (
+        configuredSyncable.map(renderSyncButton)
       ) : (
         <TooltipProvider delayDuration={200}>
           <Tooltip>
@@ -63,7 +77,7 @@ export function ProviderSyncButton({ realmId, onSyncComplete }: ProviderSyncButt
               {/* span wrapper so the disabled Button still receives hover events for the tooltip */}
               <span tabIndex={0}>
                 <Button disabled data-testid="sync-button">
-                  <RefreshCw className="mr-2 h-4 w-4" />
+                  <RefreshCw className="h-4 w-4" />
                   {m['billing.sync_provider']()}
                 </Button>
               </span>

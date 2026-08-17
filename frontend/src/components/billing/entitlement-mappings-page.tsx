@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { toast } from 'sonner'
@@ -12,7 +13,6 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/shared'
 import { ProviderSyncButton } from '@/components/billing/provider-sync-button'
-import { CreateEntitlementMappingDialog } from '@/components/billing/create-entitlement-mapping-dialog'
 import { formatProviderName } from '@/components/billing/format-provider-name'
 import {
   readProviderProductInfo,
@@ -57,6 +57,7 @@ import {
   extractActiveSubscriptions,
 } from '@/data/entitlement-mapping-mutations'
 import { usePermission } from '@/hooks/use-permission'
+import { realmPath, useResolvedRealmContext } from '@/lib/realm-routing'
 import { m } from '@/paraglide/messages'
 import type {
   EntitlementMappingResponse,
@@ -72,6 +73,8 @@ interface EntitlementMappingsPageProps {
 
 export function EntitlementMappingsPage({ realmId }: EntitlementMappingsPageProps) {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
+  const realmContext = useResolvedRealmContext()
   const { hasPermission } = usePermission()
   const canManage = hasPermission('billing.manage')
   const canManagePoints = hasPermission('points.manage')
@@ -91,9 +94,6 @@ export function EntitlementMappingsPage({ realmId }: EntitlementMappingsPageProp
   // callback (after awaiting the refetch) rather than via an effect, to
   // comply with the no-setState-in-effect rule.
   const [nextStepOpen, setNextStepOpen] = useState(false)
-
-  // without product sync (notably IAP / App Store / Google Play).
-  const [createOpen, setCreateOpen] = useState(false)
 
   const { data, isLoading } = useQuery({
     ...entitlementMappingsQueryOptions(realmId, {}),
@@ -172,7 +172,9 @@ export function EntitlementMappingsPage({ realmId }: EntitlementMappingsPageProp
         {canManage && (
           <Button
             variant="default"
-            onClick={() => setCreateOpen(true)}
+            onClick={() =>
+              navigate({ to: realmPath(realmContext, '/manage/billing/entitlement-mappings/new') })
+            }
             data-testid="create-mapping-button"
           >
             {m['billing.create_mapping_button']()}
@@ -261,15 +263,6 @@ export function EntitlementMappingsPage({ realmId }: EntitlementMappingsPageProp
       />
 
       <SyncNextStepDialog open={nextStepOpen} onOpenChange={setNextStepOpen} />
-
-      {canManage && (
-        <CreateEntitlementMappingDialog
-          open={createOpen}
-          onOpenChange={setCreateOpen}
-          realmId={realmId}
-          canManagePoints={canManagePoints}
-        />
-      )}
     </div>
   )
 }
@@ -453,7 +446,7 @@ function PriceEditRow({
   const isOneTime = isOneTimeMapping(row.billingType)
   const isNonRenewing = isNonRenewingMapping(row.billingType)
 
-  // pay_model §4.2.1). Instantiated per-row because the hook signature is
+  // Instantiated per-row because the hook signature is
   // (realmId, mappingId) and only non-renewing rows trigger it. Decoupled from
   // the batch save (`save-mapping-button`): independent failure / toast /
   const updateMappingMutation = useUpdateEntitlementMapping(realmId, row.mappingId)
@@ -628,7 +621,7 @@ function PriceEditRow({
           </Field>
         )}
 
-        {/* Role-grant dimension (design §4.4 / §5.2). Orthogonal to billing_type
+        {/* Role-grant dimension. Orthogonal to billing_type
             and points: empty = no role grant (pure credit / payment record);
             selected = roles auto-granted on successful payment. A realm-scoped
             query supplies the assignable (non-builtin) roles. */}

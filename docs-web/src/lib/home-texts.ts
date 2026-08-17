@@ -2,7 +2,7 @@ export interface HomeTexts {
   badge: string;
   heroTitle: string;
   heroDesc: string;
-  earlyAccess: string;
+  getStarted: string;
   liveDemo: string;
   terminal: {
     label: string;
@@ -62,7 +62,7 @@ export const en: HomeTexts = {
   heroTitle: "The open-source foundation for AI products",
   heroDesc:
     "Start with multi-tenant auth, billing, payments, credits, and an admin console. Use AI to shape the rest around your product—not your infrastructure.",
-  earlyAccess: "Join Early Access",
+  getStarted: "Get Started",
   liveDemo: "Live Demo",
   terminal: {
     label: "terminal",
@@ -252,7 +252,7 @@ export const zh: HomeTexts = {
   heroTitle: "AI 产品的开源基础设施",
   heroDesc:
     "多租户认证、计费、支付、积分和管理后台开箱即用。用 AI 围绕你的产品持续迭代，而不是反复搭建基础设施。",
-  earlyAccess: "申请早期体验",
+  getStarted: "快速开始",
   liveDemo: "在线演示",
   terminal: {
     label: "terminal",

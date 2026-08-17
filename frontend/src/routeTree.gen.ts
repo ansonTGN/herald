@@ -58,6 +58,7 @@ import { Route as RealmIdDeviceIndexRouteImport } from './routes/$realmId/device
 import { Route as UserSecurityTotpSetupRouteImport } from './routes/user/security/totp-setup'
 import { Route as UserInvoicesNewRouteImport } from './routes/user/invoices/new'
 import { Route as ManagePointsWalletsRouteImport } from './routes/manage/points/wallets'
+import { Route as ManagePointsRegistrationRulesRouteImport } from './routes/manage/points/registration-rules'
 import { Route as ManagePointsDefaultConfigRouteImport } from './routes/manage/points/default-config'
 import { Route as ManageClientAppsNewRouteImport } from './routes/manage/client-apps/new'
 import { Route as ManageBillingSubscriptionsRouteImport } from './routes/manage/billing/subscriptions'
@@ -95,6 +96,7 @@ import { Route as RealmIdAuthLoginRouteImport } from './routes/$realmId/auth/log
 import { Route as RealmIdAuthForgotPasswordRouteImport } from './routes/$realmId/auth/forgot-password'
 import { Route as ManageBillingPaymentProvidersIndexRouteImport } from './routes/manage/billing/payment-providers/index'
 import { Route as ManageBillingInvoicesIndexRouteImport } from './routes/manage/billing/invoices/index'
+import { Route as ManageBillingEntitlementMappingsIndexRouteImport } from './routes/manage/billing/entitlement-mappings/index'
 import { Route as ManageBillingCreditBucketsIndexRouteImport } from './routes/manage/billing/credit-buckets/index'
 import { Route as RealmIdUserSecurityIndexRouteImport } from './routes/$realmId/user/security/index'
 import { Route as RealmIdUserInvoicesIndexRouteImport } from './routes/$realmId/user/invoices/index'
@@ -108,12 +110,14 @@ import { Route as ManageBillingPaymentProvidersGoogleRouteImport } from './route
 import { Route as ManageBillingPaymentProvidersCreemRouteImport } from './routes/manage/billing/payment-providers/creem'
 import { Route as ManageBillingPaymentProvidersAppleRouteImport } from './routes/manage/billing/payment-providers/apple'
 import { Route as ManageBillingInvoicesNewRouteImport } from './routes/manage/billing/invoices/new'
+import { Route as ManageBillingEntitlementMappingsNewRouteImport } from './routes/manage/billing/entitlement-mappings/new'
 import { Route as ManageBillingCreditBucketsOverviewRouteImport } from './routes/manage/billing/credit-buckets/overview'
 import { Route as ManageApiKeysApiKeyIdEditRouteImport } from './routes/manage/api-keys/$apiKeyId.edit'
 import { Route as RealmIdUserSecurityTotpSetupRouteImport } from './routes/$realmId/user/security/totp-setup'
 import { Route as RealmIdUserInvoicesNewRouteImport } from './routes/$realmId/user/invoices/new'
 import { Route as RealmIdSubscriptionSubscriptionIdHistoryRouteImport } from './routes/$realmId/subscription/$subscriptionId/history'
 import { Route as RealmIdManagePointsWalletsRouteImport } from './routes/$realmId/manage/points/wallets'
+import { Route as RealmIdManagePointsRegistrationRulesRouteImport } from './routes/$realmId/manage/points/registration-rules'
 import { Route as RealmIdManagePointsDefaultConfigRouteImport } from './routes/$realmId/manage/points/default-config'
 import { Route as RealmIdManageClientAppsNewRouteImport } from './routes/$realmId/manage/client-apps/new'
 import { Route as RealmIdManageBillingSubscriptionsRouteImport } from './routes/$realmId/manage/billing/subscriptions'
@@ -125,6 +129,7 @@ import { Route as RealmIdManageApiKeysRevealRouteImport } from './routes/$realmI
 import { Route as RealmIdManageApiKeysNewRouteImport } from './routes/$realmId/manage/api-keys/new'
 import { Route as RealmIdManageBillingPaymentProvidersIndexRouteImport } from './routes/$realmId/manage/billing/payment-providers/index'
 import { Route as RealmIdManageBillingInvoicesIndexRouteImport } from './routes/$realmId/manage/billing/invoices/index'
+import { Route as RealmIdManageBillingEntitlementMappingsIndexRouteImport } from './routes/$realmId/manage/billing/entitlement-mappings/index'
 import { Route as RealmIdManageBillingCreditBucketsIndexRouteImport } from './routes/$realmId/manage/billing/credit-buckets/index'
 import { Route as ManageBillingInvoicesInvoiceIdEditRouteImport } from './routes/manage/billing/invoices/$invoiceId.edit'
 import { Route as RealmIdManageClientAppsClientAppIdEditRouteImport } from './routes/$realmId/manage/client-apps/$clientAppId.edit'
@@ -134,6 +139,7 @@ import { Route as RealmIdManageBillingPaymentProvidersGoogleRouteImport } from '
 import { Route as RealmIdManageBillingPaymentProvidersCreemRouteImport } from './routes/$realmId/manage/billing/payment-providers/creem'
 import { Route as RealmIdManageBillingPaymentProvidersAppleRouteImport } from './routes/$realmId/manage/billing/payment-providers/apple'
 import { Route as RealmIdManageBillingInvoicesNewRouteImport } from './routes/$realmId/manage/billing/invoices/new'
+import { Route as RealmIdManageBillingEntitlementMappingsNewRouteImport } from './routes/$realmId/manage/billing/entitlement-mappings/new'
 import { Route as RealmIdManageBillingCreditBucketsOverviewRouteImport } from './routes/$realmId/manage/billing/credit-buckets/overview'
 import { Route as RealmIdManageApiKeysApiKeyIdEditRouteImport } from './routes/$realmId/manage/api-keys/$apiKeyId.edit'
 import { Route as RealmIdManageBillingInvoicesInvoiceIdEditRouteImport } from './routes/$realmId/manage/billing/invoices/$invoiceId.edit'
@@ -384,6 +390,12 @@ const ManagePointsWalletsRoute = ManagePointsWalletsRouteImport.update({
   path: '/wallets',
   getParentRoute: () => ManagePointsRoute,
 } as any)
+const ManagePointsRegistrationRulesRoute =
+  ManagePointsRegistrationRulesRouteImport.update({
+    id: '/registration-rules',
+    path: '/registration-rules',
+    getParentRoute: () => ManagePointsRoute,
+  } as any)
 const ManagePointsDefaultConfigRoute =
   ManagePointsDefaultConfigRouteImport.update({
     id: '/default-config',
@@ -585,6 +597,12 @@ const ManageBillingInvoicesIndexRoute =
     path: '/',
     getParentRoute: () => ManageBillingInvoicesRoute,
   } as any)
+const ManageBillingEntitlementMappingsIndexRoute =
+  ManageBillingEntitlementMappingsIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => ManageBillingEntitlementMappingsRoute,
+  } as any)
 const ManageBillingCreditBucketsIndexRoute =
   ManageBillingCreditBucketsIndexRouteImport.update({
     id: '/',
@@ -662,6 +680,12 @@ const ManageBillingInvoicesNewRoute =
     path: '/new',
     getParentRoute: () => ManageBillingInvoicesRoute,
   } as any)
+const ManageBillingEntitlementMappingsNewRoute =
+  ManageBillingEntitlementMappingsNewRouteImport.update({
+    id: '/new',
+    path: '/new',
+    getParentRoute: () => ManageBillingEntitlementMappingsRoute,
+  } as any)
 const ManageBillingCreditBucketsOverviewRoute =
   ManageBillingCreditBucketsOverviewRouteImport.update({
     id: '/overview',
@@ -695,6 +719,12 @@ const RealmIdManagePointsWalletsRoute =
   RealmIdManagePointsWalletsRouteImport.update({
     id: '/wallets',
     path: '/wallets',
+    getParentRoute: () => RealmIdManagePointsRoute,
+  } as any)
+const RealmIdManagePointsRegistrationRulesRoute =
+  RealmIdManagePointsRegistrationRulesRouteImport.update({
+    id: '/registration-rules',
+    path: '/registration-rules',
     getParentRoute: () => RealmIdManagePointsRoute,
   } as any)
 const RealmIdManagePointsDefaultConfigRoute =
@@ -762,6 +792,12 @@ const RealmIdManageBillingInvoicesIndexRoute =
     path: '/',
     getParentRoute: () => RealmIdManageBillingInvoicesRoute,
   } as any)
+const RealmIdManageBillingEntitlementMappingsIndexRoute =
+  RealmIdManageBillingEntitlementMappingsIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => RealmIdManageBillingEntitlementMappingsRoute,
+  } as any)
 const RealmIdManageBillingCreditBucketsIndexRoute =
   RealmIdManageBillingCreditBucketsIndexRouteImport.update({
     id: '/',
@@ -815,6 +851,12 @@ const RealmIdManageBillingInvoicesNewRoute =
     id: '/new',
     path: '/new',
     getParentRoute: () => RealmIdManageBillingInvoicesRoute,
+  } as any)
+const RealmIdManageBillingEntitlementMappingsNewRoute =
+  RealmIdManageBillingEntitlementMappingsNewRouteImport.update({
+    id: '/new',
+    path: '/new',
+    getParentRoute: () => RealmIdManageBillingEntitlementMappingsRoute,
   } as any)
 const RealmIdManageBillingCreditBucketsOverviewRoute =
   RealmIdManageBillingCreditBucketsOverviewRouteImport.update({
@@ -904,12 +946,13 @@ export interface FileRoutesByFullPath {
   '/manage/api-keys/new': typeof ManageApiKeysNewRoute
   '/manage/api-keys/reveal': typeof ManageApiKeysRevealRoute
   '/manage/billing/credit-buckets': typeof ManageBillingCreditBucketsRouteWithChildren
-  '/manage/billing/entitlement-mappings': typeof ManageBillingEntitlementMappingsRoute
+  '/manage/billing/entitlement-mappings': typeof ManageBillingEntitlementMappingsRouteWithChildren
   '/manage/billing/invoices': typeof ManageBillingInvoicesRouteWithChildren
   '/manage/billing/payment-providers': typeof ManageBillingPaymentProvidersRouteWithChildren
   '/manage/billing/subscriptions': typeof ManageBillingSubscriptionsRoute
   '/manage/client-apps/new': typeof ManageClientAppsNewRoute
   '/manage/points/default-config': typeof ManagePointsDefaultConfigRoute
+  '/manage/points/registration-rules': typeof ManagePointsRegistrationRulesRoute
   '/manage/points/wallets': typeof ManagePointsWalletsRoute
   '/user/invoices/new': typeof UserInvoicesNewRoute
   '/user/security/totp-setup': typeof UserSecurityTotpSetupRoute
@@ -923,18 +966,20 @@ export interface FileRoutesByFullPath {
   '/$realmId/manage/api-keys/new': typeof RealmIdManageApiKeysNewRoute
   '/$realmId/manage/api-keys/reveal': typeof RealmIdManageApiKeysRevealRoute
   '/$realmId/manage/billing/credit-buckets': typeof RealmIdManageBillingCreditBucketsRouteWithChildren
-  '/$realmId/manage/billing/entitlement-mappings': typeof RealmIdManageBillingEntitlementMappingsRoute
+  '/$realmId/manage/billing/entitlement-mappings': typeof RealmIdManageBillingEntitlementMappingsRouteWithChildren
   '/$realmId/manage/billing/invoices': typeof RealmIdManageBillingInvoicesRouteWithChildren
   '/$realmId/manage/billing/payment-providers': typeof RealmIdManageBillingPaymentProvidersRouteWithChildren
   '/$realmId/manage/billing/subscriptions': typeof RealmIdManageBillingSubscriptionsRoute
   '/$realmId/manage/client-apps/new': typeof RealmIdManageClientAppsNewRoute
   '/$realmId/manage/points/default-config': typeof RealmIdManagePointsDefaultConfigRoute
+  '/$realmId/manage/points/registration-rules': typeof RealmIdManagePointsRegistrationRulesRoute
   '/$realmId/manage/points/wallets': typeof RealmIdManagePointsWalletsRoute
   '/$realmId/subscription/$subscriptionId/history': typeof RealmIdSubscriptionSubscriptionIdHistoryRoute
   '/$realmId/user/invoices/new': typeof RealmIdUserInvoicesNewRoute
   '/$realmId/user/security/totp-setup': typeof RealmIdUserSecurityTotpSetupRoute
   '/manage/api-keys/$apiKeyId/edit': typeof ManageApiKeysApiKeyIdEditRoute
   '/manage/billing/credit-buckets/overview': typeof ManageBillingCreditBucketsOverviewRoute
+  '/manage/billing/entitlement-mappings/new': typeof ManageBillingEntitlementMappingsNewRoute
   '/manage/billing/invoices/new': typeof ManageBillingInvoicesNewRoute
   '/manage/billing/payment-providers/apple': typeof ManageBillingPaymentProvidersAppleRoute
   '/manage/billing/payment-providers/creem': typeof ManageBillingPaymentProvidersCreemRoute
@@ -948,10 +993,12 @@ export interface FileRoutesByFullPath {
   '/$realmId/user/invoices/': typeof RealmIdUserInvoicesIndexRoute
   '/$realmId/user/security/': typeof RealmIdUserSecurityIndexRoute
   '/manage/billing/credit-buckets/': typeof ManageBillingCreditBucketsIndexRoute
+  '/manage/billing/entitlement-mappings/': typeof ManageBillingEntitlementMappingsIndexRoute
   '/manage/billing/invoices/': typeof ManageBillingInvoicesIndexRoute
   '/manage/billing/payment-providers/': typeof ManageBillingPaymentProvidersIndexRoute
   '/$realmId/manage/api-keys/$apiKeyId/edit': typeof RealmIdManageApiKeysApiKeyIdEditRoute
   '/$realmId/manage/billing/credit-buckets/overview': typeof RealmIdManageBillingCreditBucketsOverviewRoute
+  '/$realmId/manage/billing/entitlement-mappings/new': typeof RealmIdManageBillingEntitlementMappingsNewRoute
   '/$realmId/manage/billing/invoices/new': typeof RealmIdManageBillingInvoicesNewRoute
   '/$realmId/manage/billing/payment-providers/apple': typeof RealmIdManageBillingPaymentProvidersAppleRoute
   '/$realmId/manage/billing/payment-providers/creem': typeof RealmIdManageBillingPaymentProvidersCreemRoute
@@ -961,6 +1008,7 @@ export interface FileRoutesByFullPath {
   '/$realmId/manage/client-apps/$clientAppId/edit': typeof RealmIdManageClientAppsClientAppIdEditRoute
   '/manage/billing/invoices/$invoiceId/edit': typeof ManageBillingInvoicesInvoiceIdEditRoute
   '/$realmId/manage/billing/credit-buckets/': typeof RealmIdManageBillingCreditBucketsIndexRoute
+  '/$realmId/manage/billing/entitlement-mappings/': typeof RealmIdManageBillingEntitlementMappingsIndexRoute
   '/$realmId/manage/billing/invoices/': typeof RealmIdManageBillingInvoicesIndexRoute
   '/$realmId/manage/billing/payment-providers/': typeof RealmIdManageBillingPaymentProvidersIndexRoute
   '/$realmId/manage/billing/invoices/$invoiceId/edit': typeof RealmIdManageBillingInvoicesInvoiceIdEditRoute
@@ -1021,10 +1069,10 @@ export interface FileRoutesByTo {
   '/$realmId/user/subscription-history': typeof RealmIdUserSubscriptionHistoryRoute
   '/manage/api-keys/new': typeof ManageApiKeysNewRoute
   '/manage/api-keys/reveal': typeof ManageApiKeysRevealRoute
-  '/manage/billing/entitlement-mappings': typeof ManageBillingEntitlementMappingsRoute
   '/manage/billing/subscriptions': typeof ManageBillingSubscriptionsRoute
   '/manage/client-apps/new': typeof ManageClientAppsNewRoute
   '/manage/points/default-config': typeof ManagePointsDefaultConfigRoute
+  '/manage/points/registration-rules': typeof ManagePointsRegistrationRulesRoute
   '/manage/points/wallets': typeof ManagePointsWalletsRoute
   '/user/invoices/new': typeof UserInvoicesNewRoute
   '/user/security/totp-setup': typeof UserSecurityTotpSetupRoute
@@ -1037,16 +1085,17 @@ export interface FileRoutesByTo {
   '/user/security': typeof UserSecurityIndexRoute
   '/$realmId/manage/api-keys/new': typeof RealmIdManageApiKeysNewRoute
   '/$realmId/manage/api-keys/reveal': typeof RealmIdManageApiKeysRevealRoute
-  '/$realmId/manage/billing/entitlement-mappings': typeof RealmIdManageBillingEntitlementMappingsRoute
   '/$realmId/manage/billing/subscriptions': typeof RealmIdManageBillingSubscriptionsRoute
   '/$realmId/manage/client-apps/new': typeof RealmIdManageClientAppsNewRoute
   '/$realmId/manage/points/default-config': typeof RealmIdManagePointsDefaultConfigRoute
+  '/$realmId/manage/points/registration-rules': typeof RealmIdManagePointsRegistrationRulesRoute
   '/$realmId/manage/points/wallets': typeof RealmIdManagePointsWalletsRoute
   '/$realmId/subscription/$subscriptionId/history': typeof RealmIdSubscriptionSubscriptionIdHistoryRoute
   '/$realmId/user/invoices/new': typeof RealmIdUserInvoicesNewRoute
   '/$realmId/user/security/totp-setup': typeof RealmIdUserSecurityTotpSetupRoute
   '/manage/api-keys/$apiKeyId/edit': typeof ManageApiKeysApiKeyIdEditRoute
   '/manage/billing/credit-buckets/overview': typeof ManageBillingCreditBucketsOverviewRoute
+  '/manage/billing/entitlement-mappings/new': typeof ManageBillingEntitlementMappingsNewRoute
   '/manage/billing/invoices/new': typeof ManageBillingInvoicesNewRoute
   '/manage/billing/payment-providers/apple': typeof ManageBillingPaymentProvidersAppleRoute
   '/manage/billing/payment-providers/creem': typeof ManageBillingPaymentProvidersCreemRoute
@@ -1060,10 +1109,12 @@ export interface FileRoutesByTo {
   '/$realmId/user/invoices': typeof RealmIdUserInvoicesIndexRoute
   '/$realmId/user/security': typeof RealmIdUserSecurityIndexRoute
   '/manage/billing/credit-buckets': typeof ManageBillingCreditBucketsIndexRoute
+  '/manage/billing/entitlement-mappings': typeof ManageBillingEntitlementMappingsIndexRoute
   '/manage/billing/invoices': typeof ManageBillingInvoicesIndexRoute
   '/manage/billing/payment-providers': typeof ManageBillingPaymentProvidersIndexRoute
   '/$realmId/manage/api-keys/$apiKeyId/edit': typeof RealmIdManageApiKeysApiKeyIdEditRoute
   '/$realmId/manage/billing/credit-buckets/overview': typeof RealmIdManageBillingCreditBucketsOverviewRoute
+  '/$realmId/manage/billing/entitlement-mappings/new': typeof RealmIdManageBillingEntitlementMappingsNewRoute
   '/$realmId/manage/billing/invoices/new': typeof RealmIdManageBillingInvoicesNewRoute
   '/$realmId/manage/billing/payment-providers/apple': typeof RealmIdManageBillingPaymentProvidersAppleRoute
   '/$realmId/manage/billing/payment-providers/creem': typeof RealmIdManageBillingPaymentProvidersCreemRoute
@@ -1073,6 +1124,7 @@ export interface FileRoutesByTo {
   '/$realmId/manage/client-apps/$clientAppId/edit': typeof RealmIdManageClientAppsClientAppIdEditRoute
   '/manage/billing/invoices/$invoiceId/edit': typeof ManageBillingInvoicesInvoiceIdEditRoute
   '/$realmId/manage/billing/credit-buckets': typeof RealmIdManageBillingCreditBucketsIndexRoute
+  '/$realmId/manage/billing/entitlement-mappings': typeof RealmIdManageBillingEntitlementMappingsIndexRoute
   '/$realmId/manage/billing/invoices': typeof RealmIdManageBillingInvoicesIndexRoute
   '/$realmId/manage/billing/payment-providers': typeof RealmIdManageBillingPaymentProvidersIndexRoute
   '/$realmId/manage/billing/invoices/$invoiceId/edit': typeof RealmIdManageBillingInvoicesInvoiceIdEditRoute
@@ -1147,12 +1199,13 @@ export interface FileRoutesById {
   '/manage/api-keys/new': typeof ManageApiKeysNewRoute
   '/manage/api-keys/reveal': typeof ManageApiKeysRevealRoute
   '/manage/billing/credit-buckets': typeof ManageBillingCreditBucketsRouteWithChildren
-  '/manage/billing/entitlement-mappings': typeof ManageBillingEntitlementMappingsRoute
+  '/manage/billing/entitlement-mappings': typeof ManageBillingEntitlementMappingsRouteWithChildren
   '/manage/billing/invoices': typeof ManageBillingInvoicesRouteWithChildren
   '/manage/billing/payment-providers': typeof ManageBillingPaymentProvidersRouteWithChildren
   '/manage/billing/subscriptions': typeof ManageBillingSubscriptionsRoute
   '/manage/client-apps/new': typeof ManageClientAppsNewRoute
   '/manage/points/default-config': typeof ManagePointsDefaultConfigRoute
+  '/manage/points/registration-rules': typeof ManagePointsRegistrationRulesRoute
   '/manage/points/wallets': typeof ManagePointsWalletsRoute
   '/user/invoices/new': typeof UserInvoicesNewRoute
   '/user/security/totp-setup': typeof UserSecurityTotpSetupRoute
@@ -1166,18 +1219,20 @@ export interface FileRoutesById {
   '/$realmId/manage/api-keys/new': typeof RealmIdManageApiKeysNewRoute
   '/$realmId/manage/api-keys/reveal': typeof RealmIdManageApiKeysRevealRoute
   '/$realmId/manage/billing/credit-buckets': typeof RealmIdManageBillingCreditBucketsRouteWithChildren
-  '/$realmId/manage/billing/entitlement-mappings': typeof RealmIdManageBillingEntitlementMappingsRoute
+  '/$realmId/manage/billing/entitlement-mappings': typeof RealmIdManageBillingEntitlementMappingsRouteWithChildren
   '/$realmId/manage/billing/invoices': typeof RealmIdManageBillingInvoicesRouteWithChildren
   '/$realmId/manage/billing/payment-providers': typeof RealmIdManageBillingPaymentProvidersRouteWithChildren
   '/$realmId/manage/billing/subscriptions': typeof RealmIdManageBillingSubscriptionsRoute
   '/$realmId/manage/client-apps/new': typeof RealmIdManageClientAppsNewRoute
   '/$realmId/manage/points/default-config': typeof RealmIdManagePointsDefaultConfigRoute
+  '/$realmId/manage/points/registration-rules': typeof RealmIdManagePointsRegistrationRulesRoute
   '/$realmId/manage/points/wallets': typeof RealmIdManagePointsWalletsRoute
   '/$realmId/subscription/$subscriptionId/history': typeof RealmIdSubscriptionSubscriptionIdHistoryRoute
   '/$realmId/user/invoices/new': typeof RealmIdUserInvoicesNewRoute
   '/$realmId/user/security/totp-setup': typeof RealmIdUserSecurityTotpSetupRoute
   '/manage/api-keys/$apiKeyId/edit': typeof ManageApiKeysApiKeyIdEditRoute
   '/manage/billing/credit-buckets/overview': typeof ManageBillingCreditBucketsOverviewRoute
+  '/manage/billing/entitlement-mappings/new': typeof ManageBillingEntitlementMappingsNewRoute
   '/manage/billing/invoices/new': typeof ManageBillingInvoicesNewRoute
   '/manage/billing/payment-providers/apple': typeof ManageBillingPaymentProvidersAppleRoute
   '/manage/billing/payment-providers/creem': typeof ManageBillingPaymentProvidersCreemRoute
@@ -1191,10 +1246,12 @@ export interface FileRoutesById {
   '/$realmId/user/invoices/': typeof RealmIdUserInvoicesIndexRoute
   '/$realmId/user/security/': typeof RealmIdUserSecurityIndexRoute
   '/manage/billing/credit-buckets/': typeof ManageBillingCreditBucketsIndexRoute
+  '/manage/billing/entitlement-mappings/': typeof ManageBillingEntitlementMappingsIndexRoute
   '/manage/billing/invoices/': typeof ManageBillingInvoicesIndexRoute
   '/manage/billing/payment-providers/': typeof ManageBillingPaymentProvidersIndexRoute
   '/$realmId/manage/api-keys/$apiKeyId/edit': typeof RealmIdManageApiKeysApiKeyIdEditRoute
   '/$realmId/manage/billing/credit-buckets/overview': typeof RealmIdManageBillingCreditBucketsOverviewRoute
+  '/$realmId/manage/billing/entitlement-mappings/new': typeof RealmIdManageBillingEntitlementMappingsNewRoute
   '/$realmId/manage/billing/invoices/new': typeof RealmIdManageBillingInvoicesNewRoute
   '/$realmId/manage/billing/payment-providers/apple': typeof RealmIdManageBillingPaymentProvidersAppleRoute
   '/$realmId/manage/billing/payment-providers/creem': typeof RealmIdManageBillingPaymentProvidersCreemRoute
@@ -1204,6 +1261,7 @@ export interface FileRoutesById {
   '/$realmId/manage/client-apps/$clientAppId/edit': typeof RealmIdManageClientAppsClientAppIdEditRoute
   '/manage/billing/invoices/$invoiceId/edit': typeof ManageBillingInvoicesInvoiceIdEditRoute
   '/$realmId/manage/billing/credit-buckets/': typeof RealmIdManageBillingCreditBucketsIndexRoute
+  '/$realmId/manage/billing/entitlement-mappings/': typeof RealmIdManageBillingEntitlementMappingsIndexRoute
   '/$realmId/manage/billing/invoices/': typeof RealmIdManageBillingInvoicesIndexRoute
   '/$realmId/manage/billing/payment-providers/': typeof RealmIdManageBillingPaymentProvidersIndexRoute
   '/$realmId/manage/billing/invoices/$invoiceId/edit': typeof RealmIdManageBillingInvoicesInvoiceIdEditRoute
@@ -1285,6 +1343,7 @@ export interface FileRouteTypes {
     | '/manage/billing/subscriptions'
     | '/manage/client-apps/new'
     | '/manage/points/default-config'
+    | '/manage/points/registration-rules'
     | '/manage/points/wallets'
     | '/user/invoices/new'
     | '/user/security/totp-setup'
@@ -1304,12 +1363,14 @@ export interface FileRouteTypes {
     | '/$realmId/manage/billing/subscriptions'
     | '/$realmId/manage/client-apps/new'
     | '/$realmId/manage/points/default-config'
+    | '/$realmId/manage/points/registration-rules'
     | '/$realmId/manage/points/wallets'
     | '/$realmId/subscription/$subscriptionId/history'
     | '/$realmId/user/invoices/new'
     | '/$realmId/user/security/totp-setup'
     | '/manage/api-keys/$apiKeyId/edit'
     | '/manage/billing/credit-buckets/overview'
+    | '/manage/billing/entitlement-mappings/new'
     | '/manage/billing/invoices/new'
     | '/manage/billing/payment-providers/apple'
     | '/manage/billing/payment-providers/creem'
@@ -1323,10 +1384,12 @@ export interface FileRouteTypes {
     | '/$realmId/user/invoices/'
     | '/$realmId/user/security/'
     | '/manage/billing/credit-buckets/'
+    | '/manage/billing/entitlement-mappings/'
     | '/manage/billing/invoices/'
     | '/manage/billing/payment-providers/'
     | '/$realmId/manage/api-keys/$apiKeyId/edit'
     | '/$realmId/manage/billing/credit-buckets/overview'
+    | '/$realmId/manage/billing/entitlement-mappings/new'
     | '/$realmId/manage/billing/invoices/new'
     | '/$realmId/manage/billing/payment-providers/apple'
     | '/$realmId/manage/billing/payment-providers/creem'
@@ -1336,6 +1399,7 @@ export interface FileRouteTypes {
     | '/$realmId/manage/client-apps/$clientAppId/edit'
     | '/manage/billing/invoices/$invoiceId/edit'
     | '/$realmId/manage/billing/credit-buckets/'
+    | '/$realmId/manage/billing/entitlement-mappings/'
     | '/$realmId/manage/billing/invoices/'
     | '/$realmId/manage/billing/payment-providers/'
     | '/$realmId/manage/billing/invoices/$invoiceId/edit'
@@ -1396,10 +1460,10 @@ export interface FileRouteTypes {
     | '/$realmId/user/subscription-history'
     | '/manage/api-keys/new'
     | '/manage/api-keys/reveal'
-    | '/manage/billing/entitlement-mappings'
     | '/manage/billing/subscriptions'
     | '/manage/client-apps/new'
     | '/manage/points/default-config'
+    | '/manage/points/registration-rules'
     | '/manage/points/wallets'
     | '/user/invoices/new'
     | '/user/security/totp-setup'
@@ -1412,16 +1476,17 @@ export interface FileRouteTypes {
     | '/user/security'
     | '/$realmId/manage/api-keys/new'
     | '/$realmId/manage/api-keys/reveal'
-    | '/$realmId/manage/billing/entitlement-mappings'
     | '/$realmId/manage/billing/subscriptions'
     | '/$realmId/manage/client-apps/new'
     | '/$realmId/manage/points/default-config'
+    | '/$realmId/manage/points/registration-rules'
     | '/$realmId/manage/points/wallets'
     | '/$realmId/subscription/$subscriptionId/history'
     | '/$realmId/user/invoices/new'
     | '/$realmId/user/security/totp-setup'
     | '/manage/api-keys/$apiKeyId/edit'
     | '/manage/billing/credit-buckets/overview'
+    | '/manage/billing/entitlement-mappings/new'
     | '/manage/billing/invoices/new'
     | '/manage/billing/payment-providers/apple'
     | '/manage/billing/payment-providers/creem'
@@ -1435,10 +1500,12 @@ export interface FileRouteTypes {
     | '/$realmId/user/invoices'
     | '/$realmId/user/security'
     | '/manage/billing/credit-buckets'
+    | '/manage/billing/entitlement-mappings'
     | '/manage/billing/invoices'
     | '/manage/billing/payment-providers'
     | '/$realmId/manage/api-keys/$apiKeyId/edit'
     | '/$realmId/manage/billing/credit-buckets/overview'
+    | '/$realmId/manage/billing/entitlement-mappings/new'
     | '/$realmId/manage/billing/invoices/new'
     | '/$realmId/manage/billing/payment-providers/apple'
     | '/$realmId/manage/billing/payment-providers/creem'
@@ -1448,6 +1515,7 @@ export interface FileRouteTypes {
     | '/$realmId/manage/client-apps/$clientAppId/edit'
     | '/manage/billing/invoices/$invoiceId/edit'
     | '/$realmId/manage/billing/credit-buckets'
+    | '/$realmId/manage/billing/entitlement-mappings'
     | '/$realmId/manage/billing/invoices'
     | '/$realmId/manage/billing/payment-providers'
     | '/$realmId/manage/billing/invoices/$invoiceId/edit'
@@ -1527,6 +1595,7 @@ export interface FileRouteTypes {
     | '/manage/billing/subscriptions'
     | '/manage/client-apps/new'
     | '/manage/points/default-config'
+    | '/manage/points/registration-rules'
     | '/manage/points/wallets'
     | '/user/invoices/new'
     | '/user/security/totp-setup'
@@ -1546,12 +1615,14 @@ export interface FileRouteTypes {
     | '/$realmId/manage/billing/subscriptions'
     | '/$realmId/manage/client-apps/new'
     | '/$realmId/manage/points/default-config'
+    | '/$realmId/manage/points/registration-rules'
     | '/$realmId/manage/points/wallets'
     | '/$realmId/subscription/$subscriptionId/history'
     | '/$realmId/user/invoices/new'
     | '/$realmId/user/security/totp-setup'
     | '/manage/api-keys/$apiKeyId/edit'
     | '/manage/billing/credit-buckets/overview'
+    | '/manage/billing/entitlement-mappings/new'
     | '/manage/billing/invoices/new'
     | '/manage/billing/payment-providers/apple'
     | '/manage/billing/payment-providers/creem'
@@ -1565,10 +1636,12 @@ export interface FileRouteTypes {
     | '/$realmId/user/invoices/'
     | '/$realmId/user/security/'
     | '/manage/billing/credit-buckets/'
+    | '/manage/billing/entitlement-mappings/'
     | '/manage/billing/invoices/'
     | '/manage/billing/payment-providers/'
     | '/$realmId/manage/api-keys/$apiKeyId/edit'
     | '/$realmId/manage/billing/credit-buckets/overview'
+    | '/$realmId/manage/billing/entitlement-mappings/new'
     | '/$realmId/manage/billing/invoices/new'
     | '/$realmId/manage/billing/payment-providers/apple'
     | '/$realmId/manage/billing/payment-providers/creem'
@@ -1578,6 +1651,7 @@ export interface FileRouteTypes {
     | '/$realmId/manage/client-apps/$clientAppId/edit'
     | '/manage/billing/invoices/$invoiceId/edit'
     | '/$realmId/manage/billing/credit-buckets/'
+    | '/$realmId/manage/billing/entitlement-mappings/'
     | '/$realmId/manage/billing/invoices/'
     | '/$realmId/manage/billing/payment-providers/'
     | '/$realmId/manage/billing/invoices/$invoiceId/edit'
@@ -1938,6 +2012,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ManagePointsWalletsRouteImport
       parentRoute: typeof ManagePointsRoute
     }
+    '/manage/points/registration-rules': {
+      id: '/manage/points/registration-rules'
+      path: '/registration-rules'
+      fullPath: '/manage/points/registration-rules'
+      preLoaderRoute: typeof ManagePointsRegistrationRulesRouteImport
+      parentRoute: typeof ManagePointsRoute
+    }
     '/manage/points/default-config': {
       id: '/manage/points/default-config'
       path: '/default-config'
@@ -2197,6 +2278,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ManageBillingInvoicesIndexRouteImport
       parentRoute: typeof ManageBillingInvoicesRoute
     }
+    '/manage/billing/entitlement-mappings/': {
+      id: '/manage/billing/entitlement-mappings/'
+      path: '/'
+      fullPath: '/manage/billing/entitlement-mappings/'
+      preLoaderRoute: typeof ManageBillingEntitlementMappingsIndexRouteImport
+      parentRoute: typeof ManageBillingEntitlementMappingsRoute
+    }
     '/manage/billing/credit-buckets/': {
       id: '/manage/billing/credit-buckets/'
       path: '/'
@@ -2288,6 +2376,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ManageBillingInvoicesNewRouteImport
       parentRoute: typeof ManageBillingInvoicesRoute
     }
+    '/manage/billing/entitlement-mappings/new': {
+      id: '/manage/billing/entitlement-mappings/new'
+      path: '/new'
+      fullPath: '/manage/billing/entitlement-mappings/new'
+      preLoaderRoute: typeof ManageBillingEntitlementMappingsNewRouteImport
+      parentRoute: typeof ManageBillingEntitlementMappingsRoute
+    }
     '/manage/billing/credit-buckets/overview': {
       id: '/manage/billing/credit-buckets/overview'
       path: '/overview'
@@ -2328,6 +2423,13 @@ declare module '@tanstack/react-router' {
       path: '/wallets'
       fullPath: '/$realmId/manage/points/wallets'
       preLoaderRoute: typeof RealmIdManagePointsWalletsRouteImport
+      parentRoute: typeof RealmIdManagePointsRoute
+    }
+    '/$realmId/manage/points/registration-rules': {
+      id: '/$realmId/manage/points/registration-rules'
+      path: '/registration-rules'
+      fullPath: '/$realmId/manage/points/registration-rules'
+      preLoaderRoute: typeof RealmIdManagePointsRegistrationRulesRouteImport
       parentRoute: typeof RealmIdManagePointsRoute
     }
     '/$realmId/manage/points/default-config': {
@@ -2407,6 +2509,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RealmIdManageBillingInvoicesIndexRouteImport
       parentRoute: typeof RealmIdManageBillingInvoicesRoute
     }
+    '/$realmId/manage/billing/entitlement-mappings/': {
+      id: '/$realmId/manage/billing/entitlement-mappings/'
+      path: '/'
+      fullPath: '/$realmId/manage/billing/entitlement-mappings/'
+      preLoaderRoute: typeof RealmIdManageBillingEntitlementMappingsIndexRouteImport
+      parentRoute: typeof RealmIdManageBillingEntitlementMappingsRoute
+    }
     '/$realmId/manage/billing/credit-buckets/': {
       id: '/$realmId/manage/billing/credit-buckets/'
       path: '/'
@@ -2469,6 +2578,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/$realmId/manage/billing/invoices/new'
       preLoaderRoute: typeof RealmIdManageBillingInvoicesNewRouteImport
       parentRoute: typeof RealmIdManageBillingInvoicesRoute
+    }
+    '/$realmId/manage/billing/entitlement-mappings/new': {
+      id: '/$realmId/manage/billing/entitlement-mappings/new'
+      path: '/new'
+      fullPath: '/$realmId/manage/billing/entitlement-mappings/new'
+      preLoaderRoute: typeof RealmIdManageBillingEntitlementMappingsNewRouteImport
+      parentRoute: typeof RealmIdManageBillingEntitlementMappingsRoute
     }
     '/$realmId/manage/billing/credit-buckets/overview': {
       id: '/$realmId/manage/billing/credit-buckets/overview'
@@ -2561,6 +2677,24 @@ const RealmIdManageBillingCreditBucketsRouteWithChildren =
     RealmIdManageBillingCreditBucketsRouteChildren,
   )
 
+interface RealmIdManageBillingEntitlementMappingsRouteChildren {
+  RealmIdManageBillingEntitlementMappingsNewRoute: typeof RealmIdManageBillingEntitlementMappingsNewRoute
+  RealmIdManageBillingEntitlementMappingsIndexRoute: typeof RealmIdManageBillingEntitlementMappingsIndexRoute
+}
+
+const RealmIdManageBillingEntitlementMappingsRouteChildren: RealmIdManageBillingEntitlementMappingsRouteChildren =
+  {
+    RealmIdManageBillingEntitlementMappingsNewRoute:
+      RealmIdManageBillingEntitlementMappingsNewRoute,
+    RealmIdManageBillingEntitlementMappingsIndexRoute:
+      RealmIdManageBillingEntitlementMappingsIndexRoute,
+  }
+
+const RealmIdManageBillingEntitlementMappingsRouteWithChildren =
+  RealmIdManageBillingEntitlementMappingsRoute._addFileChildren(
+    RealmIdManageBillingEntitlementMappingsRouteChildren,
+  )
+
 interface RealmIdManageBillingInvoicesRouteChildren {
   RealmIdManageBillingInvoicesNewRoute: typeof RealmIdManageBillingInvoicesNewRoute
   RealmIdManageBillingInvoicesIndexRoute: typeof RealmIdManageBillingInvoicesIndexRoute
@@ -2613,7 +2747,7 @@ const RealmIdManageBillingPaymentProvidersRouteWithChildren =
 
 interface RealmIdManageBillingRouteChildren {
   RealmIdManageBillingCreditBucketsRoute: typeof RealmIdManageBillingCreditBucketsRouteWithChildren
-  RealmIdManageBillingEntitlementMappingsRoute: typeof RealmIdManageBillingEntitlementMappingsRoute
+  RealmIdManageBillingEntitlementMappingsRoute: typeof RealmIdManageBillingEntitlementMappingsRouteWithChildren
   RealmIdManageBillingInvoicesRoute: typeof RealmIdManageBillingInvoicesRouteWithChildren
   RealmIdManageBillingPaymentProvidersRoute: typeof RealmIdManageBillingPaymentProvidersRouteWithChildren
   RealmIdManageBillingSubscriptionsRoute: typeof RealmIdManageBillingSubscriptionsRoute
@@ -2623,7 +2757,7 @@ const RealmIdManageBillingRouteChildren: RealmIdManageBillingRouteChildren = {
   RealmIdManageBillingCreditBucketsRoute:
     RealmIdManageBillingCreditBucketsRouteWithChildren,
   RealmIdManageBillingEntitlementMappingsRoute:
-    RealmIdManageBillingEntitlementMappingsRoute,
+    RealmIdManageBillingEntitlementMappingsRouteWithChildren,
   RealmIdManageBillingInvoicesRoute:
     RealmIdManageBillingInvoicesRouteWithChildren,
   RealmIdManageBillingPaymentProvidersRoute:
@@ -2656,11 +2790,14 @@ const RealmIdManageClientAppsRouteWithChildren =
 
 interface RealmIdManagePointsRouteChildren {
   RealmIdManagePointsDefaultConfigRoute: typeof RealmIdManagePointsDefaultConfigRoute
+  RealmIdManagePointsRegistrationRulesRoute: typeof RealmIdManagePointsRegistrationRulesRoute
   RealmIdManagePointsWalletsRoute: typeof RealmIdManagePointsWalletsRoute
 }
 
 const RealmIdManagePointsRouteChildren: RealmIdManagePointsRouteChildren = {
   RealmIdManagePointsDefaultConfigRoute: RealmIdManagePointsDefaultConfigRoute,
+  RealmIdManagePointsRegistrationRulesRoute:
+    RealmIdManagePointsRegistrationRulesRoute,
   RealmIdManagePointsWalletsRoute: RealmIdManagePointsWalletsRoute,
 }
 
@@ -2858,6 +2995,24 @@ const ManageBillingCreditBucketsRouteWithChildren =
     ManageBillingCreditBucketsRouteChildren,
   )
 
+interface ManageBillingEntitlementMappingsRouteChildren {
+  ManageBillingEntitlementMappingsNewRoute: typeof ManageBillingEntitlementMappingsNewRoute
+  ManageBillingEntitlementMappingsIndexRoute: typeof ManageBillingEntitlementMappingsIndexRoute
+}
+
+const ManageBillingEntitlementMappingsRouteChildren: ManageBillingEntitlementMappingsRouteChildren =
+  {
+    ManageBillingEntitlementMappingsNewRoute:
+      ManageBillingEntitlementMappingsNewRoute,
+    ManageBillingEntitlementMappingsIndexRoute:
+      ManageBillingEntitlementMappingsIndexRoute,
+  }
+
+const ManageBillingEntitlementMappingsRouteWithChildren =
+  ManageBillingEntitlementMappingsRoute._addFileChildren(
+    ManageBillingEntitlementMappingsRouteChildren,
+  )
+
 interface ManageBillingInvoicesRouteChildren {
   ManageBillingInvoicesNewRoute: typeof ManageBillingInvoicesNewRoute
   ManageBillingInvoicesIndexRoute: typeof ManageBillingInvoicesIndexRoute
@@ -2908,7 +3063,7 @@ const ManageBillingPaymentProvidersRouteWithChildren =
 
 interface ManageBillingRouteChildren {
   ManageBillingCreditBucketsRoute: typeof ManageBillingCreditBucketsRouteWithChildren
-  ManageBillingEntitlementMappingsRoute: typeof ManageBillingEntitlementMappingsRoute
+  ManageBillingEntitlementMappingsRoute: typeof ManageBillingEntitlementMappingsRouteWithChildren
   ManageBillingInvoicesRoute: typeof ManageBillingInvoicesRouteWithChildren
   ManageBillingPaymentProvidersRoute: typeof ManageBillingPaymentProvidersRouteWithChildren
   ManageBillingSubscriptionsRoute: typeof ManageBillingSubscriptionsRoute
@@ -2916,7 +3071,8 @@ interface ManageBillingRouteChildren {
 
 const ManageBillingRouteChildren: ManageBillingRouteChildren = {
   ManageBillingCreditBucketsRoute: ManageBillingCreditBucketsRouteWithChildren,
-  ManageBillingEntitlementMappingsRoute: ManageBillingEntitlementMappingsRoute,
+  ManageBillingEntitlementMappingsRoute:
+    ManageBillingEntitlementMappingsRouteWithChildren,
   ManageBillingInvoicesRoute: ManageBillingInvoicesRouteWithChildren,
   ManageBillingPaymentProvidersRoute:
     ManageBillingPaymentProvidersRouteWithChildren,
@@ -2944,11 +3100,13 @@ const ManageClientAppsRouteWithChildren =
 
 interface ManagePointsRouteChildren {
   ManagePointsDefaultConfigRoute: typeof ManagePointsDefaultConfigRoute
+  ManagePointsRegistrationRulesRoute: typeof ManagePointsRegistrationRulesRoute
   ManagePointsWalletsRoute: typeof ManagePointsWalletsRoute
 }
 
 const ManagePointsRouteChildren: ManagePointsRouteChildren = {
   ManagePointsDefaultConfigRoute: ManagePointsDefaultConfigRoute,
+  ManagePointsRegistrationRulesRoute: ManagePointsRegistrationRulesRoute,
   ManagePointsWalletsRoute: ManagePointsWalletsRoute,
 }
 

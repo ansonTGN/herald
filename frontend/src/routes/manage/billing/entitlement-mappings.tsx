@@ -1,6 +1,5 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { EntitlementMappingsRoute } from '@/routes/$realmId/manage/billing/entitlement-mappings'
+import { createFileRoute, Outlet } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/manage/billing/entitlement-mappings')({
-  component: EntitlementMappingsRoute,
+  component: () => <Outlet />,
 })

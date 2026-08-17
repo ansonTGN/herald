@@ -9,8 +9,8 @@ import { toast } from 'sonner'
 //
 // Mirrors entitlement-mappings-page.test.tsx: the whole mutations module is
 // mocked so individual tests drive `mockCreateMutate` to decide
-// mock's onError controller just delegates to the dialog's caller-supplied
-// onError — the dialog owns the duplicate vs config-error classification.
+// mock's onError controller just delegates to the form's caller-supplied
+// onError — the form owns the duplicate vs config-error classification.
 
 // Permission hook: default to a fully-privileged admin (billing.manage +
 // points.manage both pass) so the credit-strategy fields render.
@@ -20,7 +20,28 @@ vi.mock('@/hooks/use-permission', () => ({
   })),
 }))
 
-// Query options: canned bucket list + roles so the dialog renders without a
+// The form uses TanStack Router's `useNavigate` (back / cancel / post-create
+// return to the mappings list). Mock it with a spy so the component renders
+// without a router provider and success navigation is assertable (mirrors the
+// client-app-form-page test).
+const { navigateMock } = vi.hoisted(() => ({ navigateMock: vi.fn() }))
+vi.mock('@tanstack/react-router', async () => {
+  const actual =
+    await vi.importActual<typeof import('@tanstack/react-router')>('@tanstack/react-router')
+  return {
+    ...actual,
+    useNavigate: () => navigateMock,
+  }
+})
+
+// The form derives its return path from `realmPath` +
+// `useResolvedRealmContext`. Mock both to avoid depending on the URL/router.
+vi.mock('@/lib/realm-routing', () => ({
+  realmPath: (_ctx: unknown, path: string) => path,
+  useResolvedRealmContext: () => ({ realmId: 'realm-1', mode: 'default' }),
+}))
+
+// Query options: canned bucket list + roles so the form renders without a
 // real query. The bucket list must be non-empty for the bucket Select.
 const { bucketsHolder } = vi.hoisted(() => ({
   bucketsHolder: {
@@ -64,7 +85,7 @@ const { mockCreateMutate, mockIsCreateMappingDuplicateError, mockIsCreateMapping
   vi.hoisted(() => {
     const mockCreateMutate = vi.fn()
     // Mirror the real helper contract from entitlement-mapping-mutations.ts so
-    // the dialog's branch logic (not the helper itself — that is unit-tested
+    // the form's branch logic (not the helper itself — that is unit-tested
     // elsewhere) drives the observed toast. 409 → duplicate; 23514 code or
     // status >= 500 → config error.
     const mockIsCreateMappingDuplicateError = (e: unknown) =>
@@ -103,7 +124,7 @@ vi.mock('@/components/shared/role-selector', () => ({
   RoleSelector: () => <div data-testid="role-selector-stub" />,
 }))
 
-import { CreateEntitlementMappingDialog } from '../create-entitlement-mapping-dialog'
+import { CreateEntitlementMappingPage } from '../create-entitlement-mapping-page'
 import { m } from '@/paraglide/messages'
 
 // --- Fixtures --------------------------------------------------------------
@@ -160,20 +181,14 @@ async function fillCreateForm(user: ReturnType<typeof userEvent.setup>) {
   await user.click(await screen.findByRole('option', { name: 'Default Bucket' }))
 }
 
-function renderDialog(open = true) {
-  const onOpenChange = vi.fn()
+function renderPage() {
   const client = makeQueryClient()
   const view = render(
     <Wrapper client={client}>
-      <CreateEntitlementMappingDialog
-        open={open}
-        onOpenChange={onOpenChange}
-        realmId="realm-1"
-        canManagePoints={true}
-      />
+      <CreateEntitlementMappingPage realmId="realm-1" canManagePoints={true} />
     </Wrapper>
   )
-  return { client, onOpenChange, ...view }
+  return { client, ...view }
 }
 
 /**
@@ -212,8 +227,8 @@ beforeEach(() => {
 
 // --- Tests -----------------------------------------------------------------
 
-describe('CreateEntitlementMappingDialog — submit success', () => {
-  it('submits a valid form, toasts success, and closes the dialog', async () => {
+describe('CreateEntitlementMappingPage — submit success', () => {
+  it('submits a valid form, toasts success, and returns to the mappings list', async () => {
     mockCreateMutate.mockImplementation(
       (_req: unknown, opts: { onSuccess?: () => void; onError?: (error: unknown) => void }) => {
         opts.onSuccess?.()
@@ -221,7 +236,7 @@ describe('CreateEntitlementMappingDialog — submit success', () => {
     )
 
     const user = userEvent.setup()
-    const { onOpenChange } = renderDialog()
+    renderPage()
 
     await fillCreateForm(user)
     await user.click(screen.getByTestId('create-mapping-submit-button'))
@@ -245,13 +260,13 @@ describe('CreateEntitlementMappingDialog — submit success', () => {
     await waitFor(() => {
       expect(toast.success).toHaveBeenCalledWith(m['billing.create_mapping_success']())
     })
-    expect(onOpenChange).toHaveBeenCalledWith(false)
+    expect(navigateMock).toHaveBeenCalledWith({ to: '/manage/billing/entitlement-mappings' })
   })
 })
 
-describe('CreateEntitlementMappingDialog — error classification (§4.2.2)', () => {
+describe('CreateEntitlementMappingPage — error classification (§4.2.2)', () => {
   // 409 Conflict → duplicate. Distinct from 23514/non-4xx — must NOT be
-  // conflated. The dialog surfaces `billing.create_mapping_duplicate`.
+  // conflated. The form surfaces `billing.create_mapping_duplicate`.
   it("shows the 'product id already exists' message on a 409 duplicate", async () => {
     mockCreateMutate.mockImplementation(
       (_req: unknown, opts: { onSuccess?: () => void; onError?: (error: unknown) => void }) => {
@@ -260,7 +275,7 @@ describe('CreateEntitlementMappingDialog — error classification (§4.2.2)', ()
     )
 
     const user = userEvent.setup()
-    const { onOpenChange } = renderDialog()
+    renderPage()
 
     await fillCreateForm(user)
     await user.click(screen.getByTestId('create-mapping-submit-button'))
@@ -279,8 +294,8 @@ describe('CreateEntitlementMappingDialog — error classification (§4.2.2)', ()
 
     // A 409 is NOT a config error — assert the other branch did not fire.
     expect(toast.error).not.toHaveBeenCalledWith(m['billing.create_mapping_config_error']())
-    // And the dialog stays open (the admin edits the inputs).
-    expect(onOpenChange).not.toHaveBeenCalled()
+    // And the form stays on the page (the admin edits the inputs).
+    expect(navigateMock).not.toHaveBeenCalled()
   })
 
   // 23514 / non-4xx → configuration error (DB CHECK / server defense). Two
@@ -296,7 +311,7 @@ describe('CreateEntitlementMappingDialog — error classification (§4.2.2)', ()
     )
 
     const user = userEvent.setup()
-    renderDialog()
+    renderPage()
 
     await fillCreateForm(user)
     await user.click(screen.getByTestId('create-mapping-submit-button'))
@@ -319,7 +334,7 @@ describe('CreateEntitlementMappingDialog — error classification (§4.2.2)', ()
     )
 
     const user = userEvent.setup()
-    renderDialog()
+    renderPage()
 
     await fillCreateForm(user)
     await user.click(screen.getByTestId('create-mapping-submit-button'))
@@ -336,13 +351,13 @@ describe('CreateEntitlementMappingDialog — error classification (§4.2.2)', ()
   })
 })
 
-describe('CreateEntitlementMappingDialog — client-side validation', () => {
+describe('CreateEntitlementMappingPage — client-side validation', () => {
   // The schema's recurring ⇒ billingPeriod refinement (support-iap §4.4.2) is
-  // Demo-unreachable (the dialog hides submit until the field is filled). This
+  // Demo-unreachable (the form hides submit until the field is filled). This
   // Vitest is the only coverage of the safeParse gate blocking submit.
   it('blocks submit and shows a billingPeriod field error when recurring has no period', async () => {
     const user = userEvent.setup()
-    renderDialog()
+    renderPage()
 
     // Fill everything except billingPeriod.
     await user.click(screen.getByTestId('create-mapping-provider-select'))
@@ -363,7 +378,7 @@ describe('CreateEntitlementMappingDialog — client-side validation', () => {
 
     await waitFor(() => {
       const alerts = screen.getAllByRole('alert')
-      // At least one field error rendered. The dialog renders a <p role="alert">
+      // At least one field error rendered. The form renders a <p role="alert">
       // per failed field; recurring-without-period fails billingPeriod.
       expect(alerts.length).toBeGreaterThan(0)
     })
@@ -371,7 +386,7 @@ describe('CreateEntitlementMappingDialog — client-side validation', () => {
 
   it('blocks submit when required text fields are empty', async () => {
     const user = userEvent.setup()
-    renderDialog()
+    renderPage()
 
     await user.click(screen.getByTestId('create-mapping-submit-button'))
 
@@ -387,13 +402,14 @@ describe('CreateEntitlementMappingDialog — client-side validation', () => {
 // The real `useCreateEntitlementMapping` hook owns the
 // `invalidateQueries(queryKeys.entitlementMappings(realmId, {}))` side-effect.
 // This test mocks the whole mutations module (parity with the page test), so
-// the cache-key contract is asserted indirectly: the dialog's caller-supplied
-// onSuccess closes the dialog, proving the success callback fired end-to-end —
-// i.e. the mutation layer that owns invalidation was reached. The exact key
-// shape (`['entitlement-mappings', realmId, {}]`) is pure data produced by
-// `queryKeys.entitlementMappings`, mirrored in the query-options mock above.
-describe('CreateEntitlementMappingDialog — success side-effects', () => {
-  it('closes the dialog on success (the list-invalidation callback was reached)', async () => {
+// the cache-key contract is asserted indirectly: the form's caller-supplied
+// onSuccess navigates back to the list, proving the success callback fired
+// end-to-end — i.e. the mutation layer that owns invalidation was reached. The
+// exact key shape (`['entitlement-mappings', realmId, {}]`) is pure data
+// produced by `queryKeys.entitlementMappings`, mirrored in the query-options
+// mock above.
+describe('CreateEntitlementMappingPage — success side-effects', () => {
+  it('returns to the mappings list on success (the list-invalidation callback was reached)', async () => {
     mockCreateMutate.mockImplementation(
       (_req: unknown, opts: { onSuccess?: () => void; onError?: (error: unknown) => void }) => {
         opts.onSuccess?.()
@@ -401,16 +417,16 @@ describe('CreateEntitlementMappingDialog — success side-effects', () => {
     )
 
     const user = userEvent.setup()
-    const { onOpenChange } = renderDialog()
+    renderPage()
 
     await fillCreateForm(user)
     await user.click(screen.getByTestId('create-mapping-submit-button'))
 
-    // The dialog's onSuccess closes the dialog — the observable proof the
-    // success branch (which in the real hook also invalidates the list query)
-    // executed.
+    // The form's onSuccess navigates back to the list — the observable proof
+    // the success branch (which in the real hook also invalidates the list
+    // query) executed.
     await waitFor(() => {
-      expect(onOpenChange).toHaveBeenCalledWith(false)
+      expect(navigateMock).toHaveBeenCalledWith({ to: '/manage/billing/entitlement-mappings' })
     })
     // The success toast fired (re-asserted here to bind the success path to the
     // invalidation-capable callback in one place).
@@ -419,15 +435,15 @@ describe('CreateEntitlementMappingDialog — success side-effects', () => {
 })
 
 //
-// The dialog renders the serviceDurationDays input only for non_renewing and
+// The form renders the serviceDurationDays input only for non_renewing and
 // trims the submitted payload by billing type (non-renewing sends the integer,
 // other types send null). These branches are Demo-unreachable as isolated
 // payload assertions, so Vitest is the coverage.
 
-describe('CreateEntitlementMappingDialog — non-renewing interaction', () => {
+describe('CreateEntitlementMappingPage — non-renewing interaction', () => {
   it('renders the service-duration-days input only when billingType is non_renewing', async () => {
     const user = userEvent.setup()
-    renderDialog()
+    renderPage()
 
     // Initially (no billing type selected) the non-renewing duration input is
     // absent.
@@ -448,7 +464,7 @@ describe('CreateEntitlementMappingDialog — non-renewing interaction', () => {
     )
 
     const user = userEvent.setup()
-    renderDialog()
+    renderPage()
 
     await fillCreateFormNonRenewing(user)
     await user.click(screen.getByTestId('create-mapping-submit-button'))
@@ -472,7 +488,7 @@ describe('CreateEntitlementMappingDialog — non-renewing interaction', () => {
     )
 
     const user = userEvent.setup()
-    renderDialog()
+    renderPage()
 
     await fillCreateForm(user)
     await user.click(screen.getByTestId('create-mapping-submit-button'))
@@ -487,11 +503,10 @@ describe('CreateEntitlementMappingDialog — non-renewing interaction', () => {
 })
 
 //
-// WeChat has no hosted catalog (wechat-support PRD §2.2): the form prices the
-// mapping by hand, hides the catalog-only external price id, and cannot offer
-// recurring (no auto-renewal in scope, PRD §8.1 — the backend rejects it, so
-// the schema must stop it first). These branches are Demo-unreachable, so
-// Vitest is the coverage.
+// WeChat has no hosted catalog: the form prices the mapping by hand, hides
+// the catalog-only external price id, and cannot offer recurring (WeChat has
+// no auto-renewal — the backend rejects it, so the schema must stop it
+// first). These branches are Demo-unreachable, so Vitest is the coverage.
 
 async function fillCreateFormWechat(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByTestId('create-mapping-provider-select'))
@@ -508,10 +523,10 @@ async function fillCreateFormWechat(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByTestId('create-mapping-price-input'), '19.9')
 }
 
-describe('CreateEntitlementMappingDialog — WeChat provider-aware form', () => {
+describe('CreateEntitlementMappingPage — WeChat provider-aware form', () => {
   it('shows manual price/currency + notice and hides the catalog price id for WeChat', async () => {
     const user = userEvent.setup()
-    renderDialog()
+    renderPage()
 
     await user.click(screen.getByTestId('create-mapping-provider-select'))
     await user.click(await screen.findByRole('option', { name: 'WeChat Pay' }))
@@ -533,7 +548,7 @@ describe('CreateEntitlementMappingDialog — WeChat provider-aware form', () => 
 
   it('keeps the external price id for catalog providers (stripe regression)', async () => {
     const user = userEvent.setup()
-    renderDialog()
+    renderPage()
 
     await user.click(screen.getByTestId('create-mapping-provider-select'))
     await user.click(await screen.findByRole('option', { name: 'Stripe' }))
@@ -551,7 +566,7 @@ describe('CreateEntitlementMappingDialog — WeChat provider-aware form', () => 
     )
 
     const user = userEvent.setup()
-    renderDialog()
+    renderPage()
 
     await fillCreateFormWechat(user)
     await user.click(screen.getByTestId('create-mapping-submit-button'))
@@ -568,7 +583,7 @@ describe('CreateEntitlementMappingDialog — WeChat provider-aware form', () => 
 
   it('blocks submit when the manual price is missing', async () => {
     const user = userEvent.setup()
-    renderDialog()
+    renderPage()
 
     await fillCreateFormWechat(user)
     await user.clear(screen.getByTestId('create-mapping-price-input'))
@@ -582,7 +597,7 @@ describe('CreateEntitlementMappingDialog — WeChat provider-aware form', () => 
 
   it('resets a recurring billing type when switching the provider to WeChat', async () => {
     const user = userEvent.setup()
-    renderDialog()
+    renderPage()
 
     // Stripe + recurring first (a fully legal catalog combination).
     await user.click(screen.getByTestId('create-mapping-provider-select'))

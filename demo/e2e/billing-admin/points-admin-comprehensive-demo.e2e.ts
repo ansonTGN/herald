@@ -8,7 +8,7 @@
  *
  * User story sources:
  * - docs/user-stories/billing/points-admin.md
- * - .ai/user-stories/billing/multi-wallet-grant-rules.md (draft)
+ * - docs/user-stories/billing/multi-wallet-grant-rules.md
  */
 
 import type { APIRequestContext } from '@playwright/test'
@@ -213,7 +213,7 @@ test.describe('[Points Admin] Comprehensive Demo Tests', () => {
               : rule,
           )
           await writeRegistrationRules(apiContext, setupRules)
-          await page.goto('/manage/points/default-config')
+          await page.goto('/manage/points/registration-rules')
           await expect(page.locator(SELECTORS.pointRule.registrationRulesSave)).toBeVisible()
           await expect(page.locator(SELECTORS.pointRule.list)).toHaveCount(2)
         })

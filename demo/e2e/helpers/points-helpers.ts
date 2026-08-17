@@ -265,7 +265,6 @@ export async function exportTransactionHistory(page: Page): Promise<void> {
 }
 
 export const POINTS_ROUTES = {
-  DEFAULT_CONFIG: (realmId: string) => `/manage/points/default-config`,
   FREE_USERS: (realmId: string) => `/manage/points/free-users`,
   USER_POINTS: (realmId: string) => `/user/points`,
   REGISTER: (realmId: string) => `/${realmId}/auth/register`,

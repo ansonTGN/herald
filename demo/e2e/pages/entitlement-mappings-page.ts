@@ -61,11 +61,11 @@ export class EntitlementMappingsPage extends BasePage {
   readonly protectedPriceActiveSubs: Locator
   readonly protectedPriceConfirmCancel: Locator
 
-  // Create-mapping dialog entry. The dialog is rendered by
-  // CreateEntitlementMappingDialog (frontend/src/components/billing/
-  // create-entitlement-mapping-dialog.tsx) and opened from this page's toolbar.
+  // Create-mapping form entry. The form is rendered by
+  // CreateEntitlementMappingPage (frontend/src/components/billing/
+  // create-entitlement-mapping-page.tsx), reached from this page's toolbar.
   readonly createMappingButton: Locator
-  readonly createMappingDialog: Locator
+  readonly createMappingForm: Locator
 
   constructor(page: Page, logger?: UnifiedLogger) {
     super(page, logger)
@@ -107,7 +107,7 @@ export class EntitlementMappingsPage extends BasePage {
     )
 
     this.createMappingButton = page.locator(SELECTORS.iap.createMappingButton)
-    this.createMappingDialog = page.locator(SELECTORS.iap.createMappingDialog)
+    this.createMappingForm = page.locator(SELECTORS.iap.createMappingPage)
   }
 
   /**
@@ -351,7 +351,7 @@ export class EntitlementMappingsPage extends BasePage {
     )
   }
 
-  // ==================== Granted-roles dimension (paywall design §4.4/§5.2) ====================
+  // ==================== Granted-roles dimension ====================
   //
   // The granted-roles field is a `<div className="sm:col-span-2"
   // data-testid="price-granted-roles-${priceKey}">` wrapper (priceKey =
@@ -680,22 +680,24 @@ export class EntitlementMappingsPage extends BasePage {
     }
   }
 
-  // ==================== Create-mapping dialog ====================
+  // ==================== Create-mapping page ====================
 
   /**
-   * Open the Create Entitlement Mapping dialog from the toolbar.
+   * Navigate to the Create Entitlement Mapping page from the toolbar.
    *
    * Clicks the `create-mapping-button` (rendered only when `billing.manage`
-   * is held) and waits for `create-entitlement-mapping-dialog` to be visible.
+   * is held; navigates to /manage/billing/entitlement-mappings/new) and waits
+   * for `create-entitlement-mapping-page` to be visible. The timeout covers
+   * the route's lazy chunk load.
    *
    * Shared open entry for US-IAP-002. The full field-fill helpers below
    * (provider/bucket/billing-type selects, product/price/entitlement-key
    * inputs, points strategy) consume `SELECTORS.iap.createMapping*`.
    */
-  async openCreateMappingDialog(): Promise<void> {
+  async openCreateMappingPage(): Promise<void> {
     await expect(this.createMappingButton).toBeVisible()
     await this.smartClick(this.createMappingButton)
-    await expect(this.createMappingDialog).toBeVisible({ timeout: 5000 })
+    await expect(this.createMappingForm).toBeVisible({ timeout: 10000 })
   }
 
   /**
@@ -737,7 +739,7 @@ export class EntitlementMappingsPage extends BasePage {
    */
   private async selectCreateMappingBucket(bucketName?: string): Promise<string> {
     await this.smartClick(
-      this.createMappingDialog.locator(SELECTORS.pointRule.bucketSelect),
+      this.createMappingForm.locator(SELECTORS.pointRule.bucketSelect),
     )
     if (bucketName) {
       const named = this.page.getByRole('option', { name: bucketName, exact: true })
@@ -755,11 +757,11 @@ export class EntitlementMappingsPage extends BasePage {
   }
 
   /**
-   * Fill the create-mapping dialog (US-IAP-002). Opens the dialog via
-   * `openCreateMappingDialog()`, drives the Radix selects by visible option
+   * Fill the create-mapping form (US-IAP-002). Opens the page via
+   * `openCreateMappingPage()`, drives the Radix selects by visible option
    * name, fills the text inputs by canonical testid, and configures one points
    * distribution rule. Does NOT click submit — the caller drives the
-   * outcome assertion (success → list row / closed dialog, or duplicate →
+   * outcome assertion (success → list row / returned to the list, or duplicate →
    * `create-mapping-submit-error`).
    *
    * Select option names (en locale, the admin realm default):
@@ -777,7 +779,7 @@ export class EntitlementMappingsPage extends BasePage {
    * added rule starts with the billing type's first legal trigger selected;
    * callers explicitly provide every trigger the scenario needs.
    */
-  async fillCreateMappingDialog(values: {
+  async fillCreateMappingForm(values: {
     /** 'apple' → 'App Store', 'google' → 'Google Play'. */
     provider: 'apple' | 'google'
     externalProductId: string
@@ -798,7 +800,7 @@ export class EntitlementMappingsPage extends BasePage {
     /** Optional Stripe price id. IAP/Creem leave it empty. */
     externalPriceId?: string
   }): Promise<void> {
-    await this.openCreateMappingDialog()
+    await this.openCreateMappingPage()
 
     const providerOptionName =
       values.provider === 'apple' ? 'App Store' : 'Google Play'
@@ -841,13 +843,13 @@ export class EntitlementMappingsPage extends BasePage {
       )
     }
 
-    const addRule = this.createMappingDialog.locator(SELECTORS.pointRule.addButton)
+    const addRule = this.createMappingForm.locator(SELECTORS.pointRule.addButton)
     await expect(addRule).toBeVisible({ timeout: 5000 })
     await this.smartClick(addRule)
     await this.selectCreateMappingBucket(values.bucketName)
 
     for (const trigger of values.pointRuleTriggers) {
-      const checkbox = this.createMappingDialog.locator(
+      const checkbox = this.createMappingForm.locator(
         SELECTORS.pointRule.trigger(trigger),
       )
       await expect(checkbox).toBeVisible({ timeout: 5000 })
@@ -857,12 +859,12 @@ export class EntitlementMappingsPage extends BasePage {
     }
 
     await this.fillField(
-      this.createMappingDialog.locator(SELECTORS.pointRule.amountInput('new-0')),
+      this.createMappingForm.locator(SELECTORS.pointRule.amountInput('new-0')),
       String(values.pointsAmount),
     )
     if (values.validityDays !== undefined) {
       await this.fillField(
-        this.createMappingDialog.locator(SELECTORS.pointRule.validityInput('new-0')),
+        this.createMappingForm.locator(SELECTORS.pointRule.validityInput('new-0')),
         String(values.validityDays),
       )
     }
@@ -872,7 +874,7 @@ export class EntitlementMappingsPage extends BasePage {
 
   /**
    * Click the create-mapping submit button. The caller then asserts the outcome
-   * via `expectCreateMappingDialogClosed()` (success) or
+   * via `expectCreateMappingFormClosed()` (success) or
    * `expectCreateMappingDuplicateError()` (409).
    */
   async submitCreateMapping(): Promise<void> {
@@ -884,9 +886,9 @@ export class EntitlementMappingsPage extends BasePage {
   /**
    * Assert the 409 duplicate inline error region is visible. The backend rejects
    * a create whose (provider, externalProductId) collides with an existing row
-   * (design §4.2 unique constraint); the dialog surfaces
+   * (the pair is unique); the form surfaces
    * `create-mapping-submit-error` inline (NOT a toast — toasts are auto-dismissed
-   * and must not be the primary assertion). The dialog remains open on failure.
+   * and must not be the primary assertion). The form remains on the page on failure.
    */
   async expectCreateMappingDuplicateError(): Promise<void> {
     await expect(
@@ -895,24 +897,24 @@ export class EntitlementMappingsPage extends BasePage {
   }
 
   /**
-   * Assert the create-mapping dialog has closed (success path). On a successful
-   * create the mutation invalidates `['entitlement-mappings']` and the dialog
-   * dismisses itself; the master list refreshes with the new product row.
+   * Assert the create-mapping page has been left (success path). On a successful
+   * create the mutation invalidates `['entitlement-mappings']` and the form
+   * navigates back to the list; the master list refreshes with the new product row.
    */
-  async expectCreateMappingDialogClosed(): Promise<void> {
+  async expectCreateMappingFormClosed(): Promise<void> {
     await expect(
-      this.page.locator(SELECTORS.iap.createMappingDialog),
+      this.page.locator(SELECTORS.iap.createMappingPage),
     ).toBeHidden({ timeout: 10000 })
   }
 
   /**
-   * Assert the create-mapping dialog REMAINS open (failed submit does not close
-   * the dialog). Used alongside `expectCreateMappingDuplicateError` to pin the
-   * "stays open on error" UX contract.
+   * Assert the create-mapping form REMAINS on the page (failed submit does not
+   * navigate away). Used alongside `expectCreateMappingDuplicateError` to pin
+   * the "stays put on error" UX contract.
    */
-  async expectCreateMappingDialogOpen(): Promise<void> {
+  async expectCreateMappingFormOpen(): Promise<void> {
     await expect(
-      this.page.locator(SELECTORS.iap.createMappingDialog),
+      this.page.locator(SELECTORS.iap.createMappingPage),
     ).toBeVisible()
   }
 }

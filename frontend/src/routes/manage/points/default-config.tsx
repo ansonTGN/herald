@@ -1,6 +1,8 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { RealmConfigPage } from '@/routes/$realmId/manage/points/default-config'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
+// Legacy path kept as a redirect so existing bookmarks land on the renamed page.
 export const Route = createFileRoute('/manage/points/default-config')({
-  component: RealmConfigPage,
+  beforeLoad: () => {
+    throw redirect({ to: '/manage/points/registration-rules' })
+  },
 })

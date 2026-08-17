@@ -34,7 +34,7 @@ const SEGMENT_LABELS: Record<string, () => string> = {
   'api-keys': m['nav.api_keys'],
   'payment-providers': m['nav.payment_providers'],
   'entitlement-mappings': m['nav.entitlement_mappings'],
-  'default-config': m['nav.points_default_config'],
+  'registration-rules': m['nav.points_registration_rules'],
   'credit-buckets': m['nav.credit_buckets'],
   invoices: m['nav.invoices'],
   'subscription-history': m['nav.subscription_history'],

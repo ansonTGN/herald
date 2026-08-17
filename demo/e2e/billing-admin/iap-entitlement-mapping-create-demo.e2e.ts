@@ -1,33 +1,31 @@
 /**
  * IAP Entitlement Mapping Create Demo (US-IAP-002)
  *
- * DRAFT user story source: .ai/user-stories/billing/support-iap.md
+ * User story source: docs/user-stories/billing/support-iap.md
  *   - US-IAP-002 (P0): Create IAP entitlement mappings (recurring + one_time +
  *     duplicate→409 inline error).
- * Design: .ai/design/support-iap.md
- *   - §6.2 (demo scope — create-mapping management path)
- *   - §4.2 (entitlement-mapping create + 409 duplicate contract: unique on
- *     provider + external_product_id)
- *   - §5 (provider display names: apple → 'App Store', google → 'Google Play' —
- *     these drive the Radix select option names)
+ *
+ * Contract anchors: the (provider, external_product_id) pair is unique — a
+ * duplicate create returns 409. Provider display names are apple → 'App
+ * Store', google → 'Google Play' (these drive the Radix select option names).
  *
  * Coverage:
- *   - S1: recurring IAP mapping (Apple App Store) — create succeeds, dialog
+ *   - S1: recurring IAP mapping (Apple App Store) — create succeeds, the form
  *     closes, new product row appears in the mapping list.
- *   - S2: one_time IAP mapping (Google Play) — create succeeds, dialog closes,
+ *   - S2: one_time IAP mapping (Google Play) — create succeeds, form returns,
  *     new product row appears.
  *   - S3: duplicate provider + externalProductId → backend 409 surfaces the
- *     inline `create-mapping-submit-error` region (NOT a toast); the dialog
+ *     inline `create-mapping-submit-error` region (NOT a toast); the form
  *     REMAINS open on the failed submit.
  *
  * NOT covered (declared gap):
  *   - The 23514 / non-4xx `create_mapping_config_error` branch (DB CHECK /
- *     server defense — design §4.2.2). That is owned by backend tests; it is
+ *     server defense). That is owned by backend tests; it is
  *     NOT exercised here via a crafted payload. If it surfaces incidentally
  *     during S3, the run records the observation but no assertion targets it.
  *
  * Assertion discipline:
- *   - Success assertions land on PERSISTENT state: the dialog closing AND the
+ *   - Success assertions land on PERSISTENT state: the form page closing AND the
  *     new product row (`mapping-product-row-${externalProductId}`) becoming
  *     visible in the master list (the mutation invalidates
  *     `['entitlement-mappings']` and the list refreshes).
@@ -74,7 +72,7 @@ import { SELECTORS } from '../selectors'
  * The seeded registration-pool bucket display name in the admin realm.
  *
  * Source: `scripts/lib/demo_seed.py::CREDIT_BUCKET_NAME_PRIMARY` ('Primary
- * Pool'). If this drifts, the `fillCreateMappingDialog` helper falls back to the
+ * Pool'). If this drifts, the `fillCreateMappingForm` helper falls back to the
  * first bucket option (bucketName omitted) — see the EntitlementMappingsPage
  * `selectCreateMappingBucket` fallback + the gap note above.
  */
@@ -157,7 +155,7 @@ test.describe('[Billing Admin] IAP entitlement mapping 创建 (US-IAP-002)', () 
 
   // ==========================================================================
   // S1: recurring IAP mapping (Apple App Store)
-  // US-IAP-002 S1 — create succeeds, dialog closes, product row appears.
+  // US-IAP-002 S1 — create succeeds, page returns to the list, product row appears.
   // ==========================================================================
 
   test('[US-IAP-002 S1] recurring IAP mapping (Apple App Store)', async ({
@@ -168,8 +166,8 @@ test.describe('[Billing Admin] IAP entitlement mapping 创建 (US-IAP-002)', () 
     const externalProductId = `com.example.pro.monthly.${runId}`
     const entitlementKey = `iap-pro-${runId}`
 
-    await test.step('When: fill create-mapping dialog (recurring apple)', async () => {
-      await mappingsPage.fillCreateMappingDialog({
+    await test.step('When: fill create-mapping form (recurring apple)', async () => {
+      await mappingsPage.fillCreateMappingForm({
         provider: 'apple',
         externalProductId,
         entitlementKey,
@@ -179,13 +177,13 @@ test.describe('[Billing Admin] IAP entitlement mapping 创建 (US-IAP-002)', () 
         pointRuleTriggers: ['subscription_initial', 'subscription_renewal'],
         pointsAmount: 100,
       })
-      await demoLogger.testCode.log('Create-mapping dialog filled (recurring apple)')
+      await demoLogger.testCode.log('Create-mapping form filled (recurring apple)')
     })
 
-    await test.step('Then: submit closes the dialog', async () => {
+    await test.step('Then: submit returns to the list', async () => {
       await mappingsPage.submitCreateMapping()
-      await mappingsPage.expectCreateMappingDialogClosed()
-      await demoLogger.testCode.log('Create-mapping dialog closed after submit')
+      await mappingsPage.expectCreateMappingFormClosed()
+      await demoLogger.testCode.log('Create-mapping page left after submit')
     })
 
     await test.step('Then: new product row appears in the mapping list', async () => {
@@ -204,7 +202,7 @@ test.describe('[Billing Admin] IAP entitlement mapping 创建 (US-IAP-002)', () 
 
   // ==========================================================================
   // S2: one_time IAP mapping (Google Play)
-  // US-IAP-002 S2 — create succeeds, dialog closes, product row appears.
+  // US-IAP-002 S2 — create succeeds, page returns to the list, product row appears.
   // (No billing-period field for one_time; validity-days only renders for
   //  one_time + canManagePoints — admin has points.manage.)
   // ==========================================================================
@@ -217,8 +215,8 @@ test.describe('[Billing Admin] IAP entitlement mapping 创建 (US-IAP-002)', () 
     const externalProductId = `com.example.pack.${runId}`
     const entitlementKey = `iap-pack-${runId}`
 
-    await test.step('When: fill create-mapping dialog (one_time google)', async () => {
-      await mappingsPage.fillCreateMappingDialog({
+    await test.step('When: fill create-mapping form (one_time google)', async () => {
+      await mappingsPage.fillCreateMappingForm({
         provider: 'google',
         externalProductId,
         entitlementKey,
@@ -228,13 +226,13 @@ test.describe('[Billing Admin] IAP entitlement mapping 创建 (US-IAP-002)', () 
         pointsAmount: 1000,
         validityDays: 30,
       })
-      await demoLogger.testCode.log('Create-mapping dialog filled (one_time google)')
+      await demoLogger.testCode.log('Create-mapping form filled (one_time google)')
     })
 
-    await test.step('Then: submit closes the dialog', async () => {
+    await test.step('Then: submit returns to the list', async () => {
       await mappingsPage.submitCreateMapping()
-      await mappingsPage.expectCreateMappingDialogClosed()
-      await demoLogger.testCode.log('Create-mapping dialog closed after submit')
+      await mappingsPage.expectCreateMappingFormClosed()
+      await demoLogger.testCode.log('Create-mapping page left after submit')
     })
 
     await test.step('Then: new product row appears in the mapping list', async () => {
@@ -252,9 +250,9 @@ test.describe('[Billing Admin] IAP entitlement mapping 创建 (US-IAP-002)', () 
   // S3: duplicate provider + externalProductId → 409 inline error
   // US-IAP-002 S3 — self-contained: create once, then attempt the same
   // provider + externalProductId again (with a fresh entitlementKey, since the
-  // unique constraint is on provider + external_product_id per design §4.2).
+  // unique constraint is on provider + external_product_id).
   // The backend 409 surfaces the inline `create-mapping-submit-error` region
-  // (NOT a toast); the dialog REMAINS open on the failed submit.
+  // (NOT a toast); the form REMAINS on the page on the failed submit.
   // ==========================================================================
 
   test('[US-IAP-002 S3] duplicate provider+product id → 409 inline error', async ({
@@ -265,7 +263,7 @@ test.describe('[Billing Admin] IAP entitlement mapping 创建 (US-IAP-002)', () 
     const externalProductId = `com.example.dup.${runId}`
 
     await test.step('Given: create the first mapping (apple recurring)', async () => {
-      await mappingsPage.fillCreateMappingDialog({
+      await mappingsPage.fillCreateMappingForm({
         provider: 'apple',
         externalProductId,
         entitlementKey: `iap-dup-first-${runId}`,
@@ -276,14 +274,14 @@ test.describe('[Billing Admin] IAP entitlement mapping 创建 (US-IAP-002)', () 
         pointsAmount: 50,
       })
       await mappingsPage.submitCreateMapping()
-      await mappingsPage.expectCreateMappingDialogClosed()
+      await mappingsPage.expectCreateMappingFormClosed()
       await demoLogger.testCode.log('First (seed) mapping created for duplicate test')
     })
 
     await test.step('When: re-create with the SAME provider + externalProductId', async () => {
       // Fresh entitlementKey — the unique constraint is on provider +
-      // external_product_id (design §4.2), NOT entitlement_key.
-      await mappingsPage.fillCreateMappingDialog({
+      // external_product_id, NOT entitlement_key.
+      await mappingsPage.fillCreateMappingForm({
         provider: 'apple',
         externalProductId,
         entitlementKey: `iap-dup-second-${runId}`,
@@ -297,13 +295,13 @@ test.describe('[Billing Admin] IAP entitlement mapping 创建 (US-IAP-002)', () 
       await demoLogger.testCode.log('Duplicate create submitted')
     })
 
-    await test.step('Then: 409 inline error visible + dialog stays open', async () => {
-      // Assert on the inline error region — NOT a toast. The dialog remains open
+    await test.step('Then: 409 inline error visible + form stays on the page', async () => {
+      // Assert on the inline error region — NOT a toast. The form remains on the page
       // on the failed submit (no navigation, no dismiss).
       await mappingsPage.expectCreateMappingDuplicateError()
-      await mappingsPage.expectCreateMappingDialogOpen()
+      await mappingsPage.expectCreateMappingFormOpen()
       await demoLogger.testCode.log(
-        '409 duplicate inline error surfaced; dialog stayed open',
+        '409 duplicate inline error surfaced; form stayed on the page',
       )
     })
   })

@@ -8,9 +8,6 @@
 
 [官网](https://www.fornetcode.com/zh) · [在线演示](https://auth.fornetcode.com) · [快速开始](https://www.fornetcode.com/zh/docs/getting-started) · [Star on GitHub](https://github.com/timzaak/herald)
 
-> [!IMPORTANT]
-> Herald 仍处于早期开发阶段，正在寻找首批真实用户。用于生产关键业务前，请自行评估安全、运维和升级要求。
-
 ## 为什么选择 Herald
 
 AI 创业团队需要快速验证和持续迭代，但一个能够收费的产品仍然需要账号、租户隔离、权限、订阅、用量积分和运营工具。从零开发这些系统，或者拼接多个服务，都会挤占真正用于产品差异化的时间。
@@ -70,14 +67,6 @@ uv run scripts/demo-start.py
 ```
 
 无需本地运行 Herald，即可先体验管理后台。
-
-## 寻找早期用户
-
-Herald 正在寻找构建 AI 产品的创业团队。当前阶段希望了解哪些工作流最重要，以及团队是否需要托管版、定制开发或付费技术支持。
-
-- **认可这个方向？** [为仓库点一个 Star](https://github.com/timzaak/herald)。
-- **准备开始试用？** 运行快速开始，或者先体验在线演示。
-- **正在用 Herald 构建产品？** [提交 Issue](https://github.com/timzaak/herald/issues)，告诉我们你的需求。
 
 ## AI Agent 专用入口
 

@@ -203,7 +203,7 @@ export const queryKeys = {
   userPointsTransactions: (filters: Record<string, unknown>) =>
     [QUERY_KEYS.USER_POINTS_TRANSACTIONS, filters] as const,
   userPointsWallets: () => [QUERY_KEYS.USER_POINTS_WALLETS] as const,
-  pointsDefaultConfig: (realmId: string) => [QUERY_KEYS.POINTS_DEFAULT_CONFIG, realmId] as const,
+  registrationRules: (realmId: string) => [QUERY_KEYS.REGISTRATION_RULES, realmId] as const,
   realmConfigs: (realmId: string) => [QUERY_KEYS.REALM_CONFIGS, realmId] as const,
   emailStatus: (realmId: string) => [QUERY_KEYS.EMAIL_STATUS, realmId] as const,
   userRoles: () => [QUERY_KEYS.USER_ROLES] as const,
@@ -597,7 +597,7 @@ export const turnstileStatusQueryOptions = (
 //
 // Reads the Realm's OTP-login enablement flag
 // (`GET /api/auth/{realmId}/email-otp/status`). Public; consumed by the login
-// route to gate the "Email code" entry visibility (design §4.4.1).
+// route to gate the "Email code" entry visibility.
 export const emailOtpStatusQueryOptions = (realmId: string) =>
   queryOptions({
     queryKey: queryKeys.emailOtpStatus(realmId),
@@ -704,8 +704,7 @@ export const passkeyRealmConfigQueryOptions = (realmId: string) =>
 //
 // Reads a realm's Email-OTP configuration (`GET /api/realms/{realmId}/config/email-otp`):
 // the login enablement flag and the auto-registration toggle. Requires
-// `settings.view`; used by the admin Settings → Security "Email code" tab
-// (design §4.2 admin config, §5.5).
+// `settings.view`; used by the admin Settings → Security "Email code" tab.
 export const emailOtpRealmConfigQueryOptions = (realmId: string) =>
   queryOptions({
     queryKey: queryKeys.emailOtpRealmConfig(realmId),
@@ -941,11 +940,11 @@ export const userPointsWalletsQueryOptions = queryOptions({
   staleTime: STALE_TIME_2_MIN,
 })
 
-// ==================== Points Default Config ====================
+// ==================== Registration Rules ====================
 
-export const pointsDefaultConfigQueryOptions = (realmId: string) =>
+export const registrationRulesQueryOptions = (realmId: string) =>
   queryOptions({
-    queryKey: queryKeys.pointsDefaultConfig(realmId),
+    queryKey: queryKeys.registrationRules(realmId),
     queryFn: async () => {
       try {
         const response = await getRegistrationRules({ path: { realmId } })
@@ -959,7 +958,7 @@ export const pointsDefaultConfigQueryOptions = (realmId: string) =>
     staleTime: STALE_TIME_5_MIN,
   })
 
-export const updatePointsDefaultConfigMutation = async (
+export const updateRegistrationRulesMutation = async (
   realmId: string,
   data: UpsertRegistrationRulesRequest
 ) => {

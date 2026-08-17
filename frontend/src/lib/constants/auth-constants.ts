@@ -148,6 +148,13 @@ export const ADMIN_REALM_ID = 'admin'
 export const ADMIN_WEB_CONSOLE_CLIENT_ID = 'admin-web-console'
 export const USER_ACCOUNT_CENTER_CLIENT_ID = 'user-account-center'
 
+/**
+ * The built-in (non-first-party) client app `client_id` backing API-key
+ * authentication. Seeded at realm creation like the two above — see
+ * `herald_core::domain::realm::services`.
+ */
+export const ADMIN_API_CLIENT_ID = 'admin-api-client'
+
 export type FirstPartyClientId =
   | typeof ADMIN_WEB_CONSOLE_CLIENT_ID
   | typeof USER_ACCOUNT_CENTER_CLIENT_ID

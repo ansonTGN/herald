@@ -1,6 +1,7 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { Plus } from 'lucide-react'
 import { AppForm, useAppForm } from '@/components/ui/tanstack-form'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -22,8 +23,28 @@ import type {
 import { clientAppsQueryOptions } from '@/data/query-options'
 import { useCreateCreditBucket, useUpdateCreditBucket } from '@/data/credit-bucket-mutations'
 import type { BucketDetailResponse } from '@/lib/api-generated'
+import { usePermission } from '@/hooks/use-permission'
+import { PERMISSION } from '@/lib/constants/auth-constants'
+import {
+  ADMIN_WEB_CONSOLE_CLIENT_ID,
+  USER_ACCOUNT_CENTER_CLIENT_ID,
+  ADMIN_API_CLIENT_ID,
+} from '@/lib/constants/auth-constants'
 import { m } from '@/paraglide/messages'
 import { CreditBucketCoverageMultiselect } from './credit-bucket-coverage-multiselect'
+import { CreateClientAppDialog } from './create-client-app-dialog'
+
+/**
+ * Realm-infrastructure clients seeded at realm creation. Coverage must only
+ * reference self-created apps, so these are excluded from the selectable
+ * options (apps already covering a bucket stay listed so existing selections
+ * remain visible and removable).
+ */
+const BUILT_IN_CLIENT_IDS = new Set([
+  ADMIN_WEB_CONSOLE_CLIENT_ID,
+  USER_ACCOUNT_CENTER_CLIENT_ID,
+  ADMIN_API_CLIENT_ID,
+])
 
 interface CreditBucketEditorProps {
   realmId: string
@@ -52,20 +73,19 @@ export function CreditBucketEditor({ realmId, bucket, formKey, onSaved }: Credit
   const createMutation = useCreateCreditBucket(realmId)
   const updateMutation = useUpdateCreditBucket(realmId, bucketId)
 
-  // Coverage-set option source.
+  // Coverage-set option source. Built-in clients are filtered out; ids the
+  // bucket already covers stay selectable so legacy selections (made before
+  // the filter existed) can still be seen and removed.
   const { data: clientAppsData, isLoading: clientAppsLoading } = useQuery({
     ...clientAppsQueryOptions(realmId, { pageSize: 100 }),
   })
 
-  const clientAppOptions = useMemo(
-    () =>
-      (clientAppsData?.items ?? []).map((app) => ({
-        id: app.id,
-        label: app.name,
-        hint: app.clientId,
-      })),
-    [clientAppsData]
-  )
+  const clientAppOptions = useMemo(() => {
+    const coveredIds = new Set((bucket?.clientApps ?? []).map((c) => c.id))
+    return (clientAppsData?.items ?? [])
+      .filter((app) => coveredIds.has(app.id) || !BUILT_IN_CLIENT_IDS.has(app.clientId))
+      .map((app) => ({ id: app.id, label: app.name, hint: app.clientId }))
+  }, [clientAppsData, bucket])
   const createDefaults: CreateCreditBucketFormData = {
     bucketKey: '',
     name: '',
@@ -165,6 +185,7 @@ export function CreditBucketEditor({ realmId, bucket, formKey, onSaved }: Credit
             />
             <BucketFieldsBody
               form={createForm}
+              realmId={realmId}
               clientAppOptions={clientAppOptions}
               multiselectsLoading={clientAppsLoading}
             />
@@ -201,6 +222,7 @@ export function CreditBucketEditor({ realmId, bucket, formKey, onSaved }: Credit
           </div>
           <BucketFieldsBody
             form={updateForm}
+            realmId={realmId}
             clientAppOptions={clientAppOptions}
             multiselectsLoading={clientAppsLoading}
           />
@@ -234,14 +256,20 @@ export function CreditBucketEditor({ realmId, bucket, formKey, onSaved }: Credit
 /** Shared body (everything below the bucketKey/name identity row). */
 function BucketFieldsBody({
   form,
+  realmId,
   clientAppOptions,
   multiselectsLoading,
 }: {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   form: any
+  realmId: string
   clientAppOptions: { id: string; label: string; hint?: string }[]
   multiselectsLoading: boolean
 }) {
+  const { hasPermission } = usePermission()
+  const canCreateClientApp = hasPermission(PERMISSION.CLIENTS_MANAGE)
+  const [createDialogOpen, setCreateDialogOpen] = useState(false)
+
   return (
     <>
       <TextField
@@ -306,7 +334,22 @@ function BucketFieldsBody({
           {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
           {(field: any) => (
             <div className="space-y-1.5">
-              <Label>{m['credit_buckets.field_coverage']()}</Label>
+              <div className="flex items-center justify-between">
+                <Label>{m['credit_buckets.field_coverage']()}</Label>
+                {canCreateClientApp && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 gap-1 px-2 text-xs"
+                    onClick={() => setCreateDialogOpen(true)}
+                    data-testid="bucket-coverage-create-client-app"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    {m['credit_buckets.coverage_create_button']()}
+                  </Button>
+                )}
+              </div>
               <CreditBucketCoverageMultiselect
                 options={clientAppOptions}
                 value={field.state.value}
@@ -317,6 +360,16 @@ function BucketFieldsBody({
                     ? getFieldErrorMessage(field.state.meta)
                     : undefined
                 }
+              />
+              <CreateClientAppDialog
+                realmId={realmId}
+                open={createDialogOpen}
+                onOpenChange={setCreateDialogOpen}
+                onCreated={(clientAppId) => {
+                  if (clientAppId && !field.state.value.includes(clientAppId)) {
+                    field.handleChange([...field.state.value, clientAppId])
+                  }
+                }}
               />
             </div>
           )}

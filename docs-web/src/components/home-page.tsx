@@ -8,13 +8,13 @@ import {
   Sparkles,
   Users,
 } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 import type { HomeTexts } from "@/lib/home-texts";
 import { baseOptions, SiteFooter } from "@/lib/layout.shared";
 import { gitConfig } from "@/lib/shared";
 
 const GITHUB_URL = `https://github.com/${gitConfig.user}/${gitConfig.repo}`;
 const DEMO_URL = "https://auth.fornetcode.com";
-const EARLY_ACCESS_URL = "https://tally.so/r/kd1KOo";
 
 function GitHubIcon({ className }: { className?: string }) {
   return (
@@ -36,8 +36,6 @@ export function HomePage({
   texts: HomeTexts;
   docsLink: { to: string; params: Record<string, string> };
 }) {
-  const earlyAccessUrl = `${EARLY_ACCESS_URL}?source=homepage_${docsLink.params.lang}`;
-
   return (
     <HomeLayout {...baseOptions(docsLink.params.lang)}>
       <div className="relative overflow-hidden selection:bg-amber-200 selection:text-amber-900 dark:selection:bg-amber-800 dark:selection:text-amber-100">
@@ -105,14 +103,12 @@ export function HomePage({
                 <GitHubIcon className="w-5 h-5" />
                 {texts.starGithub}
               </a>
-              <a
-                href={earlyAccessUrl}
-                target="_blank"
-                rel="noopener noreferrer"
+              <Link
+                {...docsLink}
                 className="flex items-center gap-2 bg-white/70 dark:bg-stone-800/70 hover:bg-white dark:hover:bg-stone-800 backdrop-blur-md text-stone-700 dark:text-stone-300 px-6 py-3 rounded-full border border-stone-200 dark:border-stone-700 font-medium transition-all duration-200 shadow-sm justify-center"
               >
-                {texts.earlyAccess}
-              </a>
+                {texts.getStarted}
+              </Link>
               <a
                 href={DEMO_URL}
                 target="_blank"
@@ -331,14 +327,12 @@ export function HomePage({
               <GitHubIcon className="w-5 h-5" />
               {texts.starGithub}
             </a>
-            <a
-              href={earlyAccessUrl}
-              target="_blank"
-              rel="noopener noreferrer"
+            <Link
+              {...docsLink}
               className="flex items-center gap-2 bg-white/70 dark:bg-stone-800/70 hover:bg-white dark:hover:bg-stone-800 backdrop-blur-md text-stone-700 dark:text-stone-300 px-8 py-3.5 rounded-full border border-stone-200 dark:border-stone-700 font-medium transition-all duration-200 shadow-sm justify-center"
             >
-              {texts.earlyAccess}
-            </a>
+              {texts.getStarted}
+            </Link>
           </div>
         </section>
 
