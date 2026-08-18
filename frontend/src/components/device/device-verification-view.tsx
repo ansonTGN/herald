@@ -95,7 +95,7 @@ export function DeviceVerificationView({ realmId, initialCode }: DeviceVerificat
         <CardContent>
           {error && (
             <div
-              className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-600 text-sm"
+              className="mb-4 p-3 bg-destructive/10 border border-destructive/20 rounded text-destructive text-sm"
               data-testid="device-verification-error"
             >
               {error}
@@ -130,13 +130,13 @@ export function DeviceVerificationView({ realmId, initialCode }: DeviceVerificat
             <div className="py-4 text-center" data-testid="device-verification-result">
               {resultCode === 'approved' ? (
                 <div className="space-y-2">
-                  <p className="text-green-600 font-medium">
+                  <p className="text-success font-medium">
                     {m['device.authorization_successful']()}
                   </p>
                   <p className="text-sm text-muted-foreground">{m['device.return_to_device']()}</p>
                 </div>
               ) : (
-                <p className="text-red-600 font-medium">{m['device.authorization_denied']()}</p>
+                <p className="text-destructive font-medium">{m['device.authorization_denied']()}</p>
               )}
             </div>
           )}

@@ -33,7 +33,7 @@ export function TurnstileWidget({ siteKey, onTokenChange, onError }: TurnstileWi
         onExpire={handleExpire}
         options={{ theme: 'auto', size: 'normal' }}
       />
-      {error && <div className="text-sm text-red-500 mt-1">{error}</div>}
+      {error && <div className="text-sm text-destructive mt-1">{error}</div>}
     </div>
   )
 }

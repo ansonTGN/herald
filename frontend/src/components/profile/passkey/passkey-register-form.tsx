@@ -137,7 +137,7 @@ export function PasskeyRegisterForm({ onSuccess, onCancel }: PasskeyRegisterForm
   if (!webAuthnSupported) {
     return (
       <div className="space-y-4" data-testid="passkey-register-form">
-        <h2 className="text-2xl font-bold">{m['profile.passkey_register_title']()}</h2>
+        <h2 className="text-base font-semibold">{m['profile.passkey_register_title']()}</h2>
         <p className="text-sm text-muted-foreground" data-testid="passkey-unsupported-message">
           {m['profile.passkey_unsupported']()}
         </p>
@@ -151,7 +151,7 @@ export function PasskeyRegisterForm({ onSuccess, onCancel }: PasskeyRegisterForm
   if (step === 'confirm') {
     return (
       <div className="space-y-4" data-testid="passkey-register-form">
-        <h2 className="text-2xl font-bold">{m['profile.passkey_register_title']()}</h2>
+        <h2 className="text-base font-semibold">{m['profile.passkey_register_title']()}</h2>
         <p className="text-muted-foreground">{m['profile.passkey_register_description']()}</p>
 
         <AppForm>
@@ -178,7 +178,7 @@ export function PasskeyRegisterForm({ onSuccess, onCancel }: PasskeyRegisterForm
                   />
                   {(field.state.meta.isTouched || confirmForm.state.isSubmitted) &&
                     field.state.meta.errors.length > 0 && (
-                      <p className="text-sm text-red-500">
+                      <p className="text-sm text-destructive">
                         {getFieldErrorMessage(field.state.meta)}
                       </p>
                     )}
@@ -214,7 +214,7 @@ export function PasskeyRegisterForm({ onSuccess, onCancel }: PasskeyRegisterForm
   // Step 2: name the passkey, then finish.
   return (
     <div className="space-y-4" data-testid="passkey-register-form">
-      <h2 className="text-2xl font-bold">{m['profile.passkey_register_step2']()}</h2>
+      <h2 className="text-base font-semibold">{m['profile.passkey_register_step2']()}</h2>
       <p className="text-muted-foreground">{m['profile.passkey_register_description']()}</p>
 
       <AppForm>
@@ -243,7 +243,9 @@ export function PasskeyRegisterForm({ onSuccess, onCancel }: PasskeyRegisterForm
                 />
                 {(field.state.meta.isTouched || nameForm.state.isSubmitted) &&
                   field.state.meta.errors.length > 0 && (
-                    <p className="text-sm text-red-500">{getFieldErrorMessage(field.state.meta)}</p>
+                    <p className="text-sm text-destructive">
+                      {getFieldErrorMessage(field.state.meta)}
+                    </p>
                   )}
               </div>
             )}

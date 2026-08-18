@@ -78,9 +78,9 @@ export function TransactionHistoryTable({
           return (
             <div className="flex items-center gap-2" data-testid={`transaction-type-${row.index}`}>
               {type === 'recharge' ? (
-                <ArrowUpRight className="h-4 w-4 text-green-600" />
+                <ArrowUpRight className="h-4 w-4 text-success" />
               ) : (
-                <ArrowDownRight className="h-4 w-4 text-red-600" />
+                <ArrowDownRight className="h-4 w-4 text-destructive" />
               )}
               <Badge variant={type === 'recharge' ? 'default' : 'secondary'}>
                 {type === 'recharge'
@@ -98,7 +98,7 @@ export function TransactionHistoryTable({
           const amount = row.getValue('amount') as number
           return (
             <div
-              className={`font-semibold ${amount >= 0 ? 'text-green-600' : 'text-red-600'}`}
+              className={`font-semibold ${amount >= 0 ? 'text-success' : 'text-destructive'}`}
               data-testid={`transaction-amount-${row.index}`}
             >
               {amount >= 0 ? '+' : ''}

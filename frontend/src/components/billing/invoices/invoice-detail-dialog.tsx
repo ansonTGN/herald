@@ -61,12 +61,12 @@ function getEventTypeLabels(): Record<string, string> {
 }
 
 const EVENT_TYPE_COLORS: Record<string, string> = {
-  created: 'bg-green-100 text-green-800 border-green-200',
-  updated: 'bg-teal-100 text-teal-800 border-teal-200',
-  issued: 'bg-teal-100 text-teal-800 border-teal-200',
-  paid: 'bg-green-100 text-green-800 border-green-200',
-  void: 'bg-red-100 text-red-800 border-red-200',
-  overdue: 'bg-amber-100 text-amber-800 border-amber-200',
+  created: 'bg-success/10 text-success border-success/20',
+  updated: 'bg-info/10 text-info border-info/20',
+  issued: 'bg-info/10 text-info border-info/20',
+  paid: 'bg-success/10 text-success border-success/20',
+  void: 'bg-destructive/10 text-destructive border-destructive/20',
+  overdue: 'bg-warning/10 text-warning border-warning/20',
 }
 
 export function InvoiceDetailDialog({
@@ -204,10 +204,10 @@ function InvoiceContent({
     <div className="space-y-6">
       {isExt && (
         <div
-          className="rounded-md border border-teal-200 bg-teal-50 p-3 flex items-center justify-between"
+          className="rounded-md border border-info/20 bg-info/10 p-3 flex items-center justify-between"
           data-testid="invoice-external-provider-banner"
         >
-          <p className="text-sm text-teal-800">
+          <p className="text-sm text-info">
             {m['billing.invoice_external_managed']({ provider: getProviderLabel(provider) })}
           </p>
           {externalUrl && (
@@ -364,7 +364,7 @@ function AmountBreakdown({
       </div>
       <div className="flex justify-between text-sm">
         <span className="text-muted-foreground">{m['billing.invoice_discount']()}</span>
-        <span className="font-mono text-red-600">-{fmt(invoice.discountAmount)}</span>
+        <span className="font-mono text-destructive">-{fmt(invoice.discountAmount)}</span>
       </div>
       <div className="flex justify-between text-sm">
         <span className="text-muted-foreground">{m['billing.invoice_tax']()}</span>
@@ -486,7 +486,7 @@ function HistoryEvent({ event }: { event: InvoiceDetailResponse['history'][numbe
   const labels = getEventTypeLabels()
   const label = labels[event.eventType] ?? event.eventType
   const colorClass =
-    EVENT_TYPE_COLORS[event.eventType] ?? 'bg-gray-100 text-gray-800 border-gray-200'
+    EVENT_TYPE_COLORS[event.eventType] ?? 'bg-muted text-muted-foreground border-border'
   const actorLabel =
     event.actorType === 'system'
       ? m['billing.invoice_actor_system']()

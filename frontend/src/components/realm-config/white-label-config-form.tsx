@@ -304,10 +304,7 @@ export function WhiteLabelConfigForm({
                       {m['settings.white_label.accent_color_help']()}
                     </p>
                     {showAccentWarning && (
-                      <p
-                        className="text-sm text-amber-600"
-                        data-testid="white-label-accent-warning"
-                      >
+                      <p className="text-sm text-warning" data-testid="white-label-accent-warning">
                         {m['settings.white_label.accent_warning']({
                           ratio: accentRatio.toFixed(2),
                           min: WCAG_AA_MIN_CONTRAST,
@@ -455,7 +452,7 @@ export function WhiteLabelConfigForm({
               </div>
 
               {showDraftNotice && (
-                <p className="text-sm text-amber-600" data-testid="white-label-draft-notice">
+                <p className="text-sm text-warning" data-testid="white-label-draft-notice">
                   {m['settings.white_label.draft_notice']()}
                 </p>
               )}

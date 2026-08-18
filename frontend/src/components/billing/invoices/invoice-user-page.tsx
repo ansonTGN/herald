@@ -4,7 +4,6 @@ import { type ColumnDef } from '@tanstack/react-table'
 import { Download, ExternalLink, Eye } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { DataTable } from '@/components/shared/data-table'
 import { PageHeader } from '@/components/shared'
 import { InvoiceStatusBadge } from '@/components/billing/invoices/invoice-status-badge'
@@ -50,7 +49,7 @@ function createInvoiceColumns(
         const provider = row.original.provider
         if (provider === 'manual') return null
         return (
-          <Badge variant="secondary" className="bg-teal-50 text-teal-700 border-teal-200 text-xs">
+          <Badge variant="secondary" className="bg-info/10 text-info border-info/20 text-xs">
             {getProviderLabel(provider)}
           </Badge>
         )
@@ -226,11 +225,9 @@ export function InvoiceUserPage({
     <div className="space-y-6" data-testid="invoice-user-page">
       <PageHeader title={m['billing.invoice_my_title']()} headingTestId="invoice-user-heading" />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{m['billing.invoice_user_list_title']()}</CardTitle>
-        </CardHeader>
-        <CardContent>
+      <section>
+        <h2 className="text-base font-semibold">{m['billing.invoice_user_list_title']()}</h2>
+        <div className="mt-4 border-t border-border pt-4">
           <DataTable
             columns={columns}
             data={invoices}
@@ -240,8 +237,8 @@ export function InvoiceUserPage({
             emptyMessage={m['billing.invoice_empty']()}
             data-testid="invoice-user-table"
           />
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
       {total > 0 && (
         <ListPagination

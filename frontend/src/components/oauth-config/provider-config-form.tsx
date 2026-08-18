@@ -138,7 +138,7 @@ export function ProviderConfigForm({
                       </Select>
                       {(field.state.meta.isTouched || form.state.isSubmitted) &&
                         field.state.meta.errors.length > 0 && (
-                          <p className="text-sm text-red-500">
+                          <p className="text-sm text-destructive">
                             {getFieldErrorMessage(field.state.meta)}
                           </p>
                         )}
@@ -160,7 +160,7 @@ export function ProviderConfigForm({
                       />
                       {(field.state.meta.isTouched || form.state.isSubmitted) &&
                         field.state.meta.errors.length > 0 && (
-                          <p className="text-sm text-red-500">
+                          <p className="text-sm text-destructive">
                             {getFieldErrorMessage(field.state.meta)}
                           </p>
                         )}
@@ -193,7 +193,7 @@ export function ProviderConfigForm({
                         data-testid="oauth-client-secret-input"
                       />
                       {!isEditing && field.state.meta.errors.length > 0 && (
-                        <p className="text-sm text-red-500">
+                        <p className="text-sm text-destructive">
                           {getFieldErrorMessage(field.state.meta)}
                         </p>
                       )}
@@ -235,7 +235,7 @@ export function ProviderConfigForm({
                         )}
                         {(field.state.meta.isTouched || form.state.isSubmitted) &&
                           field.state.meta.errors.length > 0 && (
-                            <p className="text-sm text-red-500">
+                            <p className="text-sm text-destructive">
                               {getFieldErrorMessage(field.state.meta)}
                             </p>
                           )}

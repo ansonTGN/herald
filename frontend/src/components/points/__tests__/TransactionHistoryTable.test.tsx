@@ -49,7 +49,7 @@ describe('TransactionHistoryTable', () => {
       const amount = screen.getByTestId('transaction-amount-0')
       expect(amount).toBeInTheDocument()
       expect(amount).toHaveTextContent('+1,000')
-      expect(amount).toHaveClass(/text-green-600/)
+      expect(amount).toHaveClass(/text-success/)
     })
 
     it('GIVEN consume transaction WHEN rendering THEN should display with red color and minus sign', () => {
@@ -60,7 +60,7 @@ describe('TransactionHistoryTable', () => {
       const amount = screen.getByTestId('transaction-amount-0')
       expect(amount).toBeInTheDocument()
       expect(amount).toHaveTextContent('-500')
-      expect(amount).toHaveClass(/text-red-600/)
+      expect(amount).toHaveClass(/text-destructive/)
     })
 
     it('GIVEN transaction without description WHEN rendering THEN should display dash', () => {

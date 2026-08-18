@@ -119,7 +119,7 @@ export function TotpRegenerateForm({ onSuccess, onCancel }: TotpRegenerateFormPr
                   />
                   {(field.state.meta.isTouched || confirmForm.state.isSubmitted) &&
                     field.state.meta.errors.length > 0 && (
-                      <p className="text-sm text-red-500">
+                      <p className="text-sm text-destructive">
                         {getFieldErrorMessage(field.state.meta)}
                       </p>
                     )}
@@ -194,7 +194,9 @@ export function TotpRegenerateForm({ onSuccess, onCancel }: TotpRegenerateFormPr
                 />
                 {(field.state.meta.isTouched || verifyForm.state.isSubmitted) &&
                   field.state.meta.errors.length > 0 && (
-                    <p className="text-sm text-red-500">{getFieldErrorMessage(field.state.meta)}</p>
+                    <p className="text-sm text-destructive">
+                      {getFieldErrorMessage(field.state.meta)}
+                    </p>
                   )}
               </div>
             )}

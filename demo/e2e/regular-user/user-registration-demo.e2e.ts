@@ -311,13 +311,13 @@ test.describe('[Regular User] Account Registration Demo Tests', () => {
         await page.getByTestId('register-password-input').fill('Pass123')
         await page.getByTestId('register-password-input').blur() // Trigger validation
         // Use text filter to precisely locate password error message
-        await expect(page.locator('p.text-red-500').filter({ hasText: 'Password must be at least 8 characters' })).toBeVisible({ timeout: 3000 })
+        await expect(page.locator('p.text-destructive').filter({ hasText: 'Password must be at least 8 characters' })).toBeVisible({ timeout: 3000 })
       })
 
       await test.step('Step 4: Verify password validation errors', async () => {
         // Password should show validation errors (missing requirements)
         // Check for password suggestions error messages with text filter
-        const errorMessage = page.locator('p.text-red-500').filter({ hasText: 'Password must be at least 8 characters' })
+        const errorMessage = page.locator('p.text-destructive').filter({ hasText: 'Password must be at least 8 characters' })
         await expect(errorMessage).toBeVisible()
       })
     })

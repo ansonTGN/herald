@@ -132,7 +132,7 @@ export function TotpSetupForm({ onSuccess, onCancel }: TotpSetupFormProps) {
                   />
                   {(field.state.meta.isTouched || confirmForm.state.isSubmitted) &&
                     field.state.meta.errors.length > 0 && (
-                      <p className="text-sm text-red-500" data-testid="password-error">
+                      <p className="text-sm text-destructive" data-testid="password-error">
                         {getFieldErrorMessage(field.state.meta)}
                       </p>
                     )}
@@ -216,7 +216,9 @@ export function TotpSetupForm({ onSuccess, onCancel }: TotpSetupFormProps) {
                 />
                 {(field.state.meta.isTouched || verifyForm.state.isSubmitted) &&
                   field.state.meta.errors.length > 0 && (
-                    <p className="text-sm text-red-500">{getFieldErrorMessage(field.state.meta)}</p>
+                    <p className="text-sm text-destructive">
+                      {getFieldErrorMessage(field.state.meta)}
+                    </p>
                   )}
               </div>
             )}

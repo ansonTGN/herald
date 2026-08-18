@@ -1,6 +1,5 @@
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { m } from '@/paraglide/messages'
 import type { QuotaWindowViewResponse } from '@/lib/api-generated'
@@ -43,12 +42,12 @@ function formatResetsDuration(resetsAt?: string | null): string | null {
 
 function windowBarColor(
   window: QuotaWindowViewResponse
-): 'bg-primary' | 'bg-amber-500' | 'bg-destructive' {
+): 'bg-primary' | 'bg-warning' | 'bg-destructive' {
   if (window.exhausted) {
     return 'bg-destructive'
   }
   if (window.isTightest) {
-    return 'bg-amber-500'
+    return 'bg-warning'
   }
   return 'bg-primary'
 }
@@ -56,16 +55,10 @@ function windowBarColor(
 export function PointsUsageDashboard({ card, loading }: PointsUsageDashboardProps) {
   if (loading) {
     return (
-      <Card data-testid="points-usage-dashboard">
-        <CardContent className="pt-6">
-          <div className="space-y-4">
-            <div className="space-y-3">
-              <Skeleton className="h-16 w-full" />
-              <Skeleton className="h-16 w-full" />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <div data-testid="points-usage-dashboard" className="space-y-3">
+        <Skeleton className="h-16 w-full" />
+        <Skeleton className="h-16 w-full" />
+      </div>
     )
   }
 
@@ -92,130 +85,125 @@ export function PointsUsageDashboard({ card, loading }: PointsUsageDashboardProp
   })
 
   return (
-    <Card data-testid={`points-usage-dashboard-${bucketId}`}>
-      <CardContent className="space-y-4">
-        {/* Tightest constraint alert (quota is the limiting factor) */}
-        {spendableFromQuota >= 0 && hasWindows && (
-          <Alert className="border-amber-500/50 text-amber-700 dark:text-amber-400">
-            <AlertDescription>{m['points.tightest_constraint']()}</AlertDescription>
-          </Alert>
-        )}
+    <div className="space-y-4" data-testid={`points-usage-dashboard-${bucketId}`}>
+      {/* Tightest constraint alert (quota is the limiting factor) */}
+      {spendableFromQuota >= 0 && hasWindows && (
+        <Alert className="border-warning/50 text-warning ">
+          <AlertDescription>{m['points.tightest_constraint']()}</AlertDescription>
+        </Alert>
+      )}
 
-        {/* Key state alerts */}
-        {empty && (
-          <Alert
-            variant="default"
-            className="border-muted text-muted-foreground"
-            data-testid="points-empty-state"
-          >
-            <AlertDescription>{m['points.empty_state']()}</AlertDescription>
-          </Alert>
-        )}
-        {anyWindowExhausted && (
-          <Alert variant="destructive" data-testid="points-window-exhausted-alert">
-            <AlertDescription>{m['points.window_exhausted']()}</AlertDescription>
-          </Alert>
-        )}
-        {overspendTopup && (
-          <Alert
-            className="border-amber-500/50 text-amber-700 dark:text-amber-400"
-            data-testid="points-overspend-topup-alert"
-          >
-            <AlertDescription>{m['points.overspend_topup_alert']()}</AlertDescription>
-          </Alert>
-        )}
-        {insufficient && (
-          <Alert variant="destructive" data-testid="points-insufficient-alert">
-            <AlertDescription>{m['points.insufficient_alert']()}</AlertDescription>
-          </Alert>
-        )}
+      {/* Key state alerts */}
+      {empty && (
+        <Alert
+          variant="default"
+          className="border-muted text-muted-foreground"
+          data-testid="points-empty-state"
+        >
+          <AlertDescription>{m['points.empty_state']()}</AlertDescription>
+        </Alert>
+      )}
+      {anyWindowExhausted && (
+        <Alert variant="destructive" data-testid="points-window-exhausted-alert">
+          <AlertDescription>{m['points.window_exhausted']()}</AlertDescription>
+        </Alert>
+      )}
+      {overspendTopup && (
+        <Alert
+          className="border-warning/50 text-warning"
+          data-testid="points-overspend-topup-alert"
+        >
+          <AlertDescription>{m['points.overspend_topup_alert']()}</AlertDescription>
+        </Alert>
+      )}
+      {insufficient && (
+        <Alert variant="destructive" data-testid="points-insufficient-alert">
+          <AlertDescription>{m['points.insufficient_alert']()}</AlertDescription>
+        </Alert>
+      )}
 
-        {/* Per-window rows */}
-        {hasWindows && (
-          <div className="space-y-4">
-            {sortedWindows.map((window) => {
-              const winKey = window.key
-              const limit = window.limit
-              const used = window.used
-              const remaining = window.remaining
-              const fillPct = limit > 0 ? Math.min(100, (remaining / limit) * 100) : 0
-              const usedPct = limit > 0 ? used / limit : 0
-              const nearLimit = !window.exhausted && usedPct >= NEAR_LIMIT_THRESHOLD
-              const resetsDuration = formatResetsDuration(window.resetsAt)
-              const barColor = windowBarColor(window)
+      {/* Per-window rows */}
+      {hasWindows && (
+        <div className="space-y-4">
+          {sortedWindows.map((window) => {
+            const winKey = window.key
+            const limit = window.limit
+            const used = window.used
+            const remaining = window.remaining
+            const fillPct = limit > 0 ? Math.min(100, (remaining / limit) * 100) : 0
+            const usedPct = limit > 0 ? used / limit : 0
+            const nearLimit = !window.exhausted && usedPct >= NEAR_LIMIT_THRESHOLD
+            const resetsDuration = formatResetsDuration(window.resetsAt)
+            const barColor = windowBarColor(window)
 
-              return (
-                <div
-                  key={winKey}
-                  data-testid={`points-window-row-${bucketId}-${winKey}`}
-                  className={
-                    window.exhausted
-                      ? 'rounded-lg border border-destructive/50 bg-destructive/5 p-3 space-y-2'
-                      : 'rounded-lg border p-3 space-y-2'
-                  }
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-medium">{winKey}</span>
-                    <div className="flex flex-wrap gap-1">
-                      {window.isTightest && (
-                        <Badge variant="secondary">{m['points.tightest_constraint']()}</Badge>
-                      )}
-                      {window.exhausted && (
-                        <Badge variant="destructive">{m['points.window_exhausted']()}</Badge>
-                      )}
-                      {nearLimit && (
-                        <Badge
-                          variant="outline"
-                          className="border-amber-500 text-amber-700 dark:text-amber-400"
-                        >
-                          {m['points.window_near_limit']()}
-                        </Badge>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Custom progress bar (no new deps) */}
-                  <div
-                    className="h-2 w-full overflow-hidden rounded-full bg-muted"
-                    data-testid={`points-window-bar-${bucketId}-${winKey}`}
-                    role="progressbar"
-                    aria-valuenow={Math.round(fillPct)}
-                    aria-valuemin={0}
-                    aria-valuemax={100}
-                  >
-                    <div
-                      className={`h-full rounded-full ${barColor}`}
-                      style={{ width: `${fillPct}%` }}
-                    />
-                  </div>
-
-                  <div className="text-muted-foreground flex items-center justify-between text-sm">
-                    <span>
-                      {remaining.toLocaleString()} / {limit.toLocaleString()} ·{' '}
-                      {used.toLocaleString()}
-                    </span>
-                    {resetsDuration && (
-                      <span>
-                        {m['points.window_resets_in']({
-                          duration: resetsDuration,
-                        })}
-                      </span>
+            return (
+              <div
+                key={winKey}
+                data-testid={`points-window-row-${bucketId}-${winKey}`}
+                className={
+                  window.exhausted
+                    ? 'rounded-lg border border-destructive/50 bg-destructive/5 p-3 space-y-2'
+                    : 'rounded-lg border p-3 space-y-2'
+                }
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium">{winKey}</span>
+                  <div className="flex flex-wrap gap-1">
+                    {window.isTightest && (
+                      <Badge variant="secondary">{m['points.tightest_constraint']()}</Badge>
+                    )}
+                    {window.exhausted && (
+                      <Badge variant="destructive">{m['points.window_exhausted']()}</Badge>
+                    )}
+                    {nearLimit && (
+                      <Badge variant="outline" className="border-warning text-warning ">
+                        {m['points.window_near_limit']()}
+                      </Badge>
                     )}
                   </div>
                 </div>
-              )
-            })}
-          </div>
-        )}
 
-        {/* Pool balance summary (topup/registration/granted) */}
-        {spendableFromPool > 0 && (
-          <div className="border-t pt-3">
-            <div className="text-muted-foreground text-sm">{m['points.balance_pool']()}</div>
-            <div className="text-2xl font-semibold">{spendableFromPool.toLocaleString()}</div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+                {/* Custom progress bar (no new deps) */}
+                <div
+                  className="h-2 w-full overflow-hidden rounded-full bg-muted"
+                  data-testid={`points-window-bar-${bucketId}-${winKey}`}
+                  role="progressbar"
+                  aria-valuenow={Math.round(fillPct)}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                >
+                  <div
+                    className={`h-full rounded-full ${barColor}`}
+                    style={{ width: `${fillPct}%` }}
+                  />
+                </div>
+
+                <div className="text-muted-foreground flex items-center justify-between text-sm">
+                  <span>
+                    {remaining.toLocaleString()} / {limit.toLocaleString()} ·{' '}
+                    {used.toLocaleString()}
+                  </span>
+                  {resetsDuration && (
+                    <span>
+                      {m['points.window_resets_in']({
+                        duration: resetsDuration,
+                      })}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Pool balance summary (topup/registration/granted) */}
+      {spendableFromPool > 0 && (
+        <div className="border-t pt-3">
+          <div className="text-muted-foreground text-sm">{m['points.balance_pool']()}</div>
+          <div className="text-2xl font-semibold">{spendableFromPool.toLocaleString()}</div>
+        </div>
+      )}
+    </div>
   )
 }

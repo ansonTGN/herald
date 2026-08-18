@@ -13,9 +13,9 @@ export function UserTableError({ error }: { error: unknown }) {
 
   return (
     <div className="flex flex-col items-center justify-center py-12" data-testid="user-table-error">
-      <AlertCircle className="h-12 w-12 text-red-500 mb-4" />
+      <AlertCircle className="h-12 w-12 text-destructive mb-4" />
       <h3 className="text-lg font-semibold mb-2">{m['users.error_title']()}</h3>
-      <p className="text-sm text-gray-500 mb-4">{getErrorMessage(error)}</p>
+      <p className="text-sm text-muted-foreground mb-4">{getErrorMessage(error)}</p>
       <Button onClick={handleRetry} data-testid="error-retry-button">
         {m['common.retry']()}
       </Button>

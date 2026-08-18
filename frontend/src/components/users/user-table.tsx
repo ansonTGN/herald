@@ -136,7 +136,7 @@ function createUserColumns(
           {onResetPassword && (
             <button
               onClick={() => onResetPassword(row.original)}
-              className="text-sm text-amber-600 hover:text-amber-800"
+              className="text-sm text-warning hover:text-warning"
               data-testid={`user-table-${row.index}-reset-password-button`}
             >
               {m['users.reset_password_title']()}
@@ -154,7 +154,7 @@ function createUserColumns(
           {onDelete && (
             <button
               onClick={() => onDelete(row.original)}
-              className="text-sm text-red-600 hover:text-red-800"
+              className="text-sm text-destructive hover:text-destructive"
               data-testid={`user-table-${row.index}-delete-button`}
             >
               {m['common.delete']()}

@@ -4,8 +4,7 @@ import { handleVerifyTotp } from '@/lib/api-generated'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Shield, RefreshCw } from 'lucide-react'
+import { RefreshCw } from 'lucide-react'
 import { useAppForm, AppForm } from '@/components/ui/tanstack-form'
 import { getFieldErrorMessage } from '@/lib/form-utils'
 import { withTimeout } from '@/lib/totp-utils'
@@ -206,165 +205,158 @@ export function TotpVerificationForm({
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center">
-      <Card className="w-full max-w-md" data-testid="totp-verification-form">
-        <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <Shield className="h-5 w-5" />
-            <span>Two-Factor Authentication</span>
-          </CardTitle>
-          <CardDescription>{getDescriptionText()}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {error && (
-            <div className="text-sm text-destructive" data-testid="totp-verification-error">
-              {error}
-            </div>
-          )}
+    <div className="w-full pt-8" data-testid="totp-verification-form">
+      <h1 className="text-xl font-semibold tracking-tight">Two-Factor Authentication</h1>
+      <p className="mt-1 text-sm text-muted-foreground">{getDescriptionText()}</p>
+      <div className="mt-6 space-y-4">
+        {error && (
+          <div className="text-sm text-destructive" data-testid="totp-verification-error">
+            {error}
+          </div>
+        )}
 
-          {isLocked && (
-            <div className="text-sm text-destructive" data-testid="totp-verification-locked">
-              {LOCKED_MESSAGE}
-            </div>
-          )}
+        {isLocked && (
+          <div className="text-sm text-destructive" data-testid="totp-verification-locked">
+            {LOCKED_MESSAGE}
+          </div>
+        )}
 
-          {pendingConsent && (
-            <div className="space-y-4" data-testid="totp-reconsent-view">
-              <h3 className="font-semibold">{m['auth.login.reconsent_title']()}</h3>
-              <p className="text-sm text-muted-foreground">
-                {m['auth.login.reconsent_description']()}
-              </p>
-              {pendingConsent.map((agreement) => (
-                <div
-                  key={agreement.version_id}
-                  className="rounded border p-3"
-                  data-testid={`totp-reconsent-agreement-${agreement.agreement_type}`}
-                >
-                  <div className="font-medium">
-                    <AgreementLinks
-                      realmId={realmId}
-                      agreements={[agreement]}
-                      agreementType={
-                        agreement.agreement_type as 'terms_of_service' | 'privacy_policy'
-                      }
-                    />
-                  </div>
-                  <div
-                    className="text-sm text-muted-foreground"
-                    data-testid={`totp-reconsent-agreement-${agreement.agreement_type}-version`}
-                  >
-                    {m['legal.version_label']()}: {agreement.version_no} •{' '}
-                    {m['legal.effective_date_label']()}: {formatDate(agreement.effective_at)}
-                  </div>
+        {pendingConsent && (
+          <div className="space-y-4" data-testid="totp-reconsent-view">
+            <h3 className="font-semibold">{m['auth.login.reconsent_title']()}</h3>
+            <p className="text-sm text-muted-foreground">
+              {m['auth.login.reconsent_description']()}
+            </p>
+            {pendingConsent.map((agreement) => (
+              <div
+                key={agreement.version_id}
+                className="rounded border p-3"
+                data-testid={`totp-reconsent-agreement-${agreement.agreement_type}`}
+              >
+                <div className="font-medium">
+                  <AgreementLinks
+                    realmId={realmId}
+                    agreements={[agreement]}
+                    agreementType={
+                      agreement.agreement_type as 'terms_of_service' | 'privacy_policy'
+                    }
+                  />
                 </div>
-              ))}
-              <Button
-                type="button"
-                disabled={verifyMutation.isPending}
-                className="w-full"
-                data-testid="totp-agree-and-continue-button"
-                onClick={handleConsentAgree}
-              >
-                {verifyMutation.isPending
-                  ? m['common.loading']()
-                  : m['auth.login.agree_and_continue']()}
-              </Button>
-              {onBack && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full"
-                  data-testid="totp-decline-back-button"
-                  onClick={handleConsentDecline}
+                <div
+                  className="text-sm text-muted-foreground"
+                  data-testid={`totp-reconsent-agreement-${agreement.agreement_type}-version`}
                 >
-                  {m['auth.login.decline_back_to_login']()}
-                </Button>
-              )}
-            </div>
-          )}
-
-          {!pendingConsent && (
-            <AppForm>
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  currentForm.handleSubmit()
-                }}
-                className="space-y-4"
-              >
-                <currentForm.Field name="code">
-                  {(field) => (
-                    <div className="space-y-2">
-                      <Label htmlFor="code">{getLabelText()}</Label>
-                      <Input
-                        id="code"
-                        type={getInputType()}
-                        inputMode={getInputType()}
-                        pattern={getInputPattern()}
-                        maxLength={codeLength}
-                        value={field.state.value ?? ''}
-                        onChange={(e) => handleCodeChange(e.target.value)}
-                        disabled={isLocked || verifyMutation.isPending}
-                        data-testid="totp-verification-code-input"
-                        placeholder={getPlaceholder()}
-                        autoFocus
-                      />
-                      {(field.state.meta.isTouched || currentForm.state.isSubmitted) &&
-                        field.state.meta.errors.length > 0 && (
-                          <p className="text-sm text-red-500">
-                            {getFieldErrorMessage(field.state.meta)}
-                          </p>
-                        )}
-                    </div>
-                  )}
-                </currentForm.Field>
-              </form>
-            </AppForm>
-          )}
-
-          {!pendingConsent && codeType === 'totp' && !isLocked && (
-            <button
-              type="button"
-              onClick={switchToBackupCode}
-              className="text-sm text-primary hover:underline"
-              data-testid="totp-use-backup-code-link"
-            >
-              Use a backup code instead
-            </button>
-          )}
-
-          {!pendingConsent && codeType === 'backup' && !isLocked && (
-            <button
-              type="button"
-              onClick={switchToTotpCode}
-              className="text-sm text-primary hover:underline"
-              data-testid="totp-use-totp-code-link"
-            >
-              Use TOTP code instead
-            </button>
-          )}
-
-          {!pendingConsent && getAttemptsText() && (
-            <div className="text-sm text-muted-foreground" data-testid="totp-remaining-attempts">
-              {getAttemptsText()}
-            </div>
-          )}
-
-          {!pendingConsent && onBack && (
+                  {m['legal.version_label']()}: {agreement.version_no} •{' '}
+                  {m['legal.effective_date_label']()}: {formatDate(agreement.effective_at)}
+                </div>
+              </div>
+            ))}
             <Button
               type="button"
-              variant="ghost"
-              onClick={onBack}
+              disabled={verifyMutation.isPending}
               className="w-full"
-              data-testid="totp-verification-back-button"
+              data-testid="totp-agree-and-continue-button"
+              onClick={handleConsentAgree}
             >
-              <RefreshCw className="mr-2 h-4 w-4" />
-              Back to Login
+              {verifyMutation.isPending
+                ? m['common.loading']()
+                : m['auth.login.agree_and_continue']()}
             </Button>
-          )}
-        </CardContent>
-      </Card>
+            {onBack && (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                data-testid="totp-decline-back-button"
+                onClick={handleConsentDecline}
+              >
+                {m['auth.login.decline_back_to_login']()}
+              </Button>
+            )}
+          </div>
+        )}
+
+        {!pendingConsent && (
+          <AppForm>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                currentForm.handleSubmit()
+              }}
+              className="space-y-4"
+            >
+              <currentForm.Field name="code">
+                {(field) => (
+                  <div className="space-y-2">
+                    <Label htmlFor="code">{getLabelText()}</Label>
+                    <Input
+                      id="code"
+                      type={getInputType()}
+                      inputMode={getInputType()}
+                      pattern={getInputPattern()}
+                      maxLength={codeLength}
+                      value={field.state.value ?? ''}
+                      onChange={(e) => handleCodeChange(e.target.value)}
+                      disabled={isLocked || verifyMutation.isPending}
+                      data-testid="totp-verification-code-input"
+                      placeholder={getPlaceholder()}
+                      autoFocus
+                    />
+                    {(field.state.meta.isTouched || currentForm.state.isSubmitted) &&
+                      field.state.meta.errors.length > 0 && (
+                        <p className="text-sm text-destructive">
+                          {getFieldErrorMessage(field.state.meta)}
+                        </p>
+                      )}
+                  </div>
+                )}
+              </currentForm.Field>
+            </form>
+          </AppForm>
+        )}
+
+        {!pendingConsent && codeType === 'totp' && !isLocked && (
+          <button
+            type="button"
+            onClick={switchToBackupCode}
+            className="text-sm text-primary hover:underline"
+            data-testid="totp-use-backup-code-link"
+          >
+            Use a backup code instead
+          </button>
+        )}
+
+        {!pendingConsent && codeType === 'backup' && !isLocked && (
+          <button
+            type="button"
+            onClick={switchToTotpCode}
+            className="text-sm text-primary hover:underline"
+            data-testid="totp-use-totp-code-link"
+          >
+            Use TOTP code instead
+          </button>
+        )}
+
+        {!pendingConsent && getAttemptsText() && (
+          <div className="text-sm text-muted-foreground" data-testid="totp-remaining-attempts">
+            {getAttemptsText()}
+          </div>
+        )}
+
+        {!pendingConsent && onBack && (
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={onBack}
+            className="w-full"
+            data-testid="totp-verification-back-button"
+          >
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Back to Login
+          </Button>
+        )}
+      </div>
     </div>
   )
 }

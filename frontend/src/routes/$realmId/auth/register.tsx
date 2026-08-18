@@ -3,7 +3,6 @@ import { AuthPageWrapper } from '@/components/auth/auth-page-wrapper'
 import { RegisterForm } from '@/components/auth/register-form'
 import { publicConfigQueryOptions, queryKeys } from '@/data/query-options'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Link } from '@tanstack/react-router'
 import { useEffect } from 'react'
 import { m } from '@/paraglide/messages'
@@ -63,7 +62,7 @@ export function RegisterPage() {
   if (state.isLoading) {
     return (
       <AuthPageWrapper whiteLabel={whiteLabel} realmName={publicConfig?.realmName}>
-        <div className="text-gray-600">{m['common.loading']()}</div>
+        <div className="text-muted-foreground">{m['common.loading']()}</div>
       </AuthPageWrapper>
     )
   }
@@ -71,7 +70,7 @@ export function RegisterPage() {
   if (state.error) {
     return (
       <AuthPageWrapper whiteLabel={whiteLabel} realmName={publicConfig?.realmName}>
-        <div className="text-red-600">{m['auth.register.error_loading']()}</div>
+        <div className="text-destructive">{m['auth.register.error_loading']()}</div>
       </AuthPageWrapper>
     )
   }
@@ -79,43 +78,44 @@ export function RegisterPage() {
   if (!state.registrationAllowed) {
     return (
       <AuthPageWrapper whiteLabel={whiteLabel} realmName={publicConfig?.realmName}>
-        <Card className="max-w-md w-full">
-          <CardHeader>
-            <CardTitle data-testid="registration-disabled-title">
-              {m['auth.register.disabled_title']()}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-gray-600 mb-4">{m['auth.register.disabled_description']()}</p>
+        <div className="w-full pt-8">
+          <h1
+            data-testid="registration-disabled-title"
+            className="text-xl font-semibold tracking-tight"
+          >
+            {m['auth.register.disabled_title']()}
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {m['auth.register.disabled_description']()}
+          </p>
+          <div className="mt-6">
             <Link
               to={realmPath(realmContext, '/auth/login')}
-              className="text-primary hover:text-primary/80"
+              className="text-sm font-medium text-primary hover:text-primary/80"
             >
               {m['auth.register.return_to_login']()}
             </Link>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </AuthPageWrapper>
     )
   }
 
   return (
     <AuthPageWrapper whiteLabel={whiteLabel} realmName={publicConfig?.realmName}>
-      <Card className="max-w-md w-full" data-testid="register-card">
-        <CardHeader>
-          <CardTitle data-testid="register-title">
-            {whiteLabel?.registerTitle ?? m['auth.register.title']()}
-          </CardTitle>
-          {whiteLabel?.registerSubtitle ? (
-            <p className="text-sm text-muted-foreground" data-testid="register-subtitle">
-              {whiteLabel.registerSubtitle}
-            </p>
-          ) : null}
-        </CardHeader>
-        <CardContent>
+      <div className="w-full pt-8" data-testid="register-card">
+        <h1 data-testid="register-title" className="text-xl font-semibold tracking-tight">
+          {whiteLabel?.registerTitle ?? m['auth.register.title']()}
+        </h1>
+        {whiteLabel?.registerSubtitle ? (
+          <p className="mt-1 text-sm text-muted-foreground" data-testid="register-subtitle">
+            {whiteLabel.registerSubtitle}
+          </p>
+        ) : null}
+        <div className="mt-6">
           <RegisterForm realmId={realmId} onSuccess={handleRegisterSuccess} />
-          <div className="mt-4 text-center">
-            <span className="text-sm text-gray-500">
+          <div className="mt-4">
+            <span className="text-sm text-muted-foreground">
               {m['auth.register.already_have_account']()}{' '}
             </span>
             <Link
@@ -126,8 +126,8 @@ export function RegisterPage() {
               {m['auth.register.login_link']()}
             </Link>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </AuthPageWrapper>
   )
 }

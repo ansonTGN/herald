@@ -2,7 +2,6 @@ import { m } from '@/paraglide/messages'
 import { useState, useEffect, useMemo } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { AlertCircle, ArrowLeft, ArrowRight, Loader2, CheckCircle2 } from 'lucide-react'
 import { createPaymentAttempt, cancelPaymentAttempt } from '@/lib/api-generated'
@@ -62,7 +61,7 @@ export function PurchasePointsRoute() {
   if (!clientAppId) {
     return (
       <div className="container" data-testid="purchase-points-page">
-        <div className="p-4 text-center text-gray-600" data-testid="no-client-app-message">
+        <div className="p-4 text-center text-muted-foreground" data-testid="no-client-app-message">
           {m['billing.subscription_no_client_app']()}
         </div>
       </div>
@@ -404,7 +403,7 @@ export function PurchasePointsPage({
         return (
           <div className="space-y-8" data-testid="purchase-step-packages">
             <div>
-              <h2 className="text-2xl font-bold">{m['purchase.choose_plan']()}</h2>
+              <h2 className="text-base font-semibold">{m['purchase.choose_plan']()}</h2>
             </div>
 
             {optionsLoading ? (
@@ -480,7 +479,7 @@ export function PurchasePointsPage({
         return (
           <div className="space-y-6" data-testid="purchase-step-payment">
             <div>
-              <h2 className="text-2xl font-bold">{m['points.purchase_payment_title']()}</h2>
+              <h2 className="text-base font-semibold">{m['points.purchase_payment_title']()}</h2>
               <p className="text-muted-foreground">
                 {m['points.purchase_payment_grants_description']({
                   grants: selectedOption
@@ -565,10 +564,10 @@ export function PurchasePointsPage({
         return (
           <div className="space-y-6 text-center" data-testid="purchase-step-complete">
             <div className="flex justify-center">
-              <CheckCircle2 className="h-16 w-16 text-green-600" />
+              <CheckCircle2 className="h-16 w-16 text-success" />
             </div>
             <div>
-              <h2 className="text-2xl font-bold">{m['points.purchase_complete_title']()}</h2>
+              <h2 className="text-base font-semibold">{m['points.purchase_complete_title']()}</h2>
               <p className="text-muted-foreground">{m['points.purchase_complete_description']()}</p>
             </div>
             <Button onClick={handleComplete}>{m['points.purchase_view_points']()}</Button>
@@ -582,77 +581,75 @@ export function PurchasePointsPage({
 
   return (
     <div className="container" data-testid="purchase-points-page">
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>{m['points.purchase_page_title']()}</CardTitle>
-            <div
-              className="flex items-center gap-2 text-sm text-muted-foreground"
-              data-testid="purchase-step-indicator"
-            >
-              <span className={currentStep === 'packages' ? 'font-bold text-primary' : ''}>
-                {m['points.purchase_step_select']()}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h1 className="text-xl font-semibold tracking-tight">
+          {m['points.purchase_page_title']()}
+        </h1>
+        <div
+          className="flex items-center gap-2 text-sm text-muted-foreground"
+          data-testid="purchase-step-indicator"
+        >
+          <span className={currentStep === 'packages' ? 'font-bold text-primary' : ''}>
+            {m['points.purchase_step_select']()}
+          </span>
+          <span>→</span>
+          {/* The "Payment" step only appears when more than one provider
+              matches the selected price (see `paymentStepSkipped`). When
+              skipped we omit it from the indicator so the trail reflects
+              the steps the user will actually visit. */}
+          {!paymentStepSkipped && (
+            <>
+              <span className={currentStep === 'payment' ? 'font-bold text-primary' : ''}>
+                {m['points.purchase_step_payment']()}
               </span>
               <span>→</span>
-              {/* The "Payment" step only appears when more than one provider
-                  matches the selected price (see `paymentStepSkipped`). When
-                  skipped we omit it from the indicator so the trail reflects
-                  the steps the user will actually visit. */}
-              {!paymentStepSkipped && (
+            </>
+          )}
+          <span className={currentStep === 'processing' ? 'font-bold text-primary' : ''}>
+            {m['points.purchase_step_processing']()}
+          </span>
+          <span>→</span>
+          <span className={currentStep === 'complete' ? 'font-bold text-primary' : ''}>
+            {m['points.purchase_step_complete']()}
+          </span>
+        </div>
+      </div>
+      <div className="mt-4 border-t border-border pt-6">
+        <div className="space-y-6">{renderStepContent()}</div>
+
+        {currentStep === 'packages' || currentStep === 'payment' ? (
+          <div className="mt-6 flex justify-between">
+            <Button
+              variant="outline"
+              onClick={handlePreviousStep}
+              disabled={currentStep === 'packages'}
+              data-testid="purchase-back-button"
+            >
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              {m['points.purchase_back']()}
+            </Button>
+            <Button
+              onClick={handleNextStep}
+              disabled={isNextDisabled()}
+              data-testid="purchase-next-button"
+            >
+              {currentStep === 'payment' ? (
                 <>
-                  <span className={currentStep === 'payment' ? 'font-bold text-primary' : ''}>
-                    {m['points.purchase_step_payment']()}
-                  </span>
-                  <span>→</span>
+                  {createPaymentMutation.isPending
+                    ? m['points.purchase_processing_button']()
+                    : m['purchase.continue_to_checkout']()}
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </>
+              ) : (
+                <>
+                  {m['points.purchase_next']()}
+                  <ArrowRight className="ml-2 h-4 w-4" />
                 </>
               )}
-              <span className={currentStep === 'processing' ? 'font-bold text-primary' : ''}>
-                {m['points.purchase_step_processing']()}
-              </span>
-              <span>→</span>
-              <span className={currentStep === 'complete' ? 'font-bold text-primary' : ''}>
-                {m['points.purchase_step_complete']()}
-              </span>
-            </div>
+            </Button>
           </div>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-6">{renderStepContent()}</div>
-
-          {currentStep === 'packages' || currentStep === 'payment' ? (
-            <div className="mt-6 flex justify-between">
-              <Button
-                variant="outline"
-                onClick={handlePreviousStep}
-                disabled={currentStep === 'packages'}
-                data-testid="purchase-back-button"
-              >
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                {m['points.purchase_back']()}
-              </Button>
-              <Button
-                onClick={handleNextStep}
-                disabled={isNextDisabled()}
-                data-testid="purchase-next-button"
-              >
-                {currentStep === 'payment' ? (
-                  <>
-                    {createPaymentMutation.isPending
-                      ? m['points.purchase_processing_button']()
-                      : m['purchase.continue_to_checkout']()}
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </>
-                ) : (
-                  <>
-                    {m['points.purchase_next']()}
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </>
-                )}
-              </Button>
-            </div>
-          ) : null}
-        </CardContent>
-      </Card>
+        ) : null}
+      </div>
     </div>
   )
 }

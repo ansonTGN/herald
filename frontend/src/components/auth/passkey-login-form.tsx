@@ -285,10 +285,7 @@ export function PasskeyLoginForm({
 
   if (!webAuthnSupported) {
     return (
-      <p
-        className="text-sm text-muted-foreground text-center"
-        data-testid="passkey-unsupported-message"
-      >
+      <p className="text-sm text-muted-foreground" data-testid="passkey-unsupported-message">
         {m['auth.login.passkey_unsupported']()}
       </p>
     )
@@ -297,10 +294,8 @@ export function PasskeyLoginForm({
   if (pendingConsent) {
     return (
       <div className="space-y-4" data-testid="passkey-login-form">
-        <h3 className="font-semibold text-center">{m['auth.login.reconsent_title']()}</h3>
-        <p className="text-sm text-muted-foreground text-center">
-          {m['auth.login.reconsent_description']()}
-        </p>
+        <h3 className="font-semibold">{m['auth.login.reconsent_title']()}</h3>
+        <p className="text-sm text-muted-foreground">{m['auth.login.reconsent_description']()}</p>
         {pendingConsent.map((agreement) => (
           <div
             key={agreement.version_id}
@@ -351,10 +346,7 @@ export function PasskeyLoginForm({
       </Button>
 
       {error && (
-        <p
-          className="text-sm text-destructive text-center"
-          data-testid="passkey-verification-error"
-        >
+        <p className="text-sm text-destructive" data-testid="passkey-verification-error">
           {error}
         </p>
       )}

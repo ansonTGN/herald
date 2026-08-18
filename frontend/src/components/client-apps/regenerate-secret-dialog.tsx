@@ -38,7 +38,7 @@ export function RegenerateSecretDialog({
           </AlertDialogCancel>
           <AlertDialogAction
             onClick={onConfirm}
-            className="bg-red-600 hover:bg-red-700"
+            className="bg-destructive hover:bg-destructive/90"
             data-testid="confirm-regenerate-button"
           >
             {m['client_apps.regenerate_button']()}

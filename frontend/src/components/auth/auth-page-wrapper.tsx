@@ -170,31 +170,40 @@ export function AuthPageWrapper({ children, realmName, whiteLabel }: AuthPageWra
 
   return (
     <div
-      className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-b from-background to-muted/30"
+      data-testid="auth-page-root"
+      className="flex min-h-screen flex-col items-center justify-center bg-background px-4 py-12"
       style={rootStyle}
     >
-      {showLogoImg ? (
-        <img
-          data-testid="auth-brand-logo"
-          src={logoUrl ?? undefined}
-          alt=""
-          className="mb-8 h-12 w-auto object-contain"
-          onError={() => setLogoFailed(true)}
-        />
-      ) : (
-        <div data-testid="auth-brand-text" className="mb-8 text-2xl font-semibold">
-          {brandName}
+      <div className="w-full max-w-md">
+        <div className="mb-8">
+          {showLogoImg ? (
+            <img
+              data-testid="auth-brand-logo"
+              src={logoUrl ?? undefined}
+              alt=""
+              className="h-10 w-auto object-contain"
+              onError={() => setLogoFailed(true)}
+            />
+          ) : (
+            <div data-testid="auth-brand-text" className="text-2xl font-semibold tracking-tight">
+              {brandName}
+            </div>
+          )}
+          {realmName && realmName !== brandName && (
+            <div className="mt-1 font-mono text-xs text-muted-foreground">{realmName}</div>
+          )}
         </div>
-      )}
-      {children}
-      {footerText ? (
-        <div
-          data-testid="auth-brand-footer"
-          className="mt-8 text-center text-sm text-muted-foreground"
-        >
-          {footerText}
-        </div>
-      ) : null}
+        <div aria-hidden="true" className="border-t border-border" />
+        {children}
+        {footerText ? (
+          <div
+            data-testid="auth-brand-footer"
+            className="mt-8 border-t border-border pt-4 text-xs text-muted-foreground"
+          >
+            {footerText}
+          </div>
+        ) : null}
+      </div>
     </div>
   )
 }

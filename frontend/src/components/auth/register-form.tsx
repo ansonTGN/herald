@@ -140,7 +140,9 @@ export function RegisterForm({ realmId, onSuccess }: RegisterFormProps) {
               />
               {(field.state.meta.isTouched || form.state.isSubmitted) &&
                 field.state.meta.errors.length > 0 && (
-                  <p className="text-sm text-red-500">{getFieldErrorMessage(field.state.meta)}</p>
+                  <p className="text-sm text-destructive">
+                    {getFieldErrorMessage(field.state.meta)}
+                  </p>
                 )}
               <PasswordStrengthMeter
                 password={field.state.value ?? ''}
@@ -175,7 +177,9 @@ export function RegisterForm({ realmId, onSuccess }: RegisterFormProps) {
                 />
                 {(field.state.meta.isTouched || form.state.isSubmitted) &&
                   field.state.meta.errors.length > 0 && (
-                    <p className="text-sm text-red-500">{getFieldErrorMessage(field.state.meta)}</p>
+                    <p className="text-sm text-destructive">
+                      {getFieldErrorMessage(field.state.meta)}
+                    </p>
                   )}
               </div>
             )}
@@ -204,7 +208,7 @@ export function RegisterForm({ realmId, onSuccess }: RegisterFormProps) {
               </div>
               {(field.state.meta.isTouched || form.state.isSubmitted) &&
                 field.state.meta.errors.length > 0 && (
-                  <p className="text-sm text-red-500" data-testid="register-consent-error">
+                  <p className="text-sm text-destructive" data-testid="register-consent-error">
                     {getFieldErrorMessage(field.state.meta)}
                   </p>
                 )}

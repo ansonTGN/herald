@@ -246,10 +246,8 @@ export function EmailOtpLoginForm({
   if (isConsentRequiredConflict && conflict?.agreements) {
     return (
       <div className="space-y-4" data-testid="email-otp-login-form">
-        <h3 className="font-semibold text-center">{m['auth.email_otp.consent_title']()}</h3>
-        <p className="text-sm text-muted-foreground text-center">
-          {m['auth.email_otp.consent_description']()}
-        </p>
+        <h3 className="font-semibold">{m['auth.email_otp.consent_title']()}</h3>
+        <p className="text-sm text-muted-foreground">{m['auth.email_otp.consent_description']()}</p>
         {conflict.agreements.map((agreement: LegalAgreementSummary) => (
           <div
             key={agreement.version_id}
@@ -301,7 +299,7 @@ export function EmailOtpLoginForm({
     return (
       <div className="space-y-4" data-testid="email-otp-login-form">
         <div
-          className="p-3 bg-amber-50 border border-amber-200 rounded text-amber-800 text-sm"
+          className="p-3 bg-warning/10 border border-warning/20 rounded text-warning text-sm"
           data-testid="email-otp-not-registered-message"
         >
           {conflict?.message ?? m['auth.email_otp.not_registered_guidance']()}
@@ -318,7 +316,7 @@ export function EmailOtpLoginForm({
         >
           {m['auth.email_otp.try_different_email']()}
         </Button>
-        <div className="text-center text-sm">
+        <div className="text-sm">
           <Link
             to={registerPath}
             className="font-medium text-primary hover:text-primary/80"
@@ -336,7 +334,7 @@ export function EmailOtpLoginForm({
     const resendDisabled = countdown !== null || sendMutation.isPending || verifyMutation.isPending
     return (
       <div className="space-y-4" data-testid="email-otp-login-form">
-        <div className="text-center">
+        <div>
           <h3 className="font-semibold">{m['auth.email_otp.code_title']()}</h3>
           <p className="text-sm text-muted-foreground">
             {m['auth.email_otp.code_description']({
@@ -347,7 +345,7 @@ export function EmailOtpLoginForm({
 
         {error && (
           <div
-            className="p-3 bg-red-50 border border-red-200 rounded text-red-600 text-sm"
+            className="p-3 bg-destructive/10 border border-destructive/20 rounded text-destructive text-sm"
             data-testid="email-otp-error-message"
           >
             {error}
@@ -356,7 +354,7 @@ export function EmailOtpLoginForm({
 
         <div>
           <Label htmlFor="email-otp-code-input">{m['auth.email_otp.code_label']()}</Label>
-          <div className="mt-2 flex justify-center" data-testid="email-otp-code-input">
+          <div className="mt-2 flex" data-testid="email-otp-code-input">
             <OTPInput
               value={code}
               onChange={setCode}
@@ -389,7 +387,7 @@ export function EmailOtpLoginForm({
             : m['auth.email_otp.verify']()}
         </Button>
 
-        <div className="flex items-center justify-center gap-2 text-sm">
+        <div className="flex items-center gap-2 text-sm">
           {countdown !== null ? (
             <span className="text-muted-foreground" data-testid="email-otp-resend-countdown">
               {m['auth.email_otp.resend_in']({ countdown })}
@@ -429,14 +427,14 @@ export function EmailOtpLoginForm({
   // Email step (initial).
   return (
     <div className="space-y-4" data-testid="email-otp-login-form">
-      <div className="text-center">
+      <div>
         <h3 className="font-semibold">{m['auth.email_otp.title']()}</h3>
         <p className="text-sm text-muted-foreground">{m['auth.email_otp.description']()}</p>
       </div>
 
       {error && (
         <div
-          className="p-3 bg-red-50 border border-red-200 rounded text-red-600 text-sm"
+          className="p-3 bg-destructive/10 border border-destructive/20 rounded text-destructive text-sm"
           data-testid="email-otp-error-message"
         >
           {error}
@@ -466,7 +464,7 @@ export function EmailOtpLoginForm({
                 placeholder="you@example.com"
               />
               {field.state.meta.errors.length > 0 && (
-                <p className="text-sm text-red-500 mt-1">
+                <p className="text-sm text-destructive mt-1">
                   {getFieldErrorMessage(field.state.meta)}
                 </p>
               )}

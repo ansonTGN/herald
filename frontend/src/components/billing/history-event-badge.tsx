@@ -15,19 +15,19 @@ const sizeClasses = {
 }
 
 const colorClasses: Record<SubscriptionHistoryEventType, string> = {
-  created: 'bg-green-100 text-green-800 border-green-200',
-  upgraded: 'bg-teal-100 text-teal-800 border-teal-200',
-  downgraded: 'bg-orange-100 text-orange-800 border-orange-200',
-  canceled: 'bg-red-100 text-red-800 border-red-200',
-  renewed: 'bg-green-100 text-green-800 border-green-200',
-  reactivated: 'bg-purple-100 text-purple-800 border-purple-200',
-  expired: 'bg-gray-100 text-gray-800 border-gray-200',
-  billing_period_changed: 'bg-teal-100 text-teal-800 border-teal-200',
-  past_due: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-  disputed: 'bg-red-100 text-red-800 border-red-200',
-  payment_succeeded: 'bg-green-100 text-green-800 border-green-200',
-  payment_failed: 'bg-red-100 text-red-800 border-red-200',
-  invoice_created: 'bg-gray-100 text-gray-800 border-gray-200',
+  created: 'bg-success/10 text-success border-success/20',
+  upgraded: 'bg-info/10 text-info border-info/20',
+  downgraded: 'bg-warning/10 text-warning border-warning/20',
+  canceled: 'bg-destructive/10 text-destructive border-destructive/20',
+  renewed: 'bg-success/10 text-success border-success/20',
+  reactivated: 'bg-info/10 text-info border-info/20',
+  expired: 'bg-muted text-muted-foreground border-border',
+  billing_period_changed: 'bg-info/10 text-info border-info/20',
+  past_due: 'bg-warning/10 text-warning border-warning/20',
+  disputed: 'bg-destructive/10 text-destructive border-destructive/20',
+  payment_succeeded: 'bg-success/10 text-success border-success/20',
+  payment_failed: 'bg-destructive/10 text-destructive border-destructive/20',
+  invoice_created: 'bg-muted text-muted-foreground border-border',
 }
 
 export function HistoryEventBadge({ eventType, size = 'md', className }: HistoryEventBadgeProps) {

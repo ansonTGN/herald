@@ -150,7 +150,7 @@ export function PaymentAttemptStatus({
   const renderDegradedUI = () => (
     <div data-testid="payment-context-degraded" className="space-y-4">
       <div className="flex items-center gap-3">
-        <AlertCircle className="h-8 w-8 text-orange-600" />
+        <AlertCircle className="h-8 w-8 text-warning" />
         <div>
           <h3 className="font-semibold text-lg">{m['points.payment_degraded_title']()}</h3>
           <p className="text-sm text-muted-foreground">
@@ -165,7 +165,7 @@ export function PaymentAttemptStatus({
   const renderRedirectPrompt = (providerName: string, checkoutUrl: string) => (
     <div data-testid="payment-redirect-prompt" className="space-y-4">
       <div className="flex items-center gap-3">
-        <Clock className="h-8 w-8 text-yellow-600 animate-pulse" />
+        <Clock className="h-8 w-8 text-warning animate-pulse" />
         <div>
           <h3 className="font-semibold text-lg">{m['points.payment_redirect_title']()}</h3>
           <p className="text-sm text-muted-foreground">
@@ -246,7 +246,7 @@ export function PaymentAttemptStatus({
         return (
           <div data-testid="payment-status-pending" className="space-y-4">
             <div className="flex items-center gap-3">
-              <Clock className="h-8 w-8 text-yellow-600 animate-pulse" />
+              <Clock className="h-8 w-8 text-warning animate-pulse" />
               <div>
                 <h3 className="font-semibold text-lg">{m['points.payment_pending_title']()}</h3>
                 <p className="text-sm text-muted-foreground">
@@ -301,7 +301,7 @@ export function PaymentAttemptStatus({
         return (
           <div data-testid="payment-status-succeeded" className="space-y-4">
             <div className="flex items-center gap-3">
-              <CheckCircle2 className="h-8 w-8 text-green-600" />
+              <CheckCircle2 className="h-8 w-8 text-success" />
               <div>
                 <h3 className="font-semibold text-lg">{m['points.payment_succeeded_title']()}</h3>
                 <p className="text-sm text-muted-foreground">
@@ -310,14 +310,14 @@ export function PaymentAttemptStatus({
               </div>
             </div>
             {status.fulfillment && status.fulfillment.pointGrants.length > 0 && (
-              <div className="space-y-2 rounded-md bg-green-50 p-4">
-                <div className="font-medium text-green-900">
+              <div className="space-y-2 rounded-md bg-success/10 p-4">
+                <div className="font-medium text-success">
                   {m['points.payment_points_granted']()}
                 </div>
                 {status.fulfillment.pointGrants.map((grant) => (
                   <div
                     key={grant.resultId}
-                    className="text-sm text-green-700"
+                    className="text-sm text-success"
                     data-testid={`payment-point-grant-${grant.resultId}`}
                   >
                     <span className="font-mono text-xs">{grant.bucketId}</span>
@@ -373,7 +373,7 @@ export function PaymentAttemptStatus({
         return (
           <div data-testid="payment-status-expired" className="space-y-4">
             <div className="flex items-center gap-3">
-              <AlertCircle className="h-8 w-8 text-orange-600" />
+              <AlertCircle className="h-8 w-8 text-warning" />
               <div>
                 <h3 className="font-semibold text-lg">{m['points.payment_expired_title']()}</h3>
                 <p className="text-sm text-muted-foreground">

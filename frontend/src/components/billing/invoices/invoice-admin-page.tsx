@@ -130,13 +130,13 @@ function createInvoiceColumns(
         const isUnattributed = !row.original.subscriptionId && !row.original.paymentAttemptId
         return (
           <div className="flex items-center gap-1.5">
-            <Badge variant="secondary" className="bg-teal-50 text-teal-700 border-teal-200">
+            <Badge variant="secondary" className="bg-info/10 text-info border-info/20">
               {label}
             </Badge>
             {isUnattributed && (
               <Badge
                 variant="outline"
-                className="bg-amber-50 text-amber-700 border-amber-200"
+                className="bg-warning/10 text-warning border-warning/20"
                 data-testid={`invoice-unattributed-badge-${row.original.id}`}
               >
                 {m['billing.invoice_attribution_unattributed_badge']()}

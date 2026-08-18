@@ -45,7 +45,7 @@ function createClientAppColumns(
             data-testid="client-app-icon"
           />
         ) : (
-          <div className="w-8 h-8 bg-gray-200 rounded flex items-center justify-center text-gray-500 text-xs">
+          <div className="w-8 h-8 bg-muted rounded flex items-center justify-center text-muted-foreground text-xs">
             N/A
           </div>
         ),
@@ -173,7 +173,7 @@ export function ClientAppTable({
   if (error) {
     return (
       <div className="rounded-md border p-8">
-        <div className="flex items-center justify-center text-red-500">
+        <div className="flex items-center justify-center text-destructive">
           {m['client_apps.error_loading']({ message: getErrorMessage(error) })}
         </div>
       </div>

@@ -27,7 +27,7 @@ export function InvoiceRefundSummary({ invoice }: InvoiceRefundSummaryProps) {
         </div>
         <div className="flex justify-between text-sm">
           <span className="text-muted-foreground">{m['billing.credit_note_refunded_label']()}</span>
-          <span className="font-mono text-red-600" data-testid="invoice-refunded-amount">
+          <span className="font-mono text-destructive" data-testid="invoice-refunded-amount">
             -{formatInvoiceAmount(invoice.amountRefunded, invoice.currency)}
           </span>
         </div>

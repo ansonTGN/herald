@@ -137,7 +137,7 @@ export function RedirectUrisInput({
                 <div
                   className={cn(
                     'status-indicator w-2 h-2 rounded-full flex-shrink-0',
-                    item.isValid ? 'bg-green-500' : 'bg-red-500'
+                    item.isValid ? 'bg-success' : 'bg-destructive'
                   )}
                   aria-hidden="true"
                 />
@@ -190,7 +190,7 @@ export function RedirectUrisInput({
               <div
                 className={cn(
                   'absolute right-3 top-1/2 -translate-y-1/2 transition-colors',
-                  currentInputValid ? 'text-green-500' : 'text-red-500'
+                  currentInputValid ? 'text-success' : 'text-destructive'
                 )}
                 aria-hidden="true"
               >

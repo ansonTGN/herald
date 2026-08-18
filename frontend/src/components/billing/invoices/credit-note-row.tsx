@@ -12,8 +12,8 @@ interface CreditNoteRowProps {
   showOperator: boolean
 }
 
-const ACTIVE_BADGE_CLASS = 'bg-green-100 text-green-800 border-green-200'
-const VOIDED_BADGE_CLASS = 'bg-red-100 text-red-800 border-red-200'
+const ACTIVE_BADGE_CLASS = 'bg-success/10 text-success border-success/20'
+const VOIDED_BADGE_CLASS = 'bg-destructive/10 text-destructive border-destructive/20'
 
 export function CreditNoteRow({ note, track, currency, showOperator }: CreditNoteRowProps) {
   const isVoided = note.status === 'voided'

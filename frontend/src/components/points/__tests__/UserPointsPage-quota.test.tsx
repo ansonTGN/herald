@@ -445,10 +445,13 @@ describe('UserPointsPage — quota dashboard + pool cards (MSW integration)', ()
       expect(screen.queryByTestId(/^points-usage-dashboard-/)).not.toBeInTheDocument()
       expect(screen.queryByTestId(/^points-balance-card-/)).not.toBeInTheDocument()
       expect(screen.queryByTestId('user-points-cross-bucket-total')).not.toBeInTheDocument()
-      // Transaction history card is hidden when there are no transactions.
-      expect(
-        screen.queryByRole('heading', { name: /transaction history/i })
-      ).not.toBeInTheDocument()
+      // Transaction history section is hidden when there are no transactions.
+      // Probed by its stable testid after settle — the section legitimately
+      // renders its skeleton while the transactions query is in flight, so a
+      // synchronous assert here would race that fetch.
+      await waitFor(() =>
+        expect(screen.queryByTestId('user-points-transaction-history')).not.toBeInTheDocument()
+      )
     })
   })
 
@@ -492,13 +495,15 @@ describe('UserPointsPage — quota dashboard + pool cards (MSW integration)', ()
       expect(loadingPoolCards.length).toBeGreaterThanOrEqual(1)
 
       // Once the (empty) response settles, the page renders no cards and no
-      // transaction history (everything is empty).
+      // transaction history (everything is empty). The section shows its
+      // skeleton while the transactions fetch is pending, so the absence must
+      // be awaited, not asserted synchronously.
       await waitFor(() =>
         expect(screen.queryByTestId(/^points-usage-dashboard-/)).not.toBeInTheDocument()
       )
-      expect(
-        screen.queryByRole('heading', { name: /transaction history/i })
-      ).not.toBeInTheDocument()
+      await waitFor(() =>
+        expect(screen.queryByTestId('user-points-transaction-history')).not.toBeInTheDocument()
+      )
     })
   })
 })

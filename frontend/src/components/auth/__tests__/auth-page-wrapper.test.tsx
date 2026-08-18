@@ -58,11 +58,14 @@ function installFakeImage(mode: ImageMode) {
   return { ctor: Ctor, instances }
 }
 
-const DEFAULT_BG_CLASS = 'bg-gradient-to-b'
+// The default (no white-label background) skin is the flat paper background.
+// Tenant gradients/images are applied as inline backgroundImage styles, so the
+// class itself stays on the root in every case; fallback tests pair it with
+// the absence of `background-image` in the style attribute.
+const DEFAULT_BG_CLASS = 'bg-background'
 
 function rootEl(container: HTMLElement): HTMLElement {
-  // The root is the wrapper div that carries the default gradient class.
-  const el = container.querySelector(`.${DEFAULT_BG_CLASS}`)
+  const el = container.querySelector('[data-testid="auth-page-root"]')
   if (!el) throw new Error('AuthPageWrapper root element not found')
   return el as HTMLElement
 }
@@ -266,7 +269,7 @@ describe('AuthPageWrapper', () => {
       })
     })
 
-    it('GIVEN an image background that fails WHEN rendering THEN falls back to the default gradient (no backgroundImage)', async () => {
+    it('GIVEN an image background that fails WHEN rendering THEN falls back to the default paper background (no backgroundImage)', async () => {
       installFakeImage('error')
       const whiteLabel: PublicWhiteLabelConfig = {
         background: { type: 'image', value: 'https://broken.example.com/bg.jpg' },
@@ -300,7 +303,7 @@ describe('AuthPageWrapper', () => {
       expect(style).toContain('background-image: linear-gradient(to right')
     })
 
-    it('GIVEN an invalid gradient background WHEN rendering THEN falls back to the default gradient', async () => {
+    it('GIVEN an invalid gradient background WHEN rendering THEN falls back to the default paper background', async () => {
       const whiteLabel: PublicWhiteLabelConfig = {
         background: { type: 'gradient', value: 'url("https://evil.example.com/x.png")' },
       }
@@ -326,7 +329,7 @@ describe('AuthPageWrapper', () => {
       expect(screen.getByTestId('login-form')).toBeInTheDocument()
     })
 
-    it('GIVEN no whiteLabel at all WHEN rendering THEN renders Herald text and keeps default gradient', async () => {
+    it('GIVEN no whiteLabel at all WHEN rendering THEN renders Herald text and keeps the default paper background', async () => {
       const screen = render(<AuthPageWrapper>children</AuthPageWrapper>)
       expect(screen.getByTestId('auth-brand-text')).toHaveTextContent('Herald')
       const root = rootEl(screen.container)

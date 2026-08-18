@@ -33,7 +33,7 @@ export function RealmDashboardLayout() {
   }, [isAccessingAdminPage, hasAdminPermissionValue, isLoading, realmId, navigate])
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen bg-muted">
       <Sidebar />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header />

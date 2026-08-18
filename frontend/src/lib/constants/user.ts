@@ -31,7 +31,7 @@ export function getUserStatusOptions() {
 }
 
 export const USER_STATUS_COLORS: Record<number, string> = {
-  [USER_STATUS.WAIT_VERIFIED]: 'bg-yellow-100 text-yellow-800',
-  [USER_STATUS.NORMAL]: 'bg-green-100 text-green-800',
-  [USER_STATUS.FORBIDDEN]: 'bg-red-100 text-red-800',
+  [USER_STATUS.WAIT_VERIFIED]: 'bg-warning/10 text-warning',
+  [USER_STATUS.NORMAL]: 'bg-success/10 text-success',
+  [USER_STATUS.FORBIDDEN]: 'bg-destructive/10 text-destructive',
 }

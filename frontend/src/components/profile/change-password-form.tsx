@@ -4,7 +4,6 @@ import { changeUserPassword } from '@/lib/api-generated'
 import { obtainReauthToken } from '@/lib/reauth-flow'
 import { useFormMutation } from '@/hooks/use-form-mutation'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { TextField } from '@/components/shared/form-fields/text-field'
 import { queryKeys } from '@/data/query-options'
 import { m } from '@/paraglide/messages'
@@ -39,11 +38,9 @@ export function ChangePasswordForm() {
   })
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{m['profile.change_password_title']()}</CardTitle>
-      </CardHeader>
-      <CardContent>
+    <section>
+      <h2 className="text-base font-semibold">{m['profile.change_password_title']()}</h2>
+      <div className="mt-4 border-t border-border pt-4">
         <AppForm>
           <form
             onSubmit={(e) => {
@@ -84,7 +81,7 @@ export function ChangePasswordForm() {
             </Button>
           </form>
         </AppForm>
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   )
 }

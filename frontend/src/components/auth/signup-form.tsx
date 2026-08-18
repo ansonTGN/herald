@@ -147,7 +147,9 @@ export function SignupForm({ onSuccess }: SignupFormProps) {
               />
               {(field.state.meta.isTouched || form.state.isSubmitted) &&
                 field.state.meta.errors.length > 0 && (
-                  <p className="text-sm text-red-500">{getFieldErrorMessage(field.state.meta)}</p>
+                  <p className="text-sm text-destructive">
+                    {getFieldErrorMessage(field.state.meta)}
+                  </p>
                 )}
               <PasswordStrengthMeter
                 password={field.state.value ?? ''}
@@ -171,7 +173,9 @@ export function SignupForm({ onSuccess }: SignupFormProps) {
                 />
                 {(field.state.meta.isTouched || form.state.isSubmitted) &&
                   field.state.meta.errors.length > 0 && (
-                    <p className="text-sm text-red-500">{getFieldErrorMessage(field.state.meta)}</p>
+                    <p className="text-sm text-destructive">
+                      {getFieldErrorMessage(field.state.meta)}
+                    </p>
                   )}
               </div>
             )}

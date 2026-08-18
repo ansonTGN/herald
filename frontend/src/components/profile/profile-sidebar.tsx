@@ -1,14 +1,4 @@
 import { Link, useLocation } from '@tanstack/react-router'
-import {
-  User,
-  Shield,
-  Coins,
-  CreditCard,
-  FileText,
-  LayoutDashboard,
-  LogOut,
-  type LucideIcon,
-} from 'lucide-react'
 import { useCallback, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { usePermissions, useRealmId } from '@/stores/auth-store'
@@ -22,7 +12,6 @@ import { realmPath, resolvedRealmFromPath } from '@/lib/realm-routing'
 interface MenuItem {
   name: string
   path: string
-  icon: LucideIcon
   visible?: boolean
 }
 
@@ -54,29 +43,24 @@ export function ProfileSidebar() {
       {
         name: 'Profile',
         path: realmPath({ ...realmContext, realmId }, '/user/profile'),
-        icon: User,
       },
       {
         name: 'Security',
         path: realmPath({ ...realmContext, realmId }, '/user/security'),
-        icon: Shield,
       },
       {
         name: 'Points',
         path: realmPath({ ...realmContext, realmId }, '/user/points'),
-        icon: Coins,
         visible: userFeatures?.pointsVisible === true,
       },
       {
         name: 'PurchaseRecords',
         path: realmPath({ ...realmContext, realmId }, '/user/subscription-history'),
-        icon: CreditCard,
         visible: userFeatures?.pointsVisible === true,
       },
       {
         name: 'Invoices',
         path: realmPath({ ...realmContext, realmId }, '/user/invoices'),
-        icon: FileText,
         visible: userFeatures?.invoicesVisible === true,
       },
     ],
@@ -92,13 +76,13 @@ export function ProfileSidebar() {
   return (
     <aside
       data-testid="profile-sidebar"
-      className="w-64 bg-sidebar border-r border-sidebar-border flex flex-col"
+      className="w-64 border-r border-border flex flex-col px-6 py-8"
     >
-      <div className="p-6">
-        <h1 className="text-xl font-bold text-sidebar-foreground">{m['nav_profile.profile']()}</h1>
-      </div>
+      <h1 className="text-lg font-semibold tracking-tight text-foreground">
+        {m['nav_profile.profile']()}
+      </h1>
 
-      <nav className="flex-1 px-3 space-y-1">
+      <nav className="mt-8 flex-1 space-y-1">
         {menuItems
           .filter((item) => item.visible !== false)
           .map((item) => (
@@ -106,39 +90,36 @@ export function ProfileSidebar() {
               key={item.name}
               to={item.path}
               data-testid={`profile-menu-${item.name.toLowerCase()}`}
-              className={`flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+              className={`block py-1.5 text-sm transition-colors ${
                 isActive(item.path)
-                  ? 'bg-sidebar-accent text-sidebar-foreground'
-                  : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground'
+                  ? 'font-medium text-foreground'
+                  : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              <item.icon className="w-5 h-5 mr-3" />
               {getProfileNavLabel(item.name)}
             </Link>
           ))}
       </nav>
 
-      <div className="px-3 pb-3">
+      <div className="space-y-2">
         {canAccessAdminConsole && (
           <a
             href={realmPath({ ...realmContext, realmId }, '/manage')}
             data-testid="profile-admin-console-link"
-            className="mb-2 flex items-center px-3 py-2 text-sm font-medium text-sidebar-foreground/70 rounded-md hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors"
+            className="block py-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
-            <LayoutDashboard className="w-5 h-5 mr-3" />
             {m['nav.dashboard']()}
           </a>
         )}
         <LanguageSwitcher />
       </div>
 
-      <div className="p-3 border-t border-sidebar-border">
+      <div className="mt-4 border-t border-border pt-4">
         <button
           data-testid="profile-logout-button"
           onClick={handleLogout}
-          className="flex items-center w-full px-3 py-2 text-sm font-medium text-sidebar-foreground/70 rounded-md hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors"
+          className="block py-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
-          <LogOut className="w-5 h-5 mr-3" />
           {m['user_menu.logout']()}
         </button>
       </div>

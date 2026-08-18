@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
@@ -111,7 +110,9 @@ function PasskeyRenameForm({ target, onClose }: { target: RenameState; onClose: 
               />
               {(field.state.meta.isTouched || form.state.isSubmitted) &&
                 field.state.meta.errors.length > 0 && (
-                  <p className="text-sm text-red-500">{getFieldErrorMessage(field.state.meta)}</p>
+                  <p className="text-sm text-destructive">
+                    {getFieldErrorMessage(field.state.meta)}
+                  </p>
                 )}
             </div>
           )}
@@ -233,58 +234,60 @@ export function PasskeyList({ onAdd }: PasskeyListProps) {
         </Button>
       </div>
 
-      <div className="space-y-3">
+      <div className="divide-y divide-border">
         {credentials.map((cred) => (
-          <Card key={cred.credentialId} data-testid={`passkey-item-${cred.credentialId}`}>
-            <CardContent className="space-y-3 py-4">
-              <div className="flex items-start justify-between gap-2">
-                <div className="space-y-1">
-                  <p className="font-medium">
-                    {cred.nickname ?? m['profile.passkey_register_nickname_placeholder']()}
-                  </p>
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-                    <span>
-                      {m['profile.passkey_list_created']()} {formatDateTimeShort(cred.createdAt)}
-                    </span>
-                    <span>
-                      {m['profile.passkey_list_last_used']()}{' '}
-                      {cred.lastUsedAt
-                        ? formatDateTimeShort(cred.lastUsedAt)
-                        : m['profile.passkey_list_never_used']()}
-                    </span>
-                  </div>
+          <div
+            key={cred.credentialId}
+            className="space-y-3 py-4 first:pt-0"
+            data-testid={`passkey-item-${cred.credentialId}`}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="space-y-1">
+                <p className="font-medium">
+                  {cred.nickname ?? m['profile.passkey_register_nickname_placeholder']()}
+                </p>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+                  <span>
+                    {m['profile.passkey_list_created']()} {formatDateTimeShort(cred.createdAt)}
+                  </span>
+                  <span>
+                    {m['profile.passkey_list_last_used']()}{' '}
+                    {cred.lastUsedAt
+                      ? formatDateTimeShort(cred.lastUsedAt)
+                      : m['profile.passkey_list_never_used']()}
+                  </span>
                 </div>
-                <Badge variant={cred.backupState ? 'default' : 'secondary'}>
-                  {cred.backupEligible && cred.backupState
-                    ? m['profile.passkey_list_synced']()
-                    : m['profile.passkey_list_device_only']()}
-                </Badge>
               </div>
+              <Badge variant={cred.backupState ? 'default' : 'secondary'}>
+                {cred.backupEligible && cred.backupState
+                  ? m['profile.passkey_list_synced']()
+                  : m['profile.passkey_list_device_only']()}
+              </Badge>
+            </div>
 
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    setRenameTarget({
-                      credentialId: cred.credentialId,
-                      nickname: cred.nickname ?? '',
-                    })
-                  }
-                >
-                  {m['profile.passkey_list_rename']()}
-                </Button>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => setDeleteTarget(cred)}
-                  data-testid="passkey-delete-button"
-                >
-                  {m['profile.passkey_list_delete']()}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  setRenameTarget({
+                    credentialId: cred.credentialId,
+                    nickname: cred.nickname ?? '',
+                  })
+                }
+              >
+                {m['profile.passkey_list_rename']()}
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => setDeleteTarget(cred)}
+                data-testid="passkey-delete-button"
+              >
+                {m['profile.passkey_list_delete']()}
+              </Button>
+            </div>
+          </div>
         ))}
       </div>
 
@@ -323,7 +326,7 @@ export function PasskeyList({ onAdd }: PasskeyListProps) {
             </DialogDescription>
           </DialogHeader>
           {isLastCredential && (
-            <p className="text-sm font-medium text-red-600">
+            <p className="text-sm font-medium text-destructive">
               {m['profile.passkey_delete_last_warning']()}
             </p>
           )}
@@ -353,7 +356,7 @@ export function PasskeyList({ onAdd }: PasskeyListProps) {
                     />
                     {(field.state.meta.isTouched || deleteForm.state.isSubmitted) &&
                       field.state.meta.errors.length > 0 && (
-                        <p className="text-sm text-red-500">
+                        <p className="text-sm text-destructive">
                           {getFieldErrorMessage(field.state.meta)}
                         </p>
                       )}
@@ -361,7 +364,7 @@ export function PasskeyList({ onAdd }: PasskeyListProps) {
                 )}
               </deleteForm.Field>
               {deletePasswordError && (
-                <p className="text-sm text-red-500" data-testid="passkey-delete-password-error">
+                <p className="text-sm text-destructive" data-testid="passkey-delete-password-error">
                   {deletePasswordError}
                 </p>
               )}

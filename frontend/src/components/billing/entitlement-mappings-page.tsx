@@ -147,7 +147,7 @@ export function EntitlementMappingsPage({ realmId }: EntitlementMappingsPageProp
 
       {!canManage && (
         <div
-          className="rounded-md border border-yellow-500/50 bg-yellow-50 px-4 py-3 text-sm text-yellow-800"
+          className="rounded-md border border-warning/50 bg-warning/10 px-4 py-3 text-sm text-warning"
           data-testid="readonly-perm-banner"
           role="alert"
         >

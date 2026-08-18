@@ -189,7 +189,7 @@ export function MySubscriptionsPage({ realmId }: MySubscriptionsPageProps) {
     switch (status.toLowerCase()) {
       case 'active':
         return (
-          <Badge className="bg-green-100 text-green-800">
+          <Badge className="bg-success/10 text-success">
             {m['billing.subscription_status_label_active']()}
           </Badge>
         )
@@ -203,7 +203,7 @@ export function MySubscriptionsPage({ realmId }: MySubscriptionsPageProps) {
         )
       case 'scheduled_cancel':
         return (
-          <Badge className="bg-yellow-100 text-yellow-800">
+          <Badge className="bg-warning/10 text-warning">
             {m['billing.subscription_status_label_scheduled_cancel']()}
           </Badge>
         )

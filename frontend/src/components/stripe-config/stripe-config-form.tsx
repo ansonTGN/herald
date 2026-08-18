@@ -75,7 +75,7 @@ export function StripeConfigForm({
                   />
                   {(field.state.meta.isTouched || form.state.isSubmitted) &&
                     field.state.meta.errors.length > 0 && (
-                      <p className="text-sm text-red-500">
+                      <p className="text-sm text-destructive">
                         {getFieldErrorMessage(field.state.meta.errors[0])}
                       </p>
                     )}
@@ -103,7 +103,7 @@ export function StripeConfigForm({
                   />
                   {(field.state.meta.isTouched || form.state.isSubmitted) &&
                     field.state.meta.errors.length > 0 && (
-                      <p className="text-sm text-red-500">
+                      <p className="text-sm text-destructive">
                         {getFieldErrorMessage(field.state.meta.errors[0])}
                       </p>
                     )}
@@ -133,7 +133,7 @@ export function StripeConfigForm({
                   />
                   {(field.state.meta.isTouched || form.state.isSubmitted) &&
                     field.state.meta.errors.length > 0 && (
-                      <p className="text-sm text-red-500">
+                      <p className="text-sm text-destructive">
                         {getFieldErrorMessage(field.state.meta.errors[0])}
                       </p>
                     )}

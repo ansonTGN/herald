@@ -52,15 +52,15 @@ function formatProviderName(provider: string): string {
 function getStatusBadgeClass(status: string): string {
   switch (status) {
     case 'active':
-      return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+      return 'bg-success/10 text-success'
     case 'past_due':
-      return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'
+      return 'bg-warning/10 text-warning'
     case 'canceled':
-      return 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400'
+      return 'bg-muted text-muted-foreground'
     case 'expired':
-      return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
+      return 'bg-destructive/10 text-destructive'
     default:
-      return 'bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-400'
+      return 'bg-info/10 text-info'
   }
 }
 

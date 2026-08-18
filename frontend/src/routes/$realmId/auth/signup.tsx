@@ -3,7 +3,6 @@ import { AuthPageWrapper } from '@/components/auth/auth-page-wrapper'
 import { SignupForm } from '@/components/auth/signup-form'
 import { publicConfigQueryOptions, signupStatusQueryOptions } from '@/data/query-options'
 import { useQuery } from '@tanstack/react-query'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { m } from '@/paraglide/messages'
 import { ADMIN_REALM_ID } from '@/lib/constants/auth-constants'
 import { realmPath, resolvedRealmFromPath } from '@/lib/realm-routing'
@@ -46,7 +45,7 @@ export function SignupPage() {
   if (isLoading) {
     return (
       <AuthPageWrapper whiteLabel={whiteLabel}>
-        <div className="text-gray-600">{m['common.loading']()}</div>
+        <div className="text-muted-foreground">{m['common.loading']()}</div>
       </AuthPageWrapper>
     )
   }
@@ -56,39 +55,39 @@ export function SignupPage() {
   if (statusError || !signupEnabled) {
     return (
       <AuthPageWrapper whiteLabel={whiteLabel}>
-        <Card className="max-w-md w-full">
-          <CardHeader>
-            <CardTitle data-testid="signup-disabled-notice">
-              {m['auth.signup.disabled_title']()}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-gray-600 mb-4">{m['auth.signup.disabled_description']()}</p>
+        <div className="w-full pt-8">
+          <h1 data-testid="signup-disabled-notice" className="text-xl font-semibold tracking-tight">
+            {m['auth.signup.disabled_title']()}
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {m['auth.signup.disabled_description']()}
+          </p>
+          <div className="mt-6">
             <Link
               to={realmPath(realmContext, '/auth/login')}
-              className="text-primary hover:text-primary/80"
+              className="text-sm font-medium text-primary hover:text-primary/80"
             >
               {m['auth.signup.return_to_login']()}
             </Link>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </AuthPageWrapper>
     )
   }
 
   return (
     <AuthPageWrapper whiteLabel={whiteLabel}>
-      <Card className="max-w-md w-full" data-testid="signup-card">
-        <CardHeader>
-          <CardTitle data-testid="signup-title">{m['auth.signup.title']()}</CardTitle>
-          <p className="text-sm text-muted-foreground" data-testid="signup-subtitle">
-            {m['auth.signup.subtitle']()}
-          </p>
-        </CardHeader>
-        <CardContent>
+      <div className="w-full pt-8" data-testid="signup-card">
+        <h1 data-testid="signup-title" className="text-xl font-semibold tracking-tight">
+          {m['auth.signup.title']()}
+        </h1>
+        <p className="mt-1 text-sm text-muted-foreground" data-testid="signup-subtitle">
+          {m['auth.signup.subtitle']()}
+        </p>
+        <div className="mt-6">
           <SignupForm onSuccess={handleSignupSuccess} />
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </AuthPageWrapper>
   )
 }

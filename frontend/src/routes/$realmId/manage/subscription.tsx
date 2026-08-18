@@ -21,7 +21,7 @@ export function SubscriptionRoute() {
 
   if (!clientAppId) {
     return (
-      <div className="p-4 text-center text-gray-600" data-testid="no-client-app-message">
+      <div className="p-4 text-center text-muted-foreground" data-testid="no-client-app-message">
         {m['billing.subscription_no_client_app']()}
       </div>
     )

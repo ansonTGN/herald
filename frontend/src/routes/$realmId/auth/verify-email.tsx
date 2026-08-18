@@ -7,7 +7,6 @@ import { getErrorMessage } from '@/lib/error-utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { TurnstileWidget } from '@/components/auth/turnstile-widget'
 import { AuthPageWrapper } from '@/components/auth/auth-page-wrapper'
 import { publicConfigQueryOptions, turnstileStatusQueryOptions } from '@/data/query-options'
@@ -105,84 +104,82 @@ export function VerifyEmailPage() {
 
   return (
     <AuthPageWrapper whiteLabel={publicConfig?.whiteLabel} realmName={publicConfig?.realmName}>
-      <Card className="max-w-md w-full">
-        <CardHeader>
-          <CardTitle data-testid="verify-email-title">{m['auth.verify_email.title']()}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-gray-600 text-center mb-6">{m['auth.verify_email.description']()}</p>
+      <div className="w-full pt-8">
+        <h1 data-testid="verify-email-title" className="text-xl font-semibold tracking-tight">
+          {m['auth.verify_email.title']()}
+        </h1>
+        <p className="mt-1 text-sm text-muted-foreground">{m['auth.verify_email.description']()}</p>
 
-          <form onSubmit={handleVerify} className="space-y-6">
-            <div>
-              <Label htmlFor="email">{m['auth.verify_email.email_label']()}</Label>
-              <Input
-                id="email"
-                type="email"
-                data-testid="verify-email-input"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="your@email.com"
-                className="mt-1"
-                required
-              />
+        <form onSubmit={handleVerify} className="mt-6 space-y-6">
+          <div>
+            <Label htmlFor="email">{m['auth.verify_email.email_label']()}</Label>
+            <Input
+              id="email"
+              type="email"
+              data-testid="verify-email-input"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="your@email.com"
+              className="mt-1"
+              required
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="verification-code">{m['auth.verify_email.code_label']()}</Label>
+            <Input
+              id="verification-code"
+              type="text"
+              data-testid="verification-code-input"
+              value={code}
+              onChange={(e) =>
+                setCode(e.target.value.replace(/\D/g, '').slice(0, VERIFICATION_CODE_LENGTH))
+              }
+              placeholder="123456"
+              maxLength={VERIFICATION_CODE_LENGTH}
+              className="mt-1"
+              required
+            />
+          </div>
+
+          <Button
+            type="submit"
+            data-testid="verify-button"
+            disabled={code.length !== VERIFICATION_CODE_LENGTH || isVerifying}
+            className="w-full"
+          >
+            {isVerifying
+              ? m['auth.verify_email.verifying']()
+              : m['auth.verify_email.verify_button']()}
+          </Button>
+
+          {verificationError && (
+            <div className="bg-destructive/10 border border-destructive/20 text-destructive px-4 py-3 rounded-lg">
+              {verificationError}
             </div>
+          )}
 
-            <div>
-              <Label htmlFor="verification-code">{m['auth.verify_email.code_label']()}</Label>
-              <Input
-                id="verification-code"
-                type="text"
-                data-testid="verification-code-input"
-                value={code}
-                onChange={(e) =>
-                  setCode(e.target.value.replace(/\D/g, '').slice(0, VERIFICATION_CODE_LENGTH))
-                }
-                placeholder="123456"
-                maxLength={VERIFICATION_CODE_LENGTH}
-                className="mt-1"
-                required
-              />
-            </div>
+          {canResend && !loadingTurnstile && turnstileStatus?.enabled && (
+            <TurnstileWidget
+              siteKey={turnstileStatus.siteKey || ''}
+              onTokenChange={setTurnstileToken}
+              onError={(error) => console.error('Turnstile error:', error)}
+            />
+          )}
 
+          <div>
             <Button
-              type="submit"
-              data-testid="verify-button"
-              disabled={code.length !== VERIFICATION_CODE_LENGTH || isVerifying}
-              className="w-full"
+              type="button"
+              variant="ghost"
+              data-testid="resend-button"
+              onClick={handleResend}
+              disabled={!canResend || isResending}
             >
-              {isVerifying
-                ? m['auth.verify_email.verifying']()
-                : m['auth.verify_email.verify_button']()}
+              {getResendButtonText(isResending, canResend, countdown)}
             </Button>
-
-            {verificationError && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
-                {verificationError}
-              </div>
-            )}
-
-            {canResend && !loadingTurnstile && turnstileStatus?.enabled && (
-              <TurnstileWidget
-                siteKey={turnstileStatus.siteKey || ''}
-                onTokenChange={setTurnstileToken}
-                onError={(error) => console.error('Turnstile error:', error)}
-              />
-            )}
-
-            <div className="text-center">
-              <Button
-                type="button"
-                variant="ghost"
-                data-testid="resend-button"
-                onClick={handleResend}
-                disabled={!canResend || isResending}
-              >
-                {getResendButtonText(isResending, canResend, countdown)}
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
+          </div>
+        </form>
+      </div>
     </AuthPageWrapper>
   )
 }

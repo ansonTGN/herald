@@ -219,10 +219,10 @@ export function isRefundOverTotal(amountRefunded: number, total: number): boolea
 /**
  * Source-aware color tokens for Credit Note badges and track top-bars.
  *
- * Aligns with the existing external-provider badge color used in
- * `invoice-admin-page.tsx` (`bg-teal-50 text-teal-700 border-teal-200`), so
- * Stripe (external) stays teal. Manual uses cyan to distinguish self-managed
- * credit notes without inventing a second external-provider color.
+ * Manual and Stripe both map to the info token (matching the external-provider
+ * badge in `invoice-admin-page.tsx`); the semantic palette has no second
+ * provider hue, so the two sources are not distinguished by color. Unknown
+ * providers fall back to muted.
  */
 export function getCreditNoteSourceColorClass(source: string): {
   badge: string
@@ -231,13 +231,13 @@ export function getCreditNoteSourceColorClass(source: string): {
   switch (source) {
     case 'manual':
       return {
-        badge: 'bg-cyan-50 text-cyan-700 border-cyan-200',
-        bar: 'border-t-cyan-500',
+        badge: 'bg-info/10 text-info border-info/20',
+        bar: 'border-t-info',
       }
     case 'stripe':
       return {
-        badge: 'bg-teal-50 text-teal-700 border-teal-200',
-        bar: 'border-t-teal-500',
+        badge: 'bg-info/10 text-info border-info/20',
+        bar: 'border-t-info',
       }
     default:
       return {

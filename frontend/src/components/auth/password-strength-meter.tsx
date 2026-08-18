@@ -39,7 +39,7 @@ export function PasswordStrengthMeter({ password, config }: PasswordStrengthMete
   return (
     <div className="mt-2">
       <div className="flex items-center gap-2">
-        <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
+        <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
           <div
             className={`h-full transition-all duration-300 ${colorClass}`}
             style={{ width: `${(strength.score / 4) * 100}%` }}
@@ -51,7 +51,7 @@ export function PasswordStrengthMeter({ password, config }: PasswordStrengthMete
       </div>
 
       {strength.unmet.length > 0 && (
-        <ul className="mt-2 text-sm text-gray-600">
+        <ul className="mt-2 text-sm text-muted-foreground">
           {strength.unmet.map((item) => (
             <li key={item.key}>• {translateUnmet(item)}</li>
           ))}

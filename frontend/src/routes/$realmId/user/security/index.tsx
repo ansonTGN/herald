@@ -12,7 +12,6 @@ import { TotpDisableForm } from '@/components/profile/totp/totp-disable-form'
 import { TotpRegenerateForm } from '@/components/profile/totp/totp-regenerate-form'
 import { PageHeader } from '@/components/shared'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { m } from '@/paraglide/messages'
 import { realmPath, useResolvedRealmContext } from '@/lib/realm-routing'
 import { userFeatureAvailabilityQueryOptions } from '@/data/query-options'
@@ -86,8 +85,10 @@ export function ProfileSecurity() {
             ) : (
               <div className="space-y-4">
                 <div>
-                  <h2 className="text-2xl font-bold">{m['profile.passkey_title']()}</h2>
-                  <p className="text-muted-foreground">{m['profile.passkey_description']()}</p>
+                  <h2 className="text-base font-semibold">{m['profile.passkey_title']()}</h2>
+                  <p className="text-sm text-muted-foreground">
+                    {m['profile.passkey_description']()}
+                  </p>
                 </div>
                 <PasskeyList onAdd={() => setPasskeyRegistering(true)} />
               </div>
@@ -121,12 +122,12 @@ export function ProfileSecurity() {
         </DialogContent>
       </Dialog>
 
-      <Card data-testid="danger-operations-section">
-        <CardHeader>
-          <CardTitle>{m['security.delete_account.section_title']()}</CardTitle>
-          <CardDescription>{m['security.delete_account.section_description']()}</CardDescription>
-        </CardHeader>
-        <CardContent>
+      <section data-testid="danger-operations-section">
+        <h2 className="text-base font-semibold">{m['security.delete_account.section_title']()}</h2>
+        <p className="mt-0.5 text-sm text-muted-foreground">
+          {m['security.delete_account.section_description']()}
+        </p>
+        <div className="mt-4 border-t border-border pt-4">
           <Button
             variant="destructive"
             onClick={() => setDeleteDialogOpen(true)}
@@ -134,8 +135,8 @@ export function ProfileSecurity() {
           >
             {m['security.delete_account.button']()}
           </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
       <DeleteAccountDialog
         realmId={realmId}

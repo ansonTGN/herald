@@ -91,7 +91,7 @@ export function ApplyInvoiceFormPage({
 
       {isCreemRejection && (
         <div
-          className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"
+          className="rounded-md border border-warning/20 bg-warning/10 p-3 text-sm text-warning"
           data-testid="apply-invoice-creem-rejection"
         >
           {m['billing.invoice_apply_creem_rejection']()}

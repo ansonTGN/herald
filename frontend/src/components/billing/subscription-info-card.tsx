@@ -81,9 +81,9 @@ export function SubscriptionInfoCard({
       <Card data-testid="subscription-info-card-loading">
         <CardContent className="py-6">
           <div className="animate-pulse space-y-3">
-            <div className="h-4 bg-gray-200 rounded w-1/4" />
-            <div className="h-3 bg-gray-200 rounded w-1/3" />
-            <div className="h-3 bg-gray-200 rounded w-1/2" />
+            <div className="h-4 bg-muted rounded w-1/4" />
+            <div className="h-3 bg-muted rounded w-1/3" />
+            <div className="h-3 bg-muted rounded w-1/2" />
           </div>
         </CardContent>
       </Card>

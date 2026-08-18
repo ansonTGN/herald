@@ -151,7 +151,7 @@ export function RealmTable({ data, isLoading, error, onViewDetail }: RealmTableP
     return (
       <div
         data-testid="realm-table-error"
-        className="text-red-500 p-4 border border-red-200 rounded-md bg-red-50"
+        className="text-destructive p-4 border border-destructive/20 rounded-md bg-destructive/10"
       >
         <div className="font-semibold">{m['realms.failed_to_load']()}</div>
         <div className="text-sm mt-1">

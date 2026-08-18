@@ -225,7 +225,7 @@ test.describe('[Regular User] Password Reset Demo Tests', () => {
 
       // The mismatch error message should appear.
       await expect(
-        page.locator('p.text-red-500').filter({ hasText: /Passwords do not match/i })
+        page.locator('p.text-destructive').filter({ hasText: /Passwords do not match/i })
       ).toBeVisible({ timeout: 3000 })
 
       // Submit button must remain disabled while passwords mismatch.

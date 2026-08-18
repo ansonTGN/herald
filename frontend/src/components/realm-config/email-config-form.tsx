@@ -125,8 +125,8 @@ export function EmailConfigForm({
               variant={emailStatus.configured ? 'default' : 'outline'}
               className={
                 emailStatus.configured
-                  ? 'bg-green-100 text-green-800 border-green-300'
-                  : 'bg-amber-100 text-amber-800 border-amber-300'
+                  ? 'bg-success/10 text-success border-success/20'
+                  : 'bg-warning/10 text-warning border-warning/20'
               }
               data-testid="email-config-status-badge"
             >
@@ -334,7 +334,7 @@ export function EmailConfigForm({
             )}
 
             {testEmailMutation.isSuccess && (
-              <p className="text-sm text-green-600" data-testid="email-test-success">
+              <p className="text-sm text-success" data-testid="email-test-success">
                 {testEmailMutation.data?.message || m['realm_config.email_test_success']()}
               </p>
             )}

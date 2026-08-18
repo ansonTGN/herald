@@ -3,7 +3,6 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ListPagination, PageHeader } from '@/components/shared'
 import { PurchaseHistoryList } from '@/components/purchase/purchase-history-list'
 import { PurchaseDetailsDialog } from '@/components/purchase/purchase-details-dialog'
@@ -78,11 +77,9 @@ export function PurchaseRecordsRoute() {
         )}
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{m['billing.purchase_records_history_title']()}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
+      <section>
+        <h2 className="text-base font-semibold">{m['billing.purchase_records_history_title']()}</h2>
+        <div className="mt-4 space-y-4 border-t border-border pt-4">
           <PurchaseHistoryList
             purchases={purchaseHistoryData?.items || []}
             isLoading={purchaseHistoryLoading}
@@ -99,8 +96,8 @@ export function PurchaseRecordsRoute() {
               testIdPrefix="purchase-records-pagination"
             />
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
       <PurchaseDetailsDialog
         purchase={selectedPurchase}

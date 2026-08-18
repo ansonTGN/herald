@@ -1,8 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Shield, Clock, Key } from 'lucide-react'
+import { Clock, Key } from 'lucide-react'
 import { formatDate } from '@/lib/totp-utils'
 import { totpStatusQueryOptions } from '@/data/query-options'
 import { m } from '@/paraglide/messages'
@@ -18,46 +17,38 @@ export function TotpStatusCard({ onEnable, onDisable, onRegenerate }: TotpStatus
 
   if (isLoading) {
     return (
-      <Card data-testid="totp-status-card">
-        <CardContent className="py-6">
-          <p className="text-center text-muted-foreground">{m['profile.totp_loading']()}</p>
-        </CardContent>
-      </Card>
+      <section data-testid="totp-status-card">
+        <p className="py-6 text-sm text-muted-foreground">{m['profile.totp_loading']()}</p>
+      </section>
     )
   }
 
   if (!data?.enabled) {
     return (
-      <Card data-testid="totp-status-card">
-        <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <Shield className="h-5 w-5" />
-            <span>{m['profile.totp_title']()}</span>
-          </CardTitle>
-          <CardDescription>{m['profile.totp_description']()}</CardDescription>
-        </CardHeader>
-        <CardContent>
+      <section data-testid="totp-status-card">
+        <h2 className="text-base font-semibold">{m['profile.totp_title']()}</h2>
+        <p className="mt-0.5 text-sm text-muted-foreground">{m['profile.totp_description']()}</p>
+        <div className="mt-4 border-t border-border pt-4">
           <Button onClick={onEnable} data-testid="totp-enable-button">
             {m['profile.totp_enable_button']()}
           </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </section>
     )
   }
 
   return (
-    <Card data-testid="totp-status-card-enabled">
-      <CardHeader>
-        <CardTitle className="flex items-center space-x-2">
-          <Shield className="h-5 w-5 text-green-600" />
-          <span>{m['profile.totp_title']()}</span>
-          <Badge variant="default" className="ml-auto" data-testid="totp-status-badge">
-            {m['profile.totp_enabled_badge']()}
-          </Badge>
-        </CardTitle>
-        <CardDescription>{m['profile.totp_protected_description']()}</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    <section data-testid="totp-status-card-enabled">
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-semibold">{m['profile.totp_title']()}</h2>
+        <Badge variant="default" data-testid="totp-status-badge">
+          {m['profile.totp_enabled_badge']()}
+        </Badge>
+      </div>
+      <p className="mt-0.5 text-sm text-muted-foreground">
+        {m['profile.totp_protected_description']()}
+      </p>
+      <div className="mt-4 space-y-4 border-t border-border pt-4">
         <div className="flex items-center space-x-2 text-sm">
           <Clock className="h-4 w-4 text-muted-foreground" />
           <span className="text-muted-foreground">{m['profile.totp_enabled_at']()}</span>
@@ -82,7 +73,7 @@ export function TotpStatusCard({ onEnable, onDisable, onRegenerate }: TotpStatus
           </Badge>
         </div>
 
-        <div className="flex space-x-2 pt-4">
+        <div className="flex space-x-2">
           <Button variant="outline" onClick={onRegenerate} data-testid="totp-regenerate-button">
             {m['profile.totp_regenerate_codes_button']()}
           </Button>
@@ -90,7 +81,7 @@ export function TotpStatusCard({ onEnable, onDisable, onRegenerate }: TotpStatus
             {m['profile.totp_disable_button']()}
           </Button>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   )
 }

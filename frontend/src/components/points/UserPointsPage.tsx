@@ -2,8 +2,6 @@ import { useMemo, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { History } from 'lucide-react'
 import { PointsBalanceCard } from './PointsBalanceCard'
 import { PointsUsageDashboard } from './PointsUsageDashboard'
 import { TransactionHistoryTable } from './TransactionHistoryTable'
@@ -141,33 +139,31 @@ export function UserPointsPage({
       </div>
 
       {pointsAreaVisible && (
-        <Card data-testid="points-purchase-inline-block">
-          <CardContent className="flex flex-col items-start justify-between gap-4 py-4 sm:flex-row sm:items-center">
-            <div className="text-sm font-medium">{m['points.purchase_points_cta']()}</div>
-            {/* TODO(ui-spec §8.3): add quick-pack chips (one_time packs) that
-                deep-link to the purchase page with a preselected price once the
-                purchase-page preselect interaction is finalized by /t-design. */}
-            <Button asChild size="sm" data-testid="points-purchase-cta">
-              <Link to="/$realmId/user/purchase-points" params={{ realmId }}>
-                {m['points.purchase_points_cta']()}
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
+        <div
+          className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center"
+          data-testid="points-purchase-inline-block"
+        >
+          <div className="text-sm font-medium">{m['points.purchase_points_cta']()}</div>
+          {/* TODO: add quick-pack chips (one_time packs) that deep-link to
+              the purchase page with a preselected price once the preselect
+              interaction is finalized. */}
+          <Button asChild size="sm" data-testid="points-purchase-cta">
+            <Link to="/$realmId/user/purchase-points" params={{ realmId }}>
+              {m['points.purchase_points_cta']()}
+            </Link>
+          </Button>
+        </div>
       )}
 
       {/* Cross-bucket total bar — only when the user holds >= 2 buckets */}
       {showTotalBar && (
-        <Card data-testid="user-points-cross-bucket-total">
-          <CardContent className="py-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">
-                {m['points.cross_bucket_total']()}
-              </span>
-              <span className="text-2xl font-bold">{crossBucketTotal.toLocaleString()}</span>
-            </div>
-          </CardContent>
-        </Card>
+        <div
+          className="flex items-center justify-between border-t border-border py-4"
+          data-testid="user-points-cross-bucket-total"
+        >
+          <span className="text-sm text-muted-foreground">{m['points.cross_bucket_total']()}</span>
+          <span className="text-2xl font-bold">{crossBucketTotal.toLocaleString()}</span>
+        </div>
       )}
 
       {/* Bucket card stack / empty state */}
@@ -231,14 +227,11 @@ export function UserPointsPage({
           (no-transactions) shows and the Clear button stays reachable —
           otherwise the user would be unable to recover from a 0-result filter. */}
       {!transactionsLoading && transactions.length === 0 && !hasActiveFilters ? null : (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <History className="h-4 w-4" />
-              {m['points.user_points_transaction_history']()}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
+        <section data-testid="user-points-transaction-history">
+          <h2 className="text-base font-semibold">
+            {m['points.user_points_transaction_history']()}
+          </h2>
+          <div className="mt-4 space-y-4 border-t border-border pt-4">
             <TransactionFilters
               filters={effectiveFilters}
               onChange={handleFiltersChange}
@@ -273,8 +266,8 @@ export function UserPointsPage({
                 </Button>
               </div>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </section>
       )}
     </div>
   )

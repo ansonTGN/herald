@@ -20,7 +20,7 @@ export function InvoiceStatusBadge({ status, provider }: InvoiceStatusBadgeProps
     return (
       <div className="flex items-center gap-2">
         {statusBadgeEl}
-        <Badge variant="secondary" className="bg-teal-50 text-teal-700 border-teal-200 text-xs">
+        <Badge variant="secondary" className="bg-info/10 text-info border-info/20 text-xs">
           {getProviderLabel(provider)}
         </Badge>
       </div>
@@ -33,14 +33,14 @@ export function InvoiceStatusBadge({ status, provider }: InvoiceStatusBadgeProps
 function getStatusBadge(status: string, label: string) {
   if (status === 'paid') {
     return (
-      <Badge className="border-transparent bg-green-600 text-white shadow hover:bg-green-600/80">
+      <Badge className="border-transparent bg-success text-white shadow hover:bg-success/80">
         {label}
       </Badge>
     )
   }
   if (status === 'overdue') {
     return (
-      <Badge className="border-transparent bg-amber-500 text-white shadow hover:bg-amber-500/80">
+      <Badge className="border-transparent bg-warning text-white shadow hover:bg-warning/80">
         {label}
       </Badge>
     )

@@ -116,7 +116,7 @@ export function TotpSetupPage() {
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div className="flex-1">
-          <h1 className="text-2xl font-bold" data-testid="totp-setup-page-title">
+          <h1 className="text-xl font-semibold tracking-tight" data-testid="totp-setup-page-title">
             Set Up Two-Factor Authentication
           </h1>
           <p

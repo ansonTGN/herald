@@ -67,7 +67,7 @@ export function RecordRefundDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="border-t-4 border-t-cyan-500 sm:max-w-[425px]"
+        className="border-t-4 border-t-info sm:max-w-[425px]"
         data-testid="record-refund-dialog"
       >
         <DialogHeader>
@@ -78,7 +78,7 @@ export function RecordRefundDialog({
         </DialogHeader>
 
         <div
-          className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"
+          className="rounded-md border border-warning/20 bg-warning/10 p-3 text-sm text-warning"
           role="alert"
         >
           {m['billing.credit_note_record_refund_irreversible_warning']()}

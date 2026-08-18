@@ -7,7 +7,6 @@ import { resetPasswordSearchSchema } from '@/lib/schemas/search-params'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { AuthPageWrapper } from '@/components/auth/auth-page-wrapper'
 import { TurnstileWidget } from '@/components/auth/turnstile-widget'
 import { publicConfigQueryOptions, turnstileStatusQueryOptions } from '@/data/query-options'
@@ -70,18 +69,18 @@ export function ResetPasswordPage() {
 
   return (
     <AuthPageWrapper whiteLabel={whiteLabel} realmName={publicConfig?.realmName}>
-      <Card className="w-full max-w-md" data-testid="reset-password-card">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl" data-testid="reset-password-title">
-            {m['auth.reset_password.title']()}
-          </CardTitle>
-          <p className="text-sm text-muted-foreground">{m['auth.reset_password.description']()}</p>
-        </CardHeader>
-        <CardContent>
+      <div className="w-full pt-8" data-testid="reset-password-card">
+        <h1 data-testid="reset-password-title" className="text-xl font-semibold tracking-tight">
+          {m['auth.reset_password.title']()}
+        </h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {m['auth.reset_password.description']()}
+        </p>
+        <div className="mt-6">
           <form onSubmit={handleSubmit} className="space-y-4" data-testid="reset-password-form">
             {error && (
               <div
-                className="p-3 bg-red-50 border border-red-200 rounded text-red-600 text-sm"
+                className="p-3 bg-destructive/10 border border-destructive/20 rounded text-destructive text-sm"
                 data-testid="reset-password-error"
               >
                 {error}
@@ -103,7 +102,7 @@ export function ResetPasswordPage() {
                 data-testid="reset-password-new-input"
               />
               {newPassword.length > 0 && newPassword.length < 8 && (
-                <p className="text-sm text-red-500 mt-1">{m['auth.password_min_length']()}</p>
+                <p className="text-sm text-destructive mt-1">{m['auth.password_min_length']()}</p>
               )}
             </div>
 
@@ -123,7 +122,7 @@ export function ResetPasswordPage() {
                 data-testid="reset-password-confirm-input"
               />
               {showMismatchError && (
-                <p className="text-sm text-red-500 mt-1">{m['auth.passwords_dont_match']()}</p>
+                <p className="text-sm text-destructive mt-1">{m['auth.passwords_dont_match']()}</p>
               )}
             </div>
 
@@ -147,7 +146,7 @@ export function ResetPasswordPage() {
             </Button>
           </form>
 
-          <div className="mt-4 text-center">
+          <div className="mt-4">
             <Link
               to={realmPath(realmContext, '/auth/login')}
               className="text-sm font-medium text-primary hover:text-primary/80"
@@ -156,8 +155,8 @@ export function ResetPasswordPage() {
               {m['auth.reset_password.back_to_login']()}
             </Link>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </AuthPageWrapper>
   )
 }

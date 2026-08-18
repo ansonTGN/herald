@@ -17,17 +17,20 @@ export function ProfileHeader() {
   }, [realmId])
 
   return (
-    <header data-testid="profile-header" className="bg-white border-b border-gray-200 px-6 py-4">
-      <div className="flex items-center justify-between">
-        <h2 data-testid="profile-heading" className="text-2xl font-bold text-gray-900">
-          {realmId} - {m['nav_profile.profile']()}
+    <header data-testid="profile-header" className="border-b border-border">
+      <div className="mx-auto flex w-full max-w-2xl items-center justify-between px-8 py-4">
+        <h2
+          data-testid="profile-heading"
+          className="font-mono text-xs uppercase tracking-wide text-muted-foreground"
+        >
+          {realmId} / {m['nav_profile.profile']()}
         </h2>
         <button
           data-testid="profile-header-logout-button"
           onClick={handleLogout}
-          className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
+          className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
-          <LogOut className="w-4 h-4" />
+          <LogOut className="h-4 w-4" />
           <span>{m['user_menu.logout']()}</span>
         </button>
       </div>

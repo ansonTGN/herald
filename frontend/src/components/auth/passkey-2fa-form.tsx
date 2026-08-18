@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Shield, KeyRound, RefreshCw } from 'lucide-react'
+import { KeyRound, RefreshCw } from 'lucide-react'
 import { m } from '@/paraglide/messages'
 import { withTimeout } from '@/lib/totp-utils'
 import { isConsentRequired } from '@/lib/auth-utils'
@@ -185,28 +184,135 @@ export function Passkey2FaForm({
 
   if (!webAuthnSupported) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <Card className="w-full max-w-md" data-testid="passkey-2fa-form">
-          <CardHeader>
-            <CardTitle className="flex items-center space-x-2">
-              <Shield className="h-5 w-5" />
-              <span>{m['auth.login.passkey_2fa_title']()}</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-sm text-muted-foreground" data-testid="passkey-unsupported-message">
-              {m['auth.login.passkey_unsupported']()}
+      <div className="w-full pt-8" data-testid="passkey-2fa-form">
+        <h1 className="text-xl font-semibold tracking-tight">
+          {m['auth.login.passkey_2fa_title']()}
+        </h1>
+        <div className="mt-6 space-y-4">
+          <p className="text-sm text-muted-foreground" data-testid="passkey-unsupported-message">
+            {m['auth.login.passkey_unsupported']()}
+          </p>
+          {canSwitchToTotp && (
+            <button
+              type="button"
+              onClick={onSwitchToTotp}
+              className="text-sm text-primary hover:underline"
+              data-testid="passkey-use-totp-link"
+            >
+              {m['auth.login.passkey_use_totp_instead']()}
+            </button>
+          )}
+          {onBack && (
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={onBack}
+              className="w-full"
+              data-testid="passkey-use-password-link"
+            >
+              <RefreshCw className="mr-2 h-4 w-4" />
+              {m['auth.login.passkey_use_password_instead']()}
+            </Button>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="w-full pt-8" data-testid="passkey-2fa-form">
+      <h1 className="text-xl font-semibold tracking-tight">
+        {m['auth.login.passkey_2fa_title']()}
+      </h1>
+      <p className="mt-1 text-sm text-muted-foreground">
+        {m['auth.login.passkey_2fa_description']()}
+      </p>
+      <div className="mt-6 space-y-4">
+        {error && (
+          <div className="text-sm text-destructive" data-testid="passkey-verification-error">
+            {error}
+          </div>
+        )}
+
+        {pendingConsent && (
+          <div className="space-y-4" data-testid="passkey-reconsent-view">
+            <h3 className="font-semibold">{m['auth.login.reconsent_title']()}</h3>
+            <p className="text-sm text-muted-foreground">
+              {m['auth.login.reconsent_description']()}
             </p>
+            {pendingConsent.map((agreement) => (
+              <div
+                key={agreement.version_id}
+                className="rounded border p-3"
+                data-testid={`passkey-reconsent-agreement-${agreement.agreement_type}`}
+              >
+                <div className="font-medium">
+                  <AgreementLinks
+                    realmId={realmId}
+                    agreements={[agreement]}
+                    agreementType={
+                      agreement.agreement_type as 'terms_of_service' | 'privacy_policy'
+                    }
+                  />
+                </div>
+                <div
+                  className="text-sm text-muted-foreground"
+                  data-testid={`passkey-reconsent-agreement-${agreement.agreement_type}-version`}
+                >
+                  {m['legal.version_label']()}: {agreement.version_no} •{' '}
+                  {m['legal.effective_date_label']()}: {formatDate(agreement.effective_at)}
+                </div>
+              </div>
+            ))}
+            <Button
+              type="button"
+              disabled={verifyMutation.isPending}
+              className="w-full"
+              data-testid="passkey-agree-and-continue-button"
+              onClick={handleConsentAgree}
+            >
+              {verifyMutation.isPending
+                ? m['common.loading']()
+                : m['auth.login.agree_and_continue']()}
+            </Button>
+            {onBack && (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                data-testid="passkey-decline-back-button"
+                onClick={handleConsentDecline}
+              >
+                {m['auth.login.decline_back_to_login']()}
+              </Button>
+            )}
+          </div>
+        )}
+
+        {!pendingConsent && (
+          <>
+            <Button
+              type="button"
+              className="w-full"
+              onClick={handleUsePasskey}
+              disabled={verifyMutation.isPending || beginMutation.isPending || !optionsRef.current}
+              data-testid="passkey-login-button"
+            >
+              <KeyRound className="mr-2 h-4 w-4" />
+              {m['auth.login.passkey_use_button']()}
+            </Button>
+
             {canSwitchToTotp && (
               <button
                 type="button"
                 onClick={onSwitchToTotp}
-                className="text-sm text-primary hover:underline"
+                className="block w-full text-center text-sm text-primary hover:underline"
                 data-testid="passkey-use-totp-link"
               >
                 {m['auth.login.passkey_use_totp_instead']()}
               </button>
             )}
+
             {onBack && (
               <Button
                 type="button"
@@ -219,126 +325,9 @@ export function Passkey2FaForm({
                 {m['auth.login.passkey_use_password_instead']()}
               </Button>
             )}
-          </CardContent>
-        </Card>
+          </>
+        )}
       </div>
-    )
-  }
-
-  return (
-    <div className="flex min-h-screen items-center justify-center">
-      <Card className="w-full max-w-md" data-testid="passkey-2fa-form">
-        <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <Shield className="h-5 w-5" />
-            <span>{m['auth.login.passkey_2fa_title']()}</span>
-          </CardTitle>
-          <CardDescription>{m['auth.login.passkey_2fa_description']()}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {error && (
-            <div className="text-sm text-destructive" data-testid="passkey-verification-error">
-              {error}
-            </div>
-          )}
-
-          {pendingConsent && (
-            <div className="space-y-4" data-testid="passkey-reconsent-view">
-              <h3 className="font-semibold">{m['auth.login.reconsent_title']()}</h3>
-              <p className="text-sm text-muted-foreground">
-                {m['auth.login.reconsent_description']()}
-              </p>
-              {pendingConsent.map((agreement) => (
-                <div
-                  key={agreement.version_id}
-                  className="rounded border p-3"
-                  data-testid={`passkey-reconsent-agreement-${agreement.agreement_type}`}
-                >
-                  <div className="font-medium">
-                    <AgreementLinks
-                      realmId={realmId}
-                      agreements={[agreement]}
-                      agreementType={
-                        agreement.agreement_type as 'terms_of_service' | 'privacy_policy'
-                      }
-                    />
-                  </div>
-                  <div
-                    className="text-sm text-muted-foreground"
-                    data-testid={`passkey-reconsent-agreement-${agreement.agreement_type}-version`}
-                  >
-                    {m['legal.version_label']()}: {agreement.version_no} •{' '}
-                    {m['legal.effective_date_label']()}: {formatDate(agreement.effective_at)}
-                  </div>
-                </div>
-              ))}
-              <Button
-                type="button"
-                disabled={verifyMutation.isPending}
-                className="w-full"
-                data-testid="passkey-agree-and-continue-button"
-                onClick={handleConsentAgree}
-              >
-                {verifyMutation.isPending
-                  ? m['common.loading']()
-                  : m['auth.login.agree_and_continue']()}
-              </Button>
-              {onBack && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full"
-                  data-testid="passkey-decline-back-button"
-                  onClick={handleConsentDecline}
-                >
-                  {m['auth.login.decline_back_to_login']()}
-                </Button>
-              )}
-            </div>
-          )}
-
-          {!pendingConsent && (
-            <>
-              <Button
-                type="button"
-                className="w-full"
-                onClick={handleUsePasskey}
-                disabled={
-                  verifyMutation.isPending || beginMutation.isPending || !optionsRef.current
-                }
-                data-testid="passkey-login-button"
-              >
-                <KeyRound className="mr-2 h-4 w-4" />
-                {m['auth.login.passkey_use_button']()}
-              </Button>
-
-              {canSwitchToTotp && (
-                <button
-                  type="button"
-                  onClick={onSwitchToTotp}
-                  className="block w-full text-center text-sm text-primary hover:underline"
-                  data-testid="passkey-use-totp-link"
-                >
-                  {m['auth.login.passkey_use_totp_instead']()}
-                </button>
-              )}
-
-              {onBack && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={onBack}
-                  className="w-full"
-                  data-testid="passkey-use-password-link"
-                >
-                  <RefreshCw className="mr-2 h-4 w-4" />
-                  {m['auth.login.passkey_use_password_instead']()}
-                </Button>
-              )}
-            </>
-          )}
-        </CardContent>
-      </Card>
     </div>
   )
 }

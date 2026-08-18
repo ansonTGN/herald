@@ -27,9 +27,7 @@ import { firstPartyClientForPath } from '@/lib/constants/auth-constants'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { AuthPageWrapper } from '@/components/auth/auth-page-wrapper'
-import { resolveBrandName } from '@/lib/white-label-brand'
 import { TotpVerificationForm } from '@/components/auth/totp-verification-form'
 import { PasskeyLoginForm } from '@/components/auth/passkey-login-form'
 import { Passkey2FaForm } from '@/components/auth/passkey-2fa-form'
@@ -424,16 +422,14 @@ export function LoginPage() {
   if (consentStep) {
     return (
       <AuthPageWrapper whiteLabel={whiteLabel} realmName={publicConfig?.realmName}>
-        <Card className="w-full max-w-md" data-testid="login-reconsent-view">
-          <CardHeader className="text-center">
-            <CardTitle data-testid="login-reconsent-title">
-              {m['auth.login.reconsent_title']()}
-            </CardTitle>
-            <p className="text-sm text-muted-foreground">
-              {m['auth.login.reconsent_description']()}
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-4">
+        <div className="w-full pt-8" data-testid="login-reconsent-view">
+          <h1 data-testid="login-reconsent-title" className="text-xl font-semibold tracking-tight">
+            {m['auth.login.reconsent_title']()}
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {m['auth.login.reconsent_description']()}
+          </p>
+          <div className="mt-6 space-y-4">
             {consentStep.agreements.map((agreement) => (
               <div
                 key={agreement.version_id}
@@ -478,8 +474,8 @@ export function LoginPage() {
             >
               {m['auth.login.decline_back_to_login']()}
             </Button>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </AuthPageWrapper>
     )
   }
@@ -520,23 +516,22 @@ export function LoginPage() {
     )
   }
 
+  // Brand name lives in the AuthPageWrapper header; the form heading is the
+  // functional title unless the tenant white-label provides a custom one, so
+  // the default skin never prints the brand twice on one screen.
+  const loginSubtitle = whiteLabel?.loginSubtitle ?? publicConfig?.realmDescription ?? null
+
   return (
     <AuthPageWrapper whiteLabel={whiteLabel} realmName={publicConfig?.realmName}>
-      <Card className="w-full max-w-md" data-testid="login-card">
-        <CardHeader className="text-center">
-          <CardTitle data-testid="login-title" className="text-2xl">
-            {whiteLabel?.loginTitle ?? resolveBrandName(whiteLabel, publicConfig?.realmName)}
-          </CardTitle>
-          <p className="text-sm text-muted-foreground">
-            {whiteLabel?.loginSubtitle ??
-              publicConfig?.realmDescription ??
-              m['auth.login.login_to_account']()}
-          </p>
-        </CardHeader>
-        <CardContent>
+      <div className="w-full pt-8" data-testid="login-card">
+        <h1 data-testid="login-title" className="text-xl font-semibold tracking-tight">
+          {whiteLabel?.loginTitle ?? m['auth.login.login_to_account']()}
+        </h1>
+        {loginSubtitle && <p className="mt-1 text-sm text-muted-foreground">{loginSubtitle}</p>}
+        <div className="mt-6">
           {globalError && (
             <div
-              className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-600 text-sm"
+              className="mb-4 p-3 bg-destructive/10 border border-destructive/20 rounded text-destructive text-sm"
               data-testid="login-error-message"
             >
               {globalError}
@@ -545,7 +540,7 @@ export function LoginPage() {
 
           {hasPartialOAuth && (
             <div
-              className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-600 text-sm"
+              className="mb-4 p-3 bg-destructive/10 border border-destructive/20 rounded text-destructive text-sm"
               data-testid="oauth-incomplete-error"
             >
               {m['auth.oauth_params_incomplete']()}
@@ -600,7 +595,7 @@ export function LoginPage() {
                         data-testid="email-input"
                       />
                       {field.state.meta.errors.length > 0 && (
-                        <p className="text-sm text-red-500 mt-1">
+                        <p className="text-sm text-destructive mt-1">
                           {getFieldErrorMessage(field.state.meta.errors[0])}
                         </p>
                       )}
@@ -631,7 +626,7 @@ export function LoginPage() {
                         data-testid="password-input"
                       />
                       {field.state.meta.errors.length > 0 && (
-                        <p className="text-sm text-red-500 mt-1">
+                        <p className="text-sm text-destructive mt-1">
                           {getFieldErrorMessage(field.state.meta.errors[0])}
                         </p>
                       )}
@@ -663,7 +658,7 @@ export function LoginPage() {
                 </Button>
 
                 <div
-                  className="text-center text-sm text-muted-foreground pt-1"
+                  className="pt-2 text-xs leading-relaxed text-muted-foreground"
                   data-testid="login-consent-statement"
                 >
                   {m['auth.login.consent_statement']()}
@@ -753,8 +748,10 @@ export function LoginPage() {
               )}
 
               {isRegistrationAllowed && (
-                <div className="mt-4 text-center">
-                  <span className="text-sm text-gray-500">{m['auth.login.no_account']()} </span>
+                <div className="mt-4">
+                  <span className="text-sm text-muted-foreground">
+                    {m['auth.login.no_account']()}{' '}
+                  </span>
                   <Link
                     to={realmPath(realmContext, '/auth/register')}
                     className="text-sm font-medium text-primary hover:text-primary/80"
@@ -766,8 +763,8 @@ export function LoginPage() {
               )}
             </>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </AuthPageWrapper>
   )
 }
