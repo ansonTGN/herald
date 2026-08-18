@@ -109,6 +109,15 @@ pub trait AdminUserRepository: Send + Sync {
 
 /// Repository for user role operations
 pub trait UserRoleRepository: Send + Sync {
+    /// Get the realm a user belongs to (None if the user does not exist).
+    ///
+    /// Lets services that only hold this repository enforce the target-realm
+    /// boundary on path-supplied user ids before reading or writing role data.
+    fn get_user_realm(
+        &self,
+        user_id: Uuid,
+    ) -> impl Future<Output = UserAdminResult<Option<String>>> + Send;
+
     /// Replace all roles for a user (transactional)
     fn replace_user_roles(
         &self,

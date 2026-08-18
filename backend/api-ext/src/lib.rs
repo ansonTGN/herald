@@ -15,6 +15,8 @@ pub mod user;
 
 #[cfg(test)]
 mod api_key_auth_test;
+#[cfg(test)]
+mod authz_test;
 
 use axum::Router;
 use herald_api_base::application::http::state::AppState;

@@ -19,10 +19,10 @@ use crate::{
 };
 
 use super::super::{
-    AdminUser, AdminUserRepository, AdminUserService, CreateUserWithRolesRequest, PermissionDetail,
-    PermissionListData, PermissionManagementService, PermissionSource, RoleAssignmentService,
-    RoleDetail, RoleEntity, RolePolicyRepository, UpdateUserAdminRequest, UserAdminError,
-    UserAdminResult, UserPermissionService, UserRoleRepository,
+    AdminUser, AdminUserEntity, AdminUserRepository, AdminUserService, CreateUserWithRolesRequest,
+    PermissionDetail, PermissionListData, PermissionManagementService, PermissionSource,
+    RoleAssignmentService, RoleDetail, RoleEntity, RolePolicyRepository, UpdateUserAdminRequest,
+    UserAdminError, UserAdminResult, UserPermissionService, UserRoleRepository,
 };
 
 // ============================================================================
@@ -53,6 +53,97 @@ async fn require_permission<P: PermissionService>(
         CoreError::Forbidden(msg) => UserAdminError::PermissionDenied(msg),
         _ => UserAdminError::InternalError(format!("Policy check error: {:?}", e)),
     })
+}
+
+// ============================================================================
+// Target realm-boundary checks
+// ============================================================================
+
+/// Load the target user of a path-scoped admin operation and enforce the
+/// realm boundary: the user acted on must belong to `realm_id`.
+///
+/// The caller-vs-path check inside each service does not constrain the target
+/// id, so without this a realm admin could act on another realm's user id
+/// (cross-tenant update/delete/password-reset). A wrong-realm target returns
+/// `UserNotFound` so it is indistinguishable from a missing one (no id oracle).
+async fn require_target_user_in_realm(
+    user_repository: &impl AdminUserRepository,
+    realm_id: &str,
+    user_id: Uuid,
+) -> UserAdminResult<AdminUserEntity> {
+    let user = user_repository
+        .get_user_with_profile(user_id)
+        .await?
+        .ok_or_else(|| UserAdminError::UserNotFound(user_id.to_string()))?;
+    if user.realm_id != realm_id {
+        tracing::warn!(
+            realm_id = realm_id,
+            user_id = %user_id,
+            target_realm_id = %user.realm_id,
+            "Blocked admin operation on a user from another realm"
+        );
+        return Err(UserAdminError::UserNotFound(user_id.to_string()));
+    }
+    Ok(user)
+}
+
+/// Same target realm-boundary check for services that only hold a
+/// [`UserRoleRepository`]: verifies the target user exists and belongs to
+/// `realm_id`, returning `UserNotFound` otherwise.
+async fn require_user_in_realm(
+    user_role_repository: &impl UserRoleRepository,
+    realm_id: &str,
+    user_id: Uuid,
+) -> UserAdminResult<()> {
+    let user_realm = user_role_repository
+        .get_user_realm(user_id)
+        .await?
+        .ok_or_else(|| UserAdminError::UserNotFound(user_id.to_string()))?;
+    if user_realm != realm_id {
+        tracing::warn!(
+            realm_id = realm_id,
+            user_id = %user_id,
+            target_realm_id = %user_realm,
+            "Blocked admin operation on a user from another realm"
+        );
+        return Err(UserAdminError::UserNotFound(user_id.to_string()));
+    }
+    Ok(())
+}
+
+/// Validate that every role id exists and belongs to `realm_id`.
+///
+/// The `user_roles` schema only foreign-keys `role_id -> roles(id)`, so a
+/// foreign realm's role id would otherwise insert cleanly into this realm's
+/// namespace. Mirrors the validation already performed by
+/// `assign_api_key_roles`.
+async fn require_roles_in_realm(
+    role_policy_repository: &impl RolePolicyRepository,
+    realm_id: &str,
+    role_ids: &[Uuid],
+) -> UserAdminResult<()> {
+    if role_ids.is_empty() {
+        return Ok(());
+    }
+
+    let roles = role_policy_repository.get_roles_by_ids(role_ids).await?;
+
+    // `IN (...)` returns one row per distinct id, so compare against the
+    // deduplicated count to reject unknown ids (and tolerate duplicates).
+    let unique_ids: std::collections::HashSet<Uuid> = role_ids.iter().copied().collect();
+    if roles.len() != unique_ids.len() {
+        let found: std::collections::HashSet<Uuid> = roles.iter().map(|r| r.id).collect();
+        let missing: Vec<String> = unique_ids
+            .difference(&found)
+            .map(|id| id.to_string())
+            .collect();
+        return Err(UserAdminError::RoleNotFound(missing.join(", ")));
+    }
+
+    if let Some(wrong_realm) = roles.iter().find(|r| r.realm_id != realm_id) {
+        return Err(UserAdminError::RoleNotFound(wrong_realm.id.to_string()));
+    }
+    Ok(())
 }
 
 // ============================================================================
@@ -416,16 +507,12 @@ where
             ));
         }
 
-        // Capture old status before write for Forbidden linkage (BE-D02).
-        // Only needed when the request actually changes status: when `status`
-        // is None the linkage branch below cannot fire (new_status is None), so
-        // skip the extra read. A missing user follows the not_found path below.
-        let old_status = if request.status.is_some() {
-            match self.user_repository.get_user_with_profile(user_id).await {
-                Ok(Some(existing)) => Some(UserStatus::from(
-                    i16::try_from(existing.status).unwrap_or(i16::from(UserStatus::Forbidden)),
-                )),
-                Ok(None) => None,
+        // Load the target user before any write: this enforces the target
+        // realm boundary (a cross-realm id must fail here, not mid-mutation)
+        // and captures the old status for the Forbidden linkage (BE-D02).
+        let target_user =
+            match require_target_user_in_realm(&*self.user_repository, realm_id, user_id).await {
+                Ok(user) => user,
                 Err(e) => {
                     self.record_user_audit(
                         &ctx,
@@ -434,15 +521,19 @@ where
                         user_id.to_string(),
                         None,
                         AuditResult::Failure,
-                        Some("fetch_existing_user_failed"),
+                        Some(if matches!(e, UserAdminError::UserNotFound(_)) {
+                            "user_not_found"
+                        } else {
+                            "fetch_existing_user_failed"
+                        }),
                     )
                     .await;
                     return Err(e);
                 }
-            }
-        } else {
-            None
-        };
+            };
+        let old_status = Some(UserStatus::from(
+            i16::try_from(target_user.status).unwrap_or(i16::from(UserStatus::Forbidden)),
+        ));
 
         // Update user fields (email is read-only after creation)
         if let Err(e) = self
@@ -590,11 +681,8 @@ where
             ));
         }
 
-        let user_entity = self
-            .user_repository
-            .get_user_with_profile(user_id)
-            .await?
-            .ok_or_else(|| UserAdminError::UserNotFound(user_id.to_string()))?;
+        let user_entity =
+            require_target_user_in_realm(&*self.user_repository, realm_id, user_id).await?;
 
         Ok(AdminUser {
             id: user_entity.id,
@@ -650,6 +738,28 @@ where
             return Err(UserAdminError::PermissionDenied(
                 "Cannot delete users in a different realm".to_string(),
             ));
+        }
+
+        // Target realm boundary: a realm admin must not be able to delete
+        // another realm's user by id.
+        if let Err(e) =
+            require_target_user_in_realm(&*self.user_repository, realm_id, user_id).await
+        {
+            self.record_user_audit(
+                &ctx,
+                realm_id,
+                AuditAction::UserDelete,
+                user_id.to_string(),
+                None,
+                AuditResult::Failure,
+                Some(if matches!(e, UserAdminError::UserNotFound(_)) {
+                    "user_not_found"
+                } else {
+                    "fetch_target_user_failed"
+                }),
+            )
+            .await;
+            return Err(e);
         }
 
         // Delete user (transactional - profile and account)
@@ -755,6 +865,28 @@ where
             return Err(UserAdminError::PermissionDenied(
                 "Cannot reset passwords for users in a different realm".to_string(),
             ));
+        }
+
+        // Target realm boundary: a realm admin must not be able to reset
+        // another realm's user password by id.
+        if let Err(e) =
+            require_target_user_in_realm(&*self.user_repository, realm_id, user_id).await
+        {
+            self.record_user_audit(
+                &ctx,
+                realm_id,
+                AuditAction::UserUpdate,
+                user_id.to_string(),
+                None,
+                AuditResult::Failure,
+                Some(if matches!(e, UserAdminError::UserNotFound(_)) {
+                    "user_not_found"
+                } else {
+                    "fetch_target_user_failed"
+                }),
+            )
+            .await;
+            return Err(e);
         }
 
         // Generate 16-character random password
@@ -957,6 +1089,11 @@ where
         user_id: Uuid,
         role_ids: Vec<Uuid>,
     ) -> UserAdminResult<()> {
+        // Target realm boundary: the user being modified must belong to this
+        // realm, and every role id must exist in it.
+        require_user_in_realm(&*self.user_role_repository, realm_id, user_id).await?;
+        require_roles_in_realm(&*self.role_policy_repository, realm_id, &role_ids).await?;
+
         // Check if can assign roles
         if !self
             .can_assign_roles(&identity, realm_id, &role_ids)
@@ -1006,6 +1143,9 @@ where
                 "Cannot read roles in a different realm".to_string(),
             ));
         }
+
+        // Target realm boundary: must not enumerate another realm's user roles.
+        require_user_in_realm(&*self.user_role_repository, realm_id, user_id).await?;
 
         let roles = self.user_role_repository.get_user_roles(user_id).await?;
 
@@ -1234,6 +1374,10 @@ where
                 "Cannot read permissions in a different realm".to_string(),
             ));
         }
+
+        // Target realm boundary: must not enumerate another realm's user
+        // permissions (role ids and names leak through the details below).
+        require_user_in_realm(&*self.user_role_repository, realm_id, user_id).await?;
 
         // 1. Get user's role IDs
         let role_ids = self.user_role_repository.get_user_role_ids(user_id).await?;
@@ -1496,6 +1640,20 @@ where
             ));
         }
 
+        // Target realm boundaries: the user receiving the role and the role
+        // being granted or policy-attached must all belong to this realm.
+        if let Some(uid) = user_id {
+            require_user_in_realm(&*self.user_role_repository, realm_id, uid).await?;
+        }
+        let mut involved_roles = Vec::new();
+        if let Some(rid) = role_id {
+            involved_roles.push(rid);
+        }
+        if let Some(r) = role {
+            involved_roles.push(r);
+        }
+        require_roles_in_realm(&*self.role_policy_repository, realm_id, &involved_roles).await?;
+
         // Create role policy
         if let (Some(rid), Some(res), Some(act)) = (role_id, resource, action) {
             self.role_policy_repository
@@ -1573,6 +1731,20 @@ where
             ));
         }
 
+        // Target realm boundaries (see create_permission): the affected user,
+        // the unassigned role, and the policy's role must belong to this realm.
+        if let Some(uid) = user_id {
+            require_user_in_realm(&*self.user_role_repository, realm_id, uid).await?;
+        }
+        let mut involved_roles = Vec::new();
+        if let Some(rid) = role_id {
+            involved_roles.push(rid);
+        }
+        if let Some(r) = role {
+            involved_roles.push(r);
+        }
+        require_roles_in_realm(&*self.role_policy_repository, realm_id, &involved_roles).await?;
+
         // Delete role policy
         if let (Some(rid), Some(res), Some(act)) = (role_id, resource, action) {
             self.role_policy_repository
@@ -1649,7 +1821,7 @@ mod tests {
     use super::*;
     use crate::audit::{AuditEvent, AuditEventFilters, PaginatedAuditEvents};
     use crate::authentication::entities::{BrowserAccessTokenData, BrowserTokenSet};
-    use crate::user::admin_entities::AdminUserEntity;
+    use crate::user::admin_entities::{AdminUserEntity, PolicyEntity, RoleEntity};
     use crate::user::{GrantRoleOutcome, RevokeRoleOutcome};
     use chrono::DateTime;
     use chrono::Utc;
@@ -1786,11 +1958,15 @@ mod tests {
         }
     }
 
-    /// In-memory admin user repository. Only `get_user_with_profile` and
-    /// `update_user_fields` are exercised by `update_user_admin`.
+    /// In-memory admin user repository. `get_user_with_profile` and
+    /// `update_user_fields` are exercised by `update_user_admin`; the call
+    /// counters back the cross-realm regression assertions (no write may
+    /// happen for a foreign target).
     struct MockAdminUserRepo {
         row: Arc<Mutex<Option<AdminUserEntity>>>,
         update_calls: Arc<AtomicUsize>,
+        delete_calls: Arc<AtomicUsize>,
+        password_calls: Arc<AtomicUsize>,
     }
     impl AdminUserRepository for MockAdminUserRepo {
         async fn create_user_with_profile(
@@ -1844,6 +2020,7 @@ mod tests {
             Ok(None)
         }
         async fn delete_user(&self, _user_id: Uuid) -> UserAdminResult<bool> {
+            self.delete_calls.fetch_add(1, Ordering::SeqCst);
             Ok(true)
         }
         async fn update_user_password(
@@ -1851,13 +2028,30 @@ mod tests {
             _user_id: Uuid,
             _password_hash: &str,
         ) -> UserAdminResult<bool> {
+            self.password_calls.fetch_add(1, Ordering::SeqCst);
             Ok(true)
         }
     }
 
-    /// Minimal no-op user-role repository. `update_user_admin` does not touch it.
-    struct MockUserRoleRepo;
+    /// Minimal user-role repository. `get_user_realm` (target-realm checks)
+    /// and `replace_user_roles` (call counting) are exercised by the
+    /// realm-boundary tests; the rest are inert defaults.
+    struct MockUserRoleRepo {
+        user_realm: Option<String>,
+        replace_calls: Arc<AtomicUsize>,
+    }
+    impl MockUserRoleRepo {
+        fn for_user_realm(realm: &str) -> Self {
+            Self {
+                user_realm: Some(realm.to_string()),
+                replace_calls: Arc::new(AtomicUsize::new(0)),
+            }
+        }
+    }
     impl UserRoleRepository for MockUserRoleRepo {
+        async fn get_user_realm(&self, _user_id: Uuid) -> UserAdminResult<Option<String>> {
+            Ok(self.user_realm.clone())
+        }
         async fn replace_user_roles(
             &self,
             _user_id: Uuid,
@@ -1865,6 +2059,7 @@ mod tests {
             _client_id: &str,
             _role_ids: &[Uuid],
         ) -> UserAdminResult<()> {
+            self.replace_calls.fetch_add(1, Ordering::SeqCst);
             Ok(())
         }
         async fn get_user_role_ids(&self, _user_id: Uuid) -> UserAdminResult<Vec<Uuid>> {
@@ -1946,6 +2141,74 @@ mod tests {
             &self,
             _api_key_ids: &[String],
         ) -> UserAdminResult<Vec<(String, Vec<(Uuid, String)>)>> {
+            Ok(vec![])
+        }
+    }
+
+    /// Minimal role-policy repository: `get_roles_by_ids` returns the
+    /// configured roles (filtered by id, mirroring the SQL `IN` semantics);
+    /// everything else is an inert default.
+    struct MockRolePolicyRepo {
+        roles: Vec<RoleEntity>,
+    }
+    impl RolePolicyRepository for MockRolePolicyRepo {
+        async fn get_role_policies_for_user(
+            &self,
+            _realm_id: &str,
+            _role_ids: &[Uuid],
+        ) -> UserAdminResult<Vec<PolicyEntity>> {
+            Ok(vec![])
+        }
+        async fn get_direct_user_policies(
+            &self,
+            _user_id: Uuid,
+        ) -> UserAdminResult<Vec<PolicyEntity>> {
+            Ok(vec![])
+        }
+        async fn get_roles_by_ids(&self, role_ids: &[Uuid]) -> UserAdminResult<Vec<RoleEntity>> {
+            Ok(self
+                .roles
+                .iter()
+                .filter(|r| role_ids.contains(&r.id))
+                .cloned()
+                .collect())
+        }
+        async fn assign_direct_permission(
+            &self,
+            _user_id: Uuid,
+            _realm_id: &str,
+            _policy_id: Uuid,
+        ) -> UserAdminResult<()> {
+            Ok(())
+        }
+        async fn remove_direct_permission(
+            &self,
+            _user_id: Uuid,
+            _policy_id: Uuid,
+        ) -> UserAdminResult<()> {
+            Ok(())
+        }
+        async fn create_role_policy(
+            &self,
+            _role_id: Uuid,
+            _realm_id: &str,
+            _resource: &str,
+            _action: &str,
+        ) -> UserAdminResult<()> {
+            Ok(())
+        }
+        async fn delete_role_policy(
+            &self,
+            _role_id: Uuid,
+            _resource: &str,
+            _action: &str,
+        ) -> UserAdminResult<bool> {
+            Ok(true)
+        }
+        async fn list_role_policies_by_realm(
+            &self,
+            _realm_id: &str,
+        ) -> UserAdminResult<Vec<(Uuid, String, String)>> {
             Ok(vec![])
         }
     }
@@ -2111,6 +2374,15 @@ mod tests {
         })
     }
 
+    /// Write-path call counters exposed by [`make_service_with_row_realm`] so
+    /// the cross-realm regression tests can assert that a rejected operation
+    /// never reached the repository.
+    struct MockWriteCounts {
+        update_calls: Arc<AtomicUsize>,
+        delete_calls: Arc<AtomicUsize>,
+        password_calls: Arc<AtomicUsize>,
+    }
+
     fn make_service(
         revoke_calls: Arc<AtomicUsize>,
         revoke_err: Option<CoreError>,
@@ -2122,29 +2394,62 @@ mod tests {
         MockAuditRepo,
         MockBrowserTokenService,
     > {
+        make_service_with_row_realm(revoke_calls, revoke_err, initial_status, "r").0
+    }
+
+    /// Variant of [`make_service`] that places the mock target user in
+    /// `row_realm` (so cross-realm targets can be simulated) and returns the
+    /// write-path call counters.
+    #[allow(clippy::type_complexity)]
+    fn make_service_with_row_realm(
+        revoke_calls: Arc<AtomicUsize>,
+        revoke_err: Option<CoreError>,
+        initial_status: i32,
+        row_realm: &str,
+    ) -> (
+        AdminUserServiceImpl<
+            MockAdminUserRepo,
+            MockUserRoleRepo,
+            AlwaysAllowPermission,
+            MockAuditRepo,
+            MockBrowserTokenService,
+        >,
+        MockWriteCounts,
+    ) {
         let row = AdminUserEntity {
             id: Uuid::nil(),
-            realm_id: "r".to_string(),
+            realm_id: row_realm.to_string(),
             email: "target@example.com".to_string(),
             nickname: None,
             status: initial_status,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
+        let user_role_repo = MockUserRoleRepo::for_user_realm(row_realm);
+        let counts = MockWriteCounts {
+            update_calls: Arc::new(AtomicUsize::new(0)),
+            delete_calls: Arc::new(AtomicUsize::new(0)),
+            password_calls: Arc::new(AtomicUsize::new(0)),
+        };
         let repo = MockAdminUserRepo {
             row: Arc::new(Mutex::new(Some(row))),
-            update_calls: Arc::new(AtomicUsize::new(0)),
+            update_calls: counts.update_calls.clone(),
+            delete_calls: counts.delete_calls.clone(),
+            password_calls: counts.password_calls.clone(),
         };
         let token = MockBrowserTokenService {
             revoke_calls,
             revoke_err,
         };
-        AdminUserServiceImpl::new(
-            Arc::new(repo),
-            Arc::new(MockUserRoleRepo),
-            Arc::new(AlwaysAllowPermission),
-            Arc::new(MockAuditRepo),
-            Arc::new(token),
+        (
+            AdminUserServiceImpl::new(
+                Arc::new(repo),
+                Arc::new(user_role_repo),
+                Arc::new(AlwaysAllowPermission),
+                Arc::new(MockAuditRepo),
+                Arc::new(token),
+            ),
+            counts,
         )
     }
 
@@ -2318,5 +2623,330 @@ mod tests {
             1,
             "revoke must be attempted once even when it errors"
         );
+    }
+
+    // ========================================================================
+    // Target realm-boundary regressions (cross-tenant IDOR fixes).
+    //
+    // The caller-vs-path realm check does not constrain the target id: a
+    // realm admin must not be able to read, mutate, delete, password-reset,
+    // or re-role another realm's user by supplying its uuid.
+    // ========================================================================
+
+    fn role_entity(id: Uuid, realm_id: &str) -> RoleEntity {
+        RoleEntity {
+            id,
+            realm_id: realm_id.to_string(),
+            name: "user".to_string(),
+            description: None,
+            is_builtin: true,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            source: "manual".to_string(),
+            source_id: None,
+            expires_at: None,
+        }
+    }
+
+    fn make_role_assignment_service(
+        target_user_realm: &str,
+        roles: Vec<RoleEntity>,
+    ) -> (
+        RoleAssignmentServiceImpl<MockUserRoleRepo, MockRolePolicyRepo, AlwaysAllowPermission>,
+        Arc<AtomicUsize>,
+    ) {
+        let repo = MockUserRoleRepo::for_user_realm(target_user_realm);
+        let replace_calls = repo.replace_calls.clone();
+        (
+            RoleAssignmentServiceImpl::new(
+                Arc::new(repo),
+                Arc::new(MockRolePolicyRepo { roles }),
+                Arc::new(AlwaysAllowPermission),
+            ),
+            replace_calls,
+        )
+    }
+
+    #[tokio::test]
+    async fn get_user_admin_rejects_cross_realm_target() {
+        let (svc, _) = make_service_with_row_realm(
+            Arc::new(AtomicUsize::new(0)),
+            None,
+            i16::from(UserStatus::Normal) as i32,
+            "other",
+        );
+        let res = svc
+            .get_user_admin(admin_identity("r"), "r", Uuid::nil())
+            .await;
+        match res {
+            Err(UserAdminError::UserNotFound(_)) => {}
+            other => panic!("expected UserNotFound, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn update_user_admin_rejects_cross_realm_target_without_writing() {
+        // Path realm matches the caller but the target user belongs to
+        // "other": must fail as UserNotFound with zero writes. This is the
+        // cross-tenant takeover primitive the check blocks.
+        let (svc, counts) = make_service_with_row_realm(
+            Arc::new(AtomicUsize::new(0)),
+            None,
+            i16::from(UserStatus::Normal) as i32,
+            "other",
+        );
+        let res = svc
+            .update_user_admin(
+                admin_identity("r"),
+                audit_ctx(),
+                "r",
+                Uuid::nil(),
+                UpdateUserAdminRequest {
+                    nickname: Some("hijack".to_string()),
+                    status: None,
+                },
+            )
+            .await;
+        match res {
+            Err(UserAdminError::UserNotFound(_)) => {}
+            other => panic!("expected UserNotFound, got {:?}", other),
+        }
+        assert_eq!(
+            counts.update_calls.load(Ordering::SeqCst),
+            0,
+            "no field update may run for a cross-realm target"
+        );
+    }
+
+    #[tokio::test]
+    async fn delete_user_rejects_cross_realm_target_without_deleting() {
+        let (svc, counts) = make_service_with_row_realm(
+            Arc::new(AtomicUsize::new(0)),
+            None,
+            i16::from(UserStatus::Normal) as i32,
+            "other",
+        );
+        let res = svc
+            .delete_user(admin_identity("r"), audit_ctx(), "r", Uuid::nil())
+            .await;
+        match res {
+            Err(UserAdminError::UserNotFound(_)) => {}
+            other => panic!("expected UserNotFound, got {:?}", other),
+        }
+        assert_eq!(
+            counts.delete_calls.load(Ordering::SeqCst),
+            0,
+            "no delete may run for a cross-realm target"
+        );
+    }
+
+    #[tokio::test]
+    async fn reset_user_password_rejects_cross_realm_target_without_resetting() {
+        let (svc, counts) = make_service_with_row_realm(
+            Arc::new(AtomicUsize::new(0)),
+            None,
+            i16::from(UserStatus::Normal) as i32,
+            "other",
+        );
+        let res = svc
+            .reset_user_password(admin_identity("r"), audit_ctx(), "r", Uuid::nil())
+            .await;
+        match res {
+            Err(UserAdminError::UserNotFound(_)) => {}
+            other => panic!("expected UserNotFound, got {:?}", other),
+        }
+        assert_eq!(
+            counts.password_calls.load(Ordering::SeqCst),
+            0,
+            "no password write may run for a cross-realm target"
+        );
+    }
+
+    #[tokio::test]
+    async fn get_user_roles_rejects_cross_realm_target() {
+        let (svc, _) = make_role_assignment_service("other", vec![]);
+        let res = svc
+            .get_user_roles(admin_identity("r"), "r", Uuid::nil())
+            .await;
+        match res {
+            Err(UserAdminError::UserNotFound(_)) => {}
+            other => panic!("expected UserNotFound, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn assign_user_roles_rejects_cross_realm_target() {
+        let (svc, replace_calls) =
+            make_role_assignment_service("other", vec![role_entity(Uuid::nil(), "r")]);
+        let res = svc
+            .assign_user_roles(admin_identity("r"), "r", Uuid::nil(), vec![Uuid::nil()])
+            .await;
+        match res {
+            Err(UserAdminError::UserNotFound(_)) => {}
+            other => panic!("expected UserNotFound, got {:?}", other),
+        }
+        assert_eq!(
+            replace_calls.load(Ordering::SeqCst),
+            0,
+            "no role replacement may run for a cross-realm target"
+        );
+    }
+
+    #[tokio::test]
+    async fn assign_user_roles_rejects_cross_realm_role() {
+        // The role id belongs to another realm: the user_roles schema only
+        // foreign-keys role_id -> roles(id), so this must be rejected here.
+        let (svc, replace_calls) =
+            make_role_assignment_service("r", vec![role_entity(Uuid::nil(), "other")]);
+        let res = svc
+            .assign_user_roles(admin_identity("r"), "r", Uuid::nil(), vec![Uuid::nil()])
+            .await;
+        match res {
+            Err(UserAdminError::RoleNotFound(_)) => {}
+            other => panic!("expected RoleNotFound, got {:?}", other),
+        }
+        assert_eq!(
+            replace_calls.load(Ordering::SeqCst),
+            0,
+            "no role replacement may run for a cross-realm role id"
+        );
+    }
+
+    #[tokio::test]
+    async fn assign_user_roles_allows_same_realm_target_and_roles() {
+        // Sanity: the boundary check must not break the legitimate flow.
+        let (svc, replace_calls) =
+            make_role_assignment_service("r", vec![role_entity(Uuid::nil(), "r")]);
+        svc.assign_user_roles(admin_identity("r"), "r", Uuid::nil(), vec![Uuid::nil()])
+            .await
+            .expect("same-realm assignment must succeed");
+        assert_eq!(replace_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn get_effective_permissions_rejects_cross_realm_target() {
+        let svc = UserPermissionServiceImpl::new(
+            Arc::new(MockUserRoleRepo::for_user_realm("other")),
+            Arc::new(MockRolePolicyRepo { roles: vec![] }),
+            Arc::new(AlwaysAllowPermission),
+        );
+        let res = svc
+            .get_effective_permissions(admin_identity("r"), "r", Uuid::nil())
+            .await;
+        match res {
+            Err(UserAdminError::UserNotFound(_)) => {}
+            other => panic!("expected UserNotFound, got {:?}", other),
+        }
+    }
+
+    fn make_permission_management_service(
+        target_user_realm: &str,
+        roles: Vec<RoleEntity>,
+    ) -> PermissionManagementServiceImpl<
+        MockUserRoleRepo,
+        MockRolePolicyRepo,
+        AlwaysAllowPermission,
+        MockAuditRepo,
+    > {
+        PermissionManagementServiceImpl::new(
+            Arc::new(MockUserRoleRepo::for_user_realm(target_user_realm)),
+            Arc::new(MockRolePolicyRepo { roles }),
+            Arc::new(AlwaysAllowPermission),
+            Arc::new(MockAuditRepo),
+        )
+    }
+
+    #[tokio::test]
+    async fn create_permission_rejects_cross_realm_user_target() {
+        let rid = Uuid::now_v7();
+        let svc = make_permission_management_service("other", vec![role_entity(rid, "r")]);
+        let res = svc
+            .create_permission(
+                admin_identity("r"),
+                audit_ctx(),
+                "r",
+                "admin-web-console",
+                None,
+                Some(Uuid::nil()),
+                Some(rid),
+                None,
+                None,
+            )
+            .await;
+        match res {
+            Err(UserAdminError::UserNotFound(_)) => {}
+            other => panic!("expected UserNotFound, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn create_permission_rejects_cross_realm_role() {
+        // Attaching a policy to another realm's role id must be rejected:
+        // the row would insert cleanly and pollute this realm's namespace.
+        let rid = Uuid::now_v7();
+        let svc = make_permission_management_service("r", vec![role_entity(rid, "other")]);
+        let res = svc
+            .create_permission(
+                admin_identity("r"),
+                audit_ctx(),
+                "r",
+                "admin-web-console",
+                Some(rid),
+                None,
+                None,
+                Some("users".to_string()),
+                Some("view".to_string()),
+            )
+            .await;
+        match res {
+            Err(UserAdminError::RoleNotFound(_)) => {}
+            other => panic!("expected RoleNotFound, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn delete_permission_rejects_cross_realm_role_policy() {
+        // delete_role_policy has no realm predicate at the repo layer, so the
+        // service-level check is what stops cross-tenant policy deletion.
+        let rid = Uuid::now_v7();
+        let svc = make_permission_management_service("r", vec![role_entity(rid, "other")]);
+        let res = svc
+            .delete_permission(
+                admin_identity("r"),
+                audit_ctx(),
+                "r",
+                "admin-web-console",
+                Some(rid),
+                None,
+                None,
+                Some("users".to_string()),
+                Some("view".to_string()),
+            )
+            .await;
+        match res {
+            Err(UserAdminError::RoleNotFound(_)) => {}
+            other => panic!("expected RoleNotFound, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn create_permission_allows_same_realm_targets() {
+        // Sanity: the boundary checks must not break the legitimate flow.
+        let rid = Uuid::now_v7();
+        let uid = Uuid::now_v7();
+        let svc = make_permission_management_service("r", vec![role_entity(rid, "r")]);
+        svc.create_permission(
+            admin_identity("r"),
+            audit_ctx(),
+            "r",
+            "admin-web-console",
+            None,
+            Some(uid),
+            Some(rid),
+            None,
+            None,
+        )
+        .await
+        .expect("same-realm permission creation must succeed");
     }
 }

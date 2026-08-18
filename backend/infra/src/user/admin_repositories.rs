@@ -395,6 +395,17 @@ impl PostgresUserRoleRepository {
 }
 
 impl UserRoleRepository for PostgresUserRoleRepository {
+    async fn get_user_realm(&self, user_id: Uuid) -> UserAdminResult<Option<String>> {
+        sqlx::query_scalar::<_, String>("SELECT realm_id FROM account WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to fetch user realm: {}", e);
+                UserAdminError::DatabaseError(format!("Failed to fetch user realm: {}", e))
+            })
+    }
+
     async fn replace_user_roles(
         &self,
         user_id: Uuid,

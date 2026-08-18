@@ -210,8 +210,10 @@ pub async fn create_realm(
 
 /// List realms
 ///
-/// Returns all realms visible to the caller. Principals in the admin realm see all realms;
-/// others see only their own realm.
+/// Returns the realms visible to the caller. Principals in the `admin` realm
+/// see all realms (platform-level enumeration); every other principal sees
+/// only its own realm. Realm-level detail endpoints remain strictly
+/// own-realm — this list is the only platform-wide view.
 ///
 /// # Authentication
 /// Requires valid API Key via X-API-Key header
@@ -257,7 +259,8 @@ pub async fn list_realms(
         }
     };
 
-    // 3. Filter: non-admin principals only see their own realm
+    // 3. Filter: the admin realm enumerates the whole platform; everyone
+    // else only ever sees their own realm.
     let items: Vec<RealmListItem> = if identity_realm == "admin" {
         realms.into_iter().map(realm_to_list_item).collect()
     } else {
@@ -285,7 +288,7 @@ pub async fn list_realms(
 ///
 /// # Authorization
 /// The caller must have `realm:view` permission in the target realm.
-/// Non-admin principals may only view their own realm.
+/// Every principal may only view its own realm (no super-admin).
 #[utoipa::path(
     get,
     path = "/api/ext/realms/{realmId}",

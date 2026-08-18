@@ -13,19 +13,20 @@ use herald_core::domain::authorization::permission_service::PermissionService;
 
 /// Verify that the authenticated identity belongs to the target realm.
 ///
-/// Returns `Ok(())` when the identity's realm matches `realm_id` (or the
-/// identity belongs to the `"admin"` realm, which is always allowed).
-/// On mismatch, logs a warning and returns a 403 FORBIDDEN error.
+/// Returns `Ok(())` when the identity's realm matches `realm_id` exactly.
+/// There is no cross-realm super-admin: an identity in any realm (including
+/// `"admin"`) may only act on its own realm. On mismatch, logs a warning and
+/// returns a 403 FORBIDDEN error.
 ///
-/// `operation` is a human-readable label (e.g. "user creation") used in
-/// the warning log: `"Cross-realm {operation} attempt blocked"`.
+/// `operation` is a human-readable label (e.g. "user creation") used in the
+/// warning log: `"Cross-realm {operation} attempt blocked"`.
 pub fn require_realm_membership(
     identity: &Identity,
     realm_id: &str,
     operation: &str,
 ) -> Result<(), ApiError> {
     let identity_realm = identity.realm_id();
-    if identity_realm == "admin" || identity_realm == realm_id {
+    if identity_realm == realm_id {
         Ok(())
     } else {
         tracing::warn!(
