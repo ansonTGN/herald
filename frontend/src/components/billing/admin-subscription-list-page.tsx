@@ -22,6 +22,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader, ListPagination } from '@/components/shared'
 import { subscriptionsQueryOptions } from '@/data/query-options'
+import { formatProviderName } from '@/components/billing/format-provider-name'
 import { m } from '@/paraglide/messages'
 import type { SubscriptionListItemResponse, SubscriptionListResponse } from '@/lib/api-generated'
 
@@ -40,14 +41,6 @@ const PROVIDER_FILTER_OPTIONS = [
   { value: 'stripe', label: 'Stripe' },
   { value: 'creem', label: 'Creem' },
 ] as const
-
-function formatProviderName(provider: string): string {
-  const names: Record<string, string> = {
-    stripe: 'Stripe',
-    creem: 'Creem',
-  }
-  return names[provider] ?? provider
-}
 
 function getStatusBadgeClass(status: string): string {
   switch (status) {

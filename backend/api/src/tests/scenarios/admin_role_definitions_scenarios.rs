@@ -263,4 +263,129 @@ mod tests {
         // ========================================================================
         tracing::info!("✓ Test completed successfully");
     }
+
+    /// 回归测试：跨 realm 的 roleId 不允许被挂权限
+    ///
+    /// WHY: roleId 是客户端提供的主键。若不校验归属，A realm 的管理员可以
+    /// 给 B realm 的角色追加权限（跨租户 RBAC 篡改）。修复后必须 404 且无写入。
+    #[test_context(AdminRoleDefinitionsTestContext)]
+    #[tokio::test]
+    async fn test_scenario_assign_permission_rejects_foreign_realm_role(
+        ctx: &mut AdminRoleDefinitionsTestContext,
+    ) {
+        let (admin_token, _user_id) =
+            create_admin_session_with_user(ctx, "role-perm-foreign-role@test.com", 1800).await;
+        grant_realm_admin_role(ctx, &_user_id).await;
+
+        // 本 realm 的权限 + 平台 admin realm 的角色（foreign）
+        let own_permission_id: uuid::Uuid = sqlx::query_scalar(
+            "SELECT id FROM permissions WHERE realm_id = $1 LIMIT 1",
+        )
+        .bind(&ctx._realm_id)
+        .fetch_one(&ctx._app_state.pool)
+        .await
+        .unwrap();
+        let foreign_role_id: uuid::Uuid = sqlx::query_scalar(
+            "SELECT id FROM roles WHERE realm_id = 'admin' LIMIT 1",
+        )
+        .fetch_one(&ctx._app_state.pool)
+        .await
+        .unwrap();
+
+        let app = ctx.create_unified_test_router();
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri(format!(
+                "/api/roles/{}/define/{}/permissions",
+                ctx._realm_id, foreign_role_id
+            ))
+            .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                serde_json::json!({ "permissionId": own_permission_id }).to_string(),
+            ))
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+
+        assert_eq!(
+            resp.status(),
+            StatusCode::NOT_FOUND,
+            "foreign-realm roleId must be rejected as not found"
+        );
+
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM role_permissions WHERE role_id = $1 AND permission_id = $2",
+        )
+        .bind(foreign_role_id)
+        .bind(own_permission_id)
+        .fetch_one(&ctx._app_state.pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            count, 0,
+            "no role_permissions row may be created for a foreign realm role"
+        );
+    }
+
+    /// 回归测试：跨 realm 的 permissionId 不允许被挂到本 realm 角色
+    ///
+    /// WHY: 与上一条对称 — 权限行同样按 realm 隔离，foreign permission 必须视为
+    /// 不存在，否则 A realm 管理员可将 B realm 的自定义权限挂进本 realm 角色。
+    #[test_context(AdminRoleDefinitionsTestContext)]
+    #[tokio::test]
+    async fn test_scenario_assign_permission_rejects_foreign_realm_permission(
+        ctx: &mut AdminRoleDefinitionsTestContext,
+    ) {
+        let (admin_token, _user_id) =
+            create_admin_session_with_user(ctx, "role-perm-foreign-perm@test.com", 1800).await;
+        grant_realm_admin_role(ctx, &_user_id).await;
+
+        let own_role_id: uuid::Uuid = sqlx::query_scalar(
+            "SELECT id FROM roles WHERE realm_id = $1 AND name = 'realm-admin'",
+        )
+        .bind(&ctx._realm_id)
+        .fetch_one(&ctx._app_state.pool)
+        .await
+        .unwrap();
+        let foreign_permission_id: uuid::Uuid = sqlx::query_scalar(
+            "SELECT id FROM permissions WHERE realm_id = 'admin' LIMIT 1",
+        )
+        .fetch_one(&ctx._app_state.pool)
+        .await
+        .unwrap();
+
+        let app = ctx.create_unified_test_router();
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri(format!(
+                "/api/roles/{}/define/{}/permissions",
+                ctx._realm_id, own_role_id
+            ))
+            .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                serde_json::json!({ "permissionId": foreign_permission_id }).to_string(),
+            ))
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+
+        assert_eq!(
+            resp.status(),
+            StatusCode::NOT_FOUND,
+            "foreign-realm permissionId must be rejected as not found"
+        );
+
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM role_permissions WHERE role_id = $1 AND permission_id = $2",
+        )
+        .bind(own_role_id)
+        .bind(foreign_permission_id)
+        .fetch_one(&ctx._app_state.pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            count, 0,
+            "no role_permissions row may be created from a foreign realm permission"
+        );
+    }
 }

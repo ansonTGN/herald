@@ -21,7 +21,7 @@ use axum::{
 /// constant time) only when the lengths differ, which does not reveal secret
 /// material. Mirrors `herald_infra_shopify::constant_time_compare` to avoid
 /// pulling that crate into `api-base`.
-fn constant_time_compare(a: &str, b: &str) -> bool {
+pub fn constant_time_compare(a: &str, b: &str) -> bool {
     if a.len() != b.len() {
         return false;
     }

@@ -61,36 +61,9 @@ describe('Audit API error states', () => {
       })
       expect(errorElement).toBeInTheDocument()
     })
-
-    test('shows error when list endpoint returns 403', async () => {
-      server.use(
-        http.get(`${API_BASE_URL}/api/audit/:realmId`, () => {
-          return HttpResponse.json({ message: 'Forbidden' }, { status: 403 })
-        })
-      )
-
-      renderWithQueryClient(<AuditListErrorTestComponent realmId="test-realm" />)
-
-      const errorElement = await screen.findByTestId('audit-list-error', undefined, {
-        timeout: 5000,
-      })
-      expect(errorElement).toBeInTheDocument()
-    })
-
-    test('shows error on network error for list endpoint', async () => {
-      server.use(
-        http.get(`${API_BASE_URL}/api/audit/:realmId`, () => {
-          return HttpResponse.error()
-        })
-      )
-
-      renderWithQueryClient(<AuditListErrorTestComponent realmId="test-realm" />)
-
-      const errorElement = await screen.findByTestId('audit-list-error', undefined, {
-        timeout: 5000,
-      })
-      expect(errorElement).toBeInTheDocument()
-    })
+    // 403/network-error variants hit the identical throw→error-state branch
+    // (retry is disabled and the harness renders one error testid), so a
+    // single representative per endpoint pins the contract.
   })
 
   describe('Detail endpoint errors', () => {
@@ -110,40 +83,6 @@ describe('Audit API error states', () => {
       })
       expect(errorElement).toBeInTheDocument()
       expect(errorElement.textContent).toContain('Failed to load event details')
-    })
-
-    test('shows error message when detail endpoint returns 500', async () => {
-      server.use(
-        http.get(`${API_BASE_URL}/api/audit/:realmId/:eventId`, () => {
-          return HttpResponse.json({ message: 'Internal Server Error' }, { status: 500 })
-        })
-      )
-
-      renderWithQueryClient(
-        <AuditEventDetailSheet eventId="evt-001" realmId="test-realm" onClose={vi.fn()} />
-      )
-
-      const errorElement = await screen.findByTestId('audit-detail-error', undefined, {
-        timeout: 5000,
-      })
-      expect(errorElement).toBeInTheDocument()
-    })
-
-    test('shows error message on network error for detail endpoint', async () => {
-      server.use(
-        http.get(`${API_BASE_URL}/api/audit/:realmId/:eventId`, () => {
-          return HttpResponse.error()
-        })
-      )
-
-      renderWithQueryClient(
-        <AuditEventDetailSheet eventId="evt-001" realmId="test-realm" onClose={vi.fn()} />
-      )
-
-      const errorElement = await screen.findByTestId('audit-detail-error', undefined, {
-        timeout: 5000,
-      })
-      expect(errorElement).toBeInTheDocument()
     })
 
     test('does not fetch when eventId is null', () => {

@@ -582,6 +582,13 @@ pub async fn admin_get_version(
         .await?
         .ok_or_else(|| ApiError::not_found("Agreement version not found"))?;
 
+    // version_id is a client-supplied primary key: the row must belong to the
+    // path realm (or be the platform default) — otherwise a realm admin could
+    // read another realm's custom agreement body by supplying a foreign id.
+    if version.realm_id.as_deref().is_some_and(|id| id != realm_id) {
+        return Err(ApiError::not_found("Agreement version not found"));
+    }
+
     Ok(Json(LegalAgreementVersionDetailResponse {
         agreement_type: version.agreement_type,
         version_no: version.version_no,

@@ -11,7 +11,6 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
-use redis::AsyncCommands;
 use serde::Deserialize;
 use utoipa::ToSchema;
 
@@ -185,10 +184,30 @@ pub async fn oauth_authorize(
         .get()
         .await
         .map_err(|_| ApiError::internal("Internal server error".to_string()))?;
-    let _: () = conn
-        .set_ex(state_key, state_value, OAUTH_STATE_TTL_SECONDS)
+    // SET NX: a state token must not overwrite an existing pending
+    // transaction — otherwise anyone who learns a victim's state value could
+    // re-seed it with their own client_id/redirect_uri/PKCE before the login
+    // completes (state fixation). A reused pending state is rejected; clients
+    // generate a fresh random state per flow.
+    let seeded: Option<String> = redis::cmd("SET")
+        .arg(&state_key)
+        .arg(&state_value)
+        .arg("NX")
+        .arg("EX")
+        .arg(OAUTH_STATE_TTL_SECONDS)
+        .query_async(&mut conn)
         .await
         .map_err(|_| ApiError::internal("Internal server error".to_string()))?;
+    if seeded.is_none() {
+        tracing::warn!(
+            realm_id = %realm_id,
+            client_id = %params.client_id,
+            "OAuth authorize rejected: state already pending (replay/fixation attempt)"
+        );
+        return Err(ApiError::bad_request(
+            "state is already in use; start a new authorize flow with a fresh state".to_string(),
+        ));
+    }
 
     tracing::debug!(
         realm_id = %realm_id,

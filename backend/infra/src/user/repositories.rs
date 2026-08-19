@@ -438,12 +438,17 @@ impl UserVerificationRepository for PostgresVerificationRepository {
         code_type: &str,
         code: &str,
     ) -> Result<bool, CoreError> {
+        use herald_domain::security_constants::EMAIL_VERIFICATION_CODE_TTL_SECONDS;
         use herald_entity::email_verification_code;
 
+        let cutoff = (chrono::Utc::now()
+            - chrono::Duration::seconds(EMAIL_VERIFICATION_CODE_TTL_SECONDS as i64))
+        .fixed_offset();
         let result = email_verification_code::Entity::find()
             .filter(email_verification_code::Column::Email.eq(email))
             .filter(email_verification_code::Column::Type.eq(code_type))
             .filter(email_verification_code::Column::VerificationCode.eq(code))
+            .filter(email_verification_code::Column::CreatedAt.gte(cutoff))
             .one(&*self.db)
             .await?;
 
@@ -462,10 +467,15 @@ impl UserVerificationRepository for PostgresVerificationRepository {
     }
 
     async fn get_email_by_code(&self, code: &str) -> Result<Option<String>, CoreError> {
+        use herald_domain::security_constants::EMAIL_VERIFICATION_CODE_TTL_SECONDS;
         use herald_entity::email_verification_code;
 
+        let cutoff = (chrono::Utc::now()
+            - chrono::Duration::seconds(EMAIL_VERIFICATION_CODE_TTL_SECONDS as i64))
+        .fixed_offset();
         let result = email_verification_code::Entity::find()
             .filter(email_verification_code::Column::VerificationCode.eq(code))
+            .filter(email_verification_code::Column::CreatedAt.gte(cutoff))
             .one(&*self.db)
             .await?;
 

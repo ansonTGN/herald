@@ -30,6 +30,17 @@ export const TIME_CONSTANTS = {
 } as const
 
 /**
+ * Shared React Query timing defaults so data modules don't each
+ * re-derive them from TIME_CONSTANTS.
+ */
+export const QUERY_TIMING = {
+  GC_TIME_5_MIN: TIME_CONSTANTS.FIVE_MINUTES,
+  STALE_TIME_2_MIN: TIME_CONSTANTS.TWO_MINUTES,
+  STALE_TIME_5_MIN: TIME_CONSTANTS.FIVE_MINUTES,
+  RETRY_COUNT: 1,
+} as const
+
+/**
  * Query cache keys for React Query
  * These should be used consistently across the application
  */

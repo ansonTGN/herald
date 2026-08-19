@@ -70,16 +70,9 @@ describe('UserTable sessions entry — permission gating via onManageSessions', 
       // Omitting `onManageSessions` is how the route expresses "no
       // users.manage". The entry point must be entirely absent — not disabled,
       // not greyed out — so a non-manager has nothing to attempt.
+      // (`onManageSessions={canManage ? fn : undefined}` is the same runtime
+      // shape as omission, so one test covers both.)
       render(<UserTable data={[makeRow()]} />)
-
-      expect(screen.queryByTestId('user-table-0-sessions-button')).not.toBeInTheDocument()
-    })
-
-    it('does not render the Sessions entry button when onManageSessions is undefined', () => {
-      // Explicit `undefined` is the exact value the route threads through when
-      // `canManage` is false (`onManageSessions={canManage ? fn : undefined}`).
-      // Cover both the omitted and the explicit-undefined shapes of the gate.
-      render(<UserTable data={[makeRow()]} onManageSessions={undefined} />)
 
       expect(screen.queryByTestId('user-table-0-sessions-button')).not.toBeInTheDocument()
     })

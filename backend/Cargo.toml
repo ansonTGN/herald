@@ -62,7 +62,7 @@ sha2 = "0.10"
 chrono = { version = "0.4", features = ["serde"] }
 # ⚠️ UUID v7 ONLY: We use UUID v7 for better database index locality and performance
 # v7 is time-ordered and monotonic, unlike v4 which is random
-uuid = { version = "1.19", features = ["v7", "serde"] }
+uuid = { version = "1.19", features = ["v4", "v7", "serde"] }
 
 # Error handling
 anyhow = "1.0"

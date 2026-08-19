@@ -9,8 +9,7 @@ use uuid::Uuid;
 use validator::Validate;
 
 use herald_api_base::application::http::common::auth_utils::{
-    require_authenticated_user_in_realm, require_authenticated_user_in_realm_with_token,
-    require_token_scope,
+    require_authenticated_user_in_realm_with_token, require_token_scope,
 };
 use herald_api_base::application::http::common::error_helpers::core_error_to_api_error;
 use herald_api_base::application::http::server::api_entities::ApiError;
@@ -85,7 +84,7 @@ pub struct PaymentContextResponse {
 }
 
 /// Structured 409 body emitted when a one-time+role entitlement is already
-/// owned by the buyer (M3 anti-repeat, design §4.2.2 / §5.4). Surfaced instead
+/// owned by the buyer (anti-repeat purchase rule). Surfaced instead
 /// of the generic conflict message so the frontend can distinguish "already
 /// owned" from other 409s.
 #[derive(Debug, Serialize, ToSchema)]
@@ -210,10 +209,10 @@ fn validate_purchasable_target(target_type: &str) -> Result<(), validator::Valid
 
 /// Map a purchase-path `CoreError` to an `ApiError`.
 ///
-/// Intercepts the M3 already-owned conflict (carried as
+/// Intercepts the already-owned conflict (carried as
 /// `CoreError::Conflict("<ALREADY_OWNED_MARKER><entitlement_key>")` — see
 /// `PurchaseErrorExt::already_owned`) and emits a structured 409 body
-/// `{ "code": "already_owned", "entitlementKey": <key> }` (design §4.2.2 / §5.4).
+/// `{ "code": "already_owned", "entitlementKey": <key> }`.
 /// All other errors fall through to the generic `core_error_to_api_error`
 /// mapping.
 fn map_purchase_error_to_api_error(e: CoreError, operation: &str) -> ApiError {
@@ -418,8 +417,15 @@ pub async fn cancel_payment_attempt(
     State(state): State<AppState>,
     Path((realm_id, attempt_id)): Path<(String, Uuid)>,
     Extension(identity): Extension<Identity>,
+    Extension(context): Extension<TokenCredentialContext>,
 ) -> Result<Json<PaymentAttemptStatusResponse>, ApiError> {
-    let user_id = require_authenticated_user_in_realm(&identity, &realm_id, "purchase APIs")?;
+    require_token_scope(&identity, &context, CredentialScope::PurchaseInitiate)?;
+    let user_id = require_authenticated_user_in_realm_with_token(
+        &identity,
+        &context,
+        &realm_id,
+        "purchase APIs",
+    )?;
 
     let service = &state.payment_attempt_service;
 

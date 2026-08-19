@@ -61,47 +61,9 @@ describe('filterByPermission', () => {
     expect(result).toHaveLength(0)
   })
 
-  it('shows Audit Log item when user has audit.view', () => {
-    const items: MenuItem[] = [
-      makeItem({ name: 'Audit Log', path: '/audit', permission: PERMISSION.AUDIT_VIEW }),
-    ]
-
-    const result = filterByPermission(items, [PERMISSION.AUDIT_VIEW])
-
-    expect(result).toHaveLength(1)
-    expect(result[0].name).toBe('Audit Log')
-  })
-
-  it('hides Audit Log item when user lacks audit.view', () => {
-    const items: MenuItem[] = [
-      makeItem({ name: 'Audit Log', path: '/audit', permission: PERMISSION.AUDIT_VIEW }),
-    ]
-
-    const result = filterByPermission(items, [])
-
-    expect(result).toHaveLength(0)
-  })
-
-  it('shows API Keys item when user has api_keys.view', () => {
-    const items: MenuItem[] = [
-      makeItem({ name: 'API Keys', path: '/api-keys', permission: PERMISSION.API_KEYS_VIEW }),
-    ]
-
-    const result = filterByPermission(items, [PERMISSION.API_KEYS_VIEW])
-
-    expect(result).toHaveLength(1)
-    expect(result[0].name).toBe('API Keys')
-  })
-
-  it('hides API Keys item when user lacks api_keys.view', () => {
-    const items: MenuItem[] = [
-      makeItem({ name: 'API Keys', path: '/api-keys', permission: PERMISSION.API_KEYS_VIEW }),
-    ]
-
-    const result = filterByPermission(items, [])
-
-    expect(result).toHaveLength(0)
-  })
+  // The permission check itself is generic (filter-by-permission.ts has no
+  // per-permission logic), so one shows/hides pair pins the branch for every
+  // menu item; only realm-gated 'realms' has its own tests below.
 
   it('hides parent when ALL children are filtered out by permissions', () => {
     const items: MenuItem[] = [

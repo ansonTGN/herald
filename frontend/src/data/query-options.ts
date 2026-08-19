@@ -112,7 +112,7 @@ import type {
   SingleSubscriptionHistoryResponse,
   GlobalSubscriptionHistoryResponse,
 } from '@/types/billing'
-import { TIME_CONSTANTS, QUERY_KEYS } from '@/lib/constants'
+import { TIME_CONSTANTS, QUERY_KEYS, QUERY_TIMING } from '@/lib/constants'
 import { client } from '@/lib/api-generated/client.gen'
 
 // ==================== Enhanced Error Handling ====================
@@ -121,11 +121,8 @@ function handleApiErrorWithStatus(error: unknown): never {
   throw error instanceof ApiResponseError ? error : new ApiResponseError(error)
 }
 
-const GC_TIME_5_MIN = TIME_CONSTANTS.FIVE_MINUTES
+const { GC_TIME_5_MIN, RETRY_COUNT, STALE_TIME_2_MIN, STALE_TIME_5_MIN } = QUERY_TIMING
 const GC_TIME_10_MIN = 10 * 60 * 1000
-const RETRY_COUNT = 1
-const STALE_TIME_2_MIN = TIME_CONSTANTS.TWO_MINUTES
-const STALE_TIME_5_MIN = TIME_CONSTANTS.FIVE_MINUTES
 
 const isClientError = (error: unknown): boolean => {
   const status = resolveApiError(error).status

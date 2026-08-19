@@ -133,35 +133,7 @@ describe('dashboardStatsQueryOptions', () => {
       })
       expect(errorElement).toBeInTheDocument()
     })
-
-    it('should enter error state on 500 Internal Server Error', async () => {
-      server.use(
-        http.get(`${API_BASE_URL}/api/dashboard/:realmId/stats`, () => {
-          return HttpResponse.json({ message: 'Internal Server Error' }, { status: 500 })
-        })
-      )
-
-      renderWithQueryClient(<DashboardStatsTestComponent realmId="test-realm" />)
-
-      const errorElement = await screen.findByTestId('dashboard-error', undefined, {
-        timeout: 5000,
-      })
-      expect(errorElement).toBeInTheDocument()
-    })
-
-    it('should enter error state on network error', async () => {
-      server.use(
-        http.get(`${API_BASE_URL}/api/dashboard/:realmId/stats`, () => {
-          return HttpResponse.error()
-        })
-      )
-
-      renderWithQueryClient(<DashboardStatsTestComponent realmId="test-realm" />)
-
-      const errorElement = await screen.findByTestId('dashboard-error', undefined, {
-        timeout: 5000,
-      })
-      expect(errorElement).toBeInTheDocument()
-    })
+    // 500/network-error variants hit the identical throw→error-state branch
+    // (retry disabled, one error testid), so one representative pins it.
   })
 })

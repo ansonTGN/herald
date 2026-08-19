@@ -132,8 +132,9 @@ pub async fn init_rate_limit_function(state: &AppState) -> Result<(), ApiError> 
 /// Check if a rate limit should be enforced
 ///
 /// Returns an error if the rate limit has been exceeded.
-/// Rate limiting is automatically disabled in non-production environments
-/// unless `config.enforce_in_dev` is set to true.
+/// Rate limiting is always enforced when `app_env == "production"`; in
+/// non-production environments it is skipped unless `config.enforce_in_dev`
+/// is set to true.
 ///
 /// This function uses Redis Functions (FCALL) for better performance
 /// compared to traditional Lua scripts.
@@ -155,8 +156,9 @@ pub async fn rate_limit(
     key: String,
     config: RateLimitConfig,
 ) -> Result<(), ApiError> {
-    // Rate limiting is enforced by default, but can be disabled for local testing
-    if !config.enforce_in_dev {
+    // Production always enforces; non-production environments may skip for
+    // local testing unless the call site opted in via `enforce_in_dev`.
+    if state.app_env != "production" && !config.enforce_in_dev {
         return Ok(());
     }
 

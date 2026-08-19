@@ -711,8 +711,9 @@ impl StripeClient {
         mac.update(signed_payload.as_bytes());
         let computed_signature = hex::encode(mac.finalize().into_bytes());
 
-        // Compare signatures
-        if computed_signature == expected_signature {
+        // Compare signatures in constant time — a byte-wise `==` on the hex
+        // strings would short-circuit and leak the matching prefix length.
+        if constant_time_eq(computed_signature.as_bytes(), expected_signature.as_bytes()) {
             Ok(())
         } else {
             Err(CoreError::BadRequest(
@@ -720,6 +721,20 @@ impl StripeClient {
             ))
         }
     }
+}
+
+/// Constant-time byte-slice comparison: XOR-accumulates instead of
+/// short-circuiting, so timing does not leak the first mismatch position.
+/// Only the length mismatch returns early, which reveals no secret material.
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut result = 0u8;
+    for (byte_a, byte_b) in a.iter().zip(b.iter()) {
+        result |= byte_a ^ byte_b;
+    }
+    result == 0
 }
 
 #[cfg(test)]

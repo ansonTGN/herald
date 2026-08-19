@@ -60,6 +60,12 @@ pub const BROWSER_REFRESH_ABSOLUTE_TTL_MAX_SECONDS: i32 = 7_776_000;
 /// call sites (do not call `bcrypt::DEFAULT_COST` directly).
 pub const DEFAULT_BCRYPT_COST: u32 = 12;
 
+// --- Email verification links (email_verification_code table) ---
+/// TTL of emailed verify-email / reset-password / change-email codes
+/// (seconds). Rows older than this are treated as invalid at lookup time —
+/// an emailed link must not stay usable forever.
+pub const EMAIL_VERIFICATION_CODE_TTL_SECONDS: u64 = 1800;
+
 // --- HTTP ---
 pub const DEFAULT_HTTP_CLIENT_TIMEOUT_SECS: u64 = 30;
 pub const DEFAULT_HTTP_CLIENT_CONNECT_TIMEOUT_SECS: u64 = 10;

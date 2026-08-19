@@ -39,6 +39,38 @@ pub async fn assign_permission_to_role(
 ) -> Result<ApiResult<()>, ApiError> {
     let admin = AdminIdentity::require(identity.clone(), &realm_id, "role permissions")?;
     admin.require_permission(&state, "roles", "manage").await?;
+
+    // role_id and permission_id are client-supplied primary keys: both must
+    // belong to the path realm before any write, otherwise a realm admin could
+    // tamper with another realm's RBAC rows.
+    let role_exists: Option<(bool,)> =
+        sqlx::query_as("SELECT is_builtin FROM roles WHERE id = $1 AND realm_id = $2")
+            .bind(role_id)
+            .bind(&realm_id)
+            .fetch_optional(&state.pool)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to check role: {e}");
+                ApiError::internal("Failed to assign permission")
+            })?;
+    if role_exists.is_none() {
+        return Err(ApiError::not_found("Role not found"));
+    }
+
+    let perm_row: Option<(String, String)> =
+        sqlx::query_as("SELECT resource, action FROM permissions WHERE id = $1 AND realm_id = $2")
+            .bind(payload.permission_id)
+            .bind(&realm_id)
+            .fetch_optional(&state.pool)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to lookup permission for policy sync: {e}");
+                ApiError::internal("Failed to sync role policy")
+            })?;
+    let Some((resource, action)) = perm_row else {
+        return Err(ApiError::not_found("Permission not found"));
+    };
+
     sqlx::query(
         r#"
         INSERT INTO role_permissions (role_id, permission_id)
@@ -60,41 +92,29 @@ pub async fn assign_permission_to_role(
     })?;
 
     // Sync to role_policies so RedisPermissionChecker can find the permission
-    let perm_row: Option<(String, String)> =
-        sqlx::query_as("SELECT resource, action FROM permissions WHERE id = $1")
-            .bind(payload.permission_id)
-            .fetch_optional(&state.pool)
-            .await
-            .map_err(|e| {
-                tracing::error!("Failed to lookup permission for policy sync: {e}");
-                ApiError::internal("Failed to sync role policy")
-            })?;
+    sqlx::query(
+        r#"
+        INSERT INTO role_policies (id, realm_id, role_id, resource, action)
+        VALUES (uuidv7(), $1, $2, $3, $4)
+        ON CONFLICT (role_id, resource, action) DO NOTHING
+        "#,
+    )
+    .bind(&realm_id)
+    .bind(role_id)
+    .bind(&resource)
+    .bind(&action)
+    .execute(&state.pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to sync role_policies: {e}");
+        ApiError::internal("Failed to sync role policy")
+    })?;
 
-    if let Some((resource, action)) = perm_row {
-        sqlx::query(
-            r#"
-            INSERT INTO role_policies (id, realm_id, role_id, resource, action)
-            VALUES (uuidv7(), $1, $2, $3, $4)
-            ON CONFLICT (role_id, resource, action) DO NOTHING
-            "#,
-        )
-        .bind(&realm_id)
-        .bind(role_id)
-        .bind(&resource)
-        .bind(&action)
-        .execute(&state.pool)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to sync role_policies: {e}");
-            ApiError::internal("Failed to sync role policy")
-        })?;
-
-        // Invalidate permission cache so the new policy takes effect
-        let _ = state
-            .permission_checker
-            .invalidate_role_policy_cache(&realm_id, &role_id.to_string())
-            .await;
-    }
+    // Invalidate permission cache so the new policy takes effect
+    let _ = state
+        .permission_checker
+        .invalidate_role_policy_cache(&realm_id, &role_id.to_string())
+        .await;
 
     // Record audit event (failure does not fail the operation)
     if let Err(e) = state
@@ -147,14 +167,21 @@ pub async fn remove_permission_from_role(
     let admin = AdminIdentity::require(identity.clone(), &realm_id, "role permissions")?;
     admin.require_permission(&state, "roles", "manage").await?;
     let role: Option<(String, bool)> =
-        sqlx::query_as("SELECT name, is_builtin FROM roles WHERE id = $1")
+        sqlx::query_as("SELECT name, is_builtin FROM roles WHERE id = $1 AND realm_id = $2")
             .bind(role_id)
+            .bind(&realm_id)
             .fetch_optional(&state.pool)
             .await
             .map_err(|e| {
                 tracing::error!("Failed to check role: {e}");
                 ApiError::internal("Failed to check role")
             })?;
+
+    // role_id is a client-supplied primary key: a role outside the path realm
+    // must not be touched (cross-tenant tampering).
+    if role.is_none() {
+        return Err(ApiError::not_found("Role not found"));
+    }
 
     if let Some((role_name, is_builtin)) = role
         && is_builtin
@@ -300,11 +327,13 @@ pub async fn get_role_permissions(
         SELECT p.id, p.name, p.resource, p.action, p.description, p.realm_id, p.is_builtin
         FROM permissions p
         INNER JOIN role_permissions rp ON p.id = rp.permission_id
+        INNER JOIN roles r ON r.id = rp.role_id AND r.realm_id = $2
         WHERE rp.role_id = $1
         ORDER BY p.created_at DESC
         "#,
     )
     .bind(role_id)
+    .bind(&realm_id)
     .fetch_all(&state.pool)
     .await
     .map_err(|e| {

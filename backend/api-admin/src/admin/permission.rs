@@ -354,8 +354,18 @@ pub async fn delete_permission(
 )]
 pub async fn check_permission(
     State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
     Valid(Json(payload)): Valid<Json<PermissionCheckRequest>>,
 ) -> Result<ApiResult<PermissionCheckResponse>, ApiError> {
+    // Self-introspection only (RFC 7662-style): the caller must authenticate,
+    // and the probed token must belong to the caller. Without this the endpoint
+    // is an unauthenticated live-token + RBAC oracle for any stolen token.
+    if !identity.is_user() {
+        return Err(ApiError::forbidden(
+            "Access denied: authenticated user token required",
+        ));
+    }
+
     let token_data = RedisBrowserTokenService::new(state.redis_manager.clone())
         .lookup_access_token(&payload.token)
         .await
@@ -369,6 +379,12 @@ pub async fn check_permission(
             user_id: None,
         }));
     };
+
+    if token_data.user_id != identity.user_id() || token_data.realm_id != identity.realm_id() {
+        return Err(ApiError::forbidden(
+            "Access denied: can only check a token that belongs to you",
+        ));
+    }
 
     let rules = match payload.rules {
         Some(rules) if !rules.is_empty() => rules,

@@ -20,7 +20,7 @@ use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::TargetOperation;
 use herald_core::domain::security_constants::{
     CHANGE_EMAIL_CONFIRM_IP_RATE_LIMIT, CHANGE_EMAIL_REQUEST_EMAIL_RATE_LIMIT,
-    CHANGE_EMAIL_REQUEST_IP_RATE_LIMIT,
+    CHANGE_EMAIL_REQUEST_IP_RATE_LIMIT, EMAIL_VERIFICATION_CODE_TTL_SECONDS,
 };
 use herald_core::third::email::{EmailService, EmailTemplateKind};
 
@@ -244,11 +244,16 @@ async fn confirm_email_change_internal(
         ApiError::internal("Failed to begin transaction")
     })?;
 
-    // Retrieve the new email from verification code (inside tx for atomicity)
+    // Retrieve the new email from verification code (inside tx for atomicity).
+    // Codes older than the TTL are rejected — the emailed link must not stay
+    // usable forever.
+    let code_cutoff =
+        chrono::Utc::now() - chrono::Duration::seconds(EMAIL_VERIFICATION_CODE_TTL_SECONDS as i64);
     let new_email: Option<String> = sqlx::query_scalar(
-        "SELECT email FROM email_verification_code WHERE verification_code = $1 AND type = 'change_email' ORDER BY id DESC LIMIT 1 FOR UPDATE",
+        "SELECT email FROM email_verification_code WHERE verification_code = $1 AND type = 'change_email' AND created_at >= $2 ORDER BY id DESC LIMIT 1 FOR UPDATE",
     )
     .bind(code)
+    .bind(code_cutoff)
     .fetch_optional(&mut *tx)
     .await
     .map_err(|e| {

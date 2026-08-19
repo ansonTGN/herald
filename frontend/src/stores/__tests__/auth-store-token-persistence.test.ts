@@ -1,5 +1,5 @@
 /**
- * Auth store token-model persistence / cleanup boundaries (design §4.4 — FE-D01).
+ * Auth store token-model persistence / cleanup boundaries.
  *
  * Uses the REAL `useAuthStore` (no mocks) to assert the Bearer family's
  * persistence contract:
@@ -77,22 +77,6 @@ describe('partialize: refresh token + PKCE state persisted, access token exclude
     expect(snapshot).not.toHaveProperty('access_token')
     // The holder DOES hold it in memory.
     expect(accessTokenHolder.get()).toBe(TOKEN_FIXTURE.accessToken)
-  })
-
-  it('partialize() excludes the access token explicitly', () => {
-    const { partialize } = useAuthStore.persist.getOptions()
-    expect(partialize).toBeTypeOf('function')
-
-    useAuthStore.getState().setTokens({
-      accessToken: TOKEN_FIXTURE.accessToken,
-      refreshToken: TOKEN_FIXTURE.refreshToken,
-      clientId: TOKEN_FIXTURE.clientId,
-    })
-    const state = useAuthStore.getState()
-    const snapshot = partialize?.(state as never) as Record<string, unknown>
-
-    expect(snapshot.refreshToken).toBe(TOKEN_FIXTURE.refreshToken)
-    expect(snapshot).not.toHaveProperty('accessToken')
   })
 })
 

@@ -8,7 +8,6 @@
 //
 // ## ⚠️ 重要：Realm 严格隔离
 //
-// 根据最新架构设计（`.ai/design/cas-permission-architecture-refactor.md`）：
 // - **没有跨 Realm 访问**：所有用户只能访问自己所属的 Realm
 // - **admin realm 是普通 realm**：只有 `realm.manage` 权限可以创建新 Realm
 // - **权限验证在 Service 层**：不在 HTTP middleware
@@ -16,7 +15,6 @@
 // ## 参考
 // - 权限标准文档: `docs/permission-standard.md`
 // - RBAC 产品文档: `docs/permission.md`
-// - 架构设计: `.ai/design/cas-permission-architecture-refactor.md`
 // - RBAC 初始化: `core/src/domain/rbac_init/services.rs`
 
 #![allow(dead_code)]
@@ -409,6 +407,9 @@ pub async fn check_permission(
     let req = Request::builder()
         .method("POST")
         .uri("/api/permission/check")
+        // /api/permission/check is self-introspection: the caller must present
+        // the same token it is probing via the Authorization header.
+        .header("authorization", format!("Bearer {token}"))
         .header("content-type", "application/json")
         .body(Body::from(req_body))
         .unwrap();

@@ -421,9 +421,18 @@ impl PermissionService for RedisPermissionChecker {
         }
 
         // 2. Query principal's roles (uses role bindings cache internally)
-        let roles = self
+        let mut roles = self
             .get_principal_roles(realm_id, principal_type, principal_id)
             .await?;
+
+        // Direct user permissions are stored as role_policies rows keyed by
+        // the user's own uuid (role_id = user_id — the same convention
+        // get_user_permissions reads). Include that key in the policy lookup
+        // so a granted direct permission actually authorizes, instead of only
+        // appearing in the effective-permissions display.
+        if principal_type == principal_types::USER && !roles.iter().any(|r| r == principal_id) {
+            roles.push(principal_id.to_string());
+        }
 
         if roles.is_empty() {
             debug!("Principal has no roles, permission denied");

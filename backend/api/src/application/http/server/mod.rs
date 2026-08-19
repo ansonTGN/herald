@@ -529,7 +529,8 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
     let billing_browser_routes = billing::billing_browser_routes();
     let audit_routes = audit::audit_router();
 
-    // Test routes - included in test builds and when ENABLE_TEST_API is set (e.g., demo mode)
+    // Test routes - `billing_test_routes()` currently returns an empty router;
+    // kept as the wiring point for any future test-only billing routes.
     let billing_test_routes = billing::billing_test_routes();
 
     let router = Router::new()
@@ -665,10 +666,13 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
             herald_api_auth::token_router()
                 .layer(from_fn_with_state((*state).clone(), inject_token_identity)),
         )
-        // Permission routes: /check endpoint (NO middleware) + others (WITH middleware)
+        // Permission routes: /check endpoint (authenticated self-introspection;
+        // the handler additionally requires the probed token to belong to the
+        // caller) + others (WITH middleware)
         .route(
             "/api/permission/check",
-            axum::routing::post(crate::application::http::admin::permission::check_permission),
+            axum::routing::post(crate::application::http::admin::permission::check_permission)
+                .layer(from_fn_with_state((*state).clone(), inject_token_identity)),
         )
         .nest(
             "/api/permission",
@@ -784,13 +788,17 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
                 .layer(axum::middleware::from_fn(require_admin_console_token))
                 .layer(from_fn_with_state((*state).clone(), inject_token_identity)),
         )
-        // Points endpoints - flexible authentication (session or API key)
+        // Points endpoints - flexible authentication (session or API key),
+        // plus the same admin-console credential gate as every other admin
+        // router: a CustomUserUi token must not reach points.manage surfaces.
         .nest(
             "/api/points/{realmId}",
-            routes::points_router().layer(from_fn_with_state(
-                (*state).clone(),
-                crate::application::http::points::auth_middleware::flexible_auth_middleware,
-            )),
+            routes::points_router()
+                .layer(axum::middleware::from_fn(require_admin_console_token))
+                .layer(from_fn_with_state(
+                    (*state).clone(),
+                    crate::application::http::points::auth_middleware::flexible_auth_middleware,
+                )),
         )
         // External API routes
         .nest("/api/ext", super::ext::create_router((*state).clone()));

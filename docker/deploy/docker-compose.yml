@@ -56,8 +56,10 @@ services:
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required in production}
       ADMIN_REALM_ID: ${ADMIN_REALM_ID:-admin}
-      # Internal API key for service-to-service calls (backend/api-base/.../internal_auth.rs).
-      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
+      # Demo/test-only internal simulation endpoints (/api/internal/*).
+      # Leave UNSET in production: with no value the middleware rejects every
+      # request (fail-closed). Only the demo e2e suite needs it.
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-}
       # TOTP HMAC key — must be >=32 bytes (backend/domain/src/user_totp/service.rs:182).
       TOTP_SECRET_KEY: ${TOTP_SECRET_KEY:?TOTP_SECRET_KEY is required (>=32 bytes)}
     volumes:

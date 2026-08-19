@@ -39,7 +39,10 @@ pub struct DeviceAuthorizationErrorResponse {
 fn generate_user_code() -> String {
     let alphabet = DEVICE_CODE_USER_CODE_ALPHABET.as_bytes();
     let len = DEVICE_CODE_USER_CODE_LENGTH;
-    let uuid_bytes = uuid::Uuid::now_v7();
+    // The user_code is a bearer secret for the device grant: it must come from
+    // the OS RNG (UUIDv4), never from UUIDv7 whose leading bytes are the
+    // millisecond timestamp and therefore predictable.
+    let uuid_bytes = uuid::Uuid::new_v4();
     let bytes = uuid_bytes.as_bytes();
     let mut chars = String::with_capacity(len + 1);
     for i in 0..len {
@@ -137,7 +140,9 @@ pub async fn device_authorize(
         .await
         .map_err(|_| ApiError::internal("Internal server error".to_string()))?;
 
-    let device_code = uuid::Uuid::now_v7().to_string();
+    // device_code is the secret the device polls with — use the fully random
+    // UUIDv4 rather than the time-ordered v7.
+    let device_code = uuid::Uuid::new_v4().to_string();
     let mut user_code = generate_user_code();
     for _ in 0..5 {
         let exists: bool = conn
@@ -244,5 +249,18 @@ mod tests {
         let code = generate_user_code();
         // Dash should be at position 4 (between the two groups of 4)
         assert_eq!(code.chars().nth(4), Some('-'));
+    }
+
+    #[test]
+    fn test_generate_user_code_is_random_not_timestamp_derived() {
+        // WHY: the user_code is a bearer secret for the device grant. When it
+        // was derived from UUIDv7 bytes, the leading (timestamp) bytes made
+        // most of the code predictable. OS-random UUIDv4 codes generated in a
+        // tight loop (same millisecond) must still be unique — timestamp-
+        // derived codes collapse to identical values here.
+        let mut seen = std::collections::HashSet::new();
+        for _ in 0..1000 {
+            assert!(seen.insert(generate_user_code()));
+        }
     }
 }

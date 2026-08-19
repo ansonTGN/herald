@@ -186,54 +186,7 @@ describe('stripe-config-utils', () => {
       expect(result.find((r) => r.configKey === STRIPE_CONFIG_KEYS.WEBHOOK_SECRET)).toBeUndefined()
       expect(result.find((r) => r.configKey === STRIPE_CONFIG_KEYS.API_KEY)).toBeDefined()
     })
-
-    test('always marks every emitted row as enabled', () => {
-      const formData: StripeConfigForm = {
-        publishableKey: 'pk_test_123',
-        secretKey: 'sk_test_456',
-        webhookSecret: 'whsec_789',
-        asyncPointsStrategy: 'conservative',
-      }
-
-      const result = buildStripeConfigRequest(formData)
-
-      expect(result.every((r) => r.enabled === true)).toBe(true)
-      expect(result.every((r) => r.configType === PAYMENT_PROVIDERS.STRIPE)).toBe(true)
-    })
-
-    test('handles minimum valid values', () => {
-      const formData: StripeConfigForm = {
-        publishableKey: 'pk_test_a',
-        secretKey: 'sk_test_a',
-        webhookSecret: '',
-        asyncPointsStrategy: 'conservative',
-      }
-
-      const result = buildStripeConfigRequest(formData)
-
-      expect(result.every((r) => r.configType === PAYMENT_PROVIDERS.STRIPE)).toBe(true)
-      const keys = result.map((r) => r.configKey)
-      expect(keys).toContain(STRIPE_CONFIG_KEYS.PUBLISHABLE_KEY)
-      expect(keys).toContain(STRIPE_CONFIG_KEYS.API_KEY)
-    })
-
-    test('marks individual fields with correct isSecret', () => {
-      const formData: StripeConfigForm = {
-        publishableKey: 'pk_test_123',
-        secretKey: 'sk_test_456',
-        webhookSecret: 'whsec_789',
-        asyncPointsStrategy: 'conservative',
-      }
-
-      const result = buildStripeConfigRequest(formData)
-
-      expect(result.find((r) => r.configKey === STRIPE_CONFIG_KEYS.PUBLISHABLE_KEY)?.isSecret).toBe(
-        false
-      )
-      expect(result.find((r) => r.configKey === STRIPE_CONFIG_KEYS.API_KEY)?.isSecret).toBe(true)
-      expect(result.find((r) => r.configKey === STRIPE_CONFIG_KEYS.WEBHOOK_SECRET)?.isSecret).toBe(
-        true
-      )
-    })
+    // Note: enabled/isSecret/configType flags are pinned by the full deep-equal
+    // test above; no separate per-flag tests needed.
   })
 })

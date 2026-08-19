@@ -12,6 +12,7 @@ use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use herald_api_base::application::http::rate_limit::rate_limit_hit;
 use herald_api_base::application::http::server::api_entities::ApiError;
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
@@ -110,6 +111,17 @@ pub async fn device_verify(
             "Access denied: cannot verify device code for a different realm",
         ));
     }
+
+    // Brute-force protection: guessing a live user_code binds the guesser to
+    // the device grant (the code becomes verified as this user), so attempts
+    // must be throttled per authenticated user.
+    rate_limit_hit(
+        &state,
+        format!("rl:device-verify:user:{}", identity.user_id()),
+        20,
+        300,
+    )
+    .await?;
 
     let user_code = payload.user_code.to_uppercase();
 

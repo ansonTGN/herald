@@ -218,12 +218,12 @@ pub async fn handle_update_custom_domain_config(
 // Unauthenticated top-level route registered in `server/mod.rs` (NOT under
 // `/api/realms`, so no Bearer identity). It shares the
 // `custom_domain_mapping` table with the management handlers with a minimal
-// response shape (design §4.2.2):
+// response shape:
 //   - ask → `{"authorized": true}` only (NO realm info — certificate-abuse
 //           gate; leaking realmId would let an attacker map a host to a realm
 //           without owning it).
-// It filters on the unified effectiveness predicate `enabled = true`
-// (design §5.1「生效判定」); `cname_verified`/`tls_ready` are display-only.
+// It filters on the unified effectiveness predicate `enabled = true`;
+// `cname_verified`/`tls_ready` are display-only.
 //
 // The public host→realmId resolve endpoint is deliberately separate: it is
 // needed by the SPA before login, while this endpoint must never disclose it.
@@ -240,7 +240,7 @@ pub struct CustomDomainHostQuery {
 /// Response body for the Caddy On-Demand TLS ask authorization gate.
 ///
 /// Deliberately contains ONLY the `authorized` boolean — no realm id or any
-/// other realm information (design §4.2.2 ask, certificate-abuse gate).
+/// other realm information (certificate-abuse gate).
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CustomDomainAuthorizeResponse {
@@ -250,8 +250,7 @@ pub struct CustomDomainAuthorizeResponse {
 /// Caddy On-Demand TLS ask authorization endpoint.
 ///
 /// Returns `200 {"authorized": true}` when `host` matches a published+enabled
-/// `custom_domain_mapping` row (design §4.2.2 ask / §5.1 effectiveness rule);
-/// `404` on a miss (Caddy declines TLS issuance); `401` when the
+/// `custom_domain_mapping` row; `404` on a miss (Caddy declines TLS issuance); `401` when the
 /// `X-Herald-Ask-Key` header is missing or mismatches the configured shared
 /// secret. Never exposes realm information — this is a certificate-abuse gate.
 #[utoipa::path(
@@ -274,20 +273,23 @@ pub async fn handle_custom_domain_authorize(
     headers: HeaderMap,
 ) -> Result<Json<CustomDomainAuthorizeResponse>, ApiError> {
     // Shared-key gate. `ask_key` is validated non-empty at server startup
-    // (build_app_state_with_migrations, design §4.2.2), so an empty configured
-    // key cannot reach here in production. Constant-time comparison is not
-    // required for a high-entropy shared secret checked once per TLS ask
-    // (low-frequency, non-user-controlled timing), but we avoid short-circuit
-    // on length by comparing the trimmed header to the configured value.
+    // (build_app_state_with_migrations), so an empty configured
+    // key cannot reach here in production. Compared in constant time, matching
+    // the internal-api-key gate (`internal_auth::constant_time_compare`).
     let provided = headers
         .get("x-herald-ask-key")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    if provided.is_empty() || provided != state.custom_domain_ask_key {
+    if provided.is_empty()
+        || !herald_api_base::application::http::internal_auth::constant_time_compare(
+            provided,
+            &state.custom_domain_ask_key,
+        )
+    {
         return Err(ApiError::unauthorized("Invalid ask key"));
     }
 
-    // Effectiveness predicate: `enabled = true` only (design §5.1). The repo
+    // Effectiveness predicate: `enabled = true` only. The repo
     // filters this; `cname_verified`/`tls_ready` are display-only and play no
     // role in authorization (otherwise ask ↔ TLS issuance would be circular).
     // Normalize the read path symmetrically with the write path (publish stores
@@ -306,7 +308,7 @@ pub async fn handle_custom_domain_authorize(
 
     match mapping {
         // Hit → authorize. NEVER include realm_id or any realm info in the
-        // body (design §4.2.2 ask / certificate-abuse gate).
+        // body (certificate-abuse gate).
         Some(mapping) => {
             if let Err(error) = state
                 .custom_domain_mapping_repo

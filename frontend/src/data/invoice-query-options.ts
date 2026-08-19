@@ -15,12 +15,9 @@ import type {
   RealmConfigResponse,
   InvoiceApplyEligibilityResponse,
 } from '@/lib/api-generated'
-import { TIME_CONSTANTS } from '@/lib/constants'
+import { QUERY_TIMING } from '@/lib/constants'
 
-const GC_TIME_5_MIN = TIME_CONSTANTS.FIVE_MINUTES
-const RETRY_COUNT = 1
-const STALE_TIME_2_MIN = TIME_CONSTANTS.TWO_MINUTES
-const STALE_TIME_5_MIN = TIME_CONSTANTS.FIVE_MINUTES
+const { GC_TIME_5_MIN, RETRY_COUNT, STALE_TIME_2_MIN, STALE_TIME_5_MIN } = QUERY_TIMING
 
 export const invoiceKeys = {
   all: (realmId: string) => ['invoices', realmId] as const,

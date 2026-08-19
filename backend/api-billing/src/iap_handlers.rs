@@ -367,6 +367,14 @@ pub async fn submit_iap_receipt(
     .await
     .map_err(|e| ApiError::not_found(format!("no_mapping: {e}")))?;
 
+    // The receipt is verified against `input.product_id`, so the fulfilled
+    // mapping must be the one that product resolved to. The client-supplied
+    // target_id is otherwise an arbitrary grant selector (buy cheap product A,
+    // submit its valid receipt against expensive mapping B).
+    if input.target_id != resolved.mapping.id {
+        return Err(ApiError::conflict("type_mismatch".to_string()));
+    }
+
     let billing_type = resolved
         .mapping
         .billing_type

@@ -6,10 +6,8 @@
 // (`api-billing/src/iap_handlers.rs::submit_iap_receipt`) end-to-end through
 // the unified test router.
 //
-// User Story: US-IAP-003 (client credential submission triggers fulfillment)
-// Covers: design support-iap §4.2.2 (receipt endpoint contract),
-//         §5.2 (8-step algorithm), §6.1 (backend integration), §6.3
-//         (Google ack-failure rollback regression).
+// User Story: docs/user-stories/billing/support-iap.md US-IAP-003
+// (client credential submission triggers fulfillment)
 //
 // # Apple verification posture (HTTP layer)
 //
@@ -106,8 +104,8 @@ mod tests {
     // Apple receipt path
     // =========================================================================
 
-    /// User Story: US-IAP-003 (scenario 3 — verification failure rejection)
-    /// Covers: design §4.2.2 (422 verification_failed), §5.2 step 4, §6.1
+    /// User Story: docs/user-stories/billing/support-iap.md US-IAP-003
+    /// (scenario 3 — verification failure rejection)
     ///
     /// A fabricated / malformed Apple JWS cannot satisfy the bundled Apple
     /// Root CA - G3 trust anchor under the `sandbox` environment the handler
@@ -176,16 +174,14 @@ mod tests {
         );
     }
 
-    /// User Story: US-IAP-003 (scenario 3 — wrong trust anchor rejection)
-    /// Covers: design §6.3 (OCSP disabled, tampered cert / wrong trust anchor
-    ///         still rejected), §4.2.2 (422 verification_failed)
+    /// User Story: docs/user-stories/billing/support-iap.md US-IAP-003
+    /// (scenario 3 — wrong trust anchor rejection)
     ///
     /// Even a structurally well-formed 3-segment JWS (valid header + payload
     /// + signature segments) carries no real Apple x5c chain, so under the
     /// sandbox verifier it must be rejected. This is the regression guard
-    /// for design §6.3 "OCSP disabled — tampered leaf cert still rejected":
-    /// disabling OCSP does not weaken the chain check, and a fabricated
-    /// chain fails it regardless.
+    /// for the OCSP-disabled posture: disabling OCSP does not weaken the
+    /// chain check, and a fabricated chain fails it regardless.
     #[test_context(IapReceiptContext)]
     #[tokio::test]
     async fn test_iap_receipt_apple_wrong_trust_anchor_returns_422(ctx: &mut IapReceiptContext) {
@@ -247,9 +243,8 @@ mod tests {
         );
     }
 
-    /// User Story: US-IAP-003 (no_mapping / no credentials rejection paths)
-    /// Covers: design §4.2.2 (404 mapping not found / iap credentials not
-    ///         configured), §5.2 step 2-3
+    /// User Story: docs/user-stories/billing/support-iap.md US-IAP-003
+    /// (no_mapping / no credentials rejection paths)
     ///
     /// Submitting a receipt against a realm with no matching mapping (or no
     /// Apple credentials) must surface as 404 before the verifier runs.
@@ -293,8 +288,66 @@ mod tests {
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
-    /// User Story: US-IAP-003 (scenario 4 — idempotency short-circuit)
-    /// Covers: design §4.2.2 (idempotent re-submission), §5.2 step 5
+    /// 回归测试：targetId 必须绑定到收据商品解析出的 mapping
+    ///
+    /// WHY: 收据按 productId 验证，但权益按 target_id 发放。若不校验两者一致，
+    /// 用户可购买便宜商品 A 后，用 A 的有效收据 + 昂贵商品 B 的 targetId 换取
+    /// B 的权益（pay-for-A-grant-B）。修复后必须 409 type_mismatch。
+    #[test_context(IapReceiptContext)]
+    #[tokio::test]
+    async fn test_iap_receipt_target_id_mismatch_returns_409(ctx: &mut IapReceiptContext) {
+        let realm_id = ctx._realm_id.clone();
+        let (token, _user_id) =
+            create_admin_session_with_user(ctx, "iap-target-mismatch@test.com", 1800).await;
+
+        // Two enabled Apple mappings in the same realm: cheap + expensive.
+        let _cheap_mapping_id = insert_mapping(
+            ctx,
+            &realm_id,
+            "apple",
+            "com.herald.test.pro.monthly",
+            "recurring",
+            "pro",
+        )
+        .await;
+        let expensive_mapping_id = insert_mapping(
+            ctx,
+            &realm_id,
+            "apple",
+            "com.herald.test.pro.elite",
+            "recurring",
+            "pro-elite",
+        )
+        .await;
+
+        // Claim the cheap product (receipt would verify against it) but pass
+        // the expensive mapping's id as targetId.
+        let app = ctx.create_unified_test_router();
+        let response = app
+            .oneshot(iap_receipt_request(
+                &realm_id,
+                &token,
+                json!({
+                    "provider": "apple",
+                    "receipt": "any-receipt",
+                    "productId": "com.herald.test.pro.monthly",
+                    "targetType": "entitlement_mapping",
+                    "targetId": expensive_mapping_id,
+                    "productType": "recurring",
+                }),
+            ))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            response.status(),
+            StatusCode::CONFLICT,
+            "a targetId that does not match the receipt-resolved mapping must be rejected"
+        );
+    }
+
+    /// User Story: docs/user-stories/billing/support-iap.md US-IAP-003
+    /// (scenario 4 — idempotency short-circuit)
     ///
     /// When a `payment_event` row already exists for an `external_event_id`
     /// + provider, the handler must short-circuit and return the existing
@@ -415,9 +468,8 @@ mod tests {
     // Google receipt path — full lifecycle exercisable via wiremock
     // =========================================================================
 
-    /// User Story: US-IAP-003 (scenario 1 — recurring fulfillment + ack)
-    /// Covers: design §4.2.2 (200 + IapReceiptResponse), §5.2 steps 6-8,
-    ///         §6.1 (Google recurring)
+    /// User Story: docs/user-stories/billing/support-iap.md US-IAP-003
+    /// (scenario 1 — recurring fulfillment + ack)
     ///
     /// Google `subscriptionsv2.get` returns an ACTIVE subscription owned by
     /// the requesting user → the handler must create the attempt, fulfil it
@@ -509,9 +561,8 @@ mod tests {
         );
     }
 
-    /// User Story: US-IAP-003 (scenario 1 — one_time fulfillment + consume)
-    /// Covers: design §4.2.2 (200 + IapReceiptResponse), §5.2 steps 6-8,
-    ///         §6.1 (Google one_time / TopupCredit)
+    /// User Story: docs/user-stories/billing/support-iap.md US-IAP-003
+    /// (scenario 1 — one_time fulfillment + consume)
     ///
     /// Google `products.get` returns an unconsumed product owned by the
     /// requesting user → the handler must fulfil it (one_time → TopupCredit)
@@ -631,8 +682,8 @@ mod tests {
         );
     }
 
-    /// User Story: US-IAP-003 (scenario 2/3 — verify failure 422)
-    /// Covers: design §4.2.2 (422 verification_failed), §5.2 step 4
+    /// User Story: docs/user-stories/billing/support-iap.md US-IAP-003
+    /// (scenario 2/3 — verify failure 422)
     ///
     /// Google `subscriptionsv2.get` returns 404 (token lookup fails) → the
     /// handler must surface 422 `verification_failed` and must NOT call ack.
@@ -707,8 +758,8 @@ mod tests {
         assert!(!ack_seen, "ack must NOT be called when verification fails");
     }
 
-    /// User Story: US-IAP-003 + design §6.3 (Google ack-failure rollback)
-    /// Covers: design §6.3 "Google ack 截止", §5.2 step 7
+    /// User Story: docs/user-stories/billing/support-iap.md US-IAP-003
+    /// (Google ack-failure rollback)
     ///
     /// When `subscriptions.acknowledge` returns 500, the handler must abort
     /// before marking the attempt succeeded. The HTTP response is 422
@@ -797,8 +848,8 @@ mod tests {
         );
     }
 
-    /// User Story: US-IAP-003 (scenario 4 — Google idempotent re-submission)
-    /// Covers: design §4.2.2 (idempotent), §5.2 step 5
+    /// User Story: docs/user-stories/billing/support-iap.md US-IAP-003
+    /// (scenario 4 — Google idempotent re-submission)
     ///
     /// After a successful Google recurring fulfillment, re-submitting the
     /// same `purchaseToken` must short-circuit on the existing
