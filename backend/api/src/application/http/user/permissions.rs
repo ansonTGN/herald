@@ -5,8 +5,8 @@ use utoipa::ToSchema;
 pub use crate::application::http::server::api_entities::ErrorResponse;
 use crate::application::http::server::api_entities::{ApiError, ApiResult};
 use crate::application::http::state::AppState;
-use herald_api_base::application::http::common::auth_utils::SelfIdentity;
-use herald_core::domain::authentication::Identity;
+use herald_api_base::application::http::common::auth_utils::{SelfIdentity, require_token_scope};
+use herald_core::domain::authentication::{CredentialScope, Identity, TokenCredentialContext};
 use herald_core::domain::authorization::permission_service::PermissionService;
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -37,7 +37,9 @@ pub struct UserPermissionsResponse {
 pub async fn get_user_permissions(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
+    Extension(context): Extension<TokenCredentialContext>,
 ) -> Result<ApiResult<UserPermissionsResponse>, ApiError> {
+    require_token_scope(&identity, &context, CredentialScope::ProfileRead)?;
     let self_identity = SelfIdentity::require(identity)?;
     let realm_id = self_identity.realm_id();
     let user_id = self_identity.user_id_string();

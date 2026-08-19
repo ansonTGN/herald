@@ -60,6 +60,13 @@ pub const BROWSER_REFRESH_ABSOLUTE_TTL_MAX_SECONDS: i32 = 7_776_000;
 /// call sites (do not call `bcrypt::DEFAULT_COST` directly).
 pub const DEFAULT_BCRYPT_COST: u32 = 12;
 
+/// Valid bcrypt hash (cost 12) of an unguessable marker string. Login burns a
+/// verification against it whenever the submitted identifier does not resolve
+/// to a stored password, so the unknown-identifier path pays the same bcrypt
+/// cost as the known-identifier path. Without it, response latency acts as a
+/// user-enumeration oracle even when the error messages are identical.
+pub const DUMMY_BCRYPT_HASH: &str = "$2b$12$B2i4fbJ4ISySJJSPyi13iu4.LRUsShzTJ1o/EQfjfk8VAgFYtv99K";
+
 // --- Email verification links (email_verification_code table) ---
 /// TTL of emailed verify-email / reset-password / change-email codes
 /// (seconds). Rows older than this are treated as invalid at lookup time —
@@ -73,6 +80,16 @@ pub const DEFAULT_HTTP_CLIENT_CONNECT_TIMEOUT_SECS: u64 = 10;
 // --- OAuth ---
 pub const OAUTH_STATE_TTL_SECONDS: u64 = 300;
 pub const OAUTH_STATE_VALIDATION_TIMEOUT_SECONDS: i64 = 300;
+
+/// Per-IP rate limits for unauthenticated OAuth endpoints that perform
+/// upstream I/O (JWKS fetch / WeChat code2session) or unbounded state writes
+/// per request. Without a cap, each request costs the server an outbound
+/// HTTPS call or a Redis write (amplification / Redis-filler DoS).
+pub const OAUTH_UPSTREAM_LOGIN_IP_RATE_LIMIT: (i64, usize) = (10, 60);
+/// /authorize seeds OAuth state in Redis and does a client_app DB read per
+/// request; allowed a higher ceiling since legitimate SPAs hit it per login.
+pub const OAUTH_AUTHORIZE_IP_RATE_LIMIT: (i64, usize) = (30, 60);
+pub const DEVICE_AUTHORIZE_IP_RATE_LIMIT: (i64, usize) = (10, 60);
 
 // --- JWT ---
 pub const DEFAULT_JWT_EXPIRATION_SECONDS: i64 = 7 * 24 * 60 * 60;

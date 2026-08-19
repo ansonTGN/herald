@@ -39,26 +39,40 @@ pub async fn status(
     let user = identity
         .as_user()
         .ok_or_else(|| ApiError::forbidden("authenticated user token required"))?;
+    // The realm RBAC grant list is profile-level data: custom-UI credentials
+    // only see it when ProfileRead was granted. First-party tokens always do.
+    let may_read_profile_grants = match context.credential_class {
+        CredentialClass::FirstParty => true,
+        CredentialClass::CustomUserUi => context
+            .allowed_scopes
+            .contains(&CredentialScope::ProfileRead),
+    };
     let mut scopes: Vec<_> = context.allowed_scopes.into_iter().collect();
     scopes.sort_by_key(|scope| format!("{scope:?}"));
-    let permissions = state
-        .permission_checker
-        .get_user_permissions(&user.realm_id, &user.id.to_string())
-        .await
-        .map_err(|e| {
-            tracing::error!(
-                error = %e,
-                user_id = %user.id,
-                realm_id = %user.realm_id,
-                "Failed to fetch user permissions for status"
-            );
-            ApiError::internal("Failed to fetch permissions")
-        })?;
+    let permissions = if may_read_profile_grants {
+        Some(
+            state
+                .permission_checker
+                .get_user_permissions(&user.realm_id, &user.id.to_string())
+                .await
+                .map_err(|e| {
+                    tracing::error!(
+                        error = %e,
+                        user_id = %user.id,
+                        realm_id = user.realm_id,
+                        "Failed to fetch user permissions for status"
+                    );
+                    ApiError::internal("Failed to fetch permissions")
+                })?,
+        )
+    } else {
+        None
+    };
     Ok(ApiResult::ok(StatusResponse {
         authenticated: true,
         realm_id: Some(user.realm_id.clone()),
         user_id: Some(user.id.to_string()),
-        permissions: Some(permissions),
+        permissions,
         client_app_id: context.client_app_id,
         client_id: context.client_id,
         credential_class: context.credential_class,

@@ -10,9 +10,11 @@ use uuid::Uuid;
 use validator::Validate;
 
 use crate::helper::{exchange_code_for_user_info, find_or_create_user};
+use herald_api_base::application::http::auth::util::{ClientIp, rate_limit_hit};
 use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::oauth::value_objects::OAuthConfig;
+use herald_core::domain::security_constants::OAUTH_UPSTREAM_LOGIN_IP_RATE_LIMIT;
 
 #[derive(Debug, Deserialize, Serialize, ToSchema, Validate)]
 pub struct WeChatMiniProgramLoginRequest {
@@ -47,12 +49,23 @@ pub struct WeChatMiniProgramLoginResponse {
 pub async fn wechat_miniprogram_login(
     Path(realm_id): Path<String>,
     State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
     Json(payload): Json<WeChatMiniProgramLoginRequest>,
 ) -> Result<Json<WeChatMiniProgramLoginResponse>, ApiError> {
     // Validate request
     payload
         .validate()
         .map_err(|e| ApiError::bad_request(format!("Validation error: {}", e)))?;
+
+    // Per-IP cap before any upstream call: code2session hits WeChat's API,
+    // so unthrottled requests amplify into outbound traffic.
+    rate_limit_hit(
+        &state,
+        format!("rl:oauth-wechat-miniprogram:ip:{ip}"),
+        OAUTH_UPSTREAM_LOGIN_IP_RATE_LIMIT.0,
+        OAUTH_UPSTREAM_LOGIN_IP_RATE_LIMIT.1,
+    )
+    .await?;
 
     tracing::info!(
         realm_id = %realm_id,

@@ -170,6 +170,20 @@ pub async fn add_policy_to_role(
         .require_permission(&state, "policies", "manage")
         .await?;
 
+    // Security: wildcard policies are reserved for the platform; mirror the
+    // guard used by direct user-permission assignment so the two policy-creation
+    // surfaces stay consistent (currently inert — matches_policy is exact-match
+    // — but a future matcher change would otherwise make this a bypass).
+    if request.resource == "All" || request.resource.contains("*") {
+        tracing::warn!(
+            role_id = %role_id,
+            realm_id = %realm_id,
+            resource = %request.resource,
+            "Attempted to create privileged role policy"
+        );
+        return Err(ApiError::forbidden("Cannot create privileged policies"));
+    }
+
     // Create new policy
     let policy = role_policies::ActiveModel {
         id: ActiveValue::Set(Uuid::now_v7()),

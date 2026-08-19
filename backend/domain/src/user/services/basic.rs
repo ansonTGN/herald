@@ -255,39 +255,29 @@ where
         let (user_id, password_hash, status) = match lookup {
             Some(found) => found,
             None => {
-                // Active lookup failed.  Check whether the original email belongs
-                // to a soft-deleted account so we can return the same Forbidden
-                // response used for other inactive statuses.
-                if let Some(email) = &request.email {
-                    let hash = {
-                        let mut hasher = sha2::Sha256::new();
-                        use sha2::Digest;
-                        hasher.update(email.as_bytes());
-                        format!("{:x}", hasher.finalize())
-                    };
-                    if let Some((_deleted_id, _deleted_status)) = self
-                        .user_repository
-                        .find_deleted_user_by_email_hash(&request.realm_id, &hash)
-                        .await?
-                    {
-                        return Err(CoreError::Forbidden(
-                            "User account is not active".to_string(),
-                        ));
-                    }
-                }
+                // Burn a bcrypt verification so the unknown-identifier path
+                // costs the same as the known-identifier path; without it,
+                // response latency reveals whether the email is registered.
+                let _ = bcrypt::verify(
+                    &request.password,
+                    crate::security_constants::DUMMY_BCRYPT_HASH,
+                );
                 return Err(CoreError::NotFound);
             }
         };
 
-        // Check user status
-        if status != 1 {
-            return Err(CoreError::Forbidden(
-                "User account is not active".to_string(),
-            ));
-        }
-
-        // Verify password
+        // Verify the password BEFORE any account-status check. Status checks
+        // return a distinct Forbidden error; running them first would let an
+        // unauthenticated caller probe whether an email is registered (and in
+        // which state) by error shape alone. Only a caller holding the correct
+        // password may observe status differences.
         let Some(stored_hash) = password_hash else {
+            // OAuth-only account (no password set): equalize timing, then
+            // stay indistinguishable from an unknown identifier.
+            let _ = bcrypt::verify(
+                &request.password,
+                crate::security_constants::DUMMY_BCRYPT_HASH,
+            );
             return Err(CoreError::NotFound);
         };
 
@@ -297,6 +287,13 @@ where
 
         if !password_valid {
             return Err(CoreError::Unauthorized);
+        }
+
+        // Password proven — status differences may now surface.
+        if status != 1 {
+            return Err(CoreError::Forbidden(
+                "User account is not active".to_string(),
+            ));
         }
 
         // Get the full user object

@@ -548,7 +548,25 @@ async fn find_or_create_user_by_email(
         .get_user_by_email(realm_id, &user_info.email)
         .await
     {
-        Ok(user) => Ok(user.id),
+        Ok(user) => {
+            // Email-based linking grants access to an EXISTING account, so it
+            // must require a provider-verified email. Some providers hand out
+            // addresses the user never confirmed (e.g. GitHub non-primary
+            // emails); linking on those would let an attacker take over a
+            // password account by registering the victim's email upstream.
+            if !user_info.verified {
+                tracing::warn!(
+                    realm_id = %realm_id,
+                    provider = %user_info.provider_type.as_str(),
+                    "Blocked OAuth login into existing account: provider email not verified"
+                );
+                return Err(AuthError::Forbidden(
+                    "Provider email is not verified; cannot sign in to an existing account with it"
+                        .to_string(),
+                ));
+            }
+            Ok(user.id)
+        }
         Err(herald_core::domain::common::entities::app_errors::CoreError::NotFound) => {
             // Account creation is gated by the realm's registration policy.
             // Registration-disabled realms must not auto-provision accounts via

@@ -49,6 +49,26 @@ pub async fn delete_client_app(
 
     // Revoke browser token families before deleting the client app so that a
     // deleted OAuth client cannot keep validating tokens.
+    // The realm boundary must be verified BEFORE revoking: revoke acts on the
+    // raw id, so revoking ahead of the service-layer check would let a realm
+    // admin kill another realm's active sessions by passing a foreign
+    // clientAppId with their own realmId in the path.
+    let client_service = state.service.client_service();
+    client_service
+        .get_client_app(admin.identity().clone(), id)
+        .await
+        .map_err(|e| match e {
+            herald_core::domain::common::entities::app_errors::CoreError::NotFound => {
+                ApiError::not_found("client_app not found")
+            }
+            herald_core::domain::common::entities::app_errors::CoreError::Forbidden(msg) => {
+                ApiError::forbidden(msg)
+            }
+            e => {
+                tracing::error!("Failed to load client app before revocation: {e}");
+                ApiError::internal("Failed to load client app")
+            }
+        })?;
     RedisBrowserTokenService::new(state.redis_manager.clone())
         .revoke_client_families(id)
         .await
@@ -59,7 +79,6 @@ pub async fn delete_client_app(
         })?;
 
     // Call service layer
-    let client_service = state.service.client_service();
     client_service
         .delete_client_app(admin.identity().clone(), id)
         .await

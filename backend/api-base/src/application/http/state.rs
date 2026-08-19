@@ -168,6 +168,7 @@ pub struct AppState {
         AdminUserServiceImpl<
             PostgresAdminUserRepository,
             PostgresUserRoleRepository,
+            PostgresRolePolicyRepository,
             RedisPermissionChecker,
             PostgresAuditEventRepository,
             RedisBrowserTokenService,

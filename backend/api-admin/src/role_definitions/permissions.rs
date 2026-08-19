@@ -188,8 +188,9 @@ pub async fn remove_permission_from_role(
         && role_name == "realm-admin"
     {
         let permission: Option<(bool,)> =
-            sqlx::query_as("SELECT is_builtin FROM permissions WHERE id = $1")
+            sqlx::query_as("SELECT is_builtin FROM permissions WHERE id = $1 AND realm_id = $2")
                 .bind(permission_id)
+                .bind(&realm_id)
                 .fetch_optional(&state.pool)
                 .await
                 .map_err(|e| {
@@ -241,10 +242,12 @@ pub async fn remove_permission_from_role(
             ApiError::internal("Failed to remove permission")
         })?;
 
-    // Sync removal to role_policies
+    // Sync removal to role_policies. Realm-scoped like the check above: a
+    // foreign permission row must not steer policy sync for this realm's role.
     let perm_row: Option<(String, String)> =
-        sqlx::query_as("SELECT resource, action FROM permissions WHERE id = $1")
+        sqlx::query_as("SELECT resource, action FROM permissions WHERE id = $1 AND realm_id = $2")
             .bind(permission_id)
+            .bind(&realm_id)
             .fetch_optional(&state.pool)
             .await
             .map_err(|e| {

@@ -190,9 +190,11 @@ fn rate_key_verify_email(email: &str) -> String {
 ///
 /// Issues a one-time verification code for an existing active user, or — if the
 /// Realm has OTP auto-register enabled — for an unregistered email after consent
-/// is expressed. Enumeration-resistant: a 200 is returned for non-active or
-/// non-existent users (no code sent in those cases), matching the response for
-/// a successful send.
+/// is expressed. Partially enumeration-resistant: a 200 is returned for a known
+/// but non-active user (no code sent). An explicit 409 is still returned for an
+/// unregistered email when auto-register is off — the same registration-status
+/// bit the register endpoint exposes by design (both paths sit behind Turnstile
+/// and per-email/IP rate limits).
 #[utoipa::path(
     post,
     path = "/api/auth/{realmId}/login/email-otp/send",

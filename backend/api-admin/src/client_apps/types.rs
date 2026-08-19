@@ -298,7 +298,9 @@ impl From<ClientAppDbModel> for ClientAppItem {
             is_first_party: db_model.is_first_party,
             enabled: db_model.enabled,
             icon_url: db_model.icon_url,
-            client_secret: db_model.client_secret,
+            // Secrets are show-once: never echoed through a DB-model
+            // conversion, only on create/regenerate handler responses.
+            client_secret: None,
             device_code_grant_enabled: db_model.device_code_grant_enabled,
             // turnstile_secret_key is intentionally NOT echoed in responses.
             turnstile_enabled: db_model.turnstile_enabled,

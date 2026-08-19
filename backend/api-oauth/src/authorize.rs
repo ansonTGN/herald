@@ -14,9 +14,12 @@ use axum::{
 use serde::Deserialize;
 use utoipa::ToSchema;
 
+use herald_api_base::application::http::auth::util::{ClientIp, rate_limit_hit};
 use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
 use herald_api_base::application::http::state::AppState;
-use herald_core::domain::security_constants::OAUTH_STATE_TTL_SECONDS;
+use herald_core::domain::security_constants::{
+    OAUTH_AUTHORIZE_IP_RATE_LIMIT, OAUTH_STATE_TTL_SECONDS,
+};
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct AuthorizeQueryParams {
@@ -78,6 +81,7 @@ pub async fn oauth_authorize(
     Path(realm_id): Path<String>,
     Query(params): Query<AuthorizeQueryParams>,
     State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
 ) -> Result<impl IntoResponse, ApiError> {
     // Validate response_type (must be "code" for Authorization Code + PKCE)
     if params.response_type != "code" {
@@ -86,6 +90,16 @@ pub async fn oauth_authorize(
             params.response_type
         )));
     }
+
+    // Per-IP cap: each request costs a client_app DB read and a Redis state
+    // write, so an unauthenticated flood can fill Redis.
+    rate_limit_hit(
+        &state,
+        format!("rl:oauth-authorize:ip:{ip}"),
+        OAUTH_AUTHORIZE_IP_RATE_LIMIT.0,
+        OAUTH_AUTHORIZE_IP_RATE_LIMIT.1,
+    )
+    .await?;
 
     // Validate code_challenge_method (only S256 is supported)
     if let Some(ref method) = params.code_challenge_method

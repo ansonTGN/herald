@@ -242,6 +242,7 @@ impl AsyncTestContext for SchemaTestContext {
         let admin_user_service = Arc::new(AdminUserServiceImpl::new(
             admin_user_repository.clone(),
             user_role_repository.clone(),
+            role_policy_repository.clone(),
             permission_checker.clone(),
             audit_event_repository.clone(),
             admin_token_service,

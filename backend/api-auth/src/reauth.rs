@@ -6,11 +6,13 @@ use axum::{
     http::HeaderMap,
 };
 use chrono::{Duration, Utc};
-use herald_api_base::application::http::auth::util::rate_limit_hit;
+use herald_api_base::application::http::auth::util::{ClientIp, rate_limit_hit};
+use herald_api_base::application::http::common::auth_utils::require_token_scope;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::{
-    Identity, ReauthCredential, ReauthFactor, ReauthResult, TargetOperation, TokenCredentialContext,
+    CredentialScope, Identity, ReauthCredential, ReauthFactor, ReauthResult, TargetOperation,
+    TokenCredentialContext,
 };
 use herald_core::domain::security_constants::{
     REAUTH_VERIFY_IP_RATE_LIMIT, REAUTH_VERIFY_USER_RATE_LIMIT,
@@ -89,6 +91,9 @@ pub async fn handle_begin_reauth(
     headers: HeaderMap,
     Json(request): Json<ReauthBeginRequest>,
 ) -> Result<ApiResult<ReauthBeginResponse>, ApiError> {
+    // The factor inventory (password/TOTP/passkey presence) is profile-level
+    // data; custom-UI credentials need ProfileRead before reauth may start.
+    require_token_scope(&identity, &context, CredentialScope::ProfileRead)?;
     Ok(ApiResult::ok(
         begin_reauth(
             &state,
@@ -100,7 +105,6 @@ pub async fn handle_begin_reauth(
         .await?,
     ))
 }
-
 #[utoipa::path(
     post,
     path = "/api/user/reauth/verify",
@@ -113,9 +117,11 @@ pub async fn handle_verify_reauth(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Extension(context): Extension<TokenCredentialContext>,
+    ClientIp(client_ip): ClientIp,
     headers: HeaderMap,
     Json(request): Json<ReauthVerifyRequest>,
 ) -> Result<ApiResult<ReauthTicket>, ApiError> {
+    require_token_scope(&identity, &context, CredentialScope::ProfileRead)?;
     let credential = match request.factor {
         ReauthFactor::Password => ReauthCredential::Password(
             request
@@ -144,6 +150,7 @@ pub async fn handle_verify_reauth(
             &context,
             request.target_operation,
             credential,
+            &client_ip,
             &headers,
         )
         .await?,
@@ -208,12 +215,12 @@ pub async fn verify_reauth(
     context: &TokenCredentialContext,
     target: TargetOperation,
     credential: ReauthCredential,
+    client_ip: &str,
     headers: &HeaderMap,
 ) -> Result<ReauthTicket, ApiError> {
     let user = identity
         .as_user()
         .ok_or_else(|| ApiError::forbidden("authenticated user token required"))?;
-    let client_ip = extract_client_ip(headers);
     rate_limit_hit(
         state,
         format!("reauth:verify:user:{}", user.id),
@@ -223,7 +230,7 @@ pub async fn verify_reauth(
     .await?;
     rate_limit_hit(
         state,
-        format!("reauth:verify:ip:{}", client_ip),
+        format!("reauth:verify:ip:{client_ip}"),
         REAUTH_VERIFY_IP_RATE_LIMIT.0,
         REAUTH_VERIFY_IP_RATE_LIMIT.1,
     )
@@ -323,25 +330,6 @@ fn map_consume_result(result: Result<(), ReauthConsumeError>) -> Result<(), ApiE
 
 fn invalid_factor() -> ApiError {
     ApiError::unauthorized("Reauthentication factor is unavailable")
-}
-
-fn extract_client_ip(headers: &HeaderMap) -> String {
-    if let Some(real_ip) = headers
-        .get("X-Real-IP")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.trim().parse::<std::net::IpAddr>().ok())
-    {
-        return real_ip.to_string();
-    }
-    if let Some(xff) = headers.get("X-Forwarded-For").and_then(|v| v.to_str().ok())
-        && let Some(first) = xff.split(',').next()
-    {
-        let trimmed = first.trim();
-        if !trimmed.is_empty() {
-            return trimmed.to_string();
-        }
-    }
-    String::new()
 }
 
 fn available_factors(password: bool, totp: bool, passkey: bool) -> Vec<ReauthFactor> {

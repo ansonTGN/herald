@@ -6,8 +6,8 @@ use uuid::Uuid;
 pub use crate::application::http::server::api_entities::ErrorResponse;
 use crate::application::http::server::api_entities::{ApiError, ApiResult};
 use crate::application::http::state::AppState;
-use herald_api_base::application::http::common::auth_utils::SelfIdentity;
-use herald_core::domain::authentication::Identity;
+use herald_api_base::application::http::common::auth_utils::{SelfIdentity, require_token_scope};
+use herald_core::domain::authentication::{CredentialScope, Identity, TokenCredentialContext};
 use herald_core::domain::authorization::{RoleRepository, permission_service::PermissionService};
 use herald_core::infrastructure::authorization::PostgresRoleRepository;
 
@@ -35,7 +35,9 @@ pub struct UserProfileRolesResponse {
 pub async fn get_user_roles(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
+    Extension(context): Extension<TokenCredentialContext>,
 ) -> Result<ApiResult<UserProfileRolesResponse>, ApiError> {
+    require_token_scope(&identity, &context, CredentialScope::ProfileRead)?;
     let self_identity = SelfIdentity::require(identity)?;
     let realm_id = self_identity.realm_id();
     let user_id = self_identity.user_id_string();

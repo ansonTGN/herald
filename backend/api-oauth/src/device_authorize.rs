@@ -6,12 +6,13 @@ use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use herald_api_base::application::http::auth::util::{ClientIp, rate_limit_hit};
 use herald_api_base::application::http::common::public_helper::realm_public_url;
 use herald_api_base::application::http::server::api_entities::ApiError;
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::security_constants::{
-    DEVICE_CODE_DEFAULT_INTERVAL_SECONDS, DEVICE_CODE_TTL_SECONDS, DEVICE_CODE_USER_CODE_ALPHABET,
-    DEVICE_CODE_USER_CODE_LENGTH,
+    DEVICE_AUTHORIZE_IP_RATE_LIMIT, DEVICE_CODE_DEFAULT_INTERVAL_SECONDS, DEVICE_CODE_TTL_SECONDS,
+    DEVICE_CODE_USER_CODE_ALPHABET, DEVICE_CODE_USER_CODE_LENGTH,
 };
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -73,6 +74,7 @@ fn generate_user_code() -> String {
 pub async fn device_authorize(
     Path(realm_id): Path<String>,
     State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
     Form(payload): Form<DeviceAuthorizationRequest>,
 ) -> Result<Json<DeviceAuthorizationResponse>, ApiError> {
     if payload.client_id.is_empty() {
@@ -83,6 +85,16 @@ pub async fn device_authorize(
             },
         ));
     }
+
+    // Per-IP cap: each request writes device_code/user_code state to Redis,
+    // so an unauthenticated flood can fill Redis.
+    rate_limit_hit(
+        &state,
+        format!("rl:device-authorize:ip:{ip}"),
+        DEVICE_AUTHORIZE_IP_RATE_LIMIT.0,
+        DEVICE_AUTHORIZE_IP_RATE_LIMIT.1,
+    )
+    .await?;
 
     let client_row = sqlx::query_as::<_, (bool, bool)>(
         "SELECT enabled, device_code_grant_enabled FROM client_app WHERE realm_id = $1 AND client_id = $2",

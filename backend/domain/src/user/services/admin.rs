@@ -150,25 +150,28 @@ async fn require_roles_in_realm(
 // Admin User Service Implementation
 // ============================================================================
 
-pub struct AdminUserServiceImpl<R, UR, P, AE, B>
+pub struct AdminUserServiceImpl<R, UR, RP, P, AE, B>
 where
     R: AdminUserRepository,
     UR: UserRoleRepository,
+    RP: RolePolicyRepository,
     P: PermissionService,
     AE: AuditEventRepository + 'static,
     B: BrowserTokenService,
 {
     user_repository: Arc<R>,
     user_role_repository: Arc<UR>,
+    role_policy_repository: Arc<RP>,
     permission_checker: Arc<P>,
     pub(crate) audit_event_repository: Arc<AE>,
     token_service: Arc<B>,
 }
 
-impl<R, UR, P, AE, B> AdminUserServiceImpl<R, UR, P, AE, B>
+impl<R, UR, RP, P, AE, B> AdminUserServiceImpl<R, UR, RP, P, AE, B>
 where
     R: AdminUserRepository,
     UR: UserRoleRepository,
+    RP: RolePolicyRepository,
     P: PermissionService,
     AE: AuditEventRepository + 'static,
     B: BrowserTokenService,
@@ -176,6 +179,7 @@ where
     pub fn new(
         user_repository: Arc<R>,
         user_role_repository: Arc<UR>,
+        role_policy_repository: Arc<RP>,
         permission_checker: Arc<P>,
         audit_event_repository: Arc<AE>,
         token_service: Arc<B>,
@@ -183,6 +187,7 @@ where
         Self {
             user_repository,
             user_role_repository,
+            role_policy_repository,
             permission_checker,
             audit_event_repository,
             token_service,
@@ -229,10 +234,11 @@ where
     }
 }
 
-impl<R, UR, P, AE, B> std::fmt::Debug for AdminUserServiceImpl<R, UR, P, AE, B>
+impl<R, UR, RP, P, AE, B> std::fmt::Debug for AdminUserServiceImpl<R, UR, RP, P, AE, B>
 where
     R: AdminUserRepository,
     UR: UserRoleRepository,
+    RP: RolePolicyRepository,
     P: PermissionService,
     AE: AuditEventRepository + 'static,
     B: BrowserTokenService,
@@ -242,10 +248,11 @@ where
     }
 }
 
-impl<R, UR, P, AE, B> AdminUserService for AdminUserServiceImpl<R, UR, P, AE, B>
+impl<R, UR, RP, P, AE, B> AdminUserService for AdminUserServiceImpl<R, UR, RP, P, AE, B>
 where
     R: AdminUserRepository,
     UR: UserRoleRepository,
+    RP: RolePolicyRepository,
     P: PermissionService,
     AE: AuditEventRepository + 'static,
     B: BrowserTokenService,
@@ -294,6 +301,39 @@ where
             return Err(UserAdminError::PermissionDenied(
                 "Cannot create users in a different realm".to_string(),
             ));
+        }
+
+        // Role validation must mirror assign_user_roles: without it, a caller
+        // holding only users.manage could create an account carrying
+        // realm-admin (privilege escalation) or a foreign realm's role id.
+        require_roles_in_realm(&*self.role_policy_repository, realm_id, &request.role_ids).await?;
+        // Hierarchy check (same rule as RoleAssignmentService::can_assign_roles):
+        // without roles.manage a caller may only grant the plain "user" role.
+        let principal = identity.principal_ref();
+        let can_manage_roles = self
+            .permission_checker
+            .check_principal_permission(
+                realm_id,
+                principal.principal_type,
+                &principal.principal_id,
+                "roles",
+                "manage",
+            )
+            .await
+            .unwrap_or(false);
+        if !can_manage_roles {
+            let only_plain_user_role = request.role_ids.len() == 1
+                && self
+                    .role_policy_repository
+                    .get_roles_by_ids(&request.role_ids)
+                    .await?
+                    .first()
+                    .is_some_and(|role| role.name == "user");
+            if !only_plain_user_role {
+                return Err(UserAdminError::PermissionDenied(
+                    "Cannot assign these roles without roles.manage permission".to_string(),
+                ));
+            }
         }
 
         // Check if email already exists
@@ -2390,6 +2430,7 @@ mod tests {
     ) -> AdminUserServiceImpl<
         MockAdminUserRepo,
         MockUserRoleRepo,
+        MockRolePolicyRepo,
         AlwaysAllowPermission,
         MockAuditRepo,
         MockBrowserTokenService,
@@ -2410,6 +2451,7 @@ mod tests {
         AdminUserServiceImpl<
             MockAdminUserRepo,
             MockUserRoleRepo,
+            MockRolePolicyRepo,
             AlwaysAllowPermission,
             MockAuditRepo,
             MockBrowserTokenService,
@@ -2445,6 +2487,7 @@ mod tests {
             AdminUserServiceImpl::new(
                 Arc::new(repo),
                 Arc::new(user_role_repo),
+                Arc::new(MockRolePolicyRepo { roles: vec![] }),
                 Arc::new(AlwaysAllowPermission),
                 Arc::new(MockAuditRepo),
                 Arc::new(token),

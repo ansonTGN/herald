@@ -19,12 +19,15 @@ use validator::Validate;
 
 use crate::callback::issue_callback_token_response;
 use crate::helper::{find_or_create_user, issue_downstream_authorization_code};
-use herald_api_base::application::http::auth::util::{ClientIp, user_agent_from_headers};
+use herald_api_base::application::http::auth::util::{
+    ClientIp, rate_limit_hit, user_agent_from_headers,
+};
 use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::BrowserTokenSet;
 use herald_core::domain::oauth::entities::ProviderType;
 use herald_core::domain::oauth::value_objects::OAuthUserInfo;
+use herald_core::domain::security_constants::OAUTH_UPSTREAM_LOGIN_IP_RATE_LIMIT;
 // `StringOrBool` lives on the nested `google` module; the `providers/mod.rs`
 // re-export only lifts the free `verify_google_id_token` function, not this
 // enum, so reference it via the submodule path.
@@ -113,6 +116,16 @@ pub async fn google_one_tap(
         provider = "google",
         "Google One Tap login request"
     );
+
+    // Per-IP cap before any upstream call: verification fetches Google JWKS,
+    // so unthrottled requests amplify into outbound HTTPS traffic.
+    rate_limit_hit(
+        &state,
+        format!("rl:oauth-one-tap:ip:{ip}"),
+        OAUTH_UPSTREAM_LOGIN_IP_RATE_LIMIT.0,
+        OAUTH_UPSTREAM_LOGIN_IP_RATE_LIMIT.1,
+    )
+    .await?;
 
     let config = state
         .service

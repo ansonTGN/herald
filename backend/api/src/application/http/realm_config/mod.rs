@@ -13,7 +13,8 @@ use validator::Validate;
 
 use crate::application::http::server::api_entities::{ApiError, ErrorResponse};
 use crate::application::http::state::AppState;
-use herald_api_base::application::http::auth::util::{is_email_configured, require_permission};
+use herald_api_base::application::http::auth::util::is_email_configured;
+use herald_api_base::application::http::common::auth_utils::AdminIdentity;
 use herald_api_base::application::http::rate_limit::rate_limit_hit_forced;
 use herald_core::domain::authorization::PermissionService;
 use herald_core::domain::realm_config::{
@@ -78,6 +79,27 @@ fn provider_string_for_config_type(config_type: &ConfigType) -> Option<&'static 
         | ConfigType::Google
         | ConfigType::Wechat => Some(config_type.as_static_str()),
         _ => None,
+    }
+}
+
+/// Server-side classification of credential-bearing config keys.
+///
+/// `is_secret` arrives from the client and is stored verbatim; GET responses
+/// mask `config_value` only when it is true. If a caller omits (or clears)
+/// the flag on a sensitive key, the stored credential would be echoed back in
+/// plaintext, so the server must force the flag regardless of the payload.
+/// Key sets mirror the frontend convention (see the `isSecret` field mappings
+/// in frontend/src/lib/*-config-utils.ts).
+fn is_sensitive_config_key(config_type: &ConfigType, config_key: &str) -> bool {
+    match config_type {
+        ConfigType::Stripe => matches!(config_key, "api_key" | "webhook_secret"),
+        ConfigType::Creem => matches!(config_key, "api_key" | "webhook_secret"),
+        ConfigType::Apple => config_key == "private_key_p8",
+        ConfigType::Google => config_key == "service_account_json",
+        ConfigType::Wechat => matches!(config_key, "private_key" | "v3_key"),
+        ConfigType::Turnstile => config_key == "secret_key",
+        ConfigType::Email => matches!(config_key, "resend_api_key" | "smtp_password"),
+        _ => false,
     }
 }
 
@@ -186,12 +208,16 @@ pub struct EmailTestResponse {
 }
 
 fn to_response(config: RealmConfig) -> RealmConfigResponse {
+    // Mask on the server-side classification too, so rows written before the
+    // write-path fix (sensitive key stored with is_secret=false) stay masked.
+    let sensitive =
+        config.is_secret || is_sensitive_config_key(&config.config_type, &config.config_key);
     RealmConfigResponse {
         id: config.id,
         realm_id: config.realm_id,
         config_type: config.config_type.into(),
         config_key: config.config_key,
-        config_value: if config.is_secret {
+        config_value: if sensitive {
             None
         } else {
             Some(config.config_value)
@@ -421,11 +447,13 @@ pub async fn upsert_realm_config(
         return Ok(Json(to_response(existing)));
     }
 
+    let is_secret = payload.is_secret.unwrap_or(false)
+        || is_sensitive_config_key(&config_type, &payload.config_key);
     let request = UpsertRealmConfigRequest {
         config_type,
         config_key: payload.config_key,
         config_value: payload.config_value,
-        is_secret: payload.is_secret,
+        is_secret: Some(is_secret),
         enabled: payload.enabled,
         metadata: payload.metadata,
     };
@@ -534,11 +562,13 @@ pub async fn batch_upsert_realm_configs(
             continue;
         }
 
+        let is_secret =
+            r.is_secret.unwrap_or(false) || is_sensitive_config_key(&config_type, &r.config_key);
         requests.push(UpsertRealmConfigRequest {
             config_type,
             config_key: r.config_key,
             config_value: r.config_value,
-            is_secret: r.is_secret,
+            is_secret: Some(is_secret),
             enabled: r.enabled,
             metadata: r.metadata,
         });
@@ -664,6 +694,13 @@ pub async fn delete_realm_config(
         "Deleting realm config"
     );
 
+    // Authorization must run before the provider-deletion guard below: the
+    // guard's 400 message discloses per-provider subscription state, which
+    // must not reach a caller from another realm (error-shape oracle).
+    AdminIdentity::require(identity.clone(), &realm_id, "realm configs")?
+        .require_permission(&state, "settings", "manage")
+        .await?;
+
     if let Ok(parsed) = parse_config_type(config_type.clone()) {
         ensure_provider_config_deletable(&state, &realm_id, &parsed).await?;
     }
@@ -707,15 +744,9 @@ pub async fn email_status(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
 ) -> Result<Json<EmailStatusResponse>, ApiError> {
-    require_permission(
-        &state,
-        &realm_id,
-        &identity.user_id(),
-        "settings",
-        "view",
-        "settings.view",
-    )
-    .await?;
+    AdminIdentity::require(identity, &realm_id, "email status")?
+        .require_permission(&state, "settings", "view")
+        .await?;
 
     let status = EmailService::is_email_configured(&state.pool, &realm_id)
         .await
@@ -756,19 +787,14 @@ pub async fn email_test(
     Extension(identity): Extension<Identity>,
     Json(payload): Json<EmailTestRequest>,
 ) -> Result<Json<EmailTestResponse>, ApiError> {
-    require_permission(
-        &state,
-        &realm_id,
-        &identity.user_id(),
-        "settings",
-        "manage",
-        "settings.manage",
-    )
-    .await?;
+    let admin = AdminIdentity::require(identity, &realm_id, "email test")?;
+    admin
+        .require_permission(&state, "settings", "manage")
+        .await?;
 
     rate_limit_hit_forced(
         &state,
-        format!("rl:email:test:{realm_id}:{}", identity.user_id()),
+        format!("rl:email:test:{realm_id}:{}", admin.user_id_string()),
         3,
         60,
     )
