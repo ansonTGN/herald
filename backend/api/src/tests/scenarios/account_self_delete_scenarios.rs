@@ -596,10 +596,13 @@ async fn test_login_fails_after_delete(ctx: &mut TestContext) {
     assert_eq!(resp.status(), StatusCode::NO_CONTENT);
 
     let login_resp = login_with_credentials(ctx, &realm_id, &email, password).await;
+    // 401 (not 403): a deleted account must be indistinguishable from a
+    // never-registered email, otherwise the login error shape becomes a
+    // "was this email ever registered" oracle (anti-enumeration).
     assert_eq!(
         login_resp.status(),
-        StatusCode::FORBIDDEN,
-        "Login with original credentials after deletion must be forbidden"
+        StatusCode::UNAUTHORIZED,
+        "Login with original credentials after deletion must be rejected as invalid credentials"
     );
 
     let (status, _, _, _, _) = read_account_row(ctx, user_id).await;
