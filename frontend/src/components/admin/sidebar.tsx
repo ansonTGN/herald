@@ -370,8 +370,10 @@ export function Sidebar() {
       data-testid="admin-sidebar"
     >
       <div className="shrink-0 px-5 pt-6 pb-4">
-        <h1 className="text-lg font-bold tracking-tight text-sidebar-foreground">{BRAND_NAME}</h1>
-        <p className="mt-0.5 text-xs font-medium text-sidebar-foreground/40">
+        <h1 className="font-display text-xl font-light uppercase tracking-[0.18em] text-sidebar-foreground">
+          {BRAND_NAME}
+        </h1>
+        <p className="mt-1 text-[11px] font-medium uppercase tracking-[0.1em] text-instrument-muted">
           {realm?.name ?? realmId}
         </p>
       </div>

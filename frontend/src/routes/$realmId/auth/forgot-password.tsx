@@ -122,7 +122,7 @@ export function ForgotPasswordPage() {
               <Button
                 type="submit"
                 disabled={isSubmitting || !email}
-                className="h-11 w-full md:h-10"
+                className="h-11 w-full"
                 data-testid="forgot-password-submit-button"
               >
                 {isSubmitting

@@ -137,7 +137,7 @@ export function ResetPasswordPage() {
             <Button
               type="submit"
               disabled={isSubmitting || !passwordsMatch}
-              className="h-11 w-full md:h-10"
+              className="h-11 w-full"
               data-testid="reset-password-submit-button"
             >
               {isSubmitting

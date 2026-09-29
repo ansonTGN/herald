@@ -36,7 +36,7 @@ export function CodeInput({ onSubmit, defaultValue, isLoading }: CodeInputProps)
         value={value}
         onChange={handleChange}
         placeholder="XXXX-XXXX"
-        className="text-center text-2xl tracking-[0.3em] font-mono h-12"
+        className="text-center text-2xl tracking-[0.3em] font-mono h-12 rounded-lg border-instrument-edge bg-instrument text-gold caret-gold placeholder:text-instrument-muted"
         data-testid="device-code-input"
         autoComplete="off"
         autoFocus

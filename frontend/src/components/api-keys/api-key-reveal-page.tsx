@@ -92,19 +92,19 @@ export function ApiKeyRevealPage({ realmId }: ApiKeyRevealPageProps) {
       <Card>
         <CardContent className="pt-6 space-y-4">
           <div className="space-y-1">
-            <p className="text-sm font-medium text-muted-foreground">
+            <p className="text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
               {m['api_keys.reveal_name_label']()}
             </p>
             <p className="text-sm font-semibold">{keyData.name}</p>
           </div>
 
           <div className="space-y-2">
-            <p className="text-sm font-medium text-muted-foreground">
+            <p className="text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
               {m['api_keys.reveal_key_label']()}
             </p>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <code
-                className="flex-1 rounded-md bg-muted px-3 py-2 font-mono text-sm break-all select-all"
+                className="flex-1 rounded-lg bg-instrument px-3 py-2.5 font-mono text-sm text-gold shadow-led break-all select-all"
                 data-testid="api-key-reveal-value"
               >
                 {keyData.key}

@@ -31,7 +31,7 @@ export function StatsCard({
       data-testid={testId}
     >
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        <CardTitle className="text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
           {title}
         </CardTitle>
         {Icon && (
@@ -41,8 +41,8 @@ export function StatsCard({
         )}
       </CardHeader>
       <CardContent>
-        <div className="text-2xl font-bold tracking-tight">{value}</div>
-        <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
+        <div className="font-display text-[32px] leading-none font-extralight">{value}</div>
+        <p className="mt-1.5 text-xs text-muted-foreground">{description}</p>
       </CardContent>
     </Card>
   )

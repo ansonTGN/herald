@@ -176,24 +176,33 @@ export function AuthPageWrapper({ children, realmName, whiteLabel }: AuthPageWra
     >
       <div className="w-full max-w-md">
         <div className="mb-8">
+          {realmName && realmName !== brandName && (
+            <div
+              className="text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground"
+              data-testid="auth-realm-eyebrow"
+            >
+              {realmName}
+            </div>
+          )}
           {showLogoImg ? (
             <img
               data-testid="auth-brand-logo"
               src={logoUrl ?? undefined}
               alt=""
-              className="h-10 w-auto object-contain"
+              className="mt-2 h-10 w-auto object-contain"
               onError={() => setLogoFailed(true)}
             />
           ) : (
-            <div data-testid="auth-brand-text" className="text-2xl font-semibold tracking-tight">
+            <div
+              data-testid="auth-brand-text"
+              className="mt-2 font-display text-3xl font-light uppercase tracking-[0.18em] text-foreground"
+            >
               {brandName}
             </div>
           )}
-          {realmName && realmName !== brandName && (
-            <div className="mt-1 font-mono text-xs text-muted-foreground">{realmName}</div>
-          )}
+          {/* Gold-foil mini rule — thin accent line only (DESIGN.md §1 金箔法则). */}
+          <div aria-hidden="true" className="mt-4 h-[2.5px] w-8 rounded-full bg-gold" />
         </div>
-        <div aria-hidden="true" className="border-t border-border" />
         {children}
         {footerText ? (
           <div

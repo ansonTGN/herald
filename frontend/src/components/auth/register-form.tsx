@@ -208,7 +208,7 @@ export function RegisterForm({ realmId, onSuccess }: RegisterFormProps) {
           type="submit"
           data-testid="register-submit-button"
           disabled={isSubmitting}
-          className="h-11 w-full md:h-10"
+          className="h-11 w-full"
         >
           {isSubmitting ? m['auth.register.registering']() : m['auth.register.submit']()}
         </Button>

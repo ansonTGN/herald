@@ -79,10 +79,9 @@ describe('PointsUsageDashboard', () => {
       // the resolved root testid.
       expect(screen.queryByTestId(`points-usage-dashboard-${BUCKET}`)).not.toBeInTheDocument()
       // Skeletons render via the Card chrome — assert at least one is present
-      // so a future removal surfaces here.
-      expect(
-        document.querySelectorAll('[class*="animate-pulse"], [class*="skeleton"]').length
-      ).toBeGreaterThan(0)
+      // so a future removal surfaces here. Selected by data-slot: the skeleton
+      // is a static block by design (DESIGN.md §8 — no pulse animation).
+      expect(document.querySelectorAll('[data-slot="skeleton"]').length).toBeGreaterThan(0)
     })
   })
 

@@ -12,8 +12,7 @@ export function BuiltinBadge({ isBuiltin, className }: BuiltinBadgeProps) {
 
   return (
     <Badge
-      variant="secondary"
-      className={cn('text-xs font-normal', className)}
+      className={cn('border-transparent bg-gold text-on-gold', className)}
       data-testid="builtin-badge"
     >
       {m['shared.builtin']()}

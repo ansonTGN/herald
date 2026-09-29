@@ -137,7 +137,7 @@ export function AuditEventDetailSheet({ eventId, realmId, onClose }: AuditEventD
             <div className="mt-4">
               <h4 className="mb-2 text-sm font-medium">{m['audit.detail_details_label']()}</h4>
               <pre
-                className="max-h-64 overflow-auto rounded-md bg-muted p-3 text-xs"
+                className="max-h-64 overflow-auto rounded-lg bg-instrument p-3 font-mono text-xs text-instrument-text"
                 data-testid="audit-detail-json"
               >
                 {JSON.stringify(data.details, null, 2)}
