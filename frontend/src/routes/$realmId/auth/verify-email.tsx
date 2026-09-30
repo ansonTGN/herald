@@ -106,7 +106,7 @@ export function VerifyEmailPage() {
 
   return (
     <AuthPageWrapper whiteLabel={publicConfig?.whiteLabel} realmName={publicConfig?.realmName}>
-      <div className="w-full pt-8">
+      <div className="w-full">
         <h1 data-testid="verify-email-title" className="text-xl font-semibold tracking-tight">
           {m['auth.verify_email.title']()}
         </h1>

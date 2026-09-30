@@ -69,7 +69,7 @@ export function ResetPasswordPage() {
 
   return (
     <AuthPageWrapper whiteLabel={whiteLabel} realmName={publicConfig?.realmName}>
-      <div className="w-full pt-8" data-testid="reset-password-card">
+      <div className="w-full" data-testid="reset-password-card">
         <h1 data-testid="reset-password-title" className="text-xl font-semibold tracking-tight">
           {m['auth.reset_password.title']()}
         </h1>

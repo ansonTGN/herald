@@ -173,7 +173,7 @@ export function Passkey2FaForm({
 
   if (!webAuthnSupported) {
     return (
-      <div className="w-full pt-8" data-testid="passkey-2fa-form">
+      <div className="w-full" data-testid="passkey-2fa-form">
         <h1 className="text-xl font-semibold tracking-tight">
           {m['auth.login.passkey_2fa_title']()}
         </h1>
@@ -209,7 +209,7 @@ export function Passkey2FaForm({
   }
 
   return (
-    <div className="w-full pt-8" data-testid="passkey-2fa-form">
+    <div className="w-full" data-testid="passkey-2fa-form">
       <h1 className="text-xl font-semibold tracking-tight">
         {m['auth.login.passkey_2fa_title']()}
       </h1>

@@ -556,7 +556,7 @@ export function LoginPage() {
   if (consentStep) {
     return (
       <AuthPageWrapper whiteLabel={whiteLabel} realmName={publicConfig?.realmName}>
-        <div className="w-full pt-8" data-testid="login-reconsent-view">
+        <div className="w-full" data-testid="login-reconsent-view">
           <h1 data-testid="login-reconsent-title" className="text-xl font-semibold tracking-tight">
             {m['auth.login.reconsent_title']()}
           </h1>
@@ -657,7 +657,7 @@ export function LoginPage() {
 
   return (
     <AuthPageWrapper whiteLabel={whiteLabel} realmName={publicConfig?.realmName}>
-      <div className="w-full pt-8" data-testid="login-card">
+      <div className="w-full" data-testid="login-card">
         <h1 data-testid="login-title" className="text-xl font-semibold tracking-tight">
           {whiteLabel?.loginTitle ?? m['auth.login.login_to_account']()}
         </h1>

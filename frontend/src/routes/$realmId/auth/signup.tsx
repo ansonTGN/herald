@@ -55,7 +55,7 @@ export function SignupPage() {
   if (statusError || !signupEnabled) {
     return (
       <AuthPageWrapper whiteLabel={whiteLabel}>
-        <div className="w-full pt-8">
+        <div className="w-full">
           <h1 data-testid="signup-disabled-notice" className="text-xl font-semibold tracking-tight">
             {m['auth.signup.disabled_title']()}
           </h1>
@@ -77,7 +77,7 @@ export function SignupPage() {
 
   return (
     <AuthPageWrapper whiteLabel={whiteLabel}>
-      <div className="w-full pt-8" data-testid="signup-card">
+      <div className="w-full" data-testid="signup-card">
         <h1 data-testid="signup-title" className="text-xl font-semibold tracking-tight">
           {m['auth.signup.title']()}
         </h1>

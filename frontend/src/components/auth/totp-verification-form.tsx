@@ -203,7 +203,7 @@ export function TotpVerificationForm({
   }
 
   return (
-    <div className="w-full pt-8" data-testid="totp-verification-form">
+    <div className="w-full" data-testid="totp-verification-form">
       <h1 className="text-xl font-semibold tracking-tight">Two-Factor Authentication</h1>
       <p className="mt-1 text-sm text-muted-foreground">{getDescriptionText()}</p>
       <div className="mt-6 space-y-4">

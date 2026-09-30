@@ -171,7 +171,7 @@ export function AuthPageWrapper({ children, realmName, whiteLabel }: AuthPageWra
   return (
     <div
       data-testid="auth-page-root"
-      className="flex min-h-dvh flex-col items-center justify-start bg-background px-4 py-8 md:justify-center md:py-12"
+      className="flex min-h-dvh flex-col items-center justify-start bg-background px-4 pt-6 pb-8 md:pt-16 md:pb-16"
       style={rootStyle}
     >
       <div className="w-full max-w-md">

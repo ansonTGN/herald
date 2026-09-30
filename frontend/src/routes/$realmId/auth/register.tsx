@@ -78,7 +78,7 @@ export function RegisterPage() {
   if (!state.registrationAllowed) {
     return (
       <AuthPageWrapper whiteLabel={whiteLabel} realmName={publicConfig?.realmName}>
-        <div className="w-full pt-8">
+        <div className="w-full">
           <h1
             data-testid="registration-disabled-title"
             className="text-xl font-semibold tracking-tight"
@@ -103,7 +103,7 @@ export function RegisterPage() {
 
   return (
     <AuthPageWrapper whiteLabel={whiteLabel} realmName={publicConfig?.realmName}>
-      <div className="w-full pt-8" data-testid="register-card">
+      <div className="w-full" data-testid="register-card">
         <h1 data-testid="register-title" className="text-xl font-semibold tracking-tight">
           {whiteLabel?.registerTitle ?? m['auth.register.title']()}
         </h1>

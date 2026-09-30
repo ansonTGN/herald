@@ -62,7 +62,7 @@ export function ForgotPasswordPage() {
 
   return (
     <AuthPageWrapper whiteLabel={whiteLabel} realmName={publicConfig?.realmName}>
-      <div className="w-full pt-8" data-testid="forgot-password-card">
+      <div className="w-full" data-testid="forgot-password-card">
         <h1 data-testid="forgot-password-title" className="text-xl font-semibold tracking-tight">
           {m['auth.forgot_password.title']()}
         </h1>
