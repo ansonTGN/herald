@@ -1,4 +1,5 @@
 import { Link, useLocation } from '@tanstack/react-router'
+import { LogOut } from 'lucide-react'
 import { useCallback, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { usePermissions, useRealmId } from '@/stores/auth-store'
@@ -95,6 +96,14 @@ export function ProfileSidebar() {
             </a>
           )}
           <LanguageSwitcher />
+          <button
+            onClick={handleLogout}
+            data-testid="profile-logout-button-mobile"
+            aria-label={m['user_menu.logout']()}
+            className="flex h-8 w-8 items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <LogOut className="h-4 w-4" />
+          </button>
         </div>
       </div>
 

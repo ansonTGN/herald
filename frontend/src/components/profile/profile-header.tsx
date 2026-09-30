@@ -17,7 +17,7 @@ export function ProfileHeader() {
   }, [realmId])
 
   return (
-    <header data-testid="profile-header" className="border-b border-border">
+    <header data-testid="profile-header" className="hidden border-b border-border md:block">
       <div className="mx-auto flex w-full max-w-2xl items-center justify-between px-4 py-3 md:px-8 md:py-4">
         <h2
           data-testid="profile-heading"
