@@ -40,7 +40,7 @@ pub struct OAuthLoginResponse {
     tag = "oauth",
     params(
         ("realmId" = String, Path, description = "Realm ID"),
-        ("provider" = String, Path, description = "OAuth provider type (google, github, facebook, apple, wechat, wechat_miniprogram)"),
+        ("provider" = String, Path, description = "OAuth provider type (google, github, facebook, apple, discord, wechat, wechat_miniprogram)"),
         ("redirect_uri" = Option<String>, Query, description = "Provider callback URI override"),
         ("downstream_state" = Option<String>, Query, description = "Existing downstream authorization transaction state")
     ),
@@ -65,7 +65,7 @@ pub async fn oauth_login(
     let provider_type = provider.to_lowercase();
     if !matches!(
         provider_type.as_str(),
-        "google" | "github" | "facebook" | "apple" | "wechat" | "wechat_miniprogram"
+        "google" | "github" | "facebook" | "apple" | "discord" | "wechat" | "wechat_miniprogram"
     ) {
         return Err(ApiError::bad_request(format!(
             "Unsupported OAuth provider: {}",

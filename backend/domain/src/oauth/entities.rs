@@ -81,6 +81,7 @@ fn default_scopes(provider_type: &ProviderType) -> Vec<String> {
         ProviderType::GitHub => vec!["user:email".to_string()],
         ProviderType::Facebook => vec!["email".to_string()],
         ProviderType::Apple => vec!["name".to_string(), "email".to_string()],
+        ProviderType::Discord => vec!["identify".to_string(), "email".to_string()],
         ProviderType::WeChat => vec!["snsapi_login".to_string()],
         ProviderType::WeChatMiniProgram => vec![],
         // LDAP links carry no OAuth scope concept; the variant exists so the
@@ -160,10 +161,18 @@ impl Entity for OAuthProvider {
 #[serde(rename_all = "snake_case")]
 pub enum ProviderType {
     Google,
+    // The serde spelling must stay identical to FromStr/as_str (one contract
+    // shared with the provider-type DB columns and the API's String DTOs);
+    // container-level snake_case would split these camel-cased variants
+    // ("GitHub" -> "git_hub"), so each carries an explicit rename.
+    #[serde(rename = "github")]
     GitHub,
     Facebook,
     Apple,
+    Discord,
+    #[serde(rename = "wechat")]
     WeChat,
+    #[serde(rename = "wechat_miniprogram")]
     WeChatMiniProgram,
     Ldap,
 }
@@ -177,6 +186,7 @@ impl FromStr for ProviderType {
             "github" => Ok(ProviderType::GitHub),
             "facebook" => Ok(ProviderType::Facebook),
             "apple" => Ok(ProviderType::Apple),
+            "discord" => Ok(ProviderType::Discord),
             "wechat" => Ok(ProviderType::WeChat),
             "wechat_miniprogram" => Ok(ProviderType::WeChatMiniProgram),
             "ldap" => Ok(ProviderType::Ldap),
@@ -192,6 +202,7 @@ impl ProviderType {
             ProviderType::GitHub => "github",
             ProviderType::Facebook => "facebook",
             ProviderType::Apple => "apple",
+            ProviderType::Discord => "discord",
             ProviderType::WeChat => "wechat",
             ProviderType::WeChatMiniProgram => "wechat_miniprogram",
             ProviderType::Ldap => "ldap",
@@ -204,6 +215,7 @@ impl ProviderType {
             ProviderType::GitHub => "GitHub",
             ProviderType::Facebook => "Facebook",
             ProviderType::Apple => "Apple",
+            ProviderType::Discord => "Discord",
             ProviderType::WeChat => "WeChat",
             ProviderType::WeChatMiniProgram => "WeChat Mini Program",
             ProviderType::Ldap => "LDAP",
@@ -260,4 +272,41 @@ pub struct UpdateOAuthProviderConfigRequest {
     pub client_secret: Option<String>,
     pub scopes: Option<Vec<String>>,
     pub enabled: Option<bool>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // The enum's string forms are one contract shared across the
+    // provider.type / oauth_provider_config.provider_type columns, the
+    // admin API's String DTOs and the frontend PROVIDER_TYPES constants.
+    // Any surface that serializes the enum directly must emit exactly the
+    // FromStr spellings — a divergence (the "git_hub" class of bug) would
+    // make serde-produced JSON unparseable by every other surface, so every
+    // variant is pinned here in both directions.
+    #[test]
+    fn provider_type_serde_matches_from_str_and_as_str() {
+        for spelling in [
+            "google",
+            "github",
+            "facebook",
+            "apple",
+            "discord",
+            "wechat",
+            "wechat_miniprogram",
+            "ldap",
+        ] {
+            let parsed: ProviderType = spelling
+                .parse()
+                .unwrap_or_else(|e| panic!("FromStr must accept {spelling}: {e}"));
+            assert_eq!(parsed.as_str(), spelling);
+
+            let json = serde_json::to_string(&parsed).unwrap();
+            assert_eq!(json, format!("\"{spelling}\""));
+            let round_tripped: ProviderType = serde_json::from_str(&json)
+                .unwrap_or_else(|e| panic!("serde must accept {json}: {e}"));
+            assert_eq!(round_tripped, parsed);
+        }
+    }
 }

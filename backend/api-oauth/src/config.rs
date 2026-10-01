@@ -128,7 +128,7 @@ pub async fn list_oauth_configs(
     path = "/api/oauth-configs/{providerType}",
     tag = "oauth",
     params(
-        ("providerType" = String, Path, description = "Provider type (google, github, facebook, apple)")
+        ("providerType" = String, Path, description = "Provider type (google, github, facebook, apple, discord, wechat, wechat_miniprogram)")
     ),
     responses(
         (status = 200, description = "OAuth provider configuration", body = OAuthConfigResponse),

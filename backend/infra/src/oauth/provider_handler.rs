@@ -1,9 +1,6 @@
-// OAuth Provider Handler - concrete provider dispatch
-// Moved from domain/oauth/services.rs to eliminate domain -> infrastructure dependency
-
 use crate::oauth::providers::{
-    apple::AppleOAuthProvider, facebook::FacebookOAuthProvider, github::GitHubOAuthProvider,
-    google::GoogleOAuthProvider, wechat::WeChatOAuthProvider,
+    apple::AppleOAuthProvider, discord::DiscordOAuthProvider, facebook::FacebookOAuthProvider,
+    github::GitHubOAuthProvider, google::GoogleOAuthProvider, wechat::WeChatOAuthProvider,
     wechat_miniprogram::WeChatMiniProgramProvider,
 };
 use herald_domain::common::entities::app_errors::CoreError;
@@ -25,6 +22,7 @@ pub enum ProviderHandler {
     GitHub(GitHubOAuthProvider),
     Facebook(FacebookOAuthProvider),
     Apple(AppleOAuthProvider),
+    Discord(DiscordOAuthProvider),
     WeChat(WeChatOAuthProvider),
     WeChatMiniProgram(WeChatMiniProgramProvider),
 }
@@ -37,6 +35,7 @@ impl OAuthProviderHandler for ProviderHandler {
             ProviderHandler::GitHub(p) => p.provider_type(),
             ProviderHandler::Facebook(p) => p.provider_type(),
             ProviderHandler::Apple(p) => p.provider_type(),
+            ProviderHandler::Discord(p) => p.provider_type(),
             ProviderHandler::WeChat(p) => p.provider_type(),
             ProviderHandler::WeChatMiniProgram(p) => p.provider_type(),
         }
@@ -48,6 +47,7 @@ impl OAuthProviderHandler for ProviderHandler {
             ProviderHandler::GitHub(p) => p.display_name(),
             ProviderHandler::Facebook(p) => p.display_name(),
             ProviderHandler::Apple(p) => p.display_name(),
+            ProviderHandler::Discord(p) => p.display_name(),
             ProviderHandler::WeChat(p) => p.display_name(),
             ProviderHandler::WeChatMiniProgram(p) => p.display_name(),
         }
@@ -59,6 +59,7 @@ impl OAuthProviderHandler for ProviderHandler {
             ProviderHandler::GitHub(p) => p.get_auth_url(state, config),
             ProviderHandler::Facebook(p) => p.get_auth_url(state, config),
             ProviderHandler::Apple(p) => p.get_auth_url(state, config),
+            ProviderHandler::Discord(p) => p.get_auth_url(state, config),
             ProviderHandler::WeChat(p) => p.get_auth_url(state, config),
             ProviderHandler::WeChatMiniProgram(p) => p.get_auth_url(state, config),
         }
@@ -100,6 +101,10 @@ impl OAuthProviderHandler for ProviderHandler {
                     p.exchange_code_and_get_user(code, config, http_client)
                         .await
                 }
+                ProviderHandler::Discord(p) => {
+                    p.exchange_code_and_get_user(code, config, http_client)
+                        .await
+                }
                 ProviderHandler::WeChat(p) => {
                     p.exchange_code_and_get_user(code, config, http_client)
                         .await
@@ -121,6 +126,7 @@ pub fn create_provider_handler(provider_type: &str) -> Result<ProviderHandler, C
         "github" => Ok(ProviderHandler::GitHub(GitHubOAuthProvider)),
         "facebook" => Ok(ProviderHandler::Facebook(FacebookOAuthProvider)),
         "apple" => Ok(ProviderHandler::Apple(AppleOAuthProvider)),
+        "discord" => Ok(ProviderHandler::Discord(DiscordOAuthProvider)),
         "wechat" => Ok(ProviderHandler::WeChat(WeChatOAuthProvider)),
         "wechat_miniprogram" => Ok(ProviderHandler::WeChatMiniProgram(
             WeChatMiniProgramProvider,

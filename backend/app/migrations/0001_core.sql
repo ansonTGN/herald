@@ -83,7 +83,7 @@ CREATE INDEX idx_provider_union_id
     ON provider(realm_id, union_id)
     WHERE union_id IS NOT NULL;
 COMMENT ON TABLE provider IS 'OAuth provider account associations';
-COMMENT ON COLUMN provider.type IS 'OAuth provider type (google, github, facebook, apple)';
+COMMENT ON COLUMN provider.type IS 'OAuth provider type (google, github, facebook, apple, discord, wechat, wechat_miniprogram); ldap identity links reuse this table with type=ldap';
 COMMENT ON COLUMN provider.open_id IS 'OpenID from the OAuth provider';
 COMMENT ON COLUMN provider.union_id IS 'Union ID for cross-provider identity matching';
 COMMENT ON COLUMN provider.user_id IS 'Reference to the account (user) that owns this OAuth provider';
@@ -402,7 +402,7 @@ CREATE INDEX oauth_provider_config_realm_idx ON oauth_provider_config(realm_id);
 CREATE INDEX oauth_provider_config_enabled_idx ON oauth_provider_config(realm_id) WHERE enabled = true;
 COMMENT ON TABLE oauth_provider_config IS 'OAuth provider configurations per realm';
 COMMENT ON COLUMN oauth_provider_config.realm_id IS 'Realm identifier';
-COMMENT ON COLUMN oauth_provider_config.provider_type IS 'OAuth provider type (google, github, facebook, apple)';
+COMMENT ON COLUMN oauth_provider_config.provider_type IS 'OAuth provider type (google, github, facebook, apple, discord, wechat, wechat_miniprogram)';
 COMMENT ON COLUMN oauth_provider_config.client_id IS 'OAuth client ID from provider';
 COMMENT ON COLUMN oauth_provider_config.client_secret IS 'OAuth client secret from provider';
 COMMENT ON COLUMN oauth_provider_config.scopes IS 'OAuth scopes to request';

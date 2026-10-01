@@ -10,6 +10,7 @@ export type ProviderType =
   | 'github'
   | 'facebook'
   | 'apple'
+  | 'discord'
   | 'wechat'
   | 'wechat_miniprogram'
 
@@ -21,6 +22,7 @@ export const PROVIDER_TYPES: readonly ProviderType[] = [
   'github',
   'facebook',
   'apple',
+  'discord',
   'wechat',
   'wechat_miniprogram',
 ] as const
@@ -33,6 +35,7 @@ export const PROVIDER_DISPLAY_NAMES: Record<ProviderType, string> = {
   github: 'GitHub',
   facebook: 'Facebook',
   apple: 'Apple',
+  discord: 'Discord',
   wechat: 'WeChat',
   wechat_miniprogram: 'WeChat Mini Program',
 }
@@ -49,6 +52,9 @@ export const DEFAULT_SCOPES: Record<ProviderType, string[]> = {
   github: ['user:email'],
   facebook: ['email'],
   apple: ['name', 'email'],
+  // `identify` returns id/username/global_name/avatar; `email` returns the
+  // bound address plus `verified` — without `email` the callback rejects.
+  discord: ['identify', 'email'],
   wechat: ['snsapi_login'],
   wechat_miniprogram: [],
 }

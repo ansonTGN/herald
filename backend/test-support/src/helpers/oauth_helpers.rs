@@ -1,50 +1,17 @@
-// =============================================================================
-// OAuth 测试辅助函数
-// =============================================================================
-//
-// 提供OAuth集成测试的辅助函数，支持Beeceptor Mock Server测试。
-//
-// ## 主要功能
-//
-// - OAuth提供者配置管理
-// - 模拟OAuth授权请求
-// - 用户创建与验证
-// - Mock授权码提取
-//
-// ## 支持的OAuth提供者
-//
-// - Google OAuth
-// - GitHub OAuth
-// - WeChat OAuth
-// - WeChat Mini Program
-//
-// ## 测试架构
-//
-// - 使用Beeceptor Mock Server模拟OAuth提供者
-// - 独立Schema隔离测试数据
-// - Redis状态管理
-// - Mock URLs 从 `mock_oauth_urls` 模块导入
-//
-// ## 参考
-// - OAuth Mock规范: `.ai/future/third.md`
-// - OAuth实现: `api/src/application/http/oauth/`
-// - Mock URL 常量: `mock_oauth_urls`
+// OAuth 测试依赖外部 Beeceptor Mock Server 模拟提供者；测试数据用独立
+// Schema 隔离，OAuth 状态存于 Redis。
 
 use crate::schema_test_context::SchemaTestContext as TestContext;
 use serde_json::json;
 use uuid::Uuid;
 
-/// ============================================================================
-/// OAuth 提供者配置管理
-/// ============================================================================
-///
 /// 创建测试用的OAuth提供者配置
 ///
 /// 在测试数据库中启用指定类型的OAuth提供者。
 ///
 /// # Arguments
 /// * `ctx` - 测试上下文
-/// * `provider_type` - 提供者类型 (google, github, wechat, wechat_miniprogram)
+/// * `provider_type` - 提供者类型 (google, github, facebook, apple, discord, wechat, wechat_miniprogram)
 /// * `client_id` - OAuth客户端ID
 /// * `client_secret` - OAuth客户端密钥
 /// * `scopes` - OAuth权限范围列表
@@ -79,6 +46,7 @@ pub async fn create_mock_oauth_provider_config(
         "github",
         "facebook",
         "apple",
+        "discord",
         "wechat",
         "wechat_miniprogram",
     ];
@@ -204,9 +172,6 @@ pub async fn create_wechat_miniprogram_provider_config(ctx: &TestContext) -> Str
     .await
 }
 
-/// ============================================================================
-/// OAuth 授权请求生成
-/// ============================================================================
 ///
 /// 生成OAuth授权URL请求体
 ///
@@ -237,9 +202,6 @@ pub fn generate_oauth_auth_url_request(
     (url, body)
 }
 
-/// ============================================================================
-/// OAuth 用户验证
-/// ============================================================================
 ///
 /// 验证OAuth用户已创建
 ///
@@ -309,9 +271,6 @@ pub async fn verify_oauth_user_details(
     row
 }
 
-/// ============================================================================
-/// Mock 授权码提取
-/// ============================================================================
 ///
 /// 从Beeceptor响应中提取授权码
 ///
@@ -380,9 +339,6 @@ pub fn extract_mock_state(response_body: &str) -> Option<String> {
     None
 }
 
-/// ============================================================================
-/// Mock 用户信息生成
-/// ============================================================================
 ///
 /// 生成Google OAuth Mock用户信息
 ///
@@ -428,9 +384,6 @@ pub fn generate_mock_github_user_info(email: &str, login: Option<&str>) -> serde
     })
 }
 
-/// ============================================================================
-/// 测试清理函数
-/// ============================================================================
 ///
 /// 清理测试用的OAuth提供者配置
 ///

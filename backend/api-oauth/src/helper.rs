@@ -19,8 +19,8 @@ use herald_core::domain::security_constants::{
 };
 use herald_core::domain::user::{User, UserRepository, UserService};
 use herald_core::infrastructure::oauth::providers::{
-    apple::AppleOAuthProvider, facebook::FacebookOAuthProvider, github::GitHubOAuthProvider,
-    google::GoogleOAuthProvider, wechat::WeChatOAuthProvider,
+    apple::AppleOAuthProvider, discord::DiscordOAuthProvider, facebook::FacebookOAuthProvider,
+    github::GitHubOAuthProvider, google::GoogleOAuthProvider, wechat::WeChatOAuthProvider,
     wechat_miniprogram::WeChatMiniProgramProvider,
 };
 use herald_core::infrastructure::redis::RedisConnectionManager;
@@ -248,6 +248,7 @@ pub enum ProviderHandler {
     GitHub(GitHubOAuthProvider),
     Facebook(FacebookOAuthProvider),
     Apple(AppleOAuthProvider),
+    Discord(DiscordOAuthProvider),
     WeChat(WeChatOAuthProvider),
     WeChatMiniProgram(WeChatMiniProgramProvider),
 }
@@ -259,6 +260,7 @@ impl ProviderHandler {
             "github" => Ok(ProviderHandler::GitHub(GitHubOAuthProvider)),
             "facebook" => Ok(ProviderHandler::Facebook(FacebookOAuthProvider)),
             "apple" => Ok(ProviderHandler::Apple(AppleOAuthProvider)),
+            "discord" => Ok(ProviderHandler::Discord(DiscordOAuthProvider)),
             "wechat" => Ok(ProviderHandler::WeChat(WeChatOAuthProvider)),
             "wechat_miniprogram" => Ok(ProviderHandler::WeChatMiniProgram(
                 WeChatMiniProgramProvider,
@@ -283,6 +285,9 @@ impl ProviderHandler {
                 AuthError::InternalServerError(format!("Failed to generate auth URL: {}", e))
             }),
             ProviderHandler::Apple(p) => p.get_auth_url(state_token, config).map_err(|e| {
+                AuthError::InternalServerError(format!("Failed to generate auth URL: {}", e))
+            }),
+            ProviderHandler::Discord(p) => p.get_auth_url(state_token, config).map_err(|e| {
                 AuthError::InternalServerError(format!("Failed to generate auth URL: {}", e))
             }),
             ProviderHandler::WeChat(p) => p.get_auth_url(state_token, config).map_err(|e| {
@@ -547,6 +552,22 @@ pub async fn exchange_code_for_user_info(
             .await
             .map_err(|e| {
                 AuthError::InternalServerError(format!("Failed to get user info: {}", e))
+            })?,
+        // BadRequest keeps its message: the Discord provider emits it only
+        // for diagnosable, self-healable config errors (e.g. a realm scope
+        // list that dropped `email`) — wrapping those as InternalServerError
+        // would turn them into an opaque 500. Everything else (token
+        // exchange, upstream HTTP) already leaves the provider as
+        // InternalServerError and is wrapped here so the 5xx message
+        // sanitization applies, matching the sibling providers above.
+        ProviderHandler::Discord(p) => p
+            .exchange_code_and_get_user(code, &config, &http_client)
+            .await
+            .map_err(|e| match e {
+                herald_core::domain::common::entities::app_errors::CoreError::BadRequest(msg) => {
+                    AuthError::BadRequest(msg)
+                }
+                _ => AuthError::InternalServerError(format!("Failed to get user info: {}", e)),
             })?,
         ProviderHandler::WeChat(p) => p
             .exchange_code_and_get_user(code, &config, &http_client)

@@ -161,7 +161,7 @@ async fn oauth_callback_inner(
     let provider_type = provider.to_lowercase();
     if !matches!(
         provider_type.as_str(),
-        "google" | "github" | "facebook" | "apple"
+        "google" | "github" | "facebook" | "apple" | "discord"
     ) {
         return Err(ApiError::bad_request(format!(
             "Unsupported OAuth provider: {}",

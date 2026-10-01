@@ -1,34 +1,13 @@
-// =============================================================================
-// Provider-Agnostic OAuth Integration Scenarios Tests
-// =============================================================================
-//
-// **Purpose**: Eliminate 80% code duplication between Google and GitHub
-// OAuth tests by using a unified, parameterized framework.
-//
-// **User Story Covered**: US-RU-003 (OAuth Third-Party Login)
-//
-// **Test Cases Consolidated**:
-// - google_oauth_scenarios.rs (8 tests)
-// - github_oauth_scenarios.rs (8 tests)
+// Covers US-RU-003 (OAuth Third-Party Login),
+// docs/user-stories/core/regular-user.md.
 //
 // WeChat is NOT parameterized here: its flow diverges (appid instead of
 // client_id, code2session instead of an authorization-URL browser jump), so
 // WeChat coverage lives in wechat_matching_scenarios and the miniprogram /
 // matching-specific scenarios rather than this generic framework.
 //
-// **Benefits**:
-// - Reduces test code by 75%
-// - Easier to add new OAuth providers
-// - Maintains 100% user story coverage
-// - Preserves BDD structure (Given-When-Then)
-// - Unified test patterns across all providers
+// Run with `cargo nextest run --workspace unified_oauth_scenarios`.
 //
-// **Running Tests**:
-// ```bash
-// cargo nextest run --workspace unified_oauth_scenarios
-// ```
-//
-// =============================================================================
 
 use crate::tests::helpers::auth_helpers::*;
 use crate::tests::helpers::oauth_test_helpers::*;
@@ -38,10 +17,6 @@ use crate::tests::schema_test_context::SchemaTestContext as TestContext;
 use axum::http::StatusCode;
 use serde_json::{Value, json};
 use test_context::test_context;
-
-// =============================================================================
-// OAuth Provider Configuration
-// =============================================================================
 
 /// Configuration data for each OAuth provider type
 #[derive(Debug, Clone)]
@@ -81,6 +56,17 @@ impl OAuthProviderTestConfig {
         }
     }
 
+    /// Create Discord provider test config
+    pub fn discord() -> Self {
+        Self {
+            provider_type: "discord",
+            client_id: "discord-test-client-id",
+            client_secret: "discord-test-client-secret",
+            scopes: vec!["identify", "email"],
+            admin_email_suffix: "discord-test.com",
+        }
+    }
+
     /// Create an OAuthProviderConfig from this test config
     pub fn to_provider_config(&self) -> OAuthProviderConfig {
         OAuthProviderConfig::new(
@@ -103,16 +89,10 @@ pub fn all_oauth_providers() -> Vec<OAuthProviderTestConfig> {
     vec![
         OAuthProviderTestConfig::google(),
         OAuthProviderTestConfig::github(),
+        OAuthProviderTestConfig::discord(),
     ]
 }
 
-// =============================================================================
-// OAuth Test Scenarios (Parameterized by Provider)
-// =============================================================================
-
-/// ============================================================================
-/// Scenario 1: OAuth Provider Configuration CRUD - Create
-///
 /// **User Story**: OAuth Provider Configuration
 ///
 /// **Given**:
@@ -127,7 +107,6 @@ pub fn all_oauth_providers() -> Vec<OAuthProviderTestConfig> {
 /// - Returns 201 Created
 /// - Configuration correctly saved to database
 /// - Can retrieve configuration via GET /api/{realmId}/oauth/configs/{providerType}
-/// ============================================================================
 #[test_context(TestContext)]
 #[tokio::test]
 async fn test_scenario_oauth_provider_config_create(ctx: &mut TestContext) {
@@ -140,24 +119,15 @@ async fn test_scenario_oauth_provider_config_create(ctx: &mut TestContext) {
             provider_type
         );
 
-        // ============================================================================
-        // Step 1: Create admin session with oauth:config:create permission
-        // ============================================================================
         println!("[Step 1] Creating admin session");
         let admin_email = provider_config.admin_email_for("config-create");
         let (token, admin_user_id) = create_admin_session_with_user(ctx, &admin_email, 1800).await;
         grant_realm_admin_role(ctx, &admin_user_id).await;
 
-        // ============================================================================
-        // Step 2: Create Provider configuration
-        // ============================================================================
         println!("[Step 2] Creating {} Provider configuration", provider_type);
         let config = provider_config.to_provider_config();
         let create_response = create_oauth_provider_config(ctx, &config, &token, &realm_id).await;
 
-        // ============================================================================
-        // Step 3: Verify 201 Created response
-        // ============================================================================
         println!("[Step 3] Verifying 201 Created response");
         assert_eq!(
             create_response.status(),
@@ -184,9 +154,6 @@ async fn test_scenario_oauth_provider_config_create(ctx: &mut TestContext) {
             provider_type
         );
 
-        // ============================================================================
-        // Step 4: Verify configuration saved to database
-        // ============================================================================
         println!("[Step 4] Verifying configuration saved to database");
         verify_provider_config_in_db(
             ctx,
@@ -203,9 +170,6 @@ async fn test_scenario_oauth_provider_config_create(ctx: &mut TestContext) {
         .await;
         println!("[Step 4] ✓ Configuration correctly saved to database");
 
-        // ============================================================================
-        // Step 5: Verify can retrieve configuration via GET
-        // ============================================================================
         println!(
             "[Step 5] Retrieving {} Provider configuration",
             provider_type
@@ -231,9 +195,6 @@ async fn test_scenario_oauth_provider_config_create(ctx: &mut TestContext) {
     }
 }
 
-/// ============================================================================
-/// Scenario 2: OAuth Provider Configuration - List Enabled
-///
 /// **Given**:
 /// - System initialized, test realm exists
 /// - OAuth Provider is configured and enabled
@@ -245,7 +206,6 @@ async fn test_scenario_oauth_provider_config_create(ctx: &mut TestContext) {
 /// - Returns 200 OK
 /// - Response includes enabled Provider configurations
 /// - Configuration does not include clientSecret
-/// ============================================================================
 #[test_context(TestContext)]
 #[tokio::test]
 async fn test_scenario_oauth_provider_config_list_enabled(ctx: &mut TestContext) {
@@ -258,20 +218,15 @@ async fn test_scenario_oauth_provider_config_list_enabled(ctx: &mut TestContext)
             provider_type
         );
 
-        // ============================================================================
-        // Step 1: Create admin session with oauth:config:view permission
-        // ============================================================================
         println!("[Step 1] Creating admin session");
         let admin_email = provider_config.admin_email_for("list-enabled");
         let (token, admin_user_id) = create_admin_session_with_user(ctx, &admin_email, 1800).await;
         grant_realm_admin_role(ctx, &admin_user_id).await;
 
-        // ============================================================================
         // Cleanup: Delete any existing provider configurations from previous iterations
         // This ensures we start fresh even if a previous test failed
-        // ============================================================================
         println!("[Cleanup] Cleaning up any existing provider configurations");
-        for pt in ["google", "github"] {
+        for pt in ["google", "github", "discord"] {
             let delete_response = delete_oauth_provider_config(ctx, &realm_id, pt, &token).await;
             // Ignore failures - the provider might not exist
             if !delete_response.status().is_success()
@@ -287,9 +242,6 @@ async fn test_scenario_oauth_provider_config_list_enabled(ctx: &mut TestContext)
         }
         println!("[Cleanup] ✓ Cleanup completed");
 
-        // ============================================================================
-        // Step 2: Create Provider configuration (enabled)
-        // ============================================================================
         println!(
             "[Step 2] Creating enabled {} Provider configuration",
             provider_type
@@ -308,9 +260,6 @@ async fn test_scenario_oauth_provider_config_list_enabled(ctx: &mut TestContext)
             provider_type
         );
 
-        // ============================================================================
-        // Step 3: Create another Provider configuration (disabled) to test filtering
-        // ============================================================================
         println!("[Step 3] Creating disabled Provider configuration for filtering test");
         // Use a different valid provider type (github) as the disabled one
         let disabled_provider_type = match provider_type {
@@ -334,9 +283,6 @@ async fn test_scenario_oauth_provider_config_list_enabled(ctx: &mut TestContext)
         );
         println!("[Step 3] ✓ Disabled Provider configuration created");
 
-        // ============================================================================
-        // Step 4: List enabled providers
-        // ============================================================================
         println!("[Step 4] Listing enabled OAuth providers");
         let list_response = list_enabled_oauth_providers(ctx, &realm_id, &token).await;
 
@@ -369,9 +315,7 @@ async fn test_scenario_oauth_provider_config_list_enabled(ctx: &mut TestContext)
 
         println!("[Step 4] ✓ Only enabled providers returned");
 
-        // ============================================================================
         // Cleanup: Delete the disabled provider to avoid conflicts in next iteration
-        // ============================================================================
         println!("[Cleanup] Deleting disabled provider configuration");
         let delete_response =
             delete_oauth_provider_config(ctx, &realm_id, disabled_provider_type, &token).await;
@@ -384,9 +328,6 @@ async fn test_scenario_oauth_provider_config_list_enabled(ctx: &mut TestContext)
     }
 }
 
-/// ============================================================================
-/// Scenario 3: OAuth Provider Configuration - Delete
-///
 /// **Given**:
 /// - System initialized, test realm exists
 /// - OAuth Provider is configured
@@ -399,7 +340,6 @@ async fn test_scenario_oauth_provider_config_list_enabled(ctx: &mut TestContext)
 /// - Returns 200 OK or 204 No Content
 /// - Configuration is removed from database
 /// - Cannot retrieve configuration anymore
-/// ============================================================================
 #[test_context(TestContext)]
 #[tokio::test]
 async fn test_scenario_oauth_provider_config_delete(ctx: &mut TestContext) {
@@ -412,17 +352,11 @@ async fn test_scenario_oauth_provider_config_delete(ctx: &mut TestContext) {
             provider_type
         );
 
-        // ============================================================================
-        // Step 1: Create admin session with oauth:config:delete permission
-        // ============================================================================
         println!("[Step 1] Creating admin session");
         let admin_email = provider_config.admin_email_for("delete");
         let (token, admin_user_id) = create_admin_session_with_user(ctx, &admin_email, 1800).await;
         grant_realm_admin_role(ctx, &admin_user_id).await;
 
-        // ============================================================================
-        // Step 2: Create Provider configuration
-        // ============================================================================
         println!("[Step 2] Creating {} Provider configuration", provider_type);
         let config = provider_config.to_provider_config();
         let create_response = create_oauth_provider_config(ctx, &config, &token, &realm_id).await;
@@ -437,9 +371,6 @@ async fn test_scenario_oauth_provider_config_delete(ctx: &mut TestContext) {
             provider_type
         );
 
-        // ============================================================================
-        // Step 3: Delete Provider configuration
-        // ============================================================================
         println!("[Step 3] Deleting {} Provider configuration", provider_type);
         let delete_response =
             delete_oauth_provider_config(ctx, &realm_id, provider_type, &token).await;
@@ -455,9 +386,6 @@ async fn test_scenario_oauth_provider_config_delete(ctx: &mut TestContext) {
             provider_type
         );
 
-        // ============================================================================
-        // Step 4: Verify configuration is removed from database
-        // ============================================================================
         println!("[Step 4] Verifying configuration removed from database");
         let get_response = get_oauth_provider_config(ctx, &realm_id, provider_type, &token).await;
 
@@ -471,9 +399,6 @@ async fn test_scenario_oauth_provider_config_delete(ctx: &mut TestContext) {
     }
 }
 
-/// ============================================================================
-/// Scenario 4: OAuth Authorization URL Generation
-///
 /// **Given**:
 /// - System initialized, test realm exists
 /// - OAuth Provider is configured and enabled
@@ -487,7 +412,6 @@ async fn test_scenario_oauth_provider_config_delete(ctx: &mut TestContext) {
 /// - Includes authorization URL (or redirect to mock server)
 /// - URL includes client_id, redirect_uri, scope, state parameters
 /// - State token is returned
-/// ============================================================================
 #[test_context(TestContext)]
 #[tokio::test]
 async fn test_scenario_oauth_authorization_url_generation(ctx: &mut TestContext) {
@@ -500,9 +424,6 @@ async fn test_scenario_oauth_authorization_url_generation(ctx: &mut TestContext)
             provider_type
         );
 
-        // ============================================================================
-        // Step 1: Create Provider configuration
-        // ============================================================================
         println!("[Step 1] Creating {} Provider configuration", provider_type);
         let admin_email = provider_config.admin_email_for("auth-url");
         let (token, admin_user_id) = create_admin_session_with_user(ctx, &admin_email, 1800).await;
@@ -515,9 +436,6 @@ async fn test_scenario_oauth_authorization_url_generation(ctx: &mut TestContext)
             provider_type
         );
 
-        // ============================================================================
-        // Step 2: Generate authorization URL
-        // ============================================================================
         println!("[Step 2] Generating {} authorization URL", provider_type);
         let (auth_response, state_token) =
             generate_auth_url_and_extract_state(ctx, &realm_id, provider_type).await;
@@ -541,9 +459,6 @@ async fn test_scenario_oauth_authorization_url_generation(ctx: &mut TestContext)
 
         println!("[Step 2] ✓ Authorization URL: {}", auth_url);
 
-        // ============================================================================
-        // Step 3: Verify authorization URL parameters
-        // ============================================================================
         println!("[Step 3] Verifying authorization URL parameters");
 
         // In test mode with mock server, URL should be redirected to mock server
@@ -567,9 +482,6 @@ async fn test_scenario_oauth_authorization_url_generation(ctx: &mut TestContext)
         }
         println!("[Step 3] ✓ Authorization URL contains required parameters");
 
-        // ============================================================================
-        // Step 4: Verify state token
-        // ============================================================================
         println!("[Step 4] Verifying state token");
         assert!(
             !state_token.is_empty(),
@@ -579,9 +491,6 @@ async fn test_scenario_oauth_authorization_url_generation(ctx: &mut TestContext)
         println!("[Step 4] ✓ State token extracted: {}", state_token);
     }
 }
-/// ============================================================================
-/// Scenario 7: OAuth Error Handling - Invalid State Token
-///
 /// **Given**:
 /// - OAuth Provider is configured and enabled
 /// - User initiates OAuth flow
@@ -592,7 +501,6 @@ async fn test_scenario_oauth_authorization_url_generation(ctx: &mut TestContext)
 /// **Then**:
 /// - Returns 400 Bad Request
 /// - Error message indicates invalid state
-/// ============================================================================
 #[test_context(TestContext)]
 #[tokio::test]
 async fn test_scenario_oauth_callback_invalid_state(ctx: &mut TestContext) {
@@ -605,9 +513,6 @@ async fn test_scenario_oauth_callback_invalid_state(ctx: &mut TestContext) {
             provider_type
         );
 
-        // ============================================================================
-        // Step 1: Configure OAuth
-        // ============================================================================
         println!("[Step 1] Configuring {} OAuth", provider_type);
         let admin_email = provider_config.admin_email_for("error-invalid-state");
         let (token, admin_user_id) = create_admin_session_with_user(ctx, &admin_email, 1800).await;
@@ -617,9 +522,6 @@ async fn test_scenario_oauth_callback_invalid_state(ctx: &mut TestContext) {
         create_oauth_provider_config(ctx, &config, &token, &realm_id).await;
         println!("[Step 1] ✓ {} OAuth configured", provider_type);
 
-        // ============================================================================
-        // Step 2: Send callback with invalid state
-        // ============================================================================
         println!("[Step 2] Sending callback with invalid state token");
         let invalid_state = "invalid_state_token_12345";
         let mock_code = "mock_code_12345";
@@ -629,9 +531,6 @@ async fn test_scenario_oauth_callback_invalid_state(ctx: &mut TestContext) {
                 .await
                 .unwrap();
 
-        // ============================================================================
-        // Step 3: Verify error response
-        // ============================================================================
         println!("[Step 3] Verifying error response");
 
         assert_eq!(
@@ -647,9 +546,6 @@ async fn test_scenario_oauth_callback_invalid_state(ctx: &mut TestContext) {
     }
 }
 
-/// ============================================================================
-/// Scenario 8: OAuth Error Handling - Provider Not Configured
-///
 /// **Given**:
 /// - OAuth Provider is not configured
 ///
@@ -659,7 +555,6 @@ async fn test_scenario_oauth_callback_invalid_state(ctx: &mut TestContext) {
 /// **Then**:
 /// - Returns 404 Not Found
 /// - Error message indicates provider not configured
-/// ============================================================================
 #[test_context(TestContext)]
 #[tokio::test]
 async fn test_scenario_oauth_provider_not_configured(ctx: &mut TestContext) {
@@ -672,9 +567,6 @@ async fn test_scenario_oauth_provider_not_configured(ctx: &mut TestContext) {
             provider_type
         );
 
-        // ============================================================================
-        // Step 1: Try to generate authorization URL without configuring provider
-        // ============================================================================
         println!(
             "[Step 1] Trying to generate authorization URL without {} provider config",
             provider_type
@@ -682,9 +574,6 @@ async fn test_scenario_oauth_provider_not_configured(ctx: &mut TestContext) {
         let (auth_response, state_token) =
             generate_auth_url_and_extract_state(ctx, &realm_id, provider_type).await;
 
-        // ============================================================================
-        // Step 2: Verify 404 response
-        // ============================================================================
         println!("[Step 2] Verifying 404 Not Found response");
         assert_eq!(
             auth_response.status(),
@@ -701,14 +590,12 @@ async fn test_scenario_oauth_provider_not_configured(ctx: &mut TestContext) {
     }
 }
 
-/// ============================================================================
 /// 回归（审计 run-1：generate_oauth_auth_url:login-redirect-uri-override-
 /// unvalidated）：provider-login 的可选 redirect_uri 覆盖必须精确等于
 /// canonical 回调地址。前端从不发送该参数；任何其他值都会把调用者选定的
 /// 重定向目标写进一次性流程状态、并复用于 provider 授权 URL 与 code 交换
 /// —— 对接受未注册 redirect_uri 的 provider 是授权码截获原语。
 /// 旧代码：任意值原样生效（200）。
-/// ============================================================================
 #[test_context(TestContext)]
 #[tokio::test]
 async fn test_scenario_oauth_login_rejects_non_canonical_redirect_uri(ctx: &mut TestContext) {
