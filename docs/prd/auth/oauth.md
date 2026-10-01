@@ -78,7 +78,7 @@
 
 ### 2.1 包含功能
 
-- OAuth Provider 配置管理（Google、GitHub、Facebook、Apple、WeChat、WeChat Mini Program）及 Provider 启用/禁用控制
+- OAuth Provider 配置管理（Google、GitHub、Facebook、Apple、Discord、WeChat、WeChat Mini Program）及 Provider 启用/禁用控制
 - Authorization Code + PKCE 流程（OAuth 2.1 推荐模式），支持第三方 SPA 发起授权请求
 - 用户在 Herald 登录页完成认证后生成 authorization_code，通过 redirect_uri 回传第三方
 - 第三方后端用 authorization_code + code_verifier 换取 access_token
@@ -123,13 +123,13 @@
 
 为 Herald 多租户系统提供完整的 OAuth 与第三方集成能力，包括两个核心功能域：
 
-1. **OAuth Provider 配置管理**：允许 Realm Admin 为每个 Realm 配置第三方登录提供商（Google、GitHub、Facebook、Apple、WeChat、WeChat Mini Program），管理 Provider 的启用/禁用状态和 OAuth 凭证。用户可通过已配置的 Provider 实现 SSO 登录。
+1. **OAuth Provider 配置管理**：允许 Realm Admin 为每个 Realm 配置第三方登录提供商（Google、GitHub、Facebook、Apple、Discord、WeChat、WeChat Mini Program），管理 Provider 的启用/禁用状态和 OAuth 凭证。用户可通过已配置的 Provider 实现 SSO 登录。
 
 2. **第三方应用 OAuth 集成 (Authorization Code + PKCE)**：基于 OAuth 2.1 标准流程，允许第三方 Web 应用通过 Herald 系统验证用户身份。第三方 SPA 发起授权请求，用户在 Herald 完成认证后，通过授权码安全交换令牌。
 
 3. **第三方 API 接入**：第三方应用通过 API Key 认证接入 Herald 系统，实现用户登录状态验证、权限检查和订阅状态查询等功能。Ext API 还提供 Realm、User、Client App、Billing（订阅计划查询）、Points（余额查询与消费）等完整管理能力。详细内容参考各自独立 PRD。
 
-4. **Herald OAuth Client SSO 登录**：Herald 本身作为 OAuth Client，通过通用登录路径 `/api/oauth/{realmId}/{provider}/login` 发起第三方 Provider 授权，回调路径 `/{provider}/callback` 接收授权结果并完成用户关联登录。通用路径适用于 Google、GitHub、Facebook、Apple；微信网站登录使用微信专属路由，小程序通过 code2session 直连接口完成登录，见 [wechat-oauth.md](wechat-oauth.md)。
+4. **Herald OAuth Client SSO 登录**：Herald 本身作为 OAuth Client，通过通用登录路径 `/api/oauth/{realmId}/{provider}/login` 发起第三方 Provider 授权，回调路径 `/{provider}/callback` 接收授权结果并完成用户关联登录。通用路径适用于 Google、GitHub、Facebook、Apple、Discord（Discord 产品语义见 [support-discord.md](support-discord.md)）；微信网站登录使用微信专属路由，小程序通过 code2session 直连接口完成登录，见 [wechat-oauth.md](wechat-oauth.md)。
 
 5. **OAuth 2.0 Device Authorization Grant**：完整实现 RFC 8628 设备授权流程，包含 authorize、token、verify、confirm 四个独立端点，详见独立 PRD `docs/prd/auth/device-code.md`。
 
@@ -155,7 +155,7 @@
 
 **OAuth Provider 管理:**
 - Provider 配置为 Realm 级别资源，仅 Realm Admin 可管理
-- 每个 Realm 可配置多个 OAuth Provider（Google、GitHub、Facebook、Apple、WeChat、WeChat Mini Program）
+- 每个 Realm 可配置多个 OAuth Provider（Google、GitHub、Facebook、Apple、Discord、WeChat、WeChat Mini Program）
 - Provider 可独立启用/禁用；禁用的 Provider 不在登录页显示
 - Provider 配置包含 Client ID、Client Secret、Scopes 和启用状态
 - 编辑 Provider 时 Client Secret 为可选（留空表示保持原值）；前端不应显示已存储的 Client Secret
@@ -188,9 +188,9 @@
 **Herald OAuth Client SSO 登录:**
 - Herald 作为 OAuth Client 通过 `/api/oauth/{realmId}/{provider}/login` 发起第三方 Provider 授权
 - 回调路径 `/{provider}/callback` 接收 Provider 授权结果，创建或关联 OAuth 用户账户，完成 SSO 登录
-- 通用跳转式链路实际服务 Google、GitHub、Facebook、Apple；`wechat` 在通用端点白名单中为死条目（同形专属路由 `/wechat/login` 优先匹配，微信网站登录由专属路由承载）；`wechat_miniprogram` 不经通用登录端点：Provider 未配置或已禁用凭据时返回 404，已配置时因不生成授权 URL 返回 400，登录走专用 code2session 端点
+- 通用跳转式链路实际服务 Google、GitHub、Facebook、Apple、Discord；`wechat` 在通用端点白名单中为死条目（同形专属路由 `/wechat/login` 优先匹配，微信网站登录由专属路由承载）；`wechat_miniprogram` 不经通用登录端点：Provider 未配置或已禁用凭据时返回 404，已配置时因不生成授权 URL 返回 400，登录走专用 code2session 端点
 - OAuth 账户通过 open_id 关联用户；未命中 provider 身份时才按 Email 匹配。回调是由一次性 state 约束的未认证入口，不以浏览器中是否另有 Herald 会话作为关联依据；Email 命中既有账号时 Provider 返回的邮箱必须已验证，未验证邮箱不得用于关联既有账号（防止经 Provider 未验证邮箱接管既有密码账号，如 GitHub 非主邮箱）。唯一例外是由已验签 provider subject 确定性生成且完全匹配的内部占位邮箱，用于恢复“账号已创建但 provider link 未落账”的失败重试
-- **自动建号受 Realm 注册政策门控（注册政策优先）**：当 Provider 凭证未命中已有用户、需要新建账号时，必须先检查当前 Realm 的注册开关（`registration.enabled` / `is_registration_enabled`）。Realm 未开启自动注册时，OAuth 路径**不得**绕过注册政策自动建号，返回注册未开放提示（实现上以 `409 conflict` 表达），引导用户走显式注册入口。已命中已有用户的关联登录不受此门控影响。注册政策还包括可选的注册邮箱域白名单（`registration.allowed_domains`，见 `docs/prd/core/realm-settings.md`）：配置后，Provider 邮箱域名不在白名单内时建号同样返回 `409 conflict`；白名单为空表示不限。该原则与邮箱验证码登录一致（见 `docs/prd/auth/email-otp-login.md` §4.1「注册政策优先」），对所有 OAuth Provider（Google、GitHub、Facebook、Apple、WeChat 等）统一适用。
+- **自动建号受 Realm 注册政策门控（注册政策优先）**：当 Provider 凭证未命中已有用户、需要新建账号时，必须先检查当前 Realm 的注册开关（`registration.enabled` / `is_registration_enabled`）。Realm 未开启自动注册时，OAuth 路径**不得**绕过注册政策自动建号，返回注册未开放提示（实现上以 `409 conflict` 表达），引导用户走显式注册入口。已命中已有用户的关联登录不受此门控影响。注册政策还包括可选的注册邮箱域白名单（`registration.allowed_domains`，见 `docs/prd/core/realm-settings.md`）：配置后，Provider 邮箱域名不在白名单内时建号同样返回 `409 conflict`；白名单为空表示不限。该原则与邮箱验证码登录一致（见 `docs/prd/auth/email-otp-login.md` §4.1「注册政策优先」），对所有 OAuth Provider（Google、GitHub、Facebook、Apple、Discord、WeChat 等）统一适用。
 
 **Herald 作为身份 Broker（brokered downstream-state redirect）:**
 - 当第三方 Client App 已在 Herald `/authorize` 发起自身的 Authorization Code + PKCE 授权事务时，可在跳转 `/api/oauth/{realmId}/{provider}/login` 时携带 `downstream_state` 参数，将该事务标识传递给 Herald
