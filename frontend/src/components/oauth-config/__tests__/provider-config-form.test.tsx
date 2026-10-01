@@ -222,6 +222,24 @@ describe('ProviderConfigForm - Create Mode', () => {
     expect(screen.getByText('(Fixed: snsapi_login)')).toBeInTheDocument()
   })
 
+  it('GIVEN creating discord provider WHEN selecting discord THEN should auto-fill scopes with identify and email', async () => {
+    const user = userEvent.setup({ delay: null })
+
+    render(<ProviderConfigForm {...defaultProps} />)
+
+    const providerSelectTrigger = screen.getByTestId('oauth-provider-type-select')
+    await user.click(providerSelectTrigger)
+
+    const discordOptions = await screen.findAllByText('Discord')
+    const discordOption =
+      discordOptions.find((element) => element.tagName !== 'OPTION') ?? discordOptions[0]
+    await user.click(discordOption)
+
+    const scopesInput = screen.getByTestId('oauth-scopes-input') as HTMLInputElement
+    expect(scopesInput.value).toBe('identify, email')
+    expect(scopesInput).not.toBeDisabled()
+  })
+
   it('GIVEN creating wechat_miniprogram provider WHEN selecting wechat_miniprogram THEN should hide scopes field', async () => {
     const user = userEvent.setup({ delay: null })
 
