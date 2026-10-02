@@ -9,52 +9,34 @@
 
 > 详细故事与验收标准请查看 `docs/user-stories/` 中对应文档。
 
-### 1.1 相关故事
-
-- US-AP-001～004：异步支付积分策略、提前发放、失败回收与未回收负债（P0/P1），来源 `docs/user-stories/billing/async-payment-points.md`
-
-**Tenant Admin 积分管理**: `docs/user-stories/billing/points-admin.md`
-- US-PO-001: 配置积分套餐 (P0)
-- US-PO-002: 查看所有用户积分账户 (P1)
-- US-PO-003: 查看用户积分交易历史 (P1)
-- US-PO-004: 管理积分套餐配置 (P2)
-- US-PO-005: 查看套餐充值引导 (P2)
-- US-PO-006: 配置 Realm 默认积分策略 (P0)
-- US-PO-007: 查看免费用户积分统计 (P1) —— 不随 billing-statistics 首版交付（免费用户发放/转化漏斗口径，见 `docs/prd/billing/billing-statistics.md` §2.2 与 Q-billing-statistics-003）
-- US-PO-009: 配置多时间窗滚动配额 (P0)
-
-**Tenant User 积分查询**: `docs/user-stories/billing/points-user.md`
-- US-PU-001: 查看我的积分余额 (P0)
-- US-PU-002: 查看我的交易历史 (P1)
-- US-PU-003: 筛选交易记录 (P2)
-- US-PU-009: 按时使用本期积分（不受分发延迟影响）(P0) —— 由 US-PU-010 取代
-- US-PU-010: 滚动窗口额度与充值余额的可用性体验 (P0)
-
-**免费用户积分体验**: `docs/user-stories/billing/points-free-user.md`
-- US-FU-001: 注册时获得初始积分（永久有效）(P0)
-- US-FU-002: 定期自动获得免费积分（支持 once/daily/weekly/monthly）(P0)
-- US-FU-003: 升级到付费套餐时保留注册初始积分 (P1)
-- US-FU-004: 按时获得每期免费积分（不受分发延迟影响）(P0) —— 由 US-FU-005 取代
-- US-FU-005: 免费周期积分改为滚动窗口配额 (P0)
-
-**积分包购买**: `docs/user-stories/billing/points-package-purchase.md`
-- US-PU-006: 购买积分包 (P0)
-- US-PU-007: 查看积分包购买记录 (P1)
-- US-PU-008: 理解积分包与订阅购买的区别 (P1)
-
-**积分发放（管理员/SDK）**: `docs/user-stories/billing/points-admin.md` / `docs/user-stories/integration/sdk.md`
-- US-PO-008: 主动发放积分 (P0) — 管理员向指定用户发放积分，支持设置有效期和发放原因
-- US-TP-017: 通过 SDK 发放积分 (P0) — 第三方应用通过 SDK 向用户发放积分
+| US-ID | 标题 | 优先级 | 来源 |
+|-------|------|--------|------|
+| US-AP-001～004 | 异步支付积分策略、提前发放、失败回收与未回收负债 | P0/P1 | `docs/user-stories/billing/async-payment-points.md` |
+| US-PO-001 | 配置积分套餐 | P0 | `docs/user-stories/billing/points-admin.md` |
+| US-PO-002 | 查看所有用户积分账户 | P1 | `docs/user-stories/billing/points-admin.md` |
+| US-PO-003 | 查看用户积分交易历史 | P1 | `docs/user-stories/billing/points-admin.md` |
+| US-PO-004 | 管理积分套餐配置 | P2 | `docs/user-stories/billing/points-admin.md` |
+| US-PO-005 | 查看套餐充值引导 | P2 | `docs/user-stories/billing/points-admin.md` |
+| US-PO-006 | 配置 Realm 默认积分策略 | P0 | `docs/user-stories/billing/points-admin.md` |
+| US-PO-007 | 查看免费用户积分统计——不随 billing-statistics 首版交付（免费用户发放/转化漏斗口径，见 `docs/prd/billing/billing-statistics.md` §2.2 与 Q-billing-statistics-003） | P1 | `docs/user-stories/billing/points-admin.md` |
+| US-PO-008 | 主动发放积分 | P0 | `docs/user-stories/billing/points-admin.md` |
+| US-PO-009 | 配置多时间窗滚动配额 | P0 | `docs/user-stories/billing/points-admin.md` |
+| US-PU-001 | 查看我的积分余额 | P0 | `docs/user-stories/billing/points-user.md` |
+| US-PU-002 | 查看我的交易历史 | P1 | `docs/user-stories/billing/points-user.md` |
+| US-PU-003 | 筛选交易记录 | P2 | `docs/user-stories/billing/points-user.md` |
+| US-PU-009 | 按时使用本期积分（不受分发延迟影响）——由 US-PU-010 取代 | P0 | `docs/user-stories/billing/points-user.md` |
+| US-PU-010 | 滚动窗口额度与充值余额的可用性体验 | P0 | `docs/user-stories/billing/points-user.md` |
+| US-FU-001 | 注册时获得初始积分（永久有效） | P0 | `docs/user-stories/billing/points-free-user.md` |
+| US-FU-002 | 定期自动获得免费积分（支持 once/daily/weekly/monthly） | P0 | `docs/user-stories/billing/points-free-user.md` |
+| US-FU-003 | 升级到付费套餐时保留注册初始积分 | P1 | `docs/user-stories/billing/points-free-user.md` |
+| US-FU-004 | 按时获得每期免费积分（不受分发延迟影响）——由 US-FU-005 取代 | P0 | `docs/user-stories/billing/points-free-user.md` |
+| US-FU-005 | 免费周期积分改为滚动窗口配额 | P0 | `docs/user-stories/billing/points-free-user.md` |
+| US-PU-006 | 购买积分包 | P0 | `docs/user-stories/billing/points-package-purchase.md` |
+| US-PU-007 | 查看积分包购买记录 | P1 | `docs/user-stories/billing/points-package-purchase.md` |
+| US-PU-008 | 理解积分包与订阅购买的区别 | P1 | `docs/user-stories/billing/points-package-purchase.md` |
+| US-TP-017 | 通过 SDK 发放积分 | P0 | `docs/user-stories/integration/sdk.md` |
 
 > 注：本地积分包管理（US-PP-001~005）和促销积分包（US-PP-006, US-PP-016~018）已由支付平台产品管理 + Entitlement 映射取代。
-
-### 1.2 优先级汇总
-
-| 优先级 | 数量 | 关键故事 |
-|--------|------|----------|
-| P0 | 13 | US-PO-001, US-PO-006, US-PO-008, US-PO-009, US-PU-001, US-PU-004, US-PU-006, US-PU-010, US-FU-001, US-FU-002, US-FU-005, US-TP-017 |
-| P1 | 7 | US-PO-002, US-PO-003, US-PO-007, US-PU-002, US-PU-005, US-PU-007, US-PU-008, US-FU-003 |
-| P2 | 3 | US-PO-004, US-PO-005, US-PU-003 |
 
 ---
 
@@ -62,6 +44,8 @@
 
 ### 2.1 包含功能
 
+- **积分池组织单位**：积分池按积分账户组织，每个用户对每个持有的积分账户拥有独立积分池（`user × bucket`），已替换单一钱包模型；积分账户目录、覆盖集、归属、跨池消费与履约路由的完整规则见 `docs/prd/billing/credit-bucket.md`。本 PRD 描述积分类型、过期、消费优先级、退款回收等积分核心规则，其"池归属"维度以积分账户为准
+- **积分分发规则（`points_distribution_rules`）**：注册、免费周期、订阅等自动发放不再各自只把一次触发路由到单一账户和一组积分策略，而是由统一的 `points_distribution_rules` 承载。一次触发可命中多条规则，每条规则指定一个目标积分账户和发放策略（fixed 周期积分 **或** 滚动窗口 quota），向多个账户扇出发放。决策账本 `DEC-multi-wallet-grant-rules-011` 已显式推翻本 PRD 早期基线中"订阅/免费周期仅可用 quota 滑动窗口"的约束——fixed 周期积分现为可配置策略；本文其余"滑动窗口配额"描述指的是 quota 策略本身的能力，不再表示唯一允许的模型。详见 `.ai/decision-log/multi-wallet-grant-rules.md`
 - 积分账户管理（创建、查询）
 - 积分余额查询
 - 积分消耗/扣除（SDK API）
@@ -81,7 +65,7 @@
 - Realm 默认配置：管理员配置免费周期积分策略（多时间窗滚动配额）
 - 注册初始积分：用户注册时自动获得一次性积分（永久有效）
 - 免费用户升级：免费用户升级到付费套餐时撤销免费窗口额度，注册初始积分保留
-- 一次性积分购买：用户通过 one-time entitlement mapping 产品购买充值积分
+- 一次性积分购买：用户通过 one-time entitlement mapping 产品购买充值积分，不创建订阅
 - 管理员主动发放积分：向指定用户发放指定数量的积分，附带发放原因和可选有效期
 - SDK 发放积分：第三方应用通过 SDK 向用户发放积分，附带原因和可选有效期
 
@@ -110,41 +94,6 @@
 
 ---
 
-## 3. 需求概述
-
-### 3.1 功能描述
-
-> **积分池组织单位**：积分池按积分账户组织，每个用户对每个持有的积分账户拥有独立积分池（`user × bucket`），已替换单一钱包模型。积分账户目录、覆盖集、归属、跨池消费与履约路由的完整规则见 `docs/prd/billing/credit-bucket.md`；本 PRD 描述积分类型、过期、消费优先级、退款回收等积分核心规则，其"池归属"维度以积分账户为准。
-
-积分系统是 Herald 多租户认证与授权系统中的虚拟货币子系统，按积分账户为用户提供独立的积分池管理能力。系统与订阅计费套餐深度集成，支持通过购买套餐定期自动获得积分，第三方应用可以通过授权 SDK 消耗积分来实现按次/按量计费场景。
-
-免费用户积分系统为未付费用户提供基础的积分体验，包括注册时的初始积分赠送和定期自动积分发放。该系统独立于订阅计费系统，通过 Realm 级别的配置实现灵活的免费用户积分策略。
-
-当前 PRD 基线以 `entitlement_key` 级积分配置为主。Billing 不再维护本地 Plan/Product 目录，Points 通过 `provider_entitlement_mappings.entitlement_key` 查找订阅积分策略。
-
-一次性积分购买已从本地积分包目录迁移到支付平台产品 + Entitlement 映射架构。
-
-### 3.2 关键特性
-
-> **积分分发规则（`points_distribution_rules`）**：注册、免费周期、订阅等自动发放不再各自只把一次触发路由到单一账户和一组积分策略，而是由统一的 `points_distribution_rules` 承载。一次触发可命中多条规则，每条规则指定一个目标积分账户和发放策略（fixed 周期积分 **或** 滚动窗口 quota），向多个账户扇出发放。决策账本 `DEC-multi-wallet-grant-rules-011` 已显式推翻本 PRD 早期基线中"订阅/免费周期仅可用 quota 滑动窗口"的约束——fixed 周期积分现为可配置策略。下方仍保留的"滑动窗口配额"描述指的是 quota 策略本身的能力，不再表示唯一允许的模型。详见 `.ai/decision-log/multi-wallet-grant-rules.md`。
-
-- **按积分账户多池账户**: 每个用户对每个持有的积分账户拥有独立积分池，支持同一用户多池并存（池组织见 `docs/prd/billing/credit-bucket.md`）
-- **SDK 授权消费接口**: 提供基于 API Key 授权的 SDK，供第三方应用安全调用积分消耗接口
-- **多时间窗滚动配额**: 订阅/免费周期额度支持叠加多个时间窗（如 5 小时/周/月），可用额度取各窗口剩余最小值
-- **懒发放（限 quota 策略）**: 订阅/免费周期的 quota 额度不再后台预发，按用户访问/消费时刻实时计算；周期中途新增用户首访即得，不活跃用户零后台开销。fixed 周期积分策略由后台按排期预发（不活跃用户照常扫描写入）
-- **混合消费协调**: 单次消费在事务内先用窗口额度，超额原子转充值/注册/发放池，合计不足整体拒绝
-- **交易追溯**: 完整的积分交易历史记录，支持审计和对账
-- **管理界面**: 提供租户管理员管理积分套餐、查看积分报表、配置多窗口配额的功能
-- **用户自助查询**: 用户可查询个人积分余额（窗口剩余 + 充值余额双展示）和交易历史
-- **注册初始积分**：用户注册时自动获得一次性积分，永久有效，不可重复获取
-- **免费周期滚动窗口额度**：免费用户按多时间窗滚动配额获得可用额度，不累积，用不完随窗口滑出释放
-- **独立于订阅系统**：免费用户不需要创建订阅记录，避免 $0 订阅污染
-- **升级平滑过渡**：免费用户升级到付费套餐时注册初始积分保留，免费窗口额度停止
-- **管理员可配置**：租户管理员可配置订阅与免费周期的多时间窗滚动配额
-- **一次性积分购买**：用户通过 one-time entitlement mapping 产品购买充值积分，不创建订阅
-
----
-
 ## 4. 业务规则与状态
 
 ### 4.1 业务规则
@@ -152,6 +101,7 @@
 **积分账户**：
 - 积分池按积分账户组织，每个用户对每个持有的积分账户拥有独立积分池，余额以整数存储，单位固定为 points（池组织与覆盖/路由见 `docs/prd/billing/credit-bucket.md`）
 - 每个 `(user, bucket)` 池相互独立，支持 realm 级别隔离
+- 积分钱包按 `(用户, 积分账户)` 懒创建：用户创建时不预建，首次对该账户发放或消费时在事务内确保钱包存在（多钱包模型，支持多租户隔离）
 - 积分账户和余额接口返回 unit = "points" 表示余额单位
 - 支持账户状态管理（正常/冻结/关闭）：持 `points.manage` 的管理员可按 `(user, bucket)` 更新钱包状态；冻结或关闭后发放与消费均拒绝
 
@@ -194,13 +144,15 @@
 **积分消费优先级（池子类型）**：
 - 按过期时间优先消费即将过期的积分（expires_at 升序，NULL 排最后表示永久有效）
 - 不需要调用方指定消费哪种类型的积分，系统根据可用余额自动计算消费分摊
-- 单次消费必须原子性地完成跨类型的积分扣减，不允许部分扣减导致数据不一致
+- 单次消费必须原子性的完成跨类型的积分扣减，不允许部分扣减导致数据不一致
+- 每次 SDK 调用记录交易历史（包含交易 ID、用户 ID、Client App ID、消耗数量、时间戳、说明）
 
 **查询与展示**：
 - 用户查询余额时，对走窗口模型的权益须展示**各窗口剩余额度**与**充值余额**，并提供合计可用
 - 余额反映"当前时刻可消费额度"：窗口剩余取各窗口 min，叠加充值余额
 - 管理员查询账户时，区分展示窗口配额权益（生效区间/窗口配额）与池子余额明细
 - 权限隔离：用户只能查询自己的记录，管理员可查询全租户记录
+- 交易历史查询支持按时间范围、交易类型、用户 ID（仅管理员）、Client App ID 筛选，分页查询
 - ext API 查询单笔交易：支持通过 external_ref_id 查询单笔交易详情
 
 **配置约束**：
@@ -215,6 +167,7 @@
 - 直接充值购买：发放 topup_credit
 - 用户注册：发放 registration_credit，并授予 free_periodic_credit 配额权益。覆盖所有自助注册入口——密码注册（含邮箱验证确认）、邮箱验证码自动注册、LDAP JIT 开通、OAuth 首次登录建号；以 `registration:{user_id}` 幂等键保证每用户仅一次。管理员建号与平台开通建号（初始 Realm 管理员）不发注册积分
 - 免费用户：按 realm default 的多时间窗滚动配额授予 free_periodic_credit 配额权益
+- Realm 注册/免费周期发放配置由注册分发规则（`points_distribution_rules`，`owner_type=realm_registration`）承载（见 multi-wallet-grant-rules.md）；新 Realm 不自动创建默认规则——无启用规则时注册正常完成、不发积分，管理员通过 registration-rules 端点显式配置注册初始积分与免费周期配额
 
 **退款积分回收**：
 - 充值退款（topup_credit 退款）：按未使用比例回收 topup_credit（proportional revocation），已使用部分不回收
@@ -246,7 +199,7 @@
 - 积分数量必须大于 0
 - 发放原因为必填项
 - 有效期可选：指定天数（> 0）或永久有效（不设置）
-- 管理员只能向本 Realm 内用户发放积分
+- 管理员只能向本 Realm 内用户发放积分（管理员发放接口需 `points.manage` 权限）
 - SDK 发放受 API Key 权限控制，遵循 Realm 隔离
 - 发放操作生成交易记录（类型为 grant），包含操作者标识（管理员身份或 API Key / Client App 标识）
 
@@ -281,15 +234,15 @@
 
 - Realm 可选择保守策略（默认）或积极策略；未配置支付平台时不展示该配置。
 - 保守策略仅在异步支付确认成功后发放积分；支付失败时因未发放而无需回收。
-- 积极策略可在 checkout 完成但款项未确认时提前发放；后续成功事件必须幂等，不得重复发放。
-- 积极策略下支付最终失败时，回收该次发放中尚未消费的积分，并更新支付尝试及订阅状态。
+- 积极策略可在 checkout 完成但款项未确认时提前发放，复用同步支付的积分履约，并记录本次支付是否已经发放；后续成功事件必须幂等，不得重复发放。
+- 积极策略下支付最终失败时，按原发放记录回收该次发放中尚未消费的积分并记录交易，同时更新支付尝试及订阅状态。
 - 回收不得使余额低于零；不足部分以带 `debt:` 原因的账本记录保留，供管理员查询与线下对账。当前没有独立的负债结清状态，因此不会据此自动永久冻结后续使用。
 - 策略修改只影响后续支付，不追溯改变已经发放的积分。
 
 - **积分不足**：SDK 调用消耗积分时余额不足，返回明确错误；混合消费下窗口额度与充值余额合计不足时整体拒绝，不部分扣减
 - **窗口额度耗尽但充值余额充足**：单次消费超额部分原子转充值池扣减，用户无感切换
 - **周期中途新增用户**：首访/首消费即得窗口额度，不依赖后台预发或上一期事件链
-- **不活跃用户（限 quota 策略）**：无后台预发写入、无回收调度；fixed 周期规则的排期发放仍会扫描并写入（见 §3.2 懒发放限定）
+- **不活跃用户（限 quota 策略）**：无后台预发写入、无回收调度；fixed 周期规则的排期发放仍会扫描并写入（见 §2.1 懒发放限定）
 - **账户冻结/关闭**：账户状态异常时，积分操作受限
 - **重复发放**：注册初始积分基于 user_id 去重，Webhook 事件与配额权益授予基于幂等键去重
 - **部分失败**：异步任务失败时，通过补偿接口退回已消费积分（使用 external_ref_id 关联原始消费交易），补偿积分继承原积分类型和过期时间。当前状态：该补偿调用路径尚未提供（无端点、无 job、无内部调用方）；现行部分失败恢复依赖支付事件幂等键 + 重试任务的履约重放，以及积极策略失败回收的负债记录（`debt:` 原因账本）
@@ -297,46 +250,14 @@
 
 ---
 
-## 5. 功能需求
-
-### 5.1 核心需求
-
-**异步支付发放与回收**：
-
-- 管理员可查看和切换异步支付积分策略，选择时看到提前发放的资金风险。
-- 积极策略复用同步支付的积分履约，并记录本次支付是否已经发放。
-- 异步成功确认不重复履约；异步失败按原发放记录回收并记录交易。
-- 余额不足时只扣减现有余额，剩余金额形成可查询的负债记录。
-- 管理员可通过 `PATCH /api/points/wallets/{userId}/{bucketId}/status`（路径无 realm 段，realm 由 admin 会话钉定）将具体钱包设置为 `active`、`frozen` 或 `closed`；目标用户、账户与调用身份均按 Realm 校验。
-
-- 积分钱包按 (用户, 积分账户) 懒创建：用户创建时不预建单一积分账户，首次对该账户发放或消费时在事务内确保钱包存在（多钱包模型，支持多租户隔离）
-- SDK 提供消耗积分的异步接口，需 API Key 授权，使用 ThirdParty 身份认证
-- 支持原子性扣减积分，防止超扣
-- 每次 SDK 调用记录交易历史（包含交易 ID、用户 ID、Client App ID、消耗数量、时间戳、说明）
-- 严格检查 realm 访问权限，防止跨 realm 消耗
-- 订阅/免费周期积分支持多时间窗滚动配额配置，可用额度取各窗口剩余最小值
-- 订阅/免费周期积分按滑动窗口实时计算可用额度，不依赖后台全表预发
-- 单次消费在事务内原子完成窗口额度优先 + 超额转充值池，合计不足整体拒绝
-- 管理员可配置每个套餐对应的积分赠送规则（池子）和多时间窗滚动配额
-- 管理员可配置 Realm 默认免费周期多时间窗滚动配额
-- 修改配置仅影响后续授予的配额权益，不影响已授予权益
-- 交易历史查询支持按时间范围、交易类型、用户 ID（仅管理员）、Client App ID 筛选，分页查询
-- Realm 注册/免费周期发放配置由注册分发规则承载（`points_distribution_rules`，owner_type=realm_registration，见 multi-wallet-grant-rules.md）；新 Realm 不自动创建默认规则——无启用规则时注册正常完成、不发积分，管理员通过 registration-rules 端点显式配置注册初始积分与免费周期配额
-- 异步任务积分补偿：通过 external_ref_id 关联原始消费交易，补偿积分继承原积分类型和过期时间，保证幂等性（当前未提供可调用的补偿路径，恢复依赖支付事件重试与负债记录，见 §4.2 部分失败条目）
-- 管理员发放接口：支持指定用户、积分数量、有效期（天数或永久）、发放原因；需 `points.manage` 权限
-- SDK 发放方法：与现有 SDK 方法风格一致，支持指定用户、积分数量、有效期、发放原因
-- 发放成功后创建交易记录（类型为 grant），更新用户积分余额
-- 前端管理页面新增"发放积分"入口和表单（用户选择、数量输入、有效期设置、原因输入）
-- 用户余额页区分展示窗口剩余额度（按窗口）与充值余额，并提供合计可用额度
-
-### 5.2 验收目标
+## 5. 验收目标
 
 - 保守策略下，未确认的异步支付不会提前增加积分；积极策略下积分可立即使用。
 - 积极策略的成功确认不重复发放，最终失败能回收未消费积分并记录不足部分负债。
 
 - 用户注册后自动获得初始积分（如果 Realm 配置启用），积分永久有效且不可重复获取
 - 周期中途新增的订阅/免费用户，在首次查询余额或首次消费时即获得窗口额度，不依赖后台预发
-- 不活跃用户在后台调度中不产生 quota 预发写入与回收（fixed 周期规则的排期发放除外，见 §3.2 懒发放限定）
+- 不活跃用户在后台调度中不产生 quota 预发写入与回收（fixed 周期规则的排期发放除外，见 §2.1 懒发放限定）
 - 多时间窗叠加时可用额度取各窗口剩余最小值；某窗口滑出后对应额度恢复
 - 滑动窗口按消费时间精确滑动，非整点固定窗
 - SDK 调用能正确消耗积分，窗口额度优先，超额原子转充值池；合计不足整体拒绝
@@ -356,63 +277,53 @@
 
 ---
 
-## 6. API 相关约束
+## 6. 边界与约束
 
-**适用性**: 适用
+**适用性**: 适用（API 与前端/交互边界合并陈述）
 
+**API / 集成边界:**
 - 接口能力范围包括：积分账户查询与管理员钱包状态更新（含窗口剩余 + 充值余额双维度）、积分消费类（SDK，含混合消费协调）、积分充值/发放类、交易历史查询类、Entitlement Mapping 积分策略配置类（随 mapping 管理的 `points_distribution_rules`）、Realm 注册积分分发规则管理类（`registration-rules`，`owner_type=realm_registration`）、Webhook 回调处理类
 - 内部直写端点（demo/test-only）：`POST /api/internal/points/{realmId}/quota-entitlement/{grant,revoke}` 绕过用户认证与 `points_distribution_rules`，直接构造/撤销 `PointsQuotaEntitlement`（复刻 webhook 路径产物，供快速 demo/E2E 使用）。该端点仅由 `X-Internal-API-Key`（`INTERNAL_API_KEY` 密钥）防护、fail-closed，不进入 OpenAPI/SDK；生产部署不得配置该密钥，否则构成绕过分发规则的发放入口
 - 访问控制：SDK 消耗接口需 API Key 授权（ThirdParty 身份）；管理类接口需 Realm Admin 权限；用户查询类接口仅允许查询本人数据
 - SDK 消耗积分时校验 API Key 对 client_app 的作用域（client_app_scope），确保 API Key 只能操作其授权范围内的 client_app 积分
 - API Key 鉴权实时校验其绑定 Client App 的启用状态（包括缓存命中路径）：Client App 被禁用后，其 API Key 立即失效并返回 401，不依赖缓存 TTL 过期
-- 限流策略（生效范围：SDK ext 消费与发放两点，即 `/api/ext` 下的 consume 与 grant 端点）：realm 级别 100 次/分钟，user 级别 20 次/分钟；api-points 管理端点当前不设独立限流
-- SDK 消费幂等（`/api/ext/points/{realmId}/consume` 的 `idempotencyKey`）：键上限 255 字节（超限 400，防共享 Redis 的持久键名膨胀）；同键同负载重放返回首次结果；同键异负载 409 `idempotency_conflict`；状态标记丢失（60s 在途 TTL 到期/写入失败/完成前崩溃）时失败关闭为 409（先前排键重放会二次扣减）；缓存记录比请求指纹存活更久（完成滞后超过 1h 时域）同样 409——ext consume 路由（仅该路由，非 ext 整体）有 60s 请求上限，正常路径不可能进入该状态
+- 限流策略（生效范围：SDK ext 消费与发放两点）：realm 级别与 user 级别双层限流，阈值为后端运行常量；api-points 管理端点当前不设独立限流
+- SDK ext 消费幂等（`idempotencyKey`）：键上限 255 字节（超限 400，防共享 Redis 的持久键名膨胀）；同键同负载重放返回首次结果；同键异负载 409 `idempotency_conflict`；状态标记丢失（在途 TTL 到期/写入失败/完成前崩溃）时失败关闭为 409（先前排键重放会二次扣减）；缓存记录比请求指纹存活更久（完成滞后超出在途时域）同样 409——ext consume 路由（仅该路由，非 ext 整体）有请求时长上限，正常路径不可能进入该状态
 - 管理接口权限：所有管理端点经灵活认证中间件认证后，再经 admin-console 凭据闸门（仅第一方 admin-web-console Bearer token 可通过，API Key 与第三方 Bearer 一律 403；第三方 API Key 走 `/api/ext/points/*`），最后在 handler 内以 `require_authenticated_user_in_realm`（Realm 归属校验）+ 权限校验进行控制：
   - 积分数据查询（wallets、transactions）：`points.manage`。`points.view` 授权用户本人数据查询（经用户自查端点）；管理端跨用户查询 wallets/transactions 需 `points.manage`（内置 user 角色持有 `points.view`，若管理端仅要求 view 会导致普通用户跨用户读取积分数据）
   - Entitlement Mapping 的积分分发规则（随 mapping 的 `point_rules`）：随 mapping CRUD，`billing.manage`（带 `point_rules` 时额外要 `points.manage`）
   - Realm 注册积分分发规则（`registration-rules`，`owner_type=realm_registration`）：读操作 `points.view`，写操作 `points.manage`
+- 钱包状态更新端点路径无 realm 段，realm 由 admin 会话钉定；目标用户、账户与调用身份均按 Realm 校验
 - 积分变更必须可追溯，所有发放、消费、回收操作创建交易记录
-- 消费原子性：单次消费的窗口额度扣减与池子扣减必须在同一事务内原子完成
 - Realm 隔离：所有接口严格遵守 realm 数据边界，防止跨 realm 操作
-- Webhook 回调处理需保证幂等性，防止重复授予或重复撤销配额权益
 
----
-
-## 7. 前端/交互约束
-
-**适用性**: 适用
-
+**前端 / 交互边界:**
 - 管理入口：租户管理员可在管理后台访问 Entitlement Mapping 积分策略配置（随 mapping 的分发规则）、积分报表、Realm 注册积分分发规则管理页面
 - 用户入口：用户可在个人中心查看积分余额（窗口剩余 + 充值余额双展示）和交易历史
 - 积分充值页面：展示套餐兑换积分的比例和预期获得积分数
 - 套餐/积分策略配置页：积分策略支持配置多时间窗滚动配额（窗口长度 × 上限的集合）
 - Realm 注册积分分发规则页：注册与免费周期发放按 `points_distribution_rules`（`owner_type=realm_registration`）配置，每条规则指定目标账户和发放策略（fixed 周期积分或滚动窗口 quota），支持多时间窗滚动配额
-- 交易历史：支持按时间范围、交易类型、来源应用筛选
+- 交易历史：支持按时间范围、交易类型、来源应用筛选；"发放"类型记录可按现有筛选规则查看
 - 状态反馈：积分变更时（发放、消费、过期、回收、配额权益授予/撤销）提供明确的状态提示
 - 免费用户积分：展示窗口剩余额度与恢复时间
 - 积分发放入口：在积分管理页面或用户积分账户详情页提供"发放积分"按钮
 - 发放表单字段：用户选择（下拉搜索）、积分数量（正整数）、有效期（天数输入或"永久有效"选项）、发放原因（文本输入）
 - 发放确认：提交前显示确认弹窗，包含发放摘要（用户、数量、有效期），需管理员二次确认
 - 配置校验与反馈：多窗口配额配置提供合理性校验（窗口长度为正、上限非负），非法配置给出明确提示
-- 交易历史中"发放"类型记录可按现有筛选规则查看
+- 异步支付积分策略：管理端可查看与切换策略，选择时展示提前发放的资金风险提示
 - 金额/积分变化场景必须突出变化量、变更影响范围和不可逆风险提示
 
 ---
 
-## 8. 已确认决策
+## 7. 已确认决策
 
 > **被后续决策覆盖的条款**：下列关于"subscription_credit / free_periodic_credit 采用 usage-based 滑动窗口配额"和"配额定义归属 entitlement mapping（订阅）与 realm default config（免费周期），不挂账户"的描述，已被 `DEC-multi-wallet-grant-rules-006`（移除单一钱包/单一积分策略字段）和 `DEC-multi-wallet-grant-rules-011`（允许订阅/免费周期规则同时配置 fixed 周期积分或滚动窗口 quota）显式推翻并扩展。当前权威规则以 `.ai/decision-log/multi-wallet-grant-rules.md` 为准：发放策略由 `points_distribution_rules` 承载，每条规则按 owner（entitlement mapping / realm registration）× trigger × policy（fixed 或 quota）路由到目标账户，一次触发可多账户扇出。本节保留历史决策以记录演进，不作为当前唯一约束。
-
-### 8.1 已确认决策
 
 - 积分余额单位固定为 points，不使用法币 currency 表示
 - 计费模型分治：subscription_credit / free_periodic_credit 采用 usage-based 滑动窗口配额；topup_credit / registration_credit / granted_credit 维持池子模型不变
 - 积分消费优先级采用过期时间优先策略（池子类型），窗口额度优先于池子扣减
 - 免费用户积分系统独立于订阅系统，不需要创建 $0 订阅记录
-- 免费用户升级时免费窗口额度立即停止，注册初始积分保留
 - 当前正式配置对象是 `entitlement_key`，不再使用 Plan 级配置
-- 多时间窗滚动配额取各窗口剩余最小值，最严约束生效
-- 滑动窗口按消费时间精确滑动，非整点固定窗
 - 懒发放：取消后台全表预发，可用额度在读/消费路径按需计算
 - 订阅生命周期回收语义从"回收 ledger 行"改为"撤销配额权益"，已消费量不反向调整
 - 配额定义归属 entitlement mapping（订阅）与 realm default config（免费周期），不挂账户
@@ -420,19 +331,14 @@
 - 积分补偿使用现有 grant_points_internal 方法，无需新增 API（补偿路径定位为内部调用；当前尚无调用方，见 §4.2 部分失败条目的现状标注）
 - 价格使用最小货币单位（分）存储，避免浮点精度问题
 - 不创建独立的活动/活动实体，积分发放直接附带原因
-- 发放原因为必填项，有效期可选（天数或永久有效）
 - SDK 发放方法与现有 SDK 风格一致
 - granted_credit 不因类型获得消费优先级特殊处理，沿用过期时间优先规则
 
 ---
 
-## 9. 参考资料
+## 8. 参考资料
 
-- 用户故事：`docs/user-stories/billing/points-admin.md`
-- 用户故事：`docs/user-stories/billing/points-user.md`
-- 用户故事：`docs/user-stories/billing/points-free-user.md`
-- 用户故事：`docs/user-stories/billing/points-package-purchase.md`
-- 用户故事：`docs/user-stories/billing/credit-bucket.md`
+- 用户故事来源见 §1 表格；另有用户故事：`docs/user-stories/billing/credit-bucket.md`
 - 相关 PRD：`docs/prd/billing/subscription.md`
 - 相关 PRD：`docs/prd/billing/credit-bucket.md`
 - 需求来源：`.ai/future/points_plus.md`

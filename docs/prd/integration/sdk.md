@@ -9,30 +9,12 @@
 
 > 详细故事与验收标准请查看 `docs/user-stories/integration/sdk.md`。
 
-### 1.1 相关故事
-
-- **[US-TP-012]** 通过 SDK 管理 Realm，优先级 P1，来源 `docs/user-stories/integration/sdk.md`
-  - 角色：Third-Party App
-  - 摘要：编程式创建、查询列表、查询详情 Realm
-
-- **[US-TP-013]** 通过 SDK 管理用户，优先级 P0，来源 `docs/user-stories/integration/sdk.md`
-  - 角色：Third-Party App
-  - 摘要：在指定 Realm 中创建、查询列表、查询详情用户
-
-- **[US-TP-014]** 通过 SDK 管理 Client App，优先级 P1，来源 `docs/user-stories/integration/sdk.md`
-  - 角色：Third-Party App
-  - 摘要：编程式创建、查询列表、查询详情 Client App
-
-- **[US-TP-017]** 通过 SDK 发放积分，优先级 P0，来源 `docs/user-stories/integration/sdk.md`
-  - 角色：Third-Party App
-  - 摘要：通过 SDK 向指定用户发放积分（必须指定目标 Credit Bucket，可设有效期），数量须为正且不超过 1,000,000
-
-### 1.2 优先级汇总
-
-| 优先级 | 数量 | 关键故事 |
-|--------|------|----------|
-| P0 | 2 | 通过 SDK 管理用户、通过 SDK 发放积分 |
-| P1 | 2 | 通过 SDK 管理 Realm、通过 SDK 管理 Client App |
+| US-ID | 标题 | 优先级 | 来源 |
+|-------|------|--------|------|
+| US-TP-012 | 通过 SDK 管理 Realm | P1 | `docs/user-stories/integration/sdk.md` |
+| US-TP-013 | 通过 SDK 管理用户 | P0 | `docs/user-stories/integration/sdk.md` |
+| US-TP-014 | 通过 SDK 管理 Client App | P1 | `docs/user-stories/integration/sdk.md` |
+| US-TP-017 | 通过 SDK 发放积分 | P0 | `docs/user-stories/integration/sdk.md` |
 
 ---
 
@@ -65,25 +47,6 @@
 
 ---
 
-## 3. 需求概述
-
-### 3.1 功能描述
-
-当前 Rust SDK 仅覆盖权限检查、订阅管理和积分系统三类能力。第三方应用开发者若需要通过编程方式管理 Realm、用户和 Client App 等核心资源，只能自行调用内部 API 或登录管理后台手动操作。
-
-本次增强为 SDK 补齐核心资源的管理能力，使第三方应用能够通过 SDK 自动完成用户开通、应用注册和组织（Realm）初始化，降低集成门槛。
-
-### 3.2 关键特性
-
-- **Realm 管理**：创建、查询列表、查询详情
-- **用户管理**：创建、查询列表、查询详情（P0）
-- **Client App 管理**：创建、查询列表、查询详情
-- **积分发放**：向指定用户显式发放积分（P0，必须指定目标 Credit Bucket，数量 1 ~ 1,000,000）
-- **与现有 SDK 风格一致**：共享 Client 实例、统一错误类型、API Key 认证
-- **统一 Principal 权限语义**：API Key 代表第三方服务端机器凭据；API Key 自身作为 Principal 参与授权，能力由角色/权限决定，资源边界由 Realm 隔离决定
-
----
-
 ## 4. 业务规则与状态
 
 ### 4.1 业务规则
@@ -92,10 +55,25 @@
 - 使用统一 Principal + RBAC 模型，API Key 不携带 runtime/management scope，能力由 Principal 的角色和 role policy 决定
 - Realm 隔离：用户和 Client App 操作仅限 API Key 所属 Realm
 - Realm 创建特权：创建 Realm 需 API Key Principal 在 admin realm 具备 `realm:manage` 权限，普通 Realm 的 API Key 不可创建 Realm（RBAC 初始化仅对 admin realm 注册 `realm:manage` 权限）
-- 严格的目标资源等值边界：用户、Client App 等带目标 Realm 的操作要求 Principal 所属 Realm 与目标 Realm 严格相等；唯一的平台视图例外是 Admin Realm Principal 持 `realm.view` 调用 Realm 列表时返回全平台列表，普通 Realm Principal 只返回自身 Realm
+- 严格的目标资源等值边界：用户、Client App 等带目标 Realm 的操作要求 Principal 所属 Realm 与目标 Realm 严格相等；唯一的平台视图例外是 Admin Realm Principal 持 `realm.view` 调用 Realm 列表时返回全平台列表，普通 Realm Principal 只返回自身 Realm；Admin Realm `realm.view` 只对 Realm 列表提供平台视图，不授权跨 Realm 修改用户或 Client App
 - Principal 绑定：API Key 以自身唯一标识作为 Principal ID，复用现有角色绑定机制
 - Client App 绑定的列表可见性收窄：绑定普通 Client App 的 Key 调用 ext API 的 Client App 列表（`clients.view`）时只返回其绑定的 App；未绑定或绑定内置 `admin-api-client` 的 Key 返回全量列表（详见 [API Key Roles PRD](/docs/prd/integration/api-key-roles.md) §4.1）
 - 角色分配：API Key 的角色通过管理后台由 Realm Admin 分配（详见 [API Key Roles PRD](/docs/prd/integration/api-key-roles.md)），API Key 不允许绑定内置角色；分配/替换同样受授予人权限层级守卫约束（授予人须持目标角色全部权限）
+
+**积分发放:**
+- 向指定用户显式发放积分，必须指定目标 Credit Bucket（`bucketId`）：缺失或非法返回 400 `grant_bucket_required`（多钱包模型下每笔发放必须落到显式 Bucket）
+- 发放原因 `reason` 必填且非空（审计字段，空白返回 400 校验错误）；有效期可设（不设置为永久有效）
+- 数量校验：必须为正数且不超过 1,000,000，越界返回参数校验错误（`invalid_amount`）
+- 发放需要 API Key Principal 具备 `points.manage` 权限（与 SDK 消费同一权限点）；跨 Realm 目标用户被拒绝
+
+**ext API 输入验证:**
+- Realm name：3-50 字符（代码中 `req.name.len() < 3 || req.name.len() > 50` 时返回 400 ValidationError）
+- Realm admin email：非空且符合邮箱格式
+- Realm admin password：8–100 字符（代码中 `req.admin_user.password.len() < 8 || > 100` 时返回 400 ValidationError）
+- User email（ext API 创建用户）：非空且符合邮箱格式
+- User password：8–100 字符
+- Client App name：非空
+- Client App redirect_uris：必填；例外——启用 `device_code_grant` 的 Client App 允许空 `redirect_uris`（device flow 无回调，校验按 `device_code_grant_enabled && redirect_uris.is_empty()` 跳过）
 
 ### 4.2 关键状态与异常
 
@@ -104,32 +82,7 @@
 
 ---
 
-## 5. 功能需求
-
-### 5.1 核心需求
-
-1. **Realm 管理** -- US-TP-012
-   - 创建新 Realm，返回 Realm ID 和基本信息
-   - 查询可见 Realm 列表：Admin Realm API Key 返回全平台列表，其他 Realm API Key 仅返回自身 Realm
-   - 查询指定 Realm 详情
-
-2. **用户管理** -- US-TP-013（P0）
-   - 在指定 Realm 中创建用户，返回用户 ID 和状态
-   - 查询指定 Realm 的用户列表（分页：page 默认 1，page_size 默认 20，最大 100）
-   - 查询指定 Realm 中单个用户的详情
-
-3. **Client App 管理** -- US-TP-014
-   - 在指定 Realm 中创建 Client App，返回 Client ID 和 Secret
-   - 查询指定 Realm 的 Client App 列表（返回字段：id、client_id、name、enabled、created_at）
-   - 查询指定 Realm 中单个 Client App 的详情（返回字段：id、client_id、client_secret（仅创建时返回）、name、description、redirect_uris、enabled、created_at）
-
-4. **积分发放** -- US-TP-017（P0）
-   - 向指定用户发放积分，发放原因 `reason` 必填且非空（审计字段，空白返回 400 校验错误），有效期可设（不设置为永久有效）
-   - 必须指定目标 Credit Bucket（`bucketId`）：缺失或非法返回 400 `grant_bucket_required`（多钱包模型下每笔发放必须落到显式 Bucket）
-   - 数量校验：必须为正数且不超过 1,000,000，越界返回参数校验错误（`invalid_amount`）
-   - 发放需要 API Key Principal 具备 `points.manage` 权限（与 SDK 消费同一权限点）；跨 Realm 目标用户被拒绝
-
-### 5.2 验收目标
+## 5. 验收目标
 
 - 4 个用户故事的全部验收场景通过
 - SDK 新增方法与现有方法风格一致（方法命名、错误处理、参数模式）
@@ -139,57 +92,24 @@
 
 ---
 
-## 6. API 相关约束
+## 6. 边界与约束
 
-**适用性**: 适用
+**适用性**: API 边界适用；前端/交互约束不适用（本次变更仅涉及 SDK 和后端 ext API，无前端页面变更）
 
-### 访问控制原则
-
+**API / 集成边界:**
 - 所有新增端点使用现有 API Key 认证机制
-- API Key 语义：API Key 只有一种身份语义，代表第三方服务端机器凭据；API Key 自身作为 Principal 参与授权，不按 Key 类型拆分
-- 权限模型：使用统一 Principal + RBAC 模型，能力由 Principal 的角色和 role policy 决定
-- Realm 隔离：用户和 Client App 操作仅限 API Key 所属 Realm
-- Realm 创建特权：创建 Realm 需 API Key Principal 在 admin realm 具备 `realm:manage` 权限
-- Realm 等值边界：目标资源操作对所有 Principal 一律要求所属 Realm 与目标 Realm 严格相等；Admin Realm `realm.view` 只对 Realm 列表提供平台视图，不授权跨 Realm 修改用户或 Client App
-- Principal 绑定：API Key 以自身唯一标识作为 Principal ID，复用现有角色绑定机制
-- Client App 绑定的列表可见性收窄：绑定普通 Client App 的 Key 调用 ext API 的 Client App 列表（`clients.view`）时只返回其绑定的 App；未绑定或绑定内置 `admin-api-client` 的 Key 返回全量列表（详见 [API Key Roles PRD](/docs/prd/integration/api-key-roles.md) §4.1）
-- 角色分配：API Key 的角色通过管理后台由 Realm Admin 分配（详见 [API Key Roles PRD](/docs/prd/integration/api-key-roles.md)），API Key 不允许绑定内置角色；分配/替换同样受授予人权限层级守卫约束（授予人须持目标角色全部权限）
+- 分页参数：用户列表 `page`（1-based，默认 1）、`page_size`（默认 20，最大 100）；Realm 列表与 Client App 列表：当前无分页，返回全量数据
+- 接口能力边界：
+  - Realm：创建（返回 Realm ID 和基本信息）、列表、详情（需对应权限；创建还需 admin realm `realm:manage` 权限）
+  - User：创建（返回用户 ID 和状态）、列表、详情（限本 Realm，无跨 Realm 例外）。权限点与管理端分属两个调用面：创建检查 `users:create`，列表/详情检查 `users:view`（见 `docs/prd/core/users.md` §4.1；`users.manage` 经 action 层级同样覆盖两者，但仅为 API Key 角色授予 `users:create` 是最小授权）
+  - Client App：创建（返回 Client ID 和 Secret，client_secret 仅创建时返回）、列表（返回字段：id、client_id、name、enabled、created_at）、详情（返回字段：id、client_id、client_secret（仅创建时返回）、name、description、redirect_uris、enabled、created_at）（需对应权限，限本 Realm，无跨 Realm 例外）
+  - 积分交易查询单笔（`get_transaction_ext`）：ext 端点，已注册到 OpenAPI 文档
 
-### 输入验证规则
-
-- Realm name：3-50 字符（代码中 `req.name.len() < 3 || req.name.len() > 50` 时返回 400 ValidationError）
-- Realm admin email：非空且符合邮箱格式
-- Realm admin password：8–100 字符（代码中 `req.admin_user.password.len() < 8 || > 100` 时返回 400 ValidationError）
-- User email（ext API 创建用户）：非空且符合邮箱格式
-- User password：8–100 字符
-- Client App name：非空
-- Client App redirect_uris：必填；例外——启用 `device_code_grant` 的 Client App 允许空 `redirect_uris`（device flow 无回调，校验按 `device_code_grant_enabled && redirect_uris.is_empty()` 跳过）
-
-### 分页参数
-
-- 用户列表：`page`（1-based，默认 1）、`page_size`（默认 20，最大 100）
-- Realm 列表与 Client App 列表：当前无分页，返回全量数据
-
-### 接口能力边界
-
-- Realm：创建、列表、详情（需对应权限；创建还需 admin realm `realm:manage` 权限）
-- User：创建、列表、详情（限本 Realm，无跨 Realm 例外）。权限点与管理端分属两个调用面：创建检查 `users:create`，列表/详情检查 `users:view`（见 `docs/prd/core/users.md` §4.1；`users.manage` 经 action 层级同样覆盖两者，但仅为 API Key 角色授予 `users:create` 是最小授权）
-- Client App：创建、列表、详情（需对应权限，限本 Realm，无跨 Realm 例外）
-- 积分交易查询单笔（`get_transaction_ext`）：端点挂载于 `/api/ext/points/{realmId}/transactions/{transactionId}`，并已注册到 OpenAPI 文档
+**前端 / 交互边界:** 不适用——本次变更仅涉及 SDK 和后端 ext API，无前端页面变更。
 
 ---
 
-## 7. 前端/交互约束
-
-**适用性**: 不适用
-
-本次变更仅涉及 SDK 和后端 ext API，无前端页面变更。
-
----
-
-## 8. 已确认决策
-
-### 8.1 已确认决策
+## 7. 已确认决策
 
 - **统一 Principal 模型**：API Key 不按类型拆分，统一作为 Principal 参与授权
 - **权限由 RBAC 决定**：API Key 能力由角色和 role policy 决定，不引入 scope 机制
@@ -197,11 +117,11 @@
 
 ---
 
-## 9. 参考资料
+## 8. 参考资料
 
-- 用户故事：`docs/user-stories/integration/sdk.md`
 - 相关 PRD：`docs/prd/auth/oauth.md`（现有 ext API）
 - 相关 PRD：`docs/prd/core/realm.md`（Realm 管理）
 - 相关 PRD：`docs/prd/core/users.md`（用户管理）
 - 相关 PRD：`docs/prd/integration/client-app.md`（Client App 管理）
 - 相关 PRD：`docs/prd/integration/api-key-roles.md`（API Key 角色绑定）
+- 用户故事来源见 §1 表格

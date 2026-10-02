@@ -13,31 +13,17 @@
 
 > 详细故事与验收标准请查看 `docs/user-stories/` 中对应文档。
 
-### 1.1 相关故事
+| US-ID | 标题 | 优先级 | 来源 |
+|-------|------|--------|------|
+| US-MC-003 | 购买页按货币分组、显式选择货币（无默认） | P0 | `docs/user-stories/billing/multiple-currency.md` |
+| US-MC-004 | 按（显式选定的）货币价格行发起购买 | P0 | `docs/user-stories/billing/multiple-currency.md` |
+| US-MC-005 | 查询可购权益支持的货币集合 | P0 | `docs/user-stories/billing/multiple-currency.md` |
+| US-MC-006 | Creem / IAP / WeChat Pay 单一价格降级展示 | P2 | `docs/user-stories/billing/multiple-currency.md` |
+| US-EM-007～009 | 多价格同步配置、Webhook 解析与指定价格购买（多价格基线，本特性复用） | P0 | `docs/user-stories/billing/entitlement-mapping.md` |
+| US-BL-SYNC-001～004 | 产品名、价格单位与计费周期同步展示（多价格基线，本特性复用） | P0 | `docs/user-stories/billing/entitlement-mapping.md` |
+| US-PA-001～004 | 创建支付尝试、查询状态、成功后履约、关闭过期（统一支付尝试与履约，本特性复用） | P0/P1 | `docs/user-stories/billing/payment-attempt.md` |
 
-**多货币特有**，来源 `docs/user-stories/billing/multiple-currency.md`：
-- `[US-MC-003]` 购买页按货币分组、显式选择货币（无默认），优先级 P0，角色 Regular User
-- `[US-MC-004]` 按（显式选定的）货币价格行发起购买，优先级 P0，角色 Regular User
-- `[US-MC-005]` 查询可购权益支持的货币集合，优先级 P0，角色 Third-party App
-- `[US-MC-006]` Creem / IAP / WeChat Pay 单一价格降级展示，优先级 P2，角色 Regular User
-
-> 原 `[US-MC-001]`（配置 Realm 默认货币）与 `[US-MC-002]`（个人偏好货币覆盖）随 DEC-014 一并废除。
-
-**多价格同步/购买/解析基线（本特性复用）**，来源 `docs/user-stories/billing/entitlement-mapping.md`：
-- `[US-EM-007～009]` 多价格同步配置、Webhook 解析与指定价格购买 —— P0
-- `[US-BL-SYNC-001～004]` 产品名、价格单位与计费周期同步展示 —— P0
-
-**统一支付尝试与履约（本特性复用）**，来源 `docs/user-stories/billing/payment-attempt.md`：
-- `[US-PA-001～004]` 创建支付尝试、查询状态、成功后履约、关闭过期 —— P0/P1
-
-### 1.2 优先级汇总
-
-| 优先级 | 数量（多货币特有） | 关键故事 |
-|--------|------|----------|
-| P0 | 3 | 购买页按货币分组且显式选择、按选定货币价格行下单、查询可购权益货币集合 |
-| P2 | 1 | Creem / IAP / WeChat Pay 单一价格降级展示 |
-
-> 多价格同步/购买/解析与统一支付尝试/履约的优先级见各自来源文件，此处不重复汇总。
+> 注：原 `[US-MC-001]`（配置 Realm 默认货币）与 `[US-MC-002]`（个人偏好货币覆盖）随 DEC-014 一并废除。
 
 ---
 
@@ -70,22 +56,6 @@
 
 ---
 
-## 3. 需求概述
-
-### 3.1 功能描述
-
-多货币（按货币选择/本地化）在 Herald 已支持的「一产品多货币多价格」目录能力之上，提供「显式按货币选择的购买体验」：购买页按货币分组展示全部可用货币、由用户显式选择后展示价格行，并向第三方应用暴露每个可购权益支持的货币集合与按货币解析能力。其本质是购买解析与展示的「货币维度选择」，不改变既有目录、同步、Checkout 构造与履约链路。
-
-### 3.2 关键特性
-
-- **货币即过滤维度**：货币缩小候选范围，与计费维度共同定位唯一价格行，避免串货币或零金额下单
-- **显式选择**：无默认货币、无偏好、无回退链——展示侧与程序化解析侧都必须显式指定货币（DEC-multiple_currency-014）
-- **SDK 可集成**：api-ext 暴露「可购权益 → 支持货币集合」，第三方应用可做货币切换与按货币解析
-- **渠道降级**：对 provider 侧定价渠道（Creem/IAP/WeChat Pay）自动降级为单一价格展示
-- **零新增外部依赖**：复用现有目录模型与支付渠道集成，不改同步（DEC-multiple_currency-002）
-
----
-
 ## 4. 业务规则与状态
 
 ### 4.1 业务规则
@@ -106,12 +76,13 @@
 **Checkout 构造规则**：
 - 货币解析只决定「选哪一行映射」；选中价格行后，Checkout 仍引用真实 Stripe Price / Creem `product_id`，构造方式不变
 - Stripe 映射行缺失价格信息时拒绝下单（fail-loud），不产生零金额或串货币支付；显式 `target_id` 购买的既有路径行为不变（DEC-multiple_currency-009）
-- provider/store 侧定价渠道（Creem、IAP、WeChat Pay）的价格由渠道侧决定，Herald 不做服务端价格解析；其映射行无 Herald 侧价格信息在解析/目录层属合法状态，不触发解析层 fail-loud（DEC-multiple_currency-013）。分层例外：WeChat Pay v3 无托管定价且下单必须传正数金额，价格由管理员在映射行手工配置（wechat-support.md §2.2/§8.1）；WeChat 映射行在**写入层**即强制正数金额与合法货币（缺价或非正数价格在映射保存时被拒，"可缺价的映射行"中间状态不存在），下单构造层保留防御性二次守卫，不产生零金额订单
+- provider/store 侧定价渠道（Creem、IAP、WeChat Pay）的价格由渠道侧决定，Herald 不做服务端价格解析；其映射行无 Herald 侧价格信息在解析/目录层属合法状态，不触发解析层 fail-loud（DEC-multiple_currency-013）。分层例外：WeChat Pay v3 无托管定价且下单必须传正数金额，价格由管理员在映射行手工配置（wechat-support.md §2.2/§7.1）；WeChat 映射行在**写入层**即强制正数金额与合法货币（缺价或非正数价格在映射保存时被拒，"可缺价的映射行"中间状态不存在），下单构造层保留防御性二次守卫，不产生零金额订单
 
 **api-ext 暴露规则**：
 - 对每个可购权益聚合其启用映射行覆盖的货币集合并对外暴露
 - 订阅类映射与一次性购买类映射均暴露货币
 - 货币集合仅反映已启用映射行，不包含禁用映射行的货币
+- 支持第三方应用按货币解析默认价格行：命中返回；无匹配即 fail-loud，不回退其他货币
 
 **数据隔离规则**：
 - 不同 Realm 的货币集合与解析结果完全隔离
@@ -128,33 +99,7 @@
 
 ---
 
-## 5. 功能需求
-
-### 5.1 核心需求
-
-**按货币解析价格行**：
-- 给定产品/权益 + 计费维度 + 货币，从该产品的启用 Stripe 多 Price 映射行中解析匹配行
-- 货币为过滤维度；同货币多计费周期时由计费维度共同定位，缺失计费维度且多行时 fail-loud
-- 仅对 Stripe 多 Price 产品生效；provider 侧定价渠道不触发货币解析
-- Stripe 映射行缺失价格信息时拒绝下单（fail-loud）；显式 `target_id` 路径行为不变（DEC-multiple_currency-009）
-
-**购买页分组展示**：
-- 对 Stripe 多 Price 产品按货币分组展示价格行
-- 无预选货币：多货币时用户显式选择后才渲染价格行；单一货币直接展示
-- 同货币组内列出可选计费周期/类型
-- 提供货币切换；显式选定的货币不因刷新/选项刷新而静默变更（手动选择保留，选定货币消失时回到待选状态）
-
-**api-ext 货币暴露**：
-- 对每个可购权益聚合并暴露其支持货币集合
-- 订阅类与一次性购买类映射均暴露货币
-- 支持第三方应用按货币解析默认价格行（命中返回；无匹配即 fail-loud，不回退其他货币）
-
-**渠道降级展示**：
-- 对 Creem 产品只展示其单一价格，不渲染货币切换器
-- 对 IAP 产品按商店地区价格展示，不做货币解析或切换
-- 对 WeChat Pay 产品按渠道侧配置的单一价格展示，不做货币解析或切换（DEC-multiple_currency-013）
-
-### 5.2 验收目标
+## 5. 验收目标
 
 - 购买页对 Stripe 多 Price 产品按货币分组、无预选货币；显式选择后展示该货币价格行；同货币多计费周期时用户可在货币组内选择周期
 - 下单始终指向显式选定的 mapping id；扣款货币与展示一致，不出现串货币或零金额下单
@@ -165,52 +110,46 @@
 
 ---
 
-## 6. API 相关约束
+## 6. 边界与约束
 
-**适用性**: 适用
+**适用性**: 适用（API 与前端/交互边界合并陈述）
 
+**API / 集成边界:**
 - **接口能力范围**：货币维度解析属购买/默认解析能力的扩展；可购权益的「支持货币集合」聚合与按货币解析默认价格行属 api-ext 查询能力的扩展。Checkout 发起与履约沿用既有统一能力，不在 PRD 列出端点、schema 或状态码。
-- **访问控制原则**：遵守 realm 隔离；api-ext 货币查询遵循既有 SDK/第三方应用访问控制（`billing.view`）；金额与积分变更必须可追溯；货币解析须 fail-loud 而非静默替代。
+- **访问控制原则**：遵守 realm 隔离；api-ext 货币查询遵循既有 SDK/第三方应用访问控制（`billing.view`）；金额与积分变更必须可追溯。
 - **租户/realm 边界**：货币集合与解析结果按 Realm 隔离；货币集合仅反映该 Realm 内启用映射行。
 - **兼容性要求**：项目未上线，废除偏好货币承载（DEC-multiple_currency-014）为破坏性变更，不做迁移兼容；与 Stripe/Creem/IAP/WeChat Pay、积分账本、订阅系统的详细契约下沉到技术设计。
 
----
-
-## 7. 前端/交互约束
-
-**适用性**: 适用
-
-- **购买页（Stripe 多 Price 产品）**：按货币分组展示价格行；无预选货币，多货币时先显示「请选择货币」提示；同货币组内列出可选计费周期/类型；提供货币切换。
+**前端 / 交互边界:**
+- **购买页（Stripe 多 Price 产品）**：按货币分组展示价格行；无预选货币，多货币时先显示「请选择货币」提示；同货币组内列出可选计费周期/类型；提供货币切换；显式选定的货币不因刷新/选项刷新而静默变更（手动选择保留，选定货币消失时回到待选状态）。
 - **购买页（Creem / IAP / WeChat Pay 等 provider 侧定价渠道）**：降级为单一价格展示，不渲染货币切换器与货币分组。
 - **状态反馈**：待选货币提示、解析失败（fail-loud）的明确反馈；Stripe Adaptive Pricing 场景下对基础货币做标注，说明实际扣款以支付页为准。
 - **金额/积分变化**：货币切换与购买场景必须突出所选货币的金额变化与不可逆风险提示。
 
 ---
 
-## 8. 已确认决策
+## 7. 已确认决策
 
 > 以下决策来自决策账本 `.ai/decision-log/multiple-currency.md`。仅记录带稳定 DEC ID 的已确认结论。
 
 | Decision ID | 状态 | 决策项 | 结论 | PRD 落点 | 来源 |
 |---|---|---|---|---|---|
-| `DEC-multiple_currency-001` | Applied | 范围路线 | 新增「按货币选择/本地化体验」功能，构建于现有多 Price 目录；非「仅确认现状」、非「改走 currency_options」 | §2.1、§3 | `.ai/decision-log/multiple-currency.md` |
+| `DEC-multiple_currency-001` | Applied | 范围路线 | 新增「按货币选择/本地化体验」功能，构建于现有多 Price 目录；非「仅确认现状」、非「改走 currency_options」 | §2.1 | `.ai/decision-log/multiple-currency.md` |
 | `DEC-multiple_currency-002` | Applied | 目录模型 | 货币选择层基于现有「一映射行对应一个 provider Price」模型，不改同步、不读 `currency_options` | §2.2、§4.1、§6 | 同上 |
-| `DEC-multiple_currency-003` | Applied | 渠道覆盖 | 仅 Stripe 多 Price 纳入货币解析；Creem/IAP 等 provider 侧定价渠道保持渠道侧定价，降级为单一价格展示 | §2.1、§2.2、§4.1、§7 | 同上 |
-| `DEC-multiple_currency-005` | Applied | 解析键 | 解析键 = (产品/权益 + 计费维度 + 货币)；货币为过滤维度，非唯一键；同货币多计费周期并存时由用户在货币内选周期 | §4.1、§5.1、§7 | 同上 |
-| `DEC-multiple_currency-008` | Applied | 程序化解析暴露 | 程序化默认解析经 api-ext 暴露（货币集合聚合 + 按货币解析默认价格行，fail-loud）；终端用户购买始终显式选定价格行，货币分组由前端完成 | §4.1、§5.1 | 同上 |
-| `DEC-multiple_currency-009` | Applied | 缺价 fail-loud | Stripe 映射行缺失价格信息时拒绝下单（fail-loud），不产生零金额/串货币支付；显式 `target_id` 路径行为不变 | §4.1、§4.2、§5.1 | 同上 |
-| `DEC-multiple_currency-010` | Applied | 货币码校验 | `^[A-Z]{3}$` 格式 + 拒绝 ISO 4217 保留码（`XXX`/`XTS`）；非法码被拒 | §4.1、§5.2 | 同上 |
+| `DEC-multiple_currency-003` | Applied | 渠道覆盖 | 仅 Stripe 多 Price 纳入货币解析；Creem/IAP 等 provider 侧定价渠道保持渠道侧定价，降级为单一价格展示 | §2.1、§2.2、§4.1、§6 | 同上 |
+| `DEC-multiple_currency-005` | Applied | 解析键 | 解析键 = (产品/权益 + 计费维度 + 货币)；货币为过滤维度，非唯一键；同货币多计费周期并存时由用户在货币内选周期 | §4.1、§6 | 同上 |
+| `DEC-multiple_currency-008` | Applied | 程序化解析暴露 | 程序化默认解析经 api-ext 暴露（货币集合聚合 + 按货币解析默认价格行，fail-loud）；终端用户购买始终显式选定价格行，货币分组由前端完成 | §4.1 | 同上 |
+| `DEC-multiple_currency-009` | Applied | 缺价 fail-loud | Stripe 映射行缺失价格信息时拒绝下单（fail-loud），不产生零金额/串货币支付；显式 `target_id` 路径行为不变 | §4.1、§4.2 | 同上 |
+| `DEC-multiple_currency-010` | Applied | 货币码校验 | `^[A-Z]{3}$` 格式 + 拒绝 ISO 4217 保留码（`XXX`/`XTS`）；非法码被拒 | §4.1、§5 | 同上 |
 | `DEC-multiple_currency-012` | Applied | 大小写归一 | 货币码匹配不区分 ASCII 大小写（目录存储 provider 原生码）；对外暴露统一大写 ISO 码 | §4.1 | 同上 |
-| `DEC-multiple_currency-013` | Applied | fail-loud 范围 | 缺价 fail-loud 仅对 Stripe 映射行生效；provider/store 侧定价渠道（apple/google/wechat/creem）缺价信息在解析/目录层属合法状态，不视为异常。分层例外：WeChat Pay 映射行在写入层即要求正数金额（WeChat v3 下单必须传金额，缺价/非正数在映射保存时被拒；下单构造层为防御性二次守卫） | §4.1、§4.2、§5.1、§7 | 同上 |
-| `DEC-multiple_currency-014` | Applied | 显式货币选择 | 废除「默认/偏好货币」：无 Realm 默认、无用户偏好、无回退链；购买页显式选择后才渲染价格行（单一货币为唯一选项自动选中）；程序化解析须显式传 currency。取代 DEC-004/006/007/011 | §2.1、§2.2、§3.1、§4.1、§5.1、§7 | conversation（2026-08-15） |
+| `DEC-multiple_currency-013` | Applied | fail-loud 范围 | 缺价 fail-loud 仅对 Stripe 映射行生效；provider/store 侧定价渠道（apple/google/wechat/creem）缺价信息在解析/目录层属合法状态，不视为异常。分层例外：WeChat Pay 映射行在写入层即要求正数金额（WeChat v3 下单必须传金额，缺价/非正数在映射保存时被拒；下单构造层为防御性二次守卫） | §4.1、§4.2、§6 | 同上 |
+| `DEC-multiple_currency-014` | Applied | 显式货币选择 | 废除「默认/偏好货币」：无 Realm 默认、无用户偏好、无回退链；购买页显式选择后才渲染价格行（单一货币为唯一选项自动选中）；程序化解析须显式传 currency。取代 DEC-004/006/007/011 | §2.1、§2.2、§4.1、§6 | conversation（2026-08-15） |
 
 ---
 
-## 9. 参考资料
+## 8. 参考资料
 
-- 用户故事（多货币特有）：`docs/user-stories/billing/multiple-currency.md`（US-MC-003～006）
-- 用户故事（多价格基线）：`docs/user-stories/billing/entitlement-mapping.md`
-- 用户故事（统一支付尝试/履约）：`docs/user-stories/billing/payment-attempt.md`
+- 用户故事来源见 §1 表格
 - 相关 PRD：`docs/prd/billing/subscription.md`（订阅计费/多价格目录基线）
 - 相关 PRD：`docs/prd/billing/stripe-payment.md`（Stripe 集成）
 - 相关 PRD：`docs/prd/billing/credit-bucket.md`（积分账户与履约路由）

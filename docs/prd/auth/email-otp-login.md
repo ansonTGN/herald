@@ -10,30 +10,17 @@
 
 > 详细故事与验收标准请查看 `docs/user-stories/auth/email-otp-login.md`。
 
-### 1.1 故事引用
-
-- `[US-EO-001]` 用户用邮箱验证码登录已有账号，优先级 P0，来源 `docs/user-stories/auth/email-otp-login.md`
-  - 角色：Regular User
-  - 摘要：用户在登录入口选择邮箱验证码登录，输入邮箱并验证码即可登录，免记忆密码
-- `[US-EO-002]` 未注册邮箱验证成功后自动注册，优先级 P0，来源 `docs/user-stories/auth/email-otp-login.md`
-  - 角色：Regular User
-  - 摘要：未注册邮箱经用户同意并验证成功后，一次操作同时完成登录与账户创建
-- `[US-EO-003]` Realm 管理员配置邮箱验证码登录与自动注册，优先级 P1，来源 `docs/user-stories/auth/email-otp-login.md`
-  - 角色：Realm Admin
-  - 摘要：管理员为本 Realm 启用/关闭邮箱验证码登录，并单独控制自动注册开关
+| US-ID | 标题 | 优先级 | 来源 |
+|-------|------|--------|------|
+| US-EO-001 | 用户用邮箱验证码登录已有账号 | P0 | `docs/user-stories/auth/email-otp-login.md` |
+| US-EO-002 | 未注册邮箱验证成功后自动注册 | P0 | `docs/user-stories/auth/email-otp-login.md` |
+| US-EO-003 | Realm 管理员配置邮箱验证码登录与自动注册 | P1 | `docs/user-stories/auth/email-otp-login.md` |
 
 表达既有登录、注册、认证器共存语义，不复制验收标准的既有故事：
 
 - `docs/user-stories/core/regular-user.md`（US-RU-001 注册、US-RU-002 登录）
 - `docs/user-stories/auth/passkey.md`（Passkey 作为增强/未来主入口）
 - `docs/user-stories/core/legal-consent-account-deletion.md`（注册即同意 / 登录即同意模型）
-
-### 1.2 优先级汇总
-
-| 优先级 | 数量 | 关键故事 |
-|--------|------|----------|
-| P0 | 2 | US-EO-001 验证码登录、US-EO-002 自动注册 |
-| P1 | 1 | US-EO-003 Realm 管理员配置 |
 
 ---
 
@@ -69,24 +56,6 @@
 
 ---
 
-## 3. 需求概述
-
-### 3.1 功能描述
-
-ai-agent-app 手机用户首次进入和再次登录存在摩擦：当前只能使用邮箱密码，忘记密码时要走重置流程；Passkey 当前尚未普及，不能假设为主流入口。用户需要一种无需记忆密码、又普遍熟悉的注册与登录方式。
-
-邮箱验证码登录允许用户输入邮箱、接收一次性验证码、验证成功即登录；对未注册邮箱，在用户完成同意表达后自动创建并激活账户，使一次操作同时完成登录与注册。这直接降低首次进入和再次登录的摩擦，验证"邮箱 OTP 登录并自动注册"对 ai-agent-app 手机用户的价值。
-
-### 3.2 关键特性
-
-- **低摩擦登录**：用邮箱验证码替代密码，免记忆、免输入密码。
-- **自动注册**：未注册邮箱验证成功后自动创建激活账户，登录与注册一次完成。
-- **同意即注册**：自动注册承接"登录即同意"语义，用户表达同意后才创建账户，满足注册政策与协议同意要求。
-- **首期限定验证**：只在 ai-agent-app 对应 Realm 开放，用选择率、完成率和放弃率等真实数据决定是否推广。
-- **会话方向承接**：不退回 cookie-only，承接 Bearer access/refresh token 方向。
-
----
-
 ## 4. 业务规则与状态
 
 ### 4.1 业务规则
@@ -99,14 +68,15 @@ ai-agent-app 手机用户首次进入和再次登录存在摩擦：当前只能�
 - **凭证定位**：邮箱验证码是便利入口，不作为与 Passkey 同等级的强认证；不得绕过现有 TOTP 二因素、高危操作重新认证或 Realm 注册政策。
 - **与其他认证方式共存**：保留密码登录入口；Passkey 作为用户后续可绑定的增强/未来主入口；用户可随后设置密码或绑定 Passkey/TOTP，账户身份不变。
 - **per-Realm 开关**：Realm 管理员可启用/关闭邮箱验证码登录，并单独控制自动注册；关闭后平滑降级，已注册用户仍可用密码/TOTP/Passkey 登录。
-- **客户端会话方向**：登录成功签发的会话承接自建用户 UI 的 Bearer access/refresh token 方向；不退回 cookie-only。
+- **公开状态查询**：提供无需登录的 Realm 邮箱 OTP 启用状态查询，仅返回 `enabled`，供登录页决定是否展示入口。
+- **客户端会话方向**：登录成功签发的会话承接自建用户 UI 的 Bearer access/refresh token 方向；不退回 cookie-only，不引入新的会话模型。
 - **防滥用**：人机验证（Turnstile）按**当前请求绑定的 Client App** 的 Turnstile 配置执行（Client App 级，见 D-PROTECT-01）；维持 IP/identifier 限流；验证码对发送频率、尝试次数、有效期和一次性消费设定上限；首期限定目标 Realm 以控制批量发送与批量注册成本。
 - **防枚举**：验证码发送对存在但非激活的账户返回与正常发送一致的反馈，不暴露账户是否存在。
 - **注册政策优先**：自动注册不得绕过 Realm 注册政策；当 Realm 未开启自动注册（或不在首期开放范围）时，未注册邮箱只能得到未注册提示或引导到显式注册入口，不创建账户。
 
 ### 4.2 关键状态与异常
 
-- **验证码错误/过期**：API 返回统一错误语义；前端可本地化显示“验证码错误或已失效”并提供重发入口。达到连续错误上限后该次验证码作废。
+- **验证码错误/过期**：API 返回统一错误语义；前端可本地化显示"验证码错误或已失效"并提供重发入口。达到连续错误上限后该次验证码作废。
 - **发送频率受限**：API 返回 429，不发送新验证码；用户可见文案由前端本地化承载。
 - **验证码被重复使用**：一次性消费，成功登录后再次提交同一验证码被拒绝并提示已失效。
 - **账号被禁用**：即使验证码正确也拒绝登录，提示账号已被禁用。
@@ -118,21 +88,7 @@ ai-agent-app 手机用户首次进入和再次登录存在摩擦：当前只能�
 
 ---
 
-## 5. 功能需求
-
-### 5.1 核心需求
-
-- **FR-1（验证码登录已有账号）**：用户在登录入口选择"邮箱验证码登录"，输入邮箱并完成人机验证（若启用），在限定时间内收到并输入正确验证码后登录成功；会话按客户端会话方向（Bearer token）建立。
-- **FR-2（未注册邮箱自动注册）**：未注册邮箱在用户完成当前 Realm 生效协议的同意表达并验证成功后，自动创建处于已验证/已激活状态的账户；不要求用户再走单独的邮箱验证；会话按客户端会话方向建立。
-- **FR-3（同意闸门）**：自动注册路径在发送验证码前要求用户表达对当前生效协议版本的同意；未表达同意不发送验证码、不创建账户；同意记录与具体协议版本绑定并可审计。
-- **FR-4（验证码生命周期）**：验证码有有效期、一次性消费、连续错误上限和发送频率限制。
-- **FR-5（per-Realm 启停）**：Realm 管理员可启用/关闭邮箱验证码登录，并单独控制自动注册开关；关闭后平滑降级。
-- **FR-6（与其他登录方式共存）**：保留密码登录入口；Passkey 作为后续可绑定入口；OTP 不替代二因素或高危操作重新认证。
-- **FR-7（客户端会话承接）**：登录成功签发的会话承接自建用户 UI 的 Bearer access/refresh token 方向；不退回 cookie-only；依赖自建用户 UI Bearer 登录能力先于或同期交付。
-- **FR-8（首期范围限定）**：首期只对 ai-agent-app 对应 Realm 开放；不默认向所有 Realm 开启自动注册。
-- **FR-9（公开状态）**：提供无需登录的 Realm 邮箱 OTP 启用状态查询，仅返回 `enabled`，供登录页决定是否展示入口。
-
-### 5.2 验收目标
+## 5. 验收目标
 
 - 已注册且已激活用户用邮箱验证码一次操作完成登录，无需输入密码。
 - 未注册邮箱经用户表达同意并验证成功后自动创建激活账户，登录与注册一次完成；账户身份与后续设置的密码/Passkey/TOTP 共存一致。
@@ -147,25 +103,18 @@ ai-agent-app 手机用户首次进入和再次登录存在摩擦：当前只能�
 
 ---
 
-## 6. API 相关约束
+## 6. 边界与约束
 
-**适用性**: 适用
+**适用性**: 适用（API 与前端/交互边界合并陈述）
 
+**API / 集成边界:**
 - **能力边界**：新增邮箱验证码发送与验证（登录/自动注册）能力，作为未认证身份端点公开开放；不新增管理员以外的高权限接口。
 - **访问控制原则**：验证码发送/验证端点为公开端点（无需已认证身份），但必须完成人机验证（Turnstile）和限流；自动注册在验证成功且同意表达后创建账户。管理员启停配置复用既有 Realm Settings 权限（`settings.view`/`settings.manage`）。
 - **租户/realm 数据边界**：请求绑定 Realm（与 Client App 上下文一致）；用户匹配和账户创建限定在当前 Realm 内；跨 Realm 数据访问被拒绝。
-- **客户端会话方向**：登录成功签发 Bearer access/refresh token，承接自建用户 UI 的会话方向与权限上限；OTP 不引入新的会话模型。
-- **未认证身份端点防护**：人机验证（Turnstile）按当前请求绑定的 Client App 的配置执行（Client App 级，见 D-PROTECT-01）；维持 IP/identifier 限流，不新增 client 维度限流。
-- **兼容性**：与现有密码登录、TOTP、Passkey、协议同意和 Realm 注册政策共存；不绕过既有二因素或高危操作重新认证。
 
 > 端点清单、参数 schema、状态码矩阵与验证码存储细节不在 PRD 承载范围，下沉到技术设计。
 
----
-
-## 7. 前端/交互约束
-
-**适用性**: 适用
-
+**前端 / 交互边界:**
 - **页面入口**：登录页新增"邮箱验证码登录"入口，与密码登录并列；入口可见性由 Realm 是否启用决定。
 - **关键交互**：
   - 用户选择"邮箱验证码登录" → 输入邮箱 → 完成人机验证（若启用） → 对未注册邮箱表达同意（"同意协议并继续"）→ 发送验证码 → 用户在邮箱收到验证码 → 输入验证码 → 验证成功登录（已注册）或自动注册并登录（未注册）。
@@ -183,7 +132,7 @@ ai-agent-app 手机用户首次进入和再次登录存在摩擦：当前只能�
 
 ---
 
-## 8. 已确认决策
+## 7. 已确认决策
 
 - **D-SCOPE-01（首期范围 Reduce）**：首期只对 ai-agent-app 对应 Realm 开放 OTP 登录与自动注册；不默认向所有 Realm 开启自动注册；推广由首期真实数据决定。
 - **D-REG-01（未注册邮箱自动注册）**：验证成功后自动创建激活账户；自动注册视为注册路径而非登录异常分支。
@@ -196,7 +145,7 @@ ai-agent-app 手机用户首次进入和再次登录存在摩擦：当前只能�
 
 ---
 
-## 9. 参考资料
+## 8. 参考资料
 
 - 会话方向承接：[docs/prd/integration/custom-user-ui.md](../integration/custom-user-ui.md)（Bearer access/refresh token）
 - 协议同意模型：[docs/prd/core/legal-consent-account-deletion.md](../core/legal-consent-account-deletion.md)（注册即同意 / 登录即同意）
@@ -205,5 +154,4 @@ ai-agent-app 手机用户首次进入和再次登录存在摩擦：当前只能�
 - Client App PRD：[docs/prd/integration/client-app.md](../integration/client-app.md)（Client App 级 Turnstile 配置）
 - Passkey PRD：[docs/prd/auth/passkey.md](passkey.md)（Passkey 作为增强/未来主入口）
 - 用户故事：[docs/user-stories/auth/email-otp-login.md](../../user-stories/auth/email-otp-login.md)
-- 既有可引用用户故事：`docs/user-stories/core/regular-user.md`、`docs/user-stories/auth/passkey.md`、`docs/user-stories/core/legal-consent-account-deletion.md`
 - 角色定义：[docs/user-stories/_roles.md](../../user-stories/_roles.md)

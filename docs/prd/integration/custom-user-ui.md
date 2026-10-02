@@ -8,41 +8,37 @@
 
 ## 1. 相关用户故事
 
-> 详细故事与验收标准请查看 `docs/user-stories/` 中对应文档。
+> 详细故事与验收标准请查看 [docs/user-stories/integration/custom-user-ui.md](/docs/user-stories/integration/custom-user-ui.md) 中对应文档。
 
-### 1.1 相关故事
+本功能用户故事：
 
-本功能用户故事（`docs/user-stories/integration/custom-user-ui.md`）：
-
-- `[US-CUI-001]` 集成方前端完成注册与邮箱验证，P0 — 第三方应用开发者
-- `[US-CUI-002]` 集成方前端完成登录获得浏览器 token，P0 — 第三方应用开发者
-- `[US-CUI-003]` 集成方前端完成找回/重置密码，P0 — 第三方应用开发者
-- `[US-CUI-004]` 集成方前端查看资料并修改昵称，P1 — 第三方应用开发者
-- `[US-CUI-005]` 集成方前端完成高危安全操作（改密码/二因素/注销账号），P0 — 第三方应用开发者
-- `[US-CUI-006]` 集成方前端完成登出，P1 — 第三方应用开发者
-- `[US-CUI-007]` 集成方前端完成积分与交易查看，P0 — 第三方应用开发者
-- `[US-CUI-008]` 集成方前端完成充值/购买，P0 — 第三方应用开发者
-- `[US-CUI-009]` 集成方前端完成发票与订阅查看，P1 — 第三方应用开发者
-
-本组故事表达"集成方前端可跨域触达"这些能力，不复制既有用户故事的验收内容。具体业务验收仍归属既有 billing/auth 用户故事；本组只验收"跨域自建 UI"这一集成维度的目标。
+| US-ID | 标题 | 优先级 | 来源 |
+|-------|------|--------|------|
+| US-CUI-001 | 集成方前端完成注册与邮箱验证 | P0 | `docs/user-stories/integration/custom-user-ui.md` |
+| US-CUI-002 | 集成方前端完成登录获得浏览器 token | P0 | `docs/user-stories/integration/custom-user-ui.md` |
+| US-CUI-003 | 集成方前端完成找回/重置密码 | P0 | `docs/user-stories/integration/custom-user-ui.md` |
+| US-CUI-004 | 集成方前端查看资料并修改昵称 | P1 | `docs/user-stories/integration/custom-user-ui.md` |
+| US-CUI-005 | 集成方前端完成高危安全操作（改密码/二因素/注销账号） | P0 | `docs/user-stories/integration/custom-user-ui.md` |
+| US-CUI-006 | 集成方前端完成登出 | P1 | `docs/user-stories/integration/custom-user-ui.md` |
+| US-CUI-007 | 集成方前端完成积分与交易查看 | P0 | `docs/user-stories/integration/custom-user-ui.md` |
+| US-CUI-008 | 集成方前端完成充值/购买 | P0 | `docs/user-stories/integration/custom-user-ui.md` |
+| US-CUI-009 | 集成方前端完成发票与订阅查看 | P1 | `docs/user-stories/integration/custom-user-ui.md` |
 
 既有可引用用户故事（表达"同一业务能力，Herald 内部前端经凭证授权调用"）：
 
-- 注册/登录/资料：`docs/user-stories/core/regular-user.md`（US-RU-001/002/004/005/007/014）
-- TOTP：`docs/user-stories/auth/totp.md`（US-TO-002/003/004/005）
-- Passkey：`docs/user-stories/auth/passkey.md`（US-PK-004~009）
-- 积分/交易：`docs/user-stories/billing/points-user.md`（US-PU-001/002）、`docs/user-stories/billing/credit-bucket.md`（US-CB-005/006）
-- 购买：`docs/user-stories/billing/points-package-purchase.md`（US-PU-006）
-- 发票：`docs/user-stories/billing/invoice.md`（US-IV-008/011）
-- 订阅：`docs/user-stories/billing/subscription.md`（US-BI-006/009）
-- OAuth 后端换码：`docs/user-stories/auth/third-party-app.md`（US-TP-015/016，该组保留"后端换码"原义，浏览器 token 路线见本 PRD）
+| US-ID | 标题 | 优先级 | 来源 |
+|-------|------|--------|------|
+| US-RU-001/002/004/005/007/014 | 注册/登录/资料 | — | `docs/user-stories/core/regular-user.md` |
+| US-TO-002/003/004/005 | TOTP | — | `docs/user-stories/auth/totp.md` |
+| US-PK-004~009 | Passkey | — | `docs/user-stories/auth/passkey.md` |
+| US-PU-001/002 | 积分/交易 | — | `docs/user-stories/billing/points-user.md` |
+| US-CB-005/006 | 积分账户 | — | `docs/user-stories/billing/credit-bucket.md` |
+| US-PU-006 | 购买 | — | `docs/user-stories/billing/points-package-purchase.md` |
+| US-IV-008/011 | 发票 | — | `docs/user-stories/billing/invoice.md` |
+| US-BI-006/009 | 订阅 | — | `docs/user-stories/billing/subscription.md` |
+| US-TP-015/016 | OAuth 后端换码（该组保留"后端换码"原义，浏览器 token 路线见本 PRD） | — | `docs/user-stories/auth/third-party-app.md` |
 
-### 1.2 优先级汇总
-
-| 优先级 | 数量 | 关键故事 |
-|--------|------|----------|
-| P0 | 6 | US-CUI-001/002/003/005/007/008 |
-| P1 | 3 | US-CUI-004/006/009 |
+本组故事表达"集成方前端可跨域触达"这些能力，不复制既有用户故事的验收内容；具体业务验收仍归属既有 billing/auth 用户故事，本组只验收"跨域自建 UI"这一集成维度的目标。
 
 ---
 
@@ -106,24 +102,6 @@
 
 ---
 
-## 3. 需求概述
-
-### 3.1 功能描述
-
-让集成方在自家前端（无自家后端）自建终端用户的全套 UI——从注册、登录、找回密码，到登录后的完整个人中心。Herald 从"提供唯一前端"转变为"提供完整 API 面 + 可选参考实现前端"，集成方按自身品牌与交互自建整套用户体验。
-
-补齐 SaaS 底座的"完整用户 UI 自建"集成路径，降低集成摩擦，契合 Herald"账号+计费+积分一站式 SaaS 底座"定位。
-
-### 3.2 关键特性
-
-- 未认证身份流程（注册/登录/找回密码）跨域开放，登录签发浏览器 token 而非 cookie。
-- 双轨浏览器凭证类：`FirstParty`（PKCE 换取、完整 RBAC）与 `CustomUserUi`（`/login` 签发、用户自服务权限上限）。
-- 登录后 `CustomUserUi` token 跨域调用完整用户自服务权限集合（含经重新认证的高危写）；管理员能力与未知能力默认拒绝。
-- 浏览器可持有、用户绑定、可吊销、旋转 refresh token 续期的用户 token。
-- per-Client App 允许 origin 动态 CORS 放行。
-
----
-
 ## 4. 业务规则与状态
 
 ### 4.1 业务规则
@@ -133,7 +111,7 @@
 - **权限控制**：`CustomUserUi` token 的权限上限为明确归类的用户自服务能力（资料/改密码/TOTP/Passkey/注销账号/登出/积分/交易/购买/发票/订阅/订阅取消）；管理员能力和未知能力默认拒绝。`FirstParty` token 执行完整 RBAC，不受该上限约束。该规则由授权层执行，不依赖路由名称。
 - **数据边界**：浏览器 token 只能访问当前登录用户自己的数据；跨用户访问拒绝。
 - **未认证身份端点**：注册/登录/找回密码/重置密码/邮箱验证为公开端点，跨域开放后人机验证（Turnstile）按当前请求绑定的 Client App 的配置执行，维持限流防护，不新增 client 维度限流。
-- **origin 精确匹配**：Client App 允许 origin 必须精确、可信，禁止通配或不安全形式。
+- **origin 精确匹配**：Client App 允许 origin 必须精确、可信，禁止通配或不安全形式；服务端授权读取最新配置，跨域 CORS 白名单使用最长 30 秒的进程内快照。
 - **CORS 非授权边界**：Origin/CORS 只控制浏览器跨域响应；即使 Origin 缺失或可伪造，服务端仍须独立验证 token 的用户、Realm、Client App、用途和权限。
 - **登录签发**：跨域登录成功签发浏览器 token（access + refresh），不设 cookie；二因素流程同步支持。
 - **生命周期（旋转 refresh token）**：短时效 access token（内存）+ 旋转 refresh token（每次刷新换发新 RT、旧 RT 作废）+ 复用检测（旧 RT 再用吊销整个家族）+ RT 绝对有效上限。
@@ -166,38 +144,7 @@
 
 ---
 
-## 5. 功能需求
-
-### 5.1 核心需求
-
-**未认证身份流程**：
-
-- **FR-1（注册与邮箱验证）**：集成方前端以有效 Client App 上下文跨域提交注册；邮箱验证完成后引导到该 Client App 预登记的验证结果页，拒绝任意回跳 URL。
-- **FR-2（登录签发浏览器 token）**：集成方前端用账号密码跨域登录，Herald 签发 `CustomUserUi` 浏览器 token（access + refresh）而非设 cookie；二因素（TOTP/Passkey）流程同步支持。
-- **FR-3（找回/重置密码）**：集成方前端以有效 Client App 上下文跨域发起找回密码（发送重置邮件）；邮件中的重置链接落在 Herald 托管的重置页完成新密码提交，重置成功后只引导到该 Client App 预登记的重置回跳页。
-
-**登录后个人中心（CustomUserUi token 跨域）**：
-
-- **FR-4（资料查看与昵称编辑）**：用浏览器 token 查看当前用户资料，并修改当前用户昵称。
-- **FR-5（高危安全操作）**：用浏览器 token 完成改密码、TOTP 启用/禁用/验证、Passkey 注册/删除/重命名、注销账号；其中改密码、绑定或移除认证器、注销账号必须消费有效的重新认证结果。
-- **FR-6（登出）**：用浏览器 token 登出，吊销当前 token 及其 refresh token 家族。
-- **FR-7（积分/交易）**：用浏览器 token 查看当前用户积分余额（按账户分组）与交易历史。
-- **FR-8（充值/购买）**：用浏览器 token 查看购买选项、发起购买、轮询支付状态。
-- **FR-9（发票/订阅）**：用浏览器 token 查看发票列表/详情、申请开票、查看我的订阅、自助取消订阅。
-
-**跨域基础设施**：
-
-- **FR-10（Bearer 鉴权与凭证类判定）**：身份解析接受 `Authorization: Bearer`，按凭证类产出身份与上下文；`CustomUserUi` 授权层只授予用户自服务权限，管理员与未知能力默认拒绝；`FirstParty` 执行完整 RBAC。
-- **FR-11（origin 白名单）**：Realm 管理员可为 Client App 配置允许 origin 列表，精确匹配、禁止不安全形式；服务端授权读取最新配置，跨域 CORS 白名单使用最长 30 秒的进程内快照。
-- **FR-12（token 生命周期）**：短时效 access token（内存）+ 旋转 refresh token（每次刷新换发新 RT、旧 RT 作废）+ 复用检测 + RT 绝对有效上限。
-- **FR-13（复用检测）**：旧 refresh token 被再次使用时，吊销该 token 家族。
-- **FR-14（吊销）**：可即时吊销浏览器 token（access token 或其 refresh token 家族），吊销不误伤其他正常凭证。
-- **FR-15（Passkey RP 隔离）**：Passkey credential 按实际 RP 保存、查询和验证；既有 credential 归属原 Herald RP，不跨 Client App origin 复用。
-- **FR-16（统一重新认证）**：为高危操作提供短时、单次且绑定用户、Client App 和目标操作的重新认证结果。
-- **FR-17（安全回跳）**：邮箱验证与密码恢复状态绑定 Client App，并只使用预登记回跳目标。
-- **FR-18（Client App 禁用联动）**：Client App 禁用后拒绝其新身份流程，并使其浏览器 token 家族失效；不得影响其他 Client App 的正常会话。
-
-### 5.2 验收目标
+## 5. 验收目标
 
 - 集成方前端在无自家后端的情况下，可完成注册→邮箱验证→登录→个人中心全套流程。
 - 登录签发 `CustomUserUi` 浏览器 token（非 cookie），access token 到期可静默刷新，refresh token 到绝对上限需重新登录。
@@ -215,27 +162,16 @@
 
 ---
 
-## 6. API 相关约束
+## 6. 边界与约束
 
-**适用性**: 适用
+**适用性**: 适用（API 与前端/交互边界合并陈述）
 
-- **凭证类边界**：`FirstParty` 经 Authorization Code + PKCE 换取，执行完整 RBAC；`CustomUserUi` 经 `/login` 签发，只获得用户自服务权限。两类互不混用，不能用 URL 前缀推导授权结果。
+**API / 集成边界:**
 - **访问控制原则**：浏览器 token 绑定用户、Realm、Client App 和凭证用途；身份解析按凭证类产出身份与上下文。handler 继续执行当前用户/Realm/RBAC 检查，授权层额外执行 `CustomUserUi` 凭证权限上限；新增能力默认拒绝。
-- **租户/realm 数据边界**：浏览器 token 只能访问当前登录用户自己的数据；Client App 禁用时其浏览器 token 联动失效。
-- **未认证身份端点防护**：人机验证（Turnstile）按当前请求绑定的 Client App 的配置执行（Client App 级配置），维持限流，不新增 client 维度限流。
-- **CORS 兼容性**：非通配 origin + `allow_credentials(false)`（Bearer token 经 `Authorization` 头传递，无需 credentialed 请求），从单 origin 改 per-Client App 动态放行。
-- **Passkey 兼容性**：Client App HTTPS origin 对应独立 RP；credential 按 RP 隔离，既有 credential 保持原 RP 归属。
-- **高危操作**：修改密码、绑定或移除认证器、注销账号必须消费重新认证结果；重新认证支持账户已绑定的密码、TOTP 或要求用户验证的 Passkey。
-- **邮件流程**：验证/重置流程携带服务端生成的 Client App 绑定状态，回跳目标只能取自预登记配置（未登记时回退 Realm 公共 URL）。
 
 > 端点清单、参数 schema、状态码矩阵与迁移细节不在 PRD 承载范围，下沉到技术设计。
 
----
-
-## 7. 前端/交互约束
-
-**适用性**: 适用
-
+**前端 / 交互边界:**
 - **页面入口**：集成方在自家前端自建全套用户 UI（可使用官方 [JS 浏览器 SDK](/docs/prd/integration/js-sdk.md) 封装认证生命周期，或用标准 `fetch` + `Authorization: Bearer` 自行实现）；页面布局与交互由集成方决定，Herald 不托管这些页面。Herald 自有前端变为可选参考实现。
 - **未认证流程入口**：注册/登录/找回密码页面由集成方自建，直接调 Herald 公开端点；登录成功返回 `CustomUserUi` token set。
 - **登录后入口**：个人中心（资料/安全/积分/充值/发票/订阅）由集成方自建，用浏览器 token 跨域调用。
@@ -246,7 +182,7 @@
 
 ---
 
-## 8. 已确认决策
+## 7. 已确认决策
 
 - **D-SEC-01（安全姿态）**：选定"跨域 + 浏览器持有用户 token"主路线。token 明确进入集成方前端，身份解析不再依赖 cookie；传输与凭证模型类比业界标准（浏览器持 token + Bearer + 不走跨域 cookie + 旋转 refresh token）。
 - **D-CRED-01（双轨凭证类）**：浏览器 token 分 `FirstParty` 与 `CustomUserUi` 两类。`FirstParty` 由内置保留 Client App（数据库内部标记，不进入 Ext API DTO；Admin API 仅只读回显该标记供管理员识别内置应用，不接受写入——服务端判定用 `is_builtin_first_party_client` 而非该标志）经 Authorization Code + PKCE 换取，执行完整 RBAC；`CustomUserUi` 由 `/login` 直接签发，受用户自服务权限上限约束。普通 Client App 即便完成 PKCE 也不升级为 FirstParty。判定在服务端 fail-closed，不接受请求体声明凭证类。
@@ -254,7 +190,7 @@
 - **D-LOGIN-01（登录链路）**：集成方自建 UI 登录入口经 `/login` 签发 `CustomUserUi` token，跨域场景不设 cookie；二因素流程同步支持。OAuth Authorization Code + PKCE 链路用于签发 `FirstParty` token（Herald 自有前端），不作为自建 UI 的登录入口；普通 Client App 经 PKCE 换码获得的是 `CustomUserUi` 类浏览器 token（权限上限与 `/login` 签发一致），不升级为 FirstParty。
 - **D-TOK-01（生命周期 = 旋转 refresh token）**：短时效 access token（内存）+ 旋转 refresh token（每次刷新换发新 RT、旧 RT 作废）+ 复用检测（旧 RT 再用吊销整个家族）+ RT 绝对有效上限。
 - **D-TOK-02（吊销）**：浏览器 token 变体支持即时吊销。OAuth PRD §2.2 原"Token 撤销（当前不支持）"对浏览器 token 变体不再成立（见 `docs/prd/auth/oauth.md` §2.2 修订），server-side token 维持原状。
-- **D-PROTECT-01（身份端点防护，Client App 级 Turnstile）**：未认证身份端点跨域开放后，人机验证（Turnstile）按当前请求绑定的 Client App 的 Turnstile 配置执行（Turnstile 配置在 Client App 级，不再由 Realm 承载，见 [docs/prd/core/realm-settings.md](../core/realm-settings.md) §3.1/§8）；维持 IP/identifier 限流，不新增 client 维度限流。
+- **D-PROTECT-01（身份端点防护，Client App 级 Turnstile）**：未认证身份端点跨域开放后，人机验证（Turnstile）按当前请求绑定的 Client App 的 Turnstile 配置执行（Turnstile 配置在 Client App 级，不再由 Realm 承载，见 [docs/prd/core/realm-settings.md](../core/realm-settings.md) §7）；维持 IP/identifier 限流，不新增 client 维度限流。
 - **D-AUTHZ-01（权限边界）**：CORS 不是授权机制。`CustomUserUi` token 只获得用户自服务权限上限，管理员与未知能力默认拒绝；新增能力必须显式归类。
 - **D-PASSKEY-01（RP 隔离）**：获准 Client App HTTPS origin 使用自身 host 作为 RP ID，credential 按 RP 隔离；既有 credential 继续归属原 Herald RP。
 - **D-REAUTH-01（高危操作确认）**：改密码、绑定或移除 TOTP/Passkey、注销账号必须先完成短时单次重新认证；可使用已绑定密码、TOTP 或要求用户验证的 Passkey。仅重命名 Passkey 不要求重新认证。
@@ -265,9 +201,9 @@
 
 ---
 
-## 9. 参考资料
+## 8. 参考资料
 
 - 冲突承接 PRD：[docs/prd/auth/oauth.md](/docs/prd/auth/oauth.md)（§2.2 Token 撤销）
 - 冲突承接用户故事：[docs/user-stories/auth/third-party-app.md](/docs/user-stories/auth/third-party-app.md)（US-TP-015/016）
-- 本功能用户故事：[docs/user-stories/integration/custom-user-ui.md](/docs/user-stories/integration/custom-user-ui.md)
 - 相关 PRD：[Client App](/docs/prd/integration/client-app.md)、[SDK](/docs/prd/integration/sdk.md)、[Users](/docs/prd/core/users.md)、[积分](/docs/prd/billing/points.md)、[积分账户](/docs/prd/billing/credit-bucket.md)、[订阅](/docs/prd/billing/subscription.md)、[发票](/docs/prd/billing/invoice.md)、[TOTP](/docs/prd/auth/totp.md)、[Passkey](/docs/prd/auth/passkey.md)、[White-label](/docs/prd/core/ui-custom.md)
+- 用户故事来源见 §1 表格

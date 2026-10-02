@@ -9,27 +9,11 @@
 
 > 详细故事与验收标准请查看 `docs/user-stories/core/realm-custom-domain.md`。
 
-### 1.1 相关故事
-
-- `[US-CD-001]` 为本 Realm 配置自定义登录域名 (P0)，来源 `docs/user-stories/core/realm-custom-domain.md`
-  - 角色：Realm Admin
-  - 摘要：在管理后台为本 Realm 配置自定义登录域名（如 `login.acme.com`），获取 CNAME 指引并查看生效状态，域名全局唯一
-
-- `[US-CD-003]` 自定义域名配置的授权门控 (P1)，来源 `docs/user-stories/core/realm-custom-domain.md`
-  - 角色：Regular User
-  - 摘要：自定义域名配置保存后立即生效（写入域名注册映射），授权反代层签发 TLS 证书
-
-- `[US-CD-005]` 未授权域名访问的拒绝 (P1)，来源 `docs/user-stories/core/realm-custom-domain.md`
-  - 角色：Regular User
-  - 摘要：未在任意 Realm 注册的域名不会被 Herald 授权签发证书，防止证书滥用与钓鱼
-
-### 1.2 优先级汇总
-
-| 优先级 | 数量 | 关键故事 |
-|--------|------|----------|
-| P0 | 1 | 配置自定义域名（CNAME 指引、全局唯一、生效状态） |
-| P1 | 2 | 授权门控（已保存域名获 TLS 授权）、未授权域名拒绝 |
-| P2 | 0 | - |
+| US-ID | 标题 | 优先级 | 来源 |
+|-------|------|--------|------|
+| US-CD-001 | 为本 Realm 配置自定义登录域名 | P0 | `docs/user-stories/core/realm-custom-domain.md` |
+| US-CD-003 | 自定义域名配置的授权门控 | P1 | `docs/user-stories/core/realm-custom-domain.md` |
+| US-CD-005 | 未授权域名访问的拒绝 | P1 | `docs/user-stories/core/realm-custom-domain.md` |
 
 ---
 
@@ -82,25 +66,6 @@
 
 ---
 
-## 3. 需求概述
-
-### 3.1 功能描述
-
-让 Herald 租户能够在本 Realm 配置一个完全自有的品牌登录域名（如 `login.acme.com`），为后续在该自有品牌域名下承载 auth 流提供配置与证书授权基础。本期交付配置能力与证书滥用防护：Realm Admin 配置自定义域名（保存即生效）、获取 CNAME 指引、查看生效状态；Herald 仅对已注册并生效的域名授权反代层签发 TLS 证书，未注册域名不被授权签发，防止证书滥用与钓鱼。
-
-动机为**终端用户信任**——终端用户在 herald.com 承载的登录页可能因 URL 非租户品牌而犹豫/担心钓鱼，导致登录转化偏低；让租户能用自有品牌域名承载 auth 流，以验证"域名本身是独立信任因素"这一假设。当前已交付的配置与证书授权门控是该信任假设落地的前置基础。
-
-### 3.2 关键特性
-
-- Per-realm 自定义登录域名配置（精确域名匹配，全局唯一）
-- CNAME + ACME 即所有权验证（无单独 DNS TXT 步骤）
-- 每域 TLS 自动签发由现有 Caddy 反代承担（Herald app 不终止 TLS）
-- 域名生效状态对 Realm Admin 可见（CNAME / TLS 是否就绪）
-- 单次保存即生效（无需草稿/发布两步；自定义域名为极低频配置，且 hostname 必须 CNAME/TLS 验证才真正生效，三态生命周期无必要）
-- 证书授权门控：仅已注册并生效的域名被授权签发 TLS，未注册域名拒绝
-
----
-
 ## 4. 业务规则与状态
 
 ### 4.1 业务规则
@@ -127,18 +92,7 @@
 
 ---
 
-## 5. 功能需求
-
-### 5.1 核心需求
-
-- **自定义域名配置**：Realm Admin 可在管理后台为本 Realm 配置一个自定义登录域名（精确域名，全局唯一）
-- **CNAME 指引**：系统向 Realm Admin 展示需要 CNAME 到的 Herald 指定 hostname，并展示域名生效状态（CNAME 是否正确指向、TLS 是否就绪）
-- **域名生效状态可见**：Realm Admin 可查看每个已配置域名的当前生效状态
-- **单次保存即生效**：自定义域名配置无草稿/发布两步流程，保存即写入域名注册映射并生效
-- **未授权域名拒绝**：未注册域名不被授权签发证书
-- **配置隔离与权限**：自定义域名按 Realm 隔离，仅 Realm Admin 可配置
-
-### 5.2 验收目标
+## 5. 验收目标
 
 - Realm Admin 能在管理后台 Settings 页面为本 Realm 成功配置并保存自定义登录域名，域名被全局唯一约束保护
 - Realm Admin 能看到 CNAME 指引与域名生效状态（CNAME / TLS 是否就绪）
@@ -149,36 +103,27 @@
 
 ---
 
-## 6. API 相关约束
+## 6. 边界与约束
 
-**适用性**: 适用
+**适用性**: 适用（API 与前端/交互边界合并陈述）
 
-- **接口能力范围**：
-  - 管理端：自定义域名配置的读取、保存（Realm Admin），沿用现有 Realm Config 管理端模式
-  - 证书授权查询：供现有 Caddy 反代 On-Demand TLS 在签发前询问 Herald 该 hostname 是否已注册并生效，兼作证书滥用门控
-- **访问控制原则**：管理端读写要求 Realm Admin（`settings.view` 读 / `settings.manage` 写）并通过 Realm 归属校验；证书授权查询供反代层内部调用（访问控制由技术设计定义）
-- **数据边界原则**：自定义域名配置按 Realm 隔离，不同 Realm 之间不可交叉访问；域名全局唯一约束跨 Realm 生效
+**API / 集成边界:**
+- **接口能力范围**：管理端为自定义域名配置的读取、保存（Realm Admin），沿用现有 Realm Config 管理端模式；证书授权查询供现有 Caddy 反代 On-Demand TLS 在签发前询问 Herald 该 hostname 是否已注册并生效，兼作证书滥用门控
+- **访问控制边界**：管理端权限要求见 §4.1「权限要求」，读写均通过 Realm 归属校验；证书授权查询供反代层内部调用（访问控制由技术设计定义）
 - **证书授权门控响应边界**：授权查询仅返回是否授权的结论，不泄露 Realm 身份或其他信息
-- **不引入资产上传接口**：本期不涉及资产上传
+- 不引入资产上传接口：本期不涉及资产上传
 - 详细接口契约、错误模型与反代层授权查询契约在技术设计文档中维护
 
----
-
-## 7. 前端/交互约束
-
-**适用性**: 适用
-
+**前端 / 交互边界:**
 - **配置页入口**：管理后台 Settings 页面新增「自定义域名」配置入口（与现有 Turnstile / Registration / Email / TOTP / Passkey / 品牌化等 Tab 同级），置于 canonical 域管理后台（`herald.com/{realmId}/manage/settings`），realmId 从 UI 上下文获取
 - **配置表单**：包含自定义域名输入字段，支持保存即生效（无草稿/发布两步流程）
-- **CNAME 指引与状态反馈**：配置端向 Realm Admin 展示需要 CNAME 到的 Herald 指定 hostname，并展示域名生效状态（CNAME 是否正确指向、TLS 是否就绪）
-- **域名全局唯一校验**：输入已被其他 Realm 占用的域名时，前端/后端拒绝并提示域名已被占用
 - **角色差异**：仅 Realm Admin 可见和操作「自定义域名」配置入口；Regular User 无配置入口
 
 ---
 
-## 8. 已确认决策
+## 7. 已确认决策
 
-### 8.1 来自 Decision Brief 的已确认决策（D0 / D1）
+**来自 Decision Brief 的已确认决策（D0 / D1）:**
 
 - **动机归类（D0）**：终端用户信任（非 B2B 成单、非邮件可达性、非纯品类对标）；成功标准以「信任/转化提升」衡量，不以「能力完整」衡量
 - **范围形态（D0）**：简化 BYO 自定义域（CNAME + ACME，无单独 DNS TXT 验证），非 Herald 通配子域、非完整审核体系
@@ -186,7 +131,7 @@
 - **简化策略（D0）**：无单独 DNS TXT 验证步骤，CNAME + ACME 即所有权验证
 - **TLS 自动化（D1）**：ACME 每域签发，由现有 Caddy 反代承担（技术预研确认）
 
-### 8.2 PRD 阶段承接/确认的决策
+**PRD 阶段承接/确认的决策:**
 
 - **TLS 落点确认**：Herald Rust app 保持纯 TCP listener，不承担 TLS 终止；每域 TLS 终止与 ACME 签发/续期由现有 Caddy 反代承担；不引入任何新库
 - **简化 BYO 安全性确认**：证书滥用风险通过「反代层授权查询 + ACME DNS 控制证明」组合消解，无需加回 DNS TXT 验证步骤
@@ -195,22 +140,22 @@
 - **证书授权门控查询基准**：授权判定仅以"已配置且启用"为准；CNAME/TLS 状态为展示态字段，不纳入授权判定，避免授权与签发形成循环
 - **扁平 realm，无父子层级**：用户所说"各个子 realm"即现有扁平 realm；本期每个 realm 为平等租户，不引入 parent_id 父子层级，不修改 realm 数据模型
 
-### 8.3 与既有设计文档的关系
+**与既有设计文档的关系:**
 
 - **与 passkey 设计文档的冲突（已按自定义域名侧落地）**：passkey 设计文档假设「单一部署统一域名，所有 Realm 共享 RP」与自定义域名的 per-realm RP 需求直接冲突。当前 passkey RP 按请求 Origin 与域映射（custom_domain_mapping / client_app allowed_origins）派生 per-realm / per-app RP ID，并校验其归属 realm；canonical 与自定义域凭证不互通，单一域名假设不再成立。此为显式冲突标记，不静默合并。
 - host→realm 路由解析在上一版实现后曾被回退（根因：框架层面改写层在路由匹配之后执行，无法改写 URI）。该重建属技术实现，当前列为未来范围，不在本期已发布能力中。
 
-### 8.4 与 Decision Brief 的关系
+**与 Decision Brief 的关系:**
 
 - Decision Brief 中的 Possible Expansions / Open Questions（跨域会话共享、TLS 运维面板）在本 PRD §2.2 / §2.3 中明确列为 Out of Scope 或未来范围，未作为已确认决策写入。
-- ACME 每域 TLS 管道在 Decision Brief 阶段为「阻塞 Proceed」的 Open Question，经技术预研确认可行（有条件：反代层授权查询 + 无新库）后已转为 §8.2 已确认决策。
+- ACME 每域 TLS 管道在 Decision Brief 阶段为「阻塞 Proceed」的 Open Question，经技术预研确认可行（有条件：反代层授权查询 + 无新库）后已转为 §7 已确认决策。
 
 ---
 
-## 9. 参考资料
+## 8. 参考资料
 
-- 用户故事：`docs/user-stories/core/realm-custom-domain.md`
 - 相关 PRD：`docs/prd/core/ui-custom.md`（white-label PRD，本能力的配置范式来源）
 - 相关 PRD：`docs/prd/core/realm-settings.md`（Realm Config 配置模式基线）
 - 相关 PRD：`docs/prd/core/realm.md`
 - 角色定义：`docs/user-stories/_roles.md`
+- 用户故事来源见 §1 表格

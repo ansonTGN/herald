@@ -9,31 +9,13 @@
 
 > 详细故事与验收标准请查看 `docs/user-stories/` 中对应文档。
 
-### 1.1 故事引用
-
-- `[US-DC-001]` CLI 工具发起设备授权，优先级 P0，来源 `docs/user-stories/auth/device-code.md`
-  - 角色：Third-Party App
-  - 摘要：CLI 通过 Device Authorization Grant 请求 device_code 和 user_code
-- `[US-DC-002]` 用户在验证页面完成授权，优先级 P0，来源 `docs/user-stories/auth/device-code.md`
-  - 角色：Regular User
-  - 摘要：用户在 Herald 验证页面输入 user_code 并完成登录授权
-- `[US-DC-003]` CLI 工具轮询获取令牌，优先级 P0，来源 `docs/user-stories/auth/device-code.md`
-  - 角色：Third-Party App
-  - 摘要：CLI 按 interval 轮询令牌端点，用户授权后获得 access token
-- `[US-DC-004]` Realm Admin 配置 Device Code Grant，优先级 P1，来源 `docs/user-stories/auth/device-code.md`
-  - 角色：Realm Admin
-  - 摘要：管理员为 Client App 启用或禁用 Device Code Grant
-- `[US-DC-005]` 设备验证页面 API，优先级 P1，来源 `docs/user-stories/auth/device-code.md`
-  - 角色：Third-Party App
-  - 摘要：开放 API 供第三方应用构建自定义设备码验证体验
-
-### 1.2 优先级汇总表
-
-| 优先级 | 数量 | 关键故事 |
-|--------|------|----------|
-| P0 | 3 | 设备授权请求、用户验证授权、令牌轮询 |
-| P1 | 2 | Client App 配置、验证页面 API |
-| P2 | 0 | - |
+| US-ID | 标题 | 优先级 | 来源 |
+|-------|------|--------|------|
+| US-DC-001 | CLI 工具发起设备授权 | P0 | `docs/user-stories/auth/device-code.md` |
+| US-DC-002 | 用户在验证页面完成授权 | P0 | `docs/user-stories/auth/device-code.md` |
+| US-DC-003 | CLI 工具轮询获取令牌 | P0 | `docs/user-stories/auth/device-code.md` |
+| US-DC-004 | Realm Admin 配置 Device Code Grant | P1 | `docs/user-stories/auth/device-code.md` |
+| US-DC-005 | 设备验证页面 API | P1 | `docs/user-stories/auth/device-code.md` |
 
 ---
 
@@ -67,25 +49,6 @@
 
 ---
 
-## 3. 需求概述
-
-### 3.1 功能描述
-
-为 Herald 新增 OAuth 2.0 Device Authorization Grant（RFC 8628）支持，主要服务于 CLI 工具认证场景。
-
-在 CLI 工具等无浏览器或输入受限的环境中，用户无法通过传统的授权码流程完成 OAuth 认证。Device Code Flow 通过将认证过程分离到用户的浏览器（手机或电脑）上，使 CLI 工具能在终端环境下安全完成用户认证。
-
-**核心价值**：为第三方 CLI 应用提供标准化、安全的认证方式，降低集成门槛，提升用户体验。
-
-### 3.2 关键特性
-
-- **RFC 8628 合规（含两处已记录偏差）**：实现协议规定的全部端点、参数和错误码；偏差见 §6——`access_denied` 返回 403、令牌轮询端点不接受 `client_id` 参数（客户端身份在设备授权时绑定于 device_code 状态，轮询仅凭 device_code + realm 定位）
-- **复用现有架构**：复用 Client App 模型和 Session Token 机制
-- **双通道验证**：Herald 提供默认验证页面，同时开放 API 供第三方自定义
-- **安全防护**：短生命周期码、轮询限速、展示 Client App 名称防钓鱼
-
----
-
 ## 4. 业务规则与状态
 
 ### 4.1 业务规则
@@ -96,6 +59,7 @@
 3. 用户在 Herald 验证页面输入 `user_code`、登录、查看 Client App 名称并确认授权
 4. CLI 工具以指定间隔轮询令牌端点，系统返回 `authorization_pending`、`slow_down`、`expired_token`、`access_denied`、`invalid_request`，或包含 access token 与可轮换 refresh token 的浏览器 token family
 5. Realm Admin 可为每个 Client App 独立启用或禁用 Device Code Grant
+- 设备授权请求需验证 `client_id` 有效且 Client App 已启用 Device Code Grant
 
 **user_code 生成规则**
 - 长度：8 字符，格式 `XXXX-XXXX`（4+4，连字符分隔）
@@ -108,8 +72,10 @@
 **API 能力边界**
 - 不需要 `redirect_uri` 参数（与授权码流程的关键区别）
 - 不需要 `client_secret`（适用于 public client / CLI 场景）
+- 令牌轮询端点（`POST /api/device/{realmId}/token`）不接受也不校验 `client_id`——客户端身份在设备授权（`/authorize`）时即绑定于 device_code 的服务端状态，轮询仅凭 `device_code` + realm 定位事务；RFC 8628 §3.5 允许（不强制）client 参数，缺失该参数不破坏协议兼容性
 - verify 与 confirm 各自按用户限制为每 300 秒 20 次。
-- 授权请求入口按来源 IP 限制为每 60 秒 10 次；当前不维护“单 Client App 同时处于 pending 的设备码数量”这一额外状态
+- 授权请求入口按来源 IP 限制为每 60 秒 10 次；当前不维护"单 Client App 同时处于 pending 的设备码数量"这一额外状态
+- 设备验证 API 需要求用户已登录（session 认证）
 
 **登录同意闸门（归属：core/legal-consent-account-deletion.md §4.1「登录即同意」）**
 - confirm 端点的 approve（授权）转换在登录同意闸门之后执行：确认人同意缺失或版本过期时，不转入 `authorized`（设备状态停留在 `verified`），confirm 返回 200 + `consent_required: true` + 当前生效协议摘要；补全路径为提交 `POST /api/user/consent` 记录同意后重新 confirm，无需重启设备流。deny（拒绝授权）不经闸门——不签发任何凭据。
@@ -141,26 +107,17 @@
 - 同一用户重复调用 verify 端点验证同一 user_code 时，幂等返回 Client App 信息，不会重复修改状态
 - 不同用户尝试验证已被其他用户验证的 user_code 时，返回 `already_used` 错误
 
-**轮询错误码**
+**轮询错误码**（错误响应体携带 `error` 与 `error_description` 字段）
 - `authorization_pending`：用户尚未完成授权（状态为 pending 或 verified），CLI 应继续轮询
 - `slow_down`：轮询过快，CLI 应在当前间隔基础上增加 5 秒
 - `expired_token`：device_code 已过期（Redis key 不存在），需重新发起授权请求
-- `access_denied`：用户拒绝授权（状态为 denied）
+- `access_denied`：用户拒绝授权（状态为 denied）。与 RFC 8628 的有意偏差：`authorization_pending`、`slow_down`、`expired_token` 均按 RFC 返回 400，而 `access_denied`（用户明确拒绝授权）返回 **403 Forbidden**（错误码名与 RFC 一致；拒绝属授权终态，语义上更贴近 403，且已有测试锁定该行为）
 - `invalid_request`：device_code 已被消费（状态为 consumed），不可重复领取 token
 - `consent_required`（403）：签发点登录同意闸门命中——确认人同意缺失或版本过期，本设备流终止；用户补全同意后需重新发起设备授权
 
 ---
 
-## 5. 功能需求
-
-### 5.1 核心需求
-
-1. **设备授权请求**：支持 CLI 工具通过 `client_id` 获取 `device_code`、`user_code`、`verification_uri` 等参数
-2. **用户验证授权**：提供 Herald 验证页面供用户输入 user_code、登录并确认授权
-3. **令牌轮询**：支持 CLI 工具按 interval 轮询，正确返回全部协议错误码
-4. **Client App 配置**：Realm Admin 可为每个 Client App 独立启用或禁用 Device Code Grant
-
-### 5.2 验收目标
+## 5. 验收目标
 
 - P0 场景（US-DC-001 ~ US-DC-003）全部通过，CLI 工具可完成完整的设备码认证流程
 - P1 场景（US-DC-004 ~ US-DC-005）通过，管理员可配置、第三方可自定义验证页面
@@ -168,53 +125,39 @@
 
 ---
 
-## 6. API 相关约束
+## 6. 边界与约束
 
-**适用性**: 适用
+**适用性**: 适用（API 与前端/交互边界合并陈述）
 
-- 设备授权请求需验证 `client_id` 有效且 Client App 已启用 Device Code Grant
-- 令牌轮询需实现 RFC 8628 §3.5 规定的全部错误码（`authorization_pending` / `slow_down` / `expired_token` / `access_denied`），错误响应体携带 `error` 与 `error_description` 字段；状态码存在一处与 RFC 的有意偏差：`authorization_pending`、`slow_down`、`expired_token` 均按 RFC 返回 400，而 `access_denied`（用户明确拒绝授权）返回 **403 Forbidden**（错误码名与 RFC 一致；拒绝属授权终态，语义上更贴近 403，且已有测试锁定该行为）
-- 参数面存在另一处与 RFC 的偏差：令牌轮询端点（`POST /api/device/{realmId}/token`）不接受也不校验 `client_id`——客户端身份在设备授权（`/authorize`）时即绑定于 device_code 的服务端状态，轮询仅凭 `device_code` + realm 定位事务；RFC 8628 §3.5 允许（不强制）client 参数，缺失该参数不破坏协议兼容性
-- 轮询端点需对 `slow_down` 错误正确累加间隔（每次 +5 秒）
-- 验证页面 API 需要求用户已登录（session 认证）
-- 所有端点遵守 realm 隔离原则
+**API / 集成边界:**
+- 协议合规：实现 RFC 8628 规定的全部端点、参数和错误码；两处已记录偏差——`access_denied` 返回 403 Forbidden、令牌轮询端点不接受 `client_id` 参数（规则详见 §4.1「API 能力边界」与 §4.2「轮询错误码」）
 
----
-
-## 7. 前端/交互约束
-
-**适用性**: 适用
-
-### 验证页面（`/{realmId}/device`）
-
-- **入口**：Herald 前端新增 `/{realmId}/device` 路由，与 realm 绑定（登录跳转、API 调用均基于路径中的 realmId）
-- **输入**：用户输入 `user_code`，8 字符输入框（自动格式化为 `XXXX-XXXX`）
-- **授权确认**：显示请求授权的 Client App 名称和图标（如果配置了 icon_url），用户点击"授权"或"拒绝"
-- **状态反馈**：
-  - 输入无效/过期码：提示"设备码无效或已过期"
-  - 已登录用户直接看到授权确认页面
-  - 未登录用户先跳转 `/{realmId}/auth/login`，登录后回到验证页面
-  - 授权成功：提示"授权成功，请返回 CLI 工具"
-  - 授权拒绝：提示"授权已拒绝"
-- **URL 预填**：通过 `verification_uri_complete` 访问时，`user_code` 自动填入输入框
-
-### Client App 设置
-
-- 在现有 Client App 设置页面中新增 Device Code Grant 启用/禁用开关
-- 默认为禁用状态
+**前端 / 交互边界:**
+- **验证页面（`/{realmId}/device`）**
+  - **入口**：Herald 前端新增 `/{realmId}/device` 路由，与 realm 绑定（登录跳转、API 调用均基于路径中的 realmId）
+  - **输入**：用户输入 `user_code`，8 字符输入框（自动格式化为 `XXXX-XXXX`）
+  - **授权确认**：显示请求授权的 Client App 名称和图标（如果配置了 icon_url），用户点击"授权"或"拒绝"
+  - **状态反馈**：
+    - 输入无效/过期码：提示"设备码无效或已过期"
+    - 已登录用户直接看到授权确认页面
+    - 未登录用户先跳转 `/{realmId}/auth/login`，登录后回到验证页面
+    - 授权成功：提示"授权成功，请返回 CLI 工具"
+    - 授权拒绝：提示"授权已拒绝"
+  - **URL 预填**：通过 `verification_uri_complete` 访问时，`user_code` 自动填入输入框
+- **Client App 设置**：在现有 Client App 设置页面中新增 Device Code Grant 启用/禁用开关；默认为禁用状态
 
 ---
 
-## 8. 已确认决策
+## 7. 已确认决策
 
-### 8.1 已确认决策
 - 复用现有 Client App 模型和 Session Token 机制 / 降低实现复杂度
 - 双通道验证策略（Herald 默认页面 + 第三方自定义 API） / 兼顾标准化和灵活性
 
 ---
 
-## 9. 参考资料
-- 用户故事：`docs/user-stories/auth/device-code.md`
+## 8. 参考资料
+
+- 用户故事来源见 §1 表格
 - RFC 8628 — OAuth 2.0 Device Authorization Grant: https://datatracker.ietf.org/doc/html/rfc8628
 - 相关 PRD：`docs/prd/auth/oauth.md`
 - 相关 PRD：`docs/prd/integration/client-app.md`

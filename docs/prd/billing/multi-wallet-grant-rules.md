@@ -13,31 +13,20 @@
 
 > 详细故事与验收标准请查看 `docs/user-stories/billing/multi-wallet-grant-rules.md`。
 
-### 1.1 本特性新增故事
-
-| US-ID | 标题 | 角色 | 优先级 |
-|---|---|---|---|
-| US-MWGR-001 | 为一个购买配置多条积分分发规则 | Realm Admin | P0 |
-| US-MWGR-002 | 为注册配置多条积分分发规则 | Realm Admin | P0 |
-| US-MWGR-003 | 一次业务事件完整执行多条积分规则 | Herald 系统 | P0 |
-| US-MWGR-004 | 查看和停用积分分发规则 | Realm Admin | P1 |
-
-### 1.2 已发布相关故事（行为随本特性变更）
-
-- `[US-CB-003]` 将套餐/积分包归属到账户，P0，来源 `docs/user-stories/billing/credit-bucket.md`；本特性将"归属唯一账户"替换为"配置零到多条规则，每条规则归属一个账户"。
-- `[US-CB-004]` 购买账户套餐/积分包，P0，来源 `docs/user-stories/billing/credit-bucket.md`；购买结果由单账户到账扩展为多账户同时到账。
-- `[US-CB-008]` 订阅生命周期按账户池发放与回收，P0，来源 `docs/user-stories/billing/credit-bucket.md`；生命周期处理由单账户扩展为逐规则、逐账户处理。
-- `[US-FU-001]` 注册时获得初始积分，P0，和 `[US-FU-002]` 定期自动获得免费积分，P0，来源 `docs/user-stories/billing/points-free-user.md`；目标账户从单一注册接收账户扩展为每条规则独立指定。
-- `[US-PA-003]` 处理支付成功后的履约，P0，来源 `docs/user-stories/billing/payment-attempt.md`；单条积分结果扩展为多条积分结果，幂等约束保持不变。
-- `[US-PO-001]` 配置 Entitlement 积分策略，P0，和 `[US-PO-006]` 配置 Realm 默认积分策略，P0，来源 `docs/user-stories/billing/points-admin.md`；单组字段编辑扩展为规则列表编辑。
-
-### 1.3 优先级汇总
-
-| 优先级 | 数量 | 关键故事 |
-|---|---:|---|
-| P0 | 3 | US-MWGR-001～003 |
-| P1 | 1 | US-MWGR-004 |
-| P2 | 0 | — |
+| US-ID | 标题 | 优先级 | 来源 |
+|-------|------|--------|------|
+| US-MWGR-001 | 为一个购买配置多条积分分发规则 | P0 | `docs/user-stories/billing/multi-wallet-grant-rules.md` |
+| US-MWGR-002 | 为注册配置多条积分分发规则 | P0 | `docs/user-stories/billing/multi-wallet-grant-rules.md` |
+| US-MWGR-003 | 一次业务事件完整执行多条积分规则 | P0 | `docs/user-stories/billing/multi-wallet-grant-rules.md` |
+| US-MWGR-004 | 查看和停用积分分发规则 | P1 | `docs/user-stories/billing/multi-wallet-grant-rules.md` |
+| US-CB-003 | 将套餐/积分包归属到账户——"归属唯一账户"替换为"配置零到多条规则，每条规则归属一个账户"（行为变更） | P0 | `docs/user-stories/billing/credit-bucket.md` |
+| US-CB-004 | 购买账户套餐/积分包——购买结果由单账户到账扩展为多账户同时到账（行为变更） | P0 | `docs/user-stories/billing/credit-bucket.md` |
+| US-CB-008 | 订阅生命周期按账户池发放与回收——由单账户扩展为逐规则、逐账户处理（行为变更） | P0 | `docs/user-stories/billing/credit-bucket.md` |
+| US-FU-001 | 注册时获得初始积分——目标账户从单一注册接收账户扩展为每条规则独立指定（行为变更） | P0 | `docs/user-stories/billing/points-free-user.md` |
+| US-FU-002 | 定期自动获得免费积分——目标账户从单一注册接收账户扩展为每条规则独立指定（行为变更） | P0 | `docs/user-stories/billing/points-free-user.md` |
+| US-PA-003 | 处理支付成功后的履约——单条积分结果扩展为多条积分结果，幂等约束保持不变（行为变更） | P0 | `docs/user-stories/billing/payment-attempt.md` |
+| US-PO-001 | 配置 Entitlement 积分策略——单组字段编辑扩展为规则列表编辑（行为变更） | P0 | `docs/user-stories/billing/points-admin.md` |
+| US-PO-006 | 配置 Realm 默认积分策略——单组字段编辑扩展为规则列表编辑（行为变更） | P0 | `docs/user-stories/billing/points-admin.md` |
 
 ---
 
@@ -74,30 +63,6 @@
 - **支付与订阅**：复用 Entitlement Mapping、Payment Attempt、Webhook 幂等、补偿与订阅生命周期。
 - **用户注册**：复用注册成功后的积分处理入口；没有启用规则时注册仍正常完成。
 - **权限**：沿用 `billing.manage`、`billing.view`、`points.manage` 和 `points.view` 的 Realm 隔离规则。
-
----
-
-## 3. 需求概述
-
-### 3.1 功能描述
-
-Herald 已支持一个用户同时持有多个积分账户，但既有发放配置曾是单目标：一个可购买对象只有一个目标账户和一组积分策略，一个 Realm 的注册积分也只能进入一个被标记的账户。这使"买一次，同时获得通用积分和专用积分"或"注册后，同时获得不同应用的体验额度"等场景无法表达。
-
-本特性将发放配置改为规则集合：
-
-- 购买对象和注册配置是规则拥有者。
-- 每条规则只负责一种发放策略，并明确指向一个积分账户。
-- 一个触发配置通过多条启用规则向多个账户扇出。
-- 积分账户不保存发放规则，避免把支付/注册语义混入消费隔离边界。
-
-### 3.2 关键特性
-
-- **一对多发放**：一次购买或注册可命中任意数量的启用规则。
-- **规则独立**：每条规则独立配置目标账户、固定积分或滚动窗口额度、有效期和适用阶段。
-- **整体一致**：同一事件的积分扇出不留下部分到账。
-- **规则级幂等**：同一事件重复处理时，每条规则都只产生一次结果。
-- **生命周期可追踪**：退款、取消、升级按原发放规则和目标账户定位回收范围。
-- **无积分仍合法**：规则集合可为空，支持纯角色、纯支付记录或无注册赠送的场景。
 
 ---
 
@@ -174,22 +139,7 @@ Herald 已支持一个用户同时持有多个积分账户，但既有发放配�
 
 ---
 
-## 5. 功能需求
-
-### 5.1 核心需求
-
-- 支持在一个 Entitlement Mapping 下管理多条购买积分规则。
-- 支持在 Realm 注册积分配置下管理多条注册初始和免费周期规则。
-- 支持每条规则选择目标积分账户、发放模型和相应策略字段。
-- 支持规则从当前项目允许的自动发放触发源中选择适用来源，并按 Mapping 计费类型约束可选项。
-- 支持规则集合为空，且不影响 Mapping 的角色授予、订阅或支付记录能力。
-- 支持支付、订阅和注册入口一次执行全部启用规则。
-- 支持生命周期事件按原规则结果跨多个账户发放、撤销或回收。
-- 支持规则级幂等、整体失败无部分到账和失败补偿。
-- 支持管理端及购买侧展示多条规则和目标账户。
-- 支持停用单条规则，且历史积分和交易仍可追踪。
-
-### 5.2 验收目标
+## 5. 验收目标
 
 - Realm Admin 能为同一个购买对象配置至少两条指向不同积分账户的规则，并在一个管理视图中查看。
 - 用户完成一次购买后，所有启用规则分别在目标账户产生正确积分或额度；购买结果列出全部发放。
@@ -203,25 +153,20 @@ Herald 已支持一个用户同时持有多个积分账户，但既有发放配�
 
 ---
 
-## 6. API 相关约束
+## 6. 边界与约束
 
-**适用性**: 适用
+**适用性**: 适用（API 与前端/交互边界合并陈述）
 
+**API / 集成边界:**
 - Mapping 查询与写入能力必须表达规则列表，不再用单一目标账户和单一策略字段代表积分发放。
 - Realm 注册积分配置查询与写入能力必须表达注册规则列表，不再依赖单一注册接收账户。
 - 规则写入需 `points.manage`；Mapping 的非积分字段仍沿用 `billing.manage`；读取沿用现有 `billing.view` / `points.view` 边界。
 - 所有规则、目标账户和业务事件必须校验 Realm 一致性，禁止跨 Realm 引用。
-- 规则集合写入和业务事件多规则执行均需具备整体一致性；失败响应应能定位具体规则。
 - 支付与购买状态能力应能返回零到多条积分发放结果，而不是只返回一个积分结果。
 - 本项目未上线，不保留旧单规则字段或旧客户端响应形态。
 - 具体端点、请求响应字段、错误码与 OpenAPI/SDK 变更下沉到技术设计。
 
----
-
-## 7. 前端/交互约束
-
-**适用性**: 适用
-
+**前端 / 交互边界:**
 - **Entitlement Mapping 管理**：现有创建、详情和批量管理入口将单一账户/积分策略编辑区替换为可增删、排序、编辑和停用的规则列表。
 - **Realm 注册积分配置**：现有默认积分配置页改为注册规则列表，区分注册初始积分和免费周期积分。
 - **规则编辑反馈**：每条规则显示目标账户、发放模型、关键数值、启用状态和行级校验错误；保存时同时展示整体提交状态。
@@ -232,16 +177,16 @@ Herald 已支持一个用户同时持有多个积分账户，但既有发放配�
 
 ---
 
-## 8. 已确认决策
+## 7. 已确认决策
 
 | Decision ID | 状态 | 决策项 | 结论 | PRD 落点 | 来源 |
 |---|---|---|---|---|---|
-| `DEC-multi-wallet-grant-rules-001` | Applied | 多目标范围 | 购买和注册均支持多规则、多账户扇出 | §2～§5 | `.ai/decision-log/multi-wallet-grant-rules.md` |
+| `DEC-multi-wallet-grant-rules-001` | Applied | 多目标范围 | 购买和注册均支持多规则、多账户扇出 | §2、§4、§5 | `.ai/decision-log/multi-wallet-grant-rules.md` |
 | `DEC-multi-wallet-grant-rules-002` | Applied | 兼容性 | 未上线，直接替换旧单规则模型，不回填或双写 | §2.2、§6 | `.ai/decision-log/multi-wallet-grant-rules.md` |
-| `DEC-multi-wallet-grant-rules-003` | Applied | 规则归属 | 规则属于触发配置，每条规则指向一个账户；账户不承载规则 | §3.1、§4.1 | `.ai/decision-log/multi-wallet-grant-rules.md` |
-| `DEC-multi-wallet-grant-rules-005` | Applied | 整体执行与幂等 | 多规则整体执行，按事件与规则幂等 | §4.5、§5.2 | `.ai/decision-log/multi-wallet-grant-rules.md` |
+| `DEC-multi-wallet-grant-rules-003` | Applied | 规则归属 | 规则属于触发配置，每条规则指向一个账户；账户不承载规则 | §4.2 | `.ai/decision-log/multi-wallet-grant-rules.md` |
+| `DEC-multi-wallet-grant-rules-005` | Applied | 整体执行与幂等 | 多规则整体执行，按事件与规则幂等 | §4.5、§5 | `.ai/decision-log/multi-wallet-grant-rules.md` |
 | `DEC-multi-wallet-grant-rules-007` | Applied | 规则生命周期 | 停用影响后续，历史发放和归因保持 | §4.5、§5 | `.ai/decision-log/multi-wallet-grant-rules.md` |
-| `DEC-multi-wallet-grant-rules-008` | Applied | 管理入口 | 复用 Mapping 与 Realm 积分配置入口管理规则集合 | §7 | `.ai/decision-log/multi-wallet-grant-rules.md` |
+| `DEC-multi-wallet-grant-rules-008` | Applied | 管理入口 | 复用 Mapping 与 Realm 积分配置入口管理规则集合 | §6 | `.ai/decision-log/multi-wallet-grant-rules.md` |
 | `DEC-multi-wallet-grant-rules-009` | Applied | 触发源目录 | 六类自动发放来源进入规则；主动发放与派生回收不进入 | §2、§4.1、§5 | `.ai/decision-log/multi-wallet-grant-rules.md` |
 | `DEC-multi-wallet-grant-rules-011` | Applied | 周期策略 | 订阅和免费周期规则允许 fixed 周期积分或滚动窗口 quota，显式覆盖已发布 quota-only 基线 | §2.1、§4.3、§4.4 | `.ai/decision-log/multi-wallet-grant-rules.md` |
 
@@ -249,13 +194,12 @@ Herald 已支持一个用户同时持有多个积分账户，但既有发放配�
 
 ---
 
-## 9. 参考资料
+## 8. 参考资料
 
-- 用户故事：`docs/user-stories/billing/multi-wallet-grant-rules.md`
+- 用户故事来源见 §1 表格
 - 决策账本：`.ai/decision-log/multi-wallet-grant-rules.md`
 - 已发布积分账户 PRD：`docs/prd/billing/credit-bucket.md`
 - 已发布积分系统 PRD：`docs/prd/billing/points.md`
 - 已发布订阅 PRD：`docs/prd/billing/subscription.md`
-- 已发布用户故事：`docs/user-stories/billing/credit-bucket.md`、`points-free-user.md`、`points-admin.md`、`payment-attempt.md`
 - 角色定义：`docs/user-stories/_roles.md`
 - 技术设计：`.ai/design/multi-wallet-grant-rules.md`

@@ -9,68 +9,23 @@
 
 > 详细故事与验收标准请查看 `docs/user-stories/` 中对应文档。
 
-### 1.1 故事引用
-
-**Realm Admin:**
-- 配置 OAuth Provider（Realm 设置的一部分，P0；无专属故事，配置入口随 Realm 设置交付）
-  - 角色：Realm Admin
-  - 摘要：配置 OAuth Provider，启用第三方登录
-
-**第三方应用开发者:**
-- `[US-TP-001]` OAuth 授权码登录 Authorization Code + PKCE (P0) — 来源 `docs/user-stories/auth/third-party-app.md`
-  - 角色：第三方应用
-  - 摘要：使用 Authorization Code + PKCE 流程安全获取访问令牌
-- `[US-TP-002]` 验证用户登录状态 (P0) — 来源 `docs/user-stories/auth/third-party-app.md`
-  - 角色：第三方应用
-  - 摘要：验证用户登录状态和身份，保护应用资源
-- `[US-TP-003]` 检查用户权限 (P0) — 来源 `docs/user-stories/auth/third-party-app.md`
-  - 角色：第三方应用
-  - 摘要：检查用户是否有权限访问特定资源，实现细粒度访问控制
-- `[US-TP-006]` 处理异常情况 (P1) — 来源 `docs/user-stories/auth/third-party-app.md`
-  - 角色：第三方应用
-  - 摘要：正确处理各种异常情况，提供友好体验
-- `[US-TP-007]` 会话管理 (P1) — 来源 `docs/user-stories/auth/third-party-app.md`
-  - 角色：第三方应用
-  - 摘要：管理用户会话，实现 SSO 和登出
-- `[US-TP-008]` 第三方 API 认证 (P0) — 来源 `docs/user-stories/auth/third-party-app.md`
-  - 角色：第三方应用
-  - 摘要：使用 API Key 认证调用 Herald 第三方接口，安全集成 Herald 系统
-- `[US-TP-009]` 查询订阅状态 (P0) — 来源 `docs/user-stories/auth/third-party-app.md`
-  - 角色：第三方应用
-  - 摘要：查询客户端应用的订阅状态，根据订阅状态提供相应功能
-- `[US-TP-015]` 第三方 Web SPA 发起 SSO 登录 (P0) — 来源 `docs/user-stories/auth/third-party-app.md`
-  - 角色：第三方应用开发者
-  - 摘要：从 Web SPA 发起 Herald SSO 登录，无需额外后端即可完成认证
-- `[US-TP-016]` 第三方后端用授权码换取令牌 (P0) — 来源 `docs/user-stories/auth/third-party-app.md`
-  - 角色：第三方应用开发者
-  - 摘要：后端用授权码和 PKCE 验证换取令牌，安全完成认证
-
-**普通用户:**
-- `[US-RU-008]` 访问第三方应用 (P0) — 来源 `docs/user-stories/core/regular-user.md`
-  - 角色：普通用户
-  - 摘要：使用 Herald 账号登录第三方应用，获得 SSO 体验
-- `[US-RU-010]` 从第三方 Web 应用跳转登录 (P0) — 来源 `docs/user-stories/core/regular-user.md`
-  - 角色：普通用户
-  - 摘要：从第三方应用跳转到 Herald 完成认证后自动返回，无缝使用第三方服务
-
-**主管理员:**
-- API Key 管理 (P0) — 来源 `docs/user-stories/core/admin-realm.md`
-  - 角色：主管理员
-  - 摘要：创建和管理第三方 API Keys，控制第三方访问
-
-**Client App 设置:**
-- `[US-TP-008]` 配置 Client App 跳转地址白名单 (P0) — 来源 `docs/user-stories/auth/client-app-settings.md`
-  - 摘要：redirect_uri 白名单精确匹配
-- `[US-TP-010]` 启用/禁用 Client App (P0) — 来源 `docs/user-stories/auth/client-app-settings.md`
-  - 摘要：禁用的 Client App 拒绝 OAuth 授权
-
-### 1.2 优先级汇总
-
-| 优先级 | 数量 | 关键故事 |
-|--------|------|----------|
-| P0 | 11 | 配置 OAuth Provider、Authorization Code + PKCE 流程、Web SPA SSO、令牌交换、API Key 认证、权限检查、订阅查询、第三方跳转登录、白名单配置 |
-| P1 | 2 | 异常处理、会话管理 |
-| P2 | 0 | - |
+| US-ID | 标题 | 优先级 | 来源 |
+|-------|------|--------|------|
+| — | 配置 OAuth Provider（无专属故事，配置入口随 Realm 设置交付） | P0 | — |
+| US-TP-001 | OAuth 授权码登录 Authorization Code + PKCE | P0 | `docs/user-stories/auth/third-party-app.md` |
+| US-TP-002 | 验证用户登录状态 | P0 | `docs/user-stories/auth/third-party-app.md` |
+| US-TP-003 | 检查用户权限 | P0 | `docs/user-stories/auth/third-party-app.md` |
+| US-TP-006 | 处理异常情况 | P1 | `docs/user-stories/auth/third-party-app.md` |
+| US-TP-007 | 会话管理 | P1 | `docs/user-stories/auth/third-party-app.md` |
+| US-TP-008 | 第三方 API 认证 | P0 | `docs/user-stories/auth/third-party-app.md` |
+| US-TP-009 | 查询订阅状态 | P0 | `docs/user-stories/auth/third-party-app.md` |
+| US-TP-015 | 第三方 Web SPA 发起 SSO 登录 | P0 | `docs/user-stories/auth/third-party-app.md` |
+| US-TP-016 | 第三方后端用授权码换取令牌 | P0 | `docs/user-stories/auth/third-party-app.md` |
+| US-RU-008 | 访问第三方应用 | P0 | `docs/user-stories/core/regular-user.md` |
+| US-RU-010 | 从第三方 Web 应用跳转登录 | P0 | `docs/user-stories/core/regular-user.md` |
+| — | API Key 管理 | P0 | `docs/user-stories/core/admin-realm.md` |
+| US-TP-008 | 配置 Client App 跳转地址白名单 | P0 | `docs/user-stories/auth/client-app-settings.md` |
+| US-TP-010 | 启用/禁用 Client App | P0 | `docs/user-stories/auth/client-app-settings.md` |
 
 ---
 
@@ -86,13 +41,13 @@
 - redirect_uri 白名单精确匹配（origin + port 一致）
 - TOTP 二次认证流程中保持 OAuth 上下文
 - 前端登录页透传 OAuth 参数，处理后端返回的 redirectTo 跳转
-- 第三方 API 认证（API Key 方式），支持用户登录状态验证、权限检查和订阅状态查询
+- 第三方 API 认证（API Key 方式），支持用户登录状态验证、权限检查和订阅状态查询；Ext API 另提供 Realm（创建/列表/查询）、User（创建/列表/查询）、Client App（创建/列表/查询）、Billing（订阅计划/分配查询）、Points（余额查询/消费/交易查询）管理能力（详见各自独立 PRD）
 - API Key 绑定到特定 Client App（Client App Scope），普通 Client App 的 API Key 仅能访问该 App 所属资源，Admin API Client 的 Key 可跨 App 访问
 - API Key 轮换（Rotate），生成新密钥并立即失效旧密钥
 - API Key Realm 隔离，API Key 使用统计
 - OAuth 2.0 Device Authorization Grant (RFC 8628)，详见独立 PRD `docs/prd/auth/device-code.md`
 - Herald 作为 OAuth Client 的 SSO 登录，通过 `/api/oauth/{realmId}/{provider}/login` 和 `/{provider}/callback` 路径实现第三方 Provider 登录
-- **OpenID Connect 兼容身份层（叠加在上述 Authorization Code + PKCE 核心端点上）**：`/authorize` 接受可选 `scope`/`nonce` 参数，`/token` 在流程携带字面 `openid` scope 时额外签发 RS256 `id_token`；并新增 discovery（`/.well-known/openid-configuration`）、JWKS（`/.well-known/jwks.json`）与 `userinfo` 端点。完整语义（claim 集、签名密钥轮换、自定义域名 issuer 重定位等）由独立 PRD [openid-connect.md](openid-connect.md) 承载，本 PRD 只声明基础授权码流的语义
+- **OpenID Connect 兼容身份层（叠加在上述 Authorization Code + PKCE 核心端点上）**：`/authorize` 接受可选 `scope`/`nonce` 参数，`/token` 在流程携带字面 `openid` scope 时额外签发 RS256 `id_token`；并新增 discovery、JWKS 与 `userinfo` 端点。完整语义（claim 集、签名密钥轮换、自定义域名 issuer 重定位等）由独立 PRD [openid-connect.md](openid-connect.md) 承载，本 PRD 只声明基础授权码流的语义
 
 ### 2.2 不包含功能 (Out of Scope)
 
@@ -117,38 +72,6 @@
 
 ---
 
-## 3. 需求概述
-
-### 3.1 功能描述
-
-为 Herald 多租户系统提供完整的 OAuth 与第三方集成能力，包括两个核心功能域：
-
-1. **OAuth Provider 配置管理**：允许 Realm Admin 为每个 Realm 配置第三方登录提供商（Google、GitHub、Facebook、Apple、Discord、WeChat、WeChat Mini Program），管理 Provider 的启用/禁用状态和 OAuth 凭证。用户可通过已配置的 Provider 实现 SSO 登录。
-
-2. **第三方应用 OAuth 集成 (Authorization Code + PKCE)**：基于 OAuth 2.1 标准流程，允许第三方 Web 应用通过 Herald 系统验证用户身份。第三方 SPA 发起授权请求，用户在 Herald 完成认证后，通过授权码安全交换令牌。
-
-3. **第三方 API 接入**：第三方应用通过 API Key 认证接入 Herald 系统，实现用户登录状态验证、权限检查和订阅状态查询等功能。Ext API 还提供 Realm、User、Client App、Billing（订阅计划查询）、Points（余额查询与消费）等完整管理能力。详细内容参考各自独立 PRD。
-
-4. **Herald OAuth Client SSO 登录**：Herald 本身作为 OAuth Client，通过通用登录路径 `/api/oauth/{realmId}/{provider}/login` 发起第三方 Provider 授权，回调路径 `/{provider}/callback` 接收授权结果并完成用户关联登录。通用路径适用于 Google、GitHub、Facebook、Apple、Discord（Discord 产品语义见 [support-discord.md](support-discord.md)）；微信网站登录使用微信专属路由，小程序通过 code2session 直连接口完成登录，见 [wechat-oauth.md](wechat-oauth.md)。
-
-5. **OAuth 2.0 Device Authorization Grant**：完整实现 RFC 8628 设备授权流程，包含 authorize、token、verify、confirm 四个独立端点，详见独立 PRD `docs/prd/auth/device-code.md`。
-
-### 3.2 关键特性
-
-- OAuth Provider 是 Realm 级别资源，由 Realm Admin 管理，与普通 Realm Config（key-value）独立
-- Authorization Code + PKCE 为 OAuth 2.1 推荐模式，前端只获得 code，后端换 token，安全性高于旧 Implicit Flow
-- 所有 OAuth 凭证（state、authorization_code）为一次性使用，防止重放攻击
-- redirect_uri 白名单精确匹配（origin + port），禁止前缀匹配，防止开放重定向；例外：第一方 Client App（内置管理控制台/用户账户中心）跳过 redirect_uri 白名单校验（其回调固定为 Herald 自有前端路由）
-- TOTP 二次认证流程中保持 OAuth 上下文，认证完成后同样返回 redirectTo
-- API Key 绑定到特定 realm，实现跨租户隔离
-- API Key 可绑定到特定 Client App（Client App Scope），普通 Client App 的 Key 仅能访问该 App 资源，Admin API Client 的 Key 可跨 App 访问
-- API Key 支持轮换（Rotate），旧密钥立即失效，返回新密钥（仅展示一次）
-- 命名约定：推荐使用 "Provider" 或 "Identity Provider"，而非 "OAuth Config"，符合行业标准
-- Herald 本身可作为 OAuth Client，通过通用路径实现第三方 Provider SSO 登录
-- 支持 OAuth 2.0 Device Authorization Grant (RFC 8628)，适用于无浏览器设备
-
----
-
 ## 4. 业务规则与状态
 
 ### 4.1 业务规则
@@ -157,21 +80,22 @@
 - Provider 配置为 Realm 级别资源，仅 Realm Admin 可管理
 - 每个 Realm 可配置多个 OAuth Provider（Google、GitHub、Facebook、Apple、Discord、WeChat、WeChat Mini Program）
 - Provider 可独立启用/禁用；禁用的 Provider 不在登录页显示
-- Provider 配置包含 Client ID、Client Secret、Scopes 和启用状态
+- Provider 配置包含 Client ID、Client Secret、Scopes 和启用状态；各 Provider Type 有默认 Scopes 配置
 - 编辑 Provider 时 Client Secret 为可选（留空表示保持原值）；前端不应显示已存储的 Client Secret
 - 删除 Provider 需要二次确认
 - WeChat Provider Scope 仅允许 `snsapi_login`；WeChat Mini Program 不使用 Scope
 
 **OAuth 授权流程:**
 - 第三方 SPA 必须使用 Authorization Code + PKCE 流程，不支持 Implicit Flow
-- Client App 必须存在且已启用，redirect_uri 必须在白名单中精确匹配（origin + port 完全一致；第一方 Client App 例外，见上）；生产环境强制 redirect_uri 使用 HTTPS，非生产环境（开发/演示）允许 http（如 localhost 回调）
+- Client App 必须存在且已启用，redirect_uri 必须在白名单中精确匹配（origin + port 完全一致；第一方 Client App——内置管理控制台/用户账户中心——例外，其回调固定为 Herald 自有前端路由）；redirect_uri 仅允许 http/https 协议，拒绝协议相对 URL 与 `javascript:` 等危险协议，生产环境强制 HTTPS（非生产环境允许 http，如 localhost 回调）
+- 授权码在签发时绑定 client_id、redirect_uri 与 code_challenge，令牌交换时逐一校验
 - Google One Tap 与 Apple 原生（Sign in with Apple）直连登录由专属 PRD 承载（[google-one-tap.md](google-one-tap.md)、[support-mobile-apple-login.md](support-mobile-apple-login.md)），不经本 PRD 的 authorize/code 交换流
 - State 和 authorization_code 必须一次性使用，验证后立即删除
 - PKCE 的 code_challenge 必须使用 S256 方法（SHA256）
 - 无 OAuth 参数时，登录行为与现有普通登录完全一致
 - `/authorize` 接受可选 `scope` 与 `nonce` 参数（存入授权事务状态，随授权码记录传递）；唯一的 scope 语义是识别**字面且区分大小写**的 `openid` token——命中时 `/token` 在 access_token 之外额外签发 RS256 `id_token`（回显 `nonce`），未命中时响应完全不含 `id_token` 字段；其余 scope token 不做任何解释，原样透传。OIDC 专属语义（claim 集、 userinfo、签名密钥）见 [openid-connect.md](openid-connect.md)
 - OAuth 参数不完整时（缺少任意一项），应显示错误提示，不静默降级为普通登录
-- 未认证 OAuth 端点实施 per-IP 速率限制，超限返回 429：`/authorize` 与 `/token` 默认 30 次/分钟/IP；发起 Provider 登录（含上游 JWKS/code2session 拉取）与 Device Authorization Grant 的 authorize 端点默认 10 次/分钟/IP（阈值为后端统一常量管理的运行默认值，第三方集成方须处理 429）
+- 未认证 OAuth 端点实施 per-IP 速率限制，超限返回 429：`/authorize` 与 `/token` 一档；发起 Provider 登录（含上游 JWKS/code2session 拉取）与 Device Authorization Grant 的 authorize 端点更低一档（阈值均为后端统一常量管理的运行默认值，非对外契约，第三方集成方须处理 429）
 
 **第三方 API 接入:**
 - 第三方应用使用 API Key（通过 X-API-Key header）认证，与 session token 认证体系分离
@@ -179,7 +103,7 @@
 - API Key 可绑定到特定 Client App（Client App Scope），绑定后只能访问该 Client App 所属资源
 - Admin API Client（`admin-api-client`）的 API Key 不受 Client App Scope 限制，可跨 App 访问
 - 未绑定 Client App 的 API Key 也不受 Client App Scope 限制
-- API Key 支持轮换（Rotate），调用 `POST /api/api-keys/{apiKeyId}/rotate`（路径无 realm 段，realm 由 admin 会话钉定）生成新密钥，旧密钥立即失效（轮换主动驱逐旧密钥的认证缓存条目——更新前后各一次以防竞态回填；驱逐失败时认证侧因 Redis 不可用本就 fail closed，缓存 TTL 仅作兜底）
+- API Key 支持轮换（Rotate），生成新密钥，旧密钥立即失效，返回新明文密钥（仅展示一次）；轮换主动驱逐旧密钥的认证缓存条目（更新前后各一次以防竞态回填；驱逐失败时旧密钥最长残留缓存 TTL，认证侧因 Redis 不可用本就 fail closed，缓存 TTL 仅作兜底——见 api-key-roles PRD 同条说明）
 - API Key 有启用/禁用和过期时间控制
 - 记录 API Key 最后使用时间（节流更新：每分钟最多一次写库）
 - 无效或缺失 API Key 返回 401；过期或禁用 API Key 返回 401
@@ -190,7 +114,7 @@
 - 回调路径 `/{provider}/callback` 接收 Provider 授权结果，创建或关联 OAuth 用户账户，完成 SSO 登录
 - 通用跳转式链路实际服务 Google、GitHub、Facebook、Apple、Discord；`wechat` 在通用端点白名单中为死条目（同形专属路由 `/wechat/login` 优先匹配，微信网站登录由专属路由承载）；`wechat_miniprogram` 不经通用登录端点：Provider 未配置或已禁用凭据时返回 404，已配置时因不生成授权 URL 返回 400，登录走专用 code2session 端点
 - OAuth 账户通过 open_id 关联用户；未命中 provider 身份时才按 Email 匹配。回调是由一次性 state 约束的未认证入口，不以浏览器中是否另有 Herald 会话作为关联依据；Email 命中既有账号时 Provider 返回的邮箱必须已验证，未验证邮箱不得用于关联既有账号（防止经 Provider 未验证邮箱接管既有密码账号，如 GitHub 非主邮箱）。唯一例外是由已验签 provider subject 确定性生成且完全匹配的内部占位邮箱，用于恢复“账号已创建但 provider link 未落账”的失败重试
-- **自动建号受 Realm 注册政策门控（注册政策优先）**：当 Provider 凭证未命中已有用户、需要新建账号时，必须先检查当前 Realm 的注册开关（`registration.enabled` / `is_registration_enabled`）。Realm 未开启自动注册时，OAuth 路径**不得**绕过注册政策自动建号，返回注册未开放提示（实现上以 `409 conflict` 表达），引导用户走显式注册入口。已命中已有用户的关联登录不受此门控影响。注册政策还包括可选的注册邮箱域白名单（`registration.allowed_domains`，见 `docs/prd/core/realm-settings.md`）：配置后，Provider 邮箱域名不在白名单内时建号同样返回 `409 conflict`；白名单为空表示不限。该原则与邮箱验证码登录一致（见 `docs/prd/auth/email-otp-login.md` §4.1「注册政策优先」），对所有 OAuth Provider（Google、GitHub、Facebook、Apple、Discord、WeChat 等）统一适用。
+- **自动建号受 Realm 注册政策门控（注册政策优先）**：当 Provider 凭证未命中已有用户、需要新建账号时，必须先检查当前 Realm 的注册开关（`registration.enabled` / `is_registration_enabled`）。Realm 未开启自动注册时，OAuth 路径**不得**绕过注册政策自动建号，返回注册未开放提示（实现上以 `409 conflict` 表达），引导用户走显式注册入口。已命中已有用户的关联登录不受此门控影响。注册政策还包括可选的注册邮箱域白名单（`registration.allowed_domains`，见 `docs/prd/core/realm-settings.md`）：配置后，Provider 邮箱域名不在白名单内时建号同样返回 `409 conflict`；白名单为空表示不限。该原则与邮箱验证码登录一致（见 `docs/prd/auth/email-otp-login.md` §4.1「注册政策优先」），对所有 OAuth Provider（Google、GitHub、Facebook、Apple、Discord、WeChat 等）统一适用
 
 **Herald 作为身份 Broker（brokered downstream-state redirect）:**
 - 当第三方 Client App 已在 Herald `/authorize` 发起自身的 Authorization Code + PKCE 授权事务时，可在跳转 `/api/oauth/{realmId}/{provider}/login` 时携带 `downstream_state` 参数，将该事务标识传递给 Herald
@@ -231,32 +155,7 @@
 
 ---
 
-## 5. 功能需求
-
-### 5.1 核心需求
-
-**OAuth Provider 配置管理:**
-- Realm Admin 可在 Settings 页面（Providers Tab）管理 OAuth Provider 配置
-- 支持 Provider 的增删改查操作，包含 Provider Type、Client ID、Client Secret、Scopes、Enabled 字段
-- Provider 列表展示名称、Client ID、状态、Scopes 和操作按钮
-- 编辑时 Client Secret 为可选字段，前端提示"留空保持现有密钥不变"
-- 各 Provider Type 有默认 Scopes 配置
-- 登录页动态加载已启用的 Provider，显示对应的登录按钮
-
-**第三方应用 OAuth 授权:**
-- 支持 authorize 请求：校验 Client App 存在且启用、redirect_uri 在白名单中，存储 state 到 Redis，重定向到 Herald 登录页
-- 支持用户认证 + 授权码生成：登录成功后校验 state，生成 authorization_code 存入 Redis（关联 code_challenge、client_id、redirect_uri），返回 redirectTo 指向第三方 callback
-- 支持令牌交换：校验 code 有效未使用、client_id 和 redirect_uri 匹配、PKCE 校验通过后创建 session 返回 access_token
-
-**第三方 API 接入:**
-- API Key 认证系统：提取验证 X-API-Key header，校验 API Key 有效且未过期，更新使用统计
-- API Key Client App Scope 校验：绑定了 Client App 的 API Key 仅能访问该 App 的资源，Admin API Client 的 Key 除外
-- API Key 轮换：通过 `POST /api/api-keys/{apiKeyId}/rotate` 轮换密钥，旧密钥失效（缓存驱逐为 best-effort：驱逐失败时旧密钥最长残留 300s 缓存 TTL，见 api-key-roles PRD 同条说明），返回新明文密钥（仅展示一次）
-- 权限检查：第三方应用使用 API Key + 用户 session token，检查用户对指定资源的权限，支持 batch 检查
-- 订阅状态查询：第三方应用使用 API Key 查询客户端应用的订阅状态，无订阅时返回 free tier 信息
-- Ext API 完整能力：除权限检查和订阅查询外，还提供 Realm（创建/列表/查询）、User（创建/列表/查询）、Client App（创建/列表/查询）、Billing（订阅计划/分配查询）、Points（余额查询/消费/交易查询）管理接口。详细内容参考各自独立 PRD
-
-### 5.2 验收目标
+## 5. 验收目标
 
 - OAuth Provider 可在管理后台完成完整的增删改查，Provider 启用/禁用即时生效
 - 第三方 SPA 可成功发起 Authorization Code + PKCE 授权流程，完成用户认证和令牌交换
@@ -270,76 +169,44 @@
 
 ---
 
-## 6. API 相关约束
+## 6. 边界与约束
 
-**适用性**: 适用
+**适用性**: 适用（API 与前端/交互边界合并陈述）
 
+**API / 集成边界:**
 - OAuth Provider 管理接口为 Realm 级别资源，仅 Realm Admin 可访问
-- 第三方 OAuth 授权接口涉及 authorize 和 token 两个核心能力：authorize 负责 Client App 校验和登录页重定向，token 负责授权码校验和令牌签发
-- redirect_uri 校验必须精确匹配白名单（禁止前缀匹配）
-- authorization_code 和 state 必须一次性使用（验证后立即删除，非标记）
-- PKCE 的 code_challenge 必须使用 S256 方法（SHA256）
-- 第三方 API 接入使用独立的 API Key 认证体系（X-API-Key header），与 session token 认证分离
-- API Key 绑定 realm，第三方接口只能访问所属 realm 的资源
-- API Key 可绑定 Client App（Client App Scope），绑定后仅能访问该 Client App 资源；Admin API Client 和未绑定 Client App 的 Key 不受此限制
-- API Key 轮换端点 `POST /api/api-keys/{apiKeyId}/rotate`（realm 由 admin 会话钉定），需要 `api_keys.manage` 权限
-- 权限检查接口支持 batch 模式（多个 rules），无效 session token 返回 `allowed: false` 而非报错
-- 订阅查询接口在无订阅时返回 free tier 信息
+- 第三方 OAuth 授权涉及 authorize（Client App 校验和登录页重定向）与 token（授权码校验和令牌签发）两个核心能力
+- 权限检查接口支持 batch 模式（多个 rules）；订阅查询接口在无订阅时返回 free tier 信息
 - Client App 禁用时拒绝所有 OAuth 授权请求
-- Herald OAuth Client SSO 路径：`GET /api/oauth/{realmId}/{provider}/login`（发起授权）和 `GET|POST /api/oauth/{realmId}/{provider}/callback`（回调处理），用于 Herald 自身通过第三方 Provider 登录
+- API Key 轮换需要 `api_keys.manage` 权限；轮换端点路径无 realm 段，realm 由 admin 会话钉定
+- Herald OAuth Client SSO 路径用于 Herald 自身通过第三方 Provider 登录（发起授权 + 回调处理）
+- OpenID Connect 兼容端点叠加在本 PRD 的核心端点上（discovery、JWKS、`userinfo`；流程携带 `openid` scope 时 `/token` 返回 `id_token`，并接受 RFC 6749 form-urlencoded 请求体），端点契约与错误语义见 `docs/prd/auth/openid-connect.md`
 - OAuth 2.0 Device Authorization Grant 完整实现（RFC 8628），端点包含 authorize、token、verify、confirm，详见 `docs/prd/auth/device-code.md`
-- OpenID Connect 兼容端点叠加在本 PRD 的核心端点上：`GET /api/oauth/{realmId}/.well-known/openid-configuration`（discovery）、`GET /api/oauth/{realmId}/.well-known/jwks.json`（验签公钥）、`GET|POST /api/oauth/{realmId}/userinfo`（需 openid scope 同意的令牌）；`/token` 在流程携带 `openid` scope 时返回 `id_token`，并接受 RFC 6749 form-urlencoded 请求体。端点契约与错误语义见 `docs/prd/auth/openid-connect.md`
-- 详细端点契约、认证方式和错误模型应下沉到技术设计或接口说明文档
+- 详细端点契约、认证方式和错误模型下沉到技术设计或接口说明文档
 
----
-
-## 7. 前端/交互约束
-
-**适用性**: 适用
-
-- OAuth Provider 配置入口在 Settings 页面的 Providers Tab，与 Turnstile、Registration 并列
-- Provider 列表以表格形式展示名称、Client ID、状态（Enabled/Disabled 用不同颜色 Badge 区分）、Scopes 和操作按钮（编辑、启用/禁用切换、删除）
+**前端 / 交互边界:**
+- Provider 配置入口在 Settings 页面的 Providers Tab，与 Turnstile、Registration 并列；列表以表格形式展示名称、Client ID、状态（Enabled/Disabled 用不同颜色 Badge 区分）、Scopes 和操作按钮（编辑、启用/禁用切换、删除）
 - 新增/编辑 Provider 通过对话框表单完成，字段包含 Provider Type（下拉选择）、Client ID、Client Secret（编辑时可选，提示"留空保持不变"）、Scopes（多选）、Enabled 开关
 - 删除 Provider 需要二次确认交互
 - 登录页动态加载已启用的 Provider 列表，展示为独立的登录按钮
-- 登录页 search schema 须支持 OAuth 上下文参数（oauthClientId、redirectUri、state）
-- OAuth 参数完整（三项都存在）时提交登录须一并传给后端；不完整时显示错误提示，不静默降级为普通登录
-- 后端返回 redirectTo 时直接跳转第三方 callback（不经前端安全重定向检查，安全性由后端白名单保证）
-- TOTP 完成后同样支持 redirectTo 跳转
-- 无 OAuth 参数时登录行为与现有普通登录完全一致
+- 登录页 search schema 须支持 OAuth 上下文参数（oauthClientId、redirectUri、state）；OAuth 参数完整（三项都存在）时提交登录须一并传给后端，不完整时显示错误提示，不静默降级为普通登录
+- 后端返回 redirectTo 时直接跳转第三方 callback（不经前端安全重定向检查，安全性由后端白名单保证）；TOTP 完成后同样支持 redirectTo 跳转
 - 涉及第三方接入时，明确区分 Herald 后台完成的流程和第三方应用/外部平台完成的流程
 
 ---
 
-## 8. 已确认决策
-
-### 8.1 已确认决策
+## 7. 已确认决策
 
 - 采用 Authorization Code + PKCE 替代旧 Implicit Flow，符合 OAuth 2.1 标准
 - OAuth Provider 配置独立于 Realm Config（key-value），使用独立的 Provider 实体管理
 - 命名使用 "Provider" / "Identity Provider"，避免与 OAuth Config 技术术语混淆
-- redirect_uri 白名单采用精确匹配策略（origin + port），不使用前缀匹配
-- redirect_uri 协议规则：拒绝协议相对 URL 与 `javascript:` 等危险协议，仅允许 http/https；生产环境强制 HTTPS（非生产环境允许 http，供 localhost 开发/演示回调）
+- redirect_uri 白名单采用精确匹配策略（origin + port），不使用前缀匹配；仅允许 http/https 协议，拒绝协议相对 URL 与 `javascript:` 等危险协议，生产环境强制 HTTPS（非生产环境允许 http，供 localhost 开发/演示回调）
 - 第三方 API 认证使用独立 API Key 体系，与 session token 分离
-- API Key 支持 Client App Scope 绑定，限制 API Key 仅访问特定 Client App 资源；Admin API Client 不受此限制
-- OAuth Provider 支持 WeChat 和 WeChat Mini Program，WeChat Scope 限制为 `snsapi_login`，WeChat Mini Program 不使用 Scope
-- Herald 自身作为 OAuth Client 通过通用登录/回调路径实现 SSO 登录
-- OAuth 2.0 Device Authorization Grant (RFC 8628) 独立实现，详见 `docs/prd/auth/device-code.md`
-- 编辑 Provider 时 Client Secret 可选留空（保持原值），前端不回显已存储的 Secret
 - State 和 authorization_code 存储在 Redis，一次性使用后删除
 
 ---
 
-## 9. 参考资料
+## 8. 参考资料
 
-- 用户故事：`docs/user-stories/auth/third-party-app.md`
-- 用户故事：`docs/user-stories/core/realm-admin.md`
-- 用户故事：`docs/user-stories/core/regular-user.md`
-- 用户故事：`docs/user-stories/core/admin-realm.md`
-- 用户故事：`docs/user-stories/auth/client-app-settings.md`
-- 相关 PRD：`docs/prd/core/realm-settings.md`
-- 相关 PRD：`docs/prd/integration/client-app.md`
-- 相关 PRD：`docs/prd/auth/permissions.md`
-- 相关 PRD：`docs/prd/auth/totp.md`
-- 相关 PRD：`docs/prd/auth/device-code.md`（Device Authorization Grant）
-- 相关 PRD：`docs/prd/auth/openid-connect.md`（叠加在本 PRD 核心端点上的 OIDC 身份层：discovery/JWKS/userinfo、id_token、签名密钥轮换）
+- 相关 PRD：`docs/prd/core/realm-settings.md`、`docs/prd/integration/client-app.md`、`docs/prd/auth/permissions.md`、`docs/prd/auth/totp.md`、`docs/prd/auth/device-code.md`（Device Authorization Grant）、`docs/prd/auth/openid-connect.md`（叠加在本 PRD 核心端点上的 OIDC 身份层：discovery/JWKS/userinfo、id_token、签名密钥轮换）
+- 用户故事来源见 §1 表格

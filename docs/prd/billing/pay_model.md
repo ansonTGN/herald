@@ -3,29 +3,27 @@
 **创建时间**: 2026-07-29
 **优先级**: P1
 
-## 1. 相关用户故事
+---
 
-### 1.1 故事引用
+## 1. 相关用户故事
 
 > 故事按商品形态分前缀：`US-BM`（买断 / one-time + role）、`US-NR`（非续期订阅 / non-renewing）。`US-BM-004` / `US-NR-004` 共用同一查询场景（故事 7），分别覆盖买断权益查询与非续期订阅查询。
 
-- [US-BM-001](../../user-stories/billing/pay_model.md)、[US-NR-001](../../user-stories/billing/pay_model.md)：配置买断商品映射、配置非续期订阅映射
-- [US-NR-002](../../user-stories/billing/pay_model.md)：管理非续期订阅（区分计费类型与截止时间）
-- [US-BM-002](../../user-stories/billing/pay_model.md)、[US-BM-003](../../user-stories/billing/pay_model.md)：购买买断商品、恢复买断购买
-- [US-NR-003](../../user-stories/billing/pay_model.md)：购买非续期订阅
-- [US-BM-004 / US-NR-004](../../user-stories/billing/pay_model.md)：查询权益（非续期订阅与买断）
-- [US-BM-005](../../user-stories/billing/pay_model.md)：退款或撤销买断（整笔退款/撤销回收支付来源角色；Stripe、Creem 为累计全额退款门）
-- [US-NR-005](../../user-stories/billing/pay_model.md)：处理非续期订阅生命周期（到期失效、退款提前回收、Apple 到期缺口）
-- [US-IAP-001～006](../../user-stories/billing/support-iap.md)：IAP 渠道配置、凭证提交和对账基础能力
-- [US-PW-001～006](../../user-stories/billing/support-paywall.md)：支付来源角色授予、撤销和重复购买边界
+| US-ID | 标题 | 优先级 | 来源 |
+|-------|------|--------|------|
+| US-BM-001 | 配置买断商品映射 | P0 | [../../user-stories/billing/pay_model.md](../../user-stories/billing/pay_model.md) |
+| US-NR-001 | 配置非续期订阅映射 | P0 | [../../user-stories/billing/pay_model.md](../../user-stories/billing/pay_model.md) |
+| US-NR-002 | 管理非续期订阅（区分计费类型与截止时间） | P1 | [../../user-stories/billing/pay_model.md](../../user-stories/billing/pay_model.md) |
+| US-BM-002 | 购买卖断商品 | P0 | [../../user-stories/billing/pay_model.md](../../user-stories/billing/pay_model.md) |
+| US-BM-003 | 恢复买断购买 | P0 | [../../user-stories/billing/pay_model.md](../../user-stories/billing/pay_model.md) |
+| US-NR-003 | 购买非续期订阅 | P0 | [../../user-stories/billing/pay_model.md](../../user-stories/billing/pay_model.md) |
+| US-BM-004 / US-NR-004 | 查询权益（买断与非续期订阅） | P1 | [../../user-stories/billing/pay_model.md](../../user-stories/billing/pay_model.md) |
+| US-BM-005 | 退款或撤销买断（整笔退款/撤销回收支付来源角色） | P0 | [../../user-stories/billing/pay_model.md](../../user-stories/billing/pay_model.md) |
+| US-NR-005 | 处理非续期订阅生命周期（到期失效、退款提前回收、Apple 到期缺口） | P0 | [../../user-stories/billing/pay_model.md](../../user-stories/billing/pay_model.md) |
+| US-IAP-001～006 | IAP 渠道配置、凭证提交和对账基础能力 | — | [../../user-stories/billing/support-iap.md](../../user-stories/billing/support-iap.md) |
+| US-PW-001～006 | 支付来源角色授予、撤销和重复购买边界 | — | [../../user-stories/billing/support-paywall.md](../../user-stories/billing/support-paywall.md) |
 
-### 1.2 优先级汇总
-
-| 优先级 | 数量 | 关键故事 |
-|---|---:|---|
-| P0 | 7 | 买断配置、购买、恢复、退款回收；非续期配置、购买和生命周期 |
-| P1 | 2 | 非续期订阅管理与查询 |
-| P2 | 0 | — |
+---
 
 ## 2. 范围界定
 
@@ -51,27 +49,16 @@
 - [支付驱动权益门控](support-paywall.md)提供的角色授予、来源追溯和重复购买控制。
 - 既有订阅查询与管理能力。
 
-## 3. 需求概述
-
-### 3.1 功能描述
-
-Herald 支持 IAP 买断与非续期订阅两种商品形态。买断以一次付款和永久角色授予表达；非续期订阅以固定服务期表达，到期后不自动续费。退款或撤销按渠道语义对称地回收支付产生的权益：IAP 商店退款与作废为整笔语义，回收全部支付权益；Stripe、Creem 的一次性购买在累计退款达到原支付金额时回收，部分退款保留角色。
-
-### 3.2 关键特性
-
-- 买断购买可恢复，恢复同一交易不会重复发放权益。
-- Google 买断商品保持可恢复；只有消耗型积分包会被消耗。
-- 非续期订阅创建时即确定截止时间，达到商店侧过期状态或退款后失效。
-- 角色回收只影响支付来源，不影响管理员的手工授予。
+---
 
 ## 4. 业务规则与状态
 
 ### 4.1 业务规则
 
 - 买断使用一次性购买加永久角色授予表达；同一用户不得重复购买同一买断商品。
-- 买断恢复购买与原始交易按同一交易标识去重，可补授缺失的永久角色。
+- 买断恢复购买与原始交易按同一交易标识去重，可补授缺失的永久角色，恢复同一交易不会重复发放权益。
 - Google 买断商品只确认购买，不消耗购买；消耗仅适用于积分包。
-- Apple 退款/撤销、Google 作废购买为整笔退款语义，回收该笔支付来源的角色；Stripe、Creem 的一次性退款在累计退款达到原支付金额时回收该笔支付来源的角色（部分退款保留，见 [refund-clawback.md](refund-clawback.md)）。重复事件不得造成二次错误。
+- Apple 退款/撤销、Google 作废购买为整笔退款语义，回收该笔支付来源的角色；Stripe、Creem 的一次性退款在累计退款达到原支付金额时回收该笔支付来源的角色（部分退款保留，见 [refund-clawback.md](refund-clawback.md)）。重复事件不得造成二次错误。回收只影响支付来源，不影响管理员的手工授予。
 - 非续期订阅必须配置服务期时长；购买成功即取得固定截止时间，不产生续费或后续扣款，到期后可再次购买。
 - 非续期订阅不参与自动续期的状态流转；查询和管理视图须显示其计费类型与截止时间。
 - Google 通过对账发现非续期订阅过期并使其失效；退款或撤销提前回收权益。
@@ -83,17 +70,9 @@ Herald 支持 IAP 买断与非续期订阅两种商品形态。买断以一次�
 - 凭证校验失败、归属不符或商品未映射时，拒绝履约并给出明确原因。
 - 履约、恢复补授与退款回收都必须幂等。
 
-## 5. 功能需求
+---
 
-### 5.1 核心需求
-
-- Realm Admin 可将 IAP 非消耗型商品配置为一次性购买加永久角色授予，并可配置非续期订阅及其服务期时长。
-- 用户购买买断商品后获得永久角色；恢复购买可补授，重复购买被阻止。
-- 用户购买非续期订阅后获得固定时长权益，到期后可再次购买。
-- 系统在整笔退款或撤销（Stripe、Creem 为累计全额退款）时回收买断的支付来源角色，并在非续期订阅退款时提前终止权益。
-- 第三方应用可查询非续期订阅状态；买断权益通过既有角色或权限检查判断。
-
-### 5.2 验收目标
+## 5. 验收目标
 
 - 买断购买、恢复购买和整笔退款/撤销（Stripe、Creem 为累计全额退款）分别实现永久角色授予、幂等补授和支付来源角色回收。
 - Google 买断购买不被消耗；现有消耗型积分包仍可被消耗。
@@ -101,24 +80,26 @@ Herald 支持 IAP 买断与非续期订阅两种商品形态。买断以一次�
 - 非续期订阅展示截止时间、不自动续费，并能由 Google 对账或退款事件进入失效状态。
 - 自动续期订阅与消耗型积分包的既有履约、续费和退款行为不回退。
 
-## 6. API 相关约束
+---
 
-**适用性**: 适用
+## 6. 边界与约束
 
+**适用性**: 适用（API 与前端/交互边界合并陈述）
+
+**API / 集成边界:**
 - 复用既有 IAP 凭证提交与权益查询能力；履约按商品形态处理。
 - 凭证提交需要用户身份，映射管理需要 billing/points 管理权限，第三方应用复用既有 SDK 与扩展查询能力。
 - 映射、履约与回收均按 Realm 隔离。
 - 非续期订阅在订阅查询中可识别；买断不进入订阅查询。
 
-## 7. 前端/交互约束
-
-**适用性**: 适用
-
+**前端 / 交互边界:**
 - Entitlement 映射管理页提供非续期订阅选项，并在缺少服务期时长时阻止保存并说明原因。
 - 买断沿用一次性购买加角色授予的配置方式。
 - 订阅管理列表和详情区分自动续期与非续期订阅，并显示非续期订阅的截止时间。
 
-## 8. 已确认决策
+---
+
+## 7. 已确认决策
 
 | 决策项 | 结论 |
 |---|---|
@@ -127,9 +108,11 @@ Herald 支持 IAP 买断与非续期订阅两种商品形态。买断以一次�
 | 到期策略 | 不增加本地到期扫描；Apple 非续期订阅的到期缺口作为已接受风险。 |
 | 退款回收 | 一次性角色购买的整笔退款/撤销回收支付来源角色；Stripe、Creem 部分退款保留角色，仅累计退款达到原支付金额时回收（见 [refund-clawback.md](refund-clawback.md)）。 |
 
-## 9. 参考资料
+---
+
+## 8. 参考资料
 
 - [IAP 支持](support-iap.md)
 - [支付驱动权益门控](support-paywall.md)
 - [订阅计费](subscription.md)
-- [履约模型扩展用户故事](../../user-stories/billing/pay_model.md)
+- 用户故事来源见 §1 表格

@@ -152,4 +152,4 @@ Then 注册页面可用，访客可完成注册并开通 realm
 ## 与既有故事的关系
 
 - **不复用 `US-AR-001`（创建 Realm）**：`US-AR-001` 的 actor 是已登录的 Admin Realm 管理员，入口是管理后台“Create Realm”对话框，前置权限为 `realm.manage`；本组故事的 actor 是未登录访客，入口是公开注册页面，无需平台权限。两者 actor、入口与前置条件不同，故新建独立故事（见 DEC-realm-create-005）。
-- **复用既有 realm 初始化规则**：新 realm 的自动初始化（默认 RBAC、`admin-web-console`、`admin-api-client`、`registration.enabled=false`、Normal 管理员）遵循 `docs/prd/core/realm.md` §3.2/§4.1，不在本故事中重复定义（见 DEC-realm-create-003）。
+- **复用既有 realm 初始化规则**：新 realm 的自动初始化（默认 RBAC、`admin-web-console`、`admin-api-client`、`registration.enabled=false`、Normal 管理员）遵循 `docs/prd/core/realm.md` §4.1，不在本故事中重复定义（见 DEC-realm-create-003）。

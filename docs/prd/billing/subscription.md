@@ -9,40 +9,17 @@
 
 > 详细故事与验收标准请查看 `docs/user-stories/` 中对应文档。
 
-### 1.1 故事引用
-
-- `[US-EM-001～006]` Entitlement 映射、同步、Webhook 解析、积分策略与订阅投影，来源 `docs/user-stories/billing/entitlement-mapping.md`
-- `[US-EM-007～009]` 多价格同步配置、Webhook 解析与指定价格购买，来源 `docs/user-stories/billing/entitlement-mapping.md`
-- `[US-BL-SYNC-001～004]` Stripe metadata、产品名、价格单位与计费周期同步展示，来源 `docs/user-stories/billing/entitlement-mapping.md`
-- `[US-WC-001～002]` 定时检测缺失 Webhook 事件与补偿幂等性，来源 `docs/user-stories/billing/webhook-compensation.md`
-
-- `[US-BI-006]` 查看订阅列表，优先级 P0，来源 `docs/user-stories/billing/subscription.md`
-  - 角色：Realm Admin
-  - 摘要：查看订阅列表，了解订阅情况
-
-- `[US-BI-007]` 第三方应用查询套餐状态，优先级 P0，来源 `docs/user-stories/billing/subscription.md`
-  - 角色：Third-party App
-  - 摘要：通过 SDK 查询用户的订阅和套餐状态，以及可用的支付平台选项
-
-- `[US-BI-008]` 查看订阅变更历史，优先级 P1，来源 `docs/user-stories/billing/subscription.md`
-  - 角色：Realm Admin
-  - 摘要：查看所有用户的订阅变更历史，监控和管理订阅情况
-
-- `[US-BI-009]` 查看自己的订阅变更历史，优先级 P1，来源 `docs/user-stories/billing/subscription.md`
-  - 角色：Regular User
-  - 摘要：查看我的订阅变更历史，了解订阅的变更轨迹
-
-- **Realm Admin 订阅套餐管理**，优先级 P0，来源 `docs/user-stories/core/realm-admin.md`
-  - 角色：Realm Admin
-  - 摘要：管理订阅套餐，为用户提供不同的订阅选项
-
-### 1.2 优先级汇总
-
-| 优先级 | 数量 | 关键故事 |
-|--------|------|----------|
-| P0 | 当前故事见索引 | Entitlement 映射、多价格同步/购买/解析、产品同步展示、订阅列表与 SDK 查询 |
-| P1 | 2 | 查看订阅变更历史（Realm Admin）、查看自己的订阅变更历史（Regular User） |
-| P2 | 0 | - |
+| US-ID | 标题 | 优先级 | 来源 |
+|-------|------|--------|------|
+| US-EM-001～006 | Entitlement 映射、同步、Webhook 解析、积分策略与订阅投影 | — | `docs/user-stories/billing/entitlement-mapping.md` |
+| US-EM-007～009 | 多价格同步配置、Webhook 解析与指定价格购买 | — | `docs/user-stories/billing/entitlement-mapping.md` |
+| US-BL-SYNC-001～004 | Stripe metadata、产品名、价格单位与计费周期同步展示 | — | `docs/user-stories/billing/entitlement-mapping.md` |
+| US-WC-001～002 | 定时检测缺失 Webhook 事件与补偿幂等性 | — | `docs/user-stories/billing/webhook-compensation.md` |
+| US-BI-006 | 查看订阅列表 | P0 | `docs/user-stories/billing/subscription.md` |
+| US-BI-007 | 第三方应用查询套餐状态 | P0 | `docs/user-stories/billing/subscription.md` |
+| US-BI-008 | 查看订阅变更历史 | P1 | `docs/user-stories/billing/subscription.md` |
+| US-BI-009 | 查看自己的订阅变更历史 | P1 | `docs/user-stories/billing/subscription.md` |
+| — | Realm Admin 订阅套餐管理 | P0 | `docs/user-stories/core/realm-admin.md` |
 
 ---
 
@@ -50,10 +27,11 @@
 
 ### 2.1 包含功能
 
-- 支持多种支付平台：Creem（模拟支付平台）、Stripe（详见 `docs/prd/billing/stripe-payment.md`）、WeChat Pay（`docs/prd/billing/wechat-support.md`）、Apple / Google 内购（`docs/prd/billing/support-iap.md`）
-- Provider Entitlement 映射管理（查看、配置积分策略、启用/禁用）
+- 支持多种支付平台：Creem（模拟支付平台）、Stripe（详见 `docs/prd/billing/stripe-payment.md`）、WeChat Pay（`docs/prd/billing/wechat-support.md`）、Apple / Google 内购（`docs/prd/billing/support-iap.md`）；支付平台配置管理支持添加、编辑、启用/禁用、删除（API Key、Secret Key、Webhook Secret）
+- Provider Entitlement 映射管理（查看、配置积分策略、启用/禁用、触发 Provider 产品同步）
 - 支付方商品同步与 provider-sourced cache
 - 前端 Entitlement 映射管理页面
+- 订阅生命周期与升级/降级变更感知：用户在第三方应用选择套餐 -> 重定向到支付页面 -> 完成支付 -> Webhook 通知 -> 创建订阅记录；升降级编排与按比例计费由支付平台处理，Herald 经 webhook 更新投影与积分
 - 查询单个订阅的变更时间线
 - 按用户、套餐、时间等维度查询订阅历史（Realm Admin）
 - 显示变更类型（创建、升级、降级、取消、续费等）
@@ -90,36 +68,13 @@
 
 ---
 
-## 3. 需求概述
-
-### 3.1 功能描述
-
-Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理和计费方案功能。涵盖支付平台配置、订阅套餐管理、套餐分配、订阅升级/降级、订阅变更历史等功能。
-
-系统采用 provider-sourced entitlement 模型：Herald 不维护本地 Product/Plan 目录，不创建、编辑或删除本地套餐。支付平台商品和价格是商业目录来源，Herald 只维护 `provider_entitlement_mappings`，用 `entitlement_key` 表示第三方应用可识别的订阅权益。
-
-**编目边界**：Herald 不维护本地 Product/Plan 目录。支付方是商业目录的 source of truth，Herald 只维护 `provider_entitlement_mappings` 用 `entitlement_key` 表示第三方应用可识别的订阅权益。
-
-### 3.2 关键特性
-
-- 支持多种支付平台（Stripe、Creem、WeChat Pay、Apple / Google 内购）
-- Provider entitlement 映射管理
-- 通过 `entitlement_key` 统一表示订阅权益
-- 支付方商品同步与 provider-sourced cache
-- 订阅升级/降级变更感知（升降级编排与按比例计费由支付平台处理，Herald 经 webhook 更新投影与积分）
-- Webhook 集成和事件处理
-- 完整的订阅变更历史记录
-- 订阅事件与积分系统联动
-
----
-
 ## 4. 业务规则与状态
 
 ### 4.1 业务规则
 
 **Entitlement 映射规则**：
 
-- 映射按价格粒度分辨：同一产品的多个价格是各自独立的映射行，entitlement_key / 计费类型 / 计费周期 / 积分策略均按价格配置并可跨价格共享
+- 映射按价格粒度分辨：同一产品的多个价格是各自独立、独立可购与可配置的映射行，可共享或分别配置 `entitlement_key`；entitlement_key / 计费类型 / 计费周期 / 积分策略均按价格配置并可跨价格共享
 - `entitlement_key` 是 Herald 内部和第三方应用识别订阅权益的稳定业务标识
 - `provider_entitlement_mappings` 记录 provider、external_product_id、external_price_id、entitlement_key、billing_type、billing_period 和 provider_product_info
 - provider 商品/价格展示信息来自支付方同步缓存，不由 Herald 本地手工维护
@@ -129,16 +84,24 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 - Provider-to-Entitlement 映射是 Herald 本地的 allowlist 和只读缓存，不是本地商业目录
 - 映射数据以 Herald 本地配置为准；Stripe Product/Price metadata 可作为导入入口，Creem 需要在 Herald 中配置 entitlement 和积分策略
 - 映射承载的信息包括：provider、external_product_id、external_price_id（Creem 不适用）、entitlement_key、积分策略字段、`granted_role_ids`（支付成功后授予的 role，见 [support-paywall.md](support-paywall.md)）、规则集合中的 `quota_windows`（配额窗口策略，保存在 `points_distribution_rules`，不是 Mapping 基表字段）、provider_product_info、synced_at
+- 列表端点过滤仅支持 provider 与 enabled（含分页），产品名等筛选由前端在已返回数据上执行
 - 禁用映射后，匹配该映射的 webhook 订阅事件仍更新订阅投影，但跳过该映射的全部自动**授予**履约：不触发积分策略发放、不续授支付来源 role（`grant_payment_roles` 同步跳过，支付来源 role 可能因订阅周期结束而过期，见 [support-paywall.md](support-paywall.md) §4.2 的禁用映射例外）。**回收不看启用状态**：立即取消/退款/过期撤销等回收路径照常执行积分回收与支付来源 role 撤销（禁用映射只冻结新发放，不放行已授予权益的留存）；管理员重新启用后恢复积分策略执行与 role 续授
-- 映射同步失败不应静默降级为默认策略，应 fail loud 并记录诊断；「fail loud」指单行同步失败可观测（返回 `Partial` 状态 + `partial_errors` 列表），非整体回滚
+- 映射同步失败不应静默降级为默认策略，应 fail loud 并记录诊断；「fail loud」指单行同步失败可观测（返回 `Partial` 状态 + `partial_errors` 列表），非整体回滚；已成功项仍生效，既有缓存不因单项失败被清空
 
 **编目边界**：商品与价格生命周期由支付平台管理；Herald 不维护本地 Product/Plan，不提供套餐删除、升降级或 Client App 套餐分配能力。Herald 通过 `entitlement_mapping` 配置权益，并通过 webhook 感知支付平台上的订阅变化。
+
+**订阅升降级与取消规则**：
+- 升级订阅：升降级编排（含按比例计费）由支付平台处理，Herald 不提供套餐化升降级；webhook 感知升级后立即撤销旧积分发放并执行新映射的升级规则
+- 降级订阅：Herald 仅更新订阅映射，不改变当前周期发放，待下次续费事件按新映射执行
+- 取消订阅：立即取消或周期末取消（`canceled` / `scheduled_cancel`），由 Provider webhook 事件决定（见 §4.2 用户自助取消）
 
 **Webhook 处理规则**：
 - 系统采用 realm 隔离的 webhook 端点架构，每个 realm 使用独立的 webhook URL
 - Webhook 签名验证失败时拒绝处理请求
 - 支持事件幂等性处理，防止重复处理
 - 订阅状态转换需通过合法性验证
+- 支持 Creem 的 checkout.completed、subscription.active/trialing/paid/paused/canceled/expired/update/scheduled_cancel、subscription.past_due、dispute.created、refund.created 事件
+- 支持 Stripe 的 checkout.session.completed/expired/async_payment_succeeded/async_payment_failed、customer.subscription.created/updated/deleted/paused/resumed、charge.refunded、charge.dispute.created/closed、invoice.payment_succeeded/payment_failed/payment_action_required/created/finalized/paid/voided、payment_intent.succeeded/payment_failed 事件（详见 `docs/prd/billing/stripe-payment.md`）
 
 **Webhook 补偿规则**：
 
@@ -160,6 +123,8 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 **Webhook Entitlement 解析链**：
 - Webhook 通过 metadata 提取 herald_entitlement_key 等映射信息
 - 解析 fallback 链：webhook metadata 中的 herald_entitlement_key → 本地 mapping（按 provider + external_product_id 查询）→ fail loud
+- Webhook 优先按 `herald_entitlement_key` 解析权益，再以实际的 provider + product + price 匹配价格策略；metadata 缺失时直接按该三元组匹配
+- 一产品多价格但事件无法唯一确定价格时 fail loud，不使用默认价格或默认积分策略
 - 用户绑定优先使用 Subscription metadata，fallback 到本地 mapping
 - Metadata 缺失 entitlement_key 时尝试本地 Mapping 解析；所有解析路径均失败时 fail loud，记录诊断
 
@@ -168,9 +133,16 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 - 增量同步：webhook 事件触发，从 webhook payload 中提取 metadata、外部 ID 和可用产品信息更新订阅投影或缓存
 - 同步失败时本地缓存继续服务，但记录失败诊断
 - 管理员可查看同步状态（最后同步时间、同步来源、同步结果）
+- 对具备 Price 概念的支付方，按价格粒度建立或更新映射；Stripe 完整支持 Product→多 Price，Creem 以 Product 作为单一价格单元
+- 支付方提供的名称、描述、金额、币种和计费周期覆盖本地展示缓存，但不得覆盖 Herald 管理的 entitlement、积分和 quota 策略
+- Stripe 金额按最小货币单位换算，Creem 按 provider 返回的显示值展示，不跨 provider 共用换算规则
+- Stripe Product/Price metadata 随同步写入展示缓存并只读展示；Creem Product 无对应 metadata 时保持为空，不伪造
+- Stripe 计费周期以 `Price.recurring.interval` 为唯一来源且只读；Creem 未提供时显示为空，不人工推断
+- `billing_period` 与 `quota_windows` 相互独立，不要求相等或整除；同步不读取或校验额度窗口
 
 **购买对象统一**：
 - 购买目标统一为 entitlement_mapping，通过 mapping 的 billing_type 决定履约（三分模型口径见 pay_model.md §2.2/§4）
+- 用户选择具体价格后发起购买；Stripe checkout 引用真实 Price，不临时重建价格
 - billing_type=one_time → 发放 topup_credit，不创建 subscription
 - billing_type=non_renewing → 创建固定服务期的订阅记录，到期不自动续费（履约细节以 pay_model.md 为准）
 - billing_type=recurring → 创建/更新 subscription，积分由后续 webhook 事件触发
@@ -275,63 +247,7 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 
 ---
 
-## 5. 功能需求
-
-### 5.1 核心需求
-
-**支付平台配置**：
-- 支持添加、编辑、启用/禁用、删除支付平台配置（API Key、Secret Key、Webhook Secret）
-- 当前支持 Creem（模拟支付平台）、Stripe、WeChat Pay 与 Apple / Google 内购
-- 每个 realm 使用独立的 webhook URL，实现多租户隔离
-
-**Entitlement 映射管理**：
-- 查看 Provider Entitlement 映射列表：显示 provider、external IDs、entitlement_key、积分策略、同步状态
-- 触发 Provider 产品同步：手动触发全量同步，更新 provider-sourced cache
-- 启用/禁用映射：禁用只冻结积分发放与支付来源 role 续授，**回收不受影响**（立即取消/退款/过期撤销照常回收，见 §4.1），重新启用后恢复
-
-**Provider 同步与缓存**：
-- 全量同步：调用支付方 API 读取 Product/Price 信息并更新本地缓存
-- 增量同步：webhook 事件触发，更新订阅投影或缓存
-- 查看同步状态（最后同步时间、来源、结果）
-- 对具备 Price 概念的支付方，按价格粒度建立或更新映射；Stripe 完整支持 Product→多 Price，Creem 以 Product 作为单一价格单元
-- 支付方提供的名称、描述、金额、币种和计费周期覆盖本地展示缓存，但不得覆盖 Herald 管理的 entitlement、积分和 quota 策略
-- 列表以产品名作为主标签，缺失时回退到外部产品 ID；列表端点过滤仅支持 provider 与 enabled（含分页），产品名等筛选由前端在已返回数据上执行
-- Stripe 金额按最小货币单位换算，Creem 按 provider 返回的显示值展示，不跨 provider 共用换算规则
-- Stripe Product/Price metadata 随同步写入展示缓存并只读展示；Creem Product 无对应 metadata 时保持为空，不伪造
-- Stripe 计费周期以 `Price.recurring.interval` 为唯一来源且只读；Creem 未提供时显示为空，不人工推断
-- `billing_period` 与 `quota_windows` 相互独立，不要求相等或整除；同步不读取或校验额度窗口
-- 单项同步失败进入 partial errors，已成功项仍生效；既有缓存不因单项失败被清空
-
-**多价格购买与解析**：
-- 同一产品的每个价格是独立可购和可配置单元，可共享或分别配置 `entitlement_key`
-- 用户选择具体价格后发起购买；Stripe checkout 引用真实 Price，不临时重建价格
-- one-time 与 recurring 履约路径由所选价格的计费类型决定
-- Webhook 优先按 `herald_entitlement_key` 解析权益，再以实际的 provider + product + price 匹配价格策略；metadata 缺失时直接按该三元组匹配
-- 一产品多价格但事件无法唯一确定价格时 fail loud，不使用默认价格或默认积分策略
-
-**订阅生命周期管理**：
-- 创建订阅：用户在第三方应用选择套餐 -> 重定向到支付页面 -> 完成支付 -> Webhook 通知 -> 创建订阅记录
-- 升级订阅：升降级编排（含按比例计费）由支付平台处理，Herald 不提供套餐化升降级；webhook 感知升级后立即撤销旧积分发放并执行新映射的升级规则
-- 降级订阅：Herald 仅更新订阅映射，不改变当前周期发放，待下次续费事件按新映射执行
-- 取消订阅：立即取消或周期末取消（`canceled` / `scheduled_cancel`），由 Provider webhook 事件决定（见 §4.2 用户自助取消）
-
-**Webhook 事件处理**：
-- 支持 Creem 的 checkout.completed、subscription.active/trialing/paid/paused/canceled/expired/update/scheduled_cancel、subscription.past_due、dispute.created、refund.created 事件
-- 支持 Stripe 的 checkout.session.completed/expired/async_payment_succeeded/async_payment_failed、customer.subscription.created/updated/deleted/paused/resumed、charge.refunded、charge.dispute.created/closed、invoice.payment_succeeded/payment_failed/payment_action_required/created/finalized/paid/voided、payment_intent.succeeded/payment_failed 事件（详见 `docs/prd/billing/stripe-payment.md`）
-- 签名验证、事件幂等性处理、状态转换验证
-- 与积分系统联动：首次订阅充值、定期续费充值、退款积分回收
-
-**Webhook 可靠性补偿**：
-- 定时识别 Stripe/Creem 已发生但本地缺失的支付、订阅、退款和争议事件
-- 缺失事件复用正常 webhook 领域处理和数据库幂等机制
-- 补偿失败记录结构化错误并继续后续事件；每次运行输出对账统计
-
-**订阅变更历史**：
-- 单订阅历史：展示单个订阅从创建到当前的所有变更事件，按时间倒序排列
-- 全局历史查询（Realm Admin）：支持按用户、套餐、变更类型、时间范围、订阅状态等维度筛选，支持分页和排序
-- 变更记录包含：变更类型、操作者、变更详情、变更前后状态对比
-
-### 5.2 验收目标
+## 5. 验收目标
 
 - Realm Admin 可同步支付方商品，并按价格查看、配置和启用/禁用 Entitlement 映射
 - 同一 Product 的多个 Price 可独立配置或共享 entitlement_key，并按所选价格正确购买和履约
@@ -344,88 +260,52 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 
 ---
 
-## 6. API 相关约束
+## 6. 边界与约束
 
-**适用性**: 适用
+**适用性**: 适用（API 与前端/交互边界合并陈述）
 
-**能力边界**：
-- 不提供本地 Product/Plan CRUD
-- Entitlement mapping 查询、更新、禁用和 provider 产品同步由 Billing Admin API 提供
+**API / 集成边界:**
+- Entitlement mapping 查询、更新、禁用和 provider 产品同步由 Billing Admin API 提供；映射不提供删除，下线以禁用承载
 - 订阅查询：订阅状态、`entitlement_key`、支付平台、周期和订阅变更历史
 - SDK 查询：第三方应用查询 client app 当前订阅状态，返回 `entitlement_key`
 - Checkout 发起：显式传递 `mapping_id + payment_provider`，entitlement_key 由所选价格映射解析得出
-- Webhook 接收：优先使用 `herald_entitlement_key`，fallback 到本地 provider mapping
-
-**访问控制与数据边界**：
-- 所有接口遵守 realm 隔离原则
-- 写入类操作（创建、编辑、禁用映射等）需要 `billing.manage` 权限；映射不提供删除，下线以禁用承载
-- 读取类操作需要 `billing.view` 权限或认证用户身份
+- 所有接口遵守 realm 隔离原则；读取类操作需要 `billing.view` 权限或认证用户身份，写入类操作权限见 §4.1 权限规则
 - 金额与积分变更必须可追溯
-
-**兼容性要求**：
 - Webhook 处理需支持回调幂等和失败补偿
 - 与支付平台、积分账本、订阅系统的详细契约应下沉到技术设计或接口文档
 
----
-
-## 7. 前端/交互约束
-
-**适用性**: 适用
-
-**导航与可见性约束**：
+**前端 / 交互边界:**
 - 管理后台入口按权限控制：拥有 `billing.view` 的用户可看到 Billing 相关管理入口（Payment Providers、Entitlement Mappings、Invoices、Subscription History），不因当前 Realm 尚未配置产品或套餐而隐藏入口
 - 个人中心的 Subscription 入口按 Realm 能力开通状态显示：当 Realm 下存在已启用的订阅 Plan 时显示；仅存在历史订阅记录但没有已启用 Plan 时不单独作为显示入口依据
 - 订阅购买按钮或 checkout 流程的可用性独立于 Subscription 入口：只有当 Plan 已配置启用的支付平台映射，且对应支付平台已在 Realm 中启用时，才允许用户发起购买；否则显示不可购买状态或禁用购买操作
-
-**用户订阅流程**：
-- 用户选择套餐后，展示该套餐支持的支付平台选项
-- 用户选择具体的支付平台后发起 checkout 请求
-- 如果套餐没有可用的支付平台，禁用订阅按钮并显示提示
-
-**订阅历史界面**：
-- Realm Admin 可查看全局订阅变更历史，支持按用户、套餐、变更类型、时间范围、订阅状态筛选
-- 用户可在订阅详情中查看该订阅的完整变更时间线
-- 历史记录按时间倒序排列，显示变更类型、操作者、变更详情和前后状态对比
-
-**One-time 购买页面**：
-- 用户购买页列出 enabled 且 billing_type=one_time 的 entitlement mappings
-- 产品信息（名称、价格、描述）从 mapping 的 provider_product_info 读取
-- 支付平台选择基于 mapping 关联的 provider
-- 没有启用的 one-time mapping 时不显示购买入口
-- 购买历史基于支付尝试记录和积分交易记录查询
-
-**状态反馈**：
-- 禁用有活跃订阅的映射时整批回滚并提示活跃订阅数量（409 `mapping_in_use`，携带 `activeSubscriptions` 计数）
-- 禁用支付平台映射时提示："Existing subscriptions will continue to work, new users cannot select this provider"
+- 用户选择套餐后，展示该套餐支持的支付平台选项；用户选择具体的支付平台后发起 checkout 请求；如果套餐没有可用的支付平台，禁用订阅按钮并显示提示
+- Entitlement 映射列表显示 provider、external IDs、entitlement_key、积分策略、同步状态，以产品名作为主标签（缺失时回退到外部产品 ID）
+- 订阅历史界面：Realm Admin 可查看全局订阅变更历史，支持按用户、套餐、变更类型、时间范围、订阅状态等维度筛选、分页和排序；用户可在订阅详情中查看该订阅从创建到当前的完整变更时间线；历史记录按时间倒序排列，显示变更类型、操作者、变更详情和前后状态对比
+- One-time 购买页面：产品信息（名称、价格、描述）从 mapping 的 provider_product_info 读取，支付平台选择基于 mapping 关联的 provider
+- 状态反馈：禁用有活跃订阅的映射时整批回滚并提示活跃订阅数量（409 `mapping_in_use`，携带 `activeSubscriptions` 计数）；禁用支付平台映射时提示："Existing subscriptions will continue to work, new users cannot select this provider"
 
 ---
 
-## 8. 已确认决策
-
-### 8.1 已确认决策
+## 7. 已确认决策
 
 - **简化模型**：Herald 不管理权益的功能（features）和配额（quotas），由第三方应用自行管理
 - **Entitlement 映射**：采用 provider 商品到 `entitlement_key` 的映射模型，不维护本地 Plan
 - **Webhook 隔离**：每个 realm 使用独立的 webhook URL，realm_id 从 URL 路径提取实现多租户隔离
 - **Webhook 补偿复用领域处理**：补偿只重放缺失事件，依赖数据库事件记录保证幂等；状态差异不做自动修复
-- **编目决策**：Herald 不维护本地 Product/Plan 编目，以 `entitlement_key` 表示权益
 - **积分策略归属**：Herald 本地 mapping/entitlement policy 是积分策略 source of truth；provider metadata 只作为可选导入来源
 - **Entitlement 映射表保留**：保留 provider-to-entitlement 映射作为 allowlist 和积分策略同步缓存，不纯粹依赖 provider metadata 运行时解析
 - **Metadata 统一契约**：使用 `herald_*` 前缀统一 metadata key
-- **退款边界**：支付平台处理金额退款，Herald 处理积分回收。退款不作为独立订阅状态，`refund.created`/`charge.refunded` 事件仅记录审计日志并触发积分回收，不改变订阅状态
+- **退款边界**：支付平台处理金额退款，Herald 处理积分回收
 - **订阅过期降级**：订阅过期后状态变为 expired/canceled；具体权限降级由第三方应用根据 `entitlement_key` 和订阅状态处理
-- **One-time 购买不创建 subscription**：one-time 购买发放 topup_credit，不创建 subscription 记录
 - **billing_type 决定履约路径**：entitlement_mapping 的 billing_type 按 pay_model.md 的三分模型区分履约——one_time（发放 topup_credit，不建订阅）、non_renewing（创建固定服务期订阅，见 pay_model.md）、recurring（创建/更新自动续期订阅）
 - **促销策略委托支付平台**：Herald 不在本地实现促销逻辑，由支付平台优惠券/折扣码管理
 - **购买历史数据源**：基于支付尝试记录和积分交易记录查询，不依赖本地产品目录
 
 ---
 
-## 9. 参考资料
+## 8. 参考资料
 
-- 用户故事：`docs/user-stories/billing/subscription.md`
 - 相关 PRD：`docs/prd/billing/points.md`
 - 相关 PRD：`docs/prd/billing/stripe-payment.md`
 - 相关 PRD：`docs/prd/core/realm-settings.md`
-- 用户故事：`docs/user-stories/billing/entitlement-mapping.md`
-- Realm Admin 用户故事：`docs/user-stories/core/realm-admin.md`
+- 用户故事来源见 §1 表格

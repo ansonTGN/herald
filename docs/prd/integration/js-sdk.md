@@ -10,27 +10,18 @@
 
 > 详细故事与验收标准请查看 [docs/user-stories/integration/js-sdk.md](/docs/user-stories/integration/js-sdk.md)（SDK 开发者体验维度）与 [docs/user-stories/integration/custom-user-ui.md](/docs/user-stories/integration/custom-user-ui.md)（业务能力基线）。
 
-### 1.1 相关故事
+| US-ID | 标题 | 优先级 | 来源 |
+|-------|------|--------|------|
+| US-JS-001 | 初始化与跨域接入 | P0 | `docs/user-stories/integration/js-sdk.md` |
+| US-JS-002 | 注册与邮箱验证（业务能力引用 US-CUI-001） | P0 | `docs/user-stories/integration/js-sdk.md` |
+| US-JS-003 | 找回与重置密码（业务能力引用 US-CUI-003） | P0 | `docs/user-stories/integration/js-sdk.md` |
+| US-JS-004 | 登录与多因素编排（业务能力引用 US-CUI-002） | P0 | `docs/user-stories/integration/js-sdk.md` |
+| US-JS-005 | 自动静默刷新 | P0 | `docs/user-stories/integration/js-sdk.md` |
+| US-JS-006 | 会话状态与登出（业务能力引用 US-CUI-006） | P1 | `docs/user-stories/integration/js-sdk.md` |
+| US-JS-007 | 可配置凭证存储 | P1 | `docs/user-stories/integration/js-sdk.md` |
+| US-JS-008 | 可区分的错误反馈 | P1 | `docs/user-stories/integration/js-sdk.md` |
 
-本功能用户故事（[docs/user-stories/integration/js-sdk.md](/docs/user-stories/integration/js-sdk.md)），表达「集成方前端开发者通过官方浏览器 SDK 接入 Herald 认证生命周期」的开发者体验维度：
-
-- `[US-JS-001]` 初始化与跨域接入，P0 — 第三方应用开发者
-- `[US-JS-002]` 注册与邮箱验证，P0 — 第三方应用开发者（业务能力引用 US-CUI-001）
-- `[US-JS-003]` 找回与重置密码，P0 — 第三方应用开发者（业务能力引用 US-CUI-003）
-- `[US-JS-004]` 登录与多因素编排，P0 — 第三方应用开发者（业务能力引用 US-CUI-002）
-- `[US-JS-005]` 自动静默刷新，P0 — 第三方应用开发者
-- `[US-JS-006]` 会话状态与登出，P1 — 第三方应用开发者（业务能力引用 US-CUI-006）
-- `[US-JS-007]` 可配置凭证存储，P1 — 第三方应用开发者
-- `[US-JS-008]` 可区分的错误反馈，P1 — 第三方应用开发者
-
-业务能力基线（[docs/user-stories/integration/custom-user-ui.md](/docs/user-stories/integration/custom-user-ui.md)，已发布）：本 SDK 只覆盖其中的**认证生命周期子集**（注册/邮箱验证/登录+二因素/无密码邮箱验证码登录/找回重置/登出/状态），不覆盖个人中心其余能力（资料、积分、计费、发票、订阅、高危操作）。相关故事 US-CUI-001/002/003/006 为本 SDK 背后的业务验收来源，本 PRD 不复制其验收文本。
-
-### 1.2 优先级汇总
-
-| 优先级 | 数量 | 关键故事 |
-|--------|------|----------|
-| P0 | 5 | US-JS-001/002/003/004/005（接入、注册、找回、登录+多因素、自动刷新） |
-| P1 | 3 | US-JS-006/007/008（状态登出、可配置存储、错误反馈） |
+业务能力基线（`docs/user-stories/integration/custom-user-ui.md`，已发布）：本 SDK 只覆盖其中的**认证生命周期子集**（注册/邮箱验证/登录+二因素/无密码邮箱验证码登录/找回重置/登出/状态），不覆盖个人中心其余能力（资料、积分、计费、发票、订阅、高危操作）；相关故事 US-CUI-001/002/003/006 为本 SDK 背后的业务验收来源，本 PRD 不复制其验收文本。
 
 ---
 
@@ -42,7 +33,7 @@
 
 - **初始化与跨域接入**：以所属 Realm 与 Client App 上下文初始化，获得可用客户端；来源未预登记时跨域失败，按网络错误处理并提示检查来源配置。
 - **注册与邮箱验证**：封装注册与邮箱验证，验证结果只回跳到 Client App 预登记页面。
-- **找回/重置密码**：封装找回密码发起；新密码提交由 Herald 托管重置页承接，重置成功后回跳到 Client App 预登记页面。
+- **找回/重置密码**：封装找回密码发起；新密码提交由 Herald 托管重置页承接（SDK 不暴露重置提交方法），重置成功后回跳到 Client App 预登记页面。
 - **登录与多因素编排**：封装密码登录及其二因素（TOTP / Passkey）分支编排；提供无密码邮箱验证码登录流程；提供 LDAP 目录登录（`loginWithLdap`，走后端既有 LDAP 登录端点，结果分支编排与密码登录一致，仅 Realm 配置了 LDAP 时可用）；登录可能返回需要同意协议的中间状态。返回登录会话。
 - **自动静默刷新**：访问凭证过期时用刷新凭证静默换发并重放原请求；并发合并为单次刷新；防刷新死循环；刷新失效或整族被吊销时清会话并引导重登。
 - **会话状态与登出**：查询当前登录状态；登出终止当前会话及其刷新凭证族。
@@ -71,24 +62,6 @@
 - **Client App 配置**：依赖集成方在 Client App 中预登记允许来源与身份流程回跳目标。
 - **OpenAPI 契约同步**：依赖后端 OpenAPI 导出能力，SDK 的 HTTP 类型层与之同源。
 - **既有参考实现**：Herald 自有前端的单飞刷新与「内存 access / 可持久化 refresh」存储模式作为 SDK 行为参考（非运行时依赖）。
-
----
-
-## 3. 需求概述
-
-### 3.1 功能描述
-
-Herald 已具备完整的第三方网页跨域认证能力（浏览器 Bearer token、旋转 refresh、动态 CORS、二因素与无密码邮箱验证码登录），但集成方目前只能用标准 `fetch` 自行实现注册/登录/找回/刷新编排——其中单飞刷新、轮换重放、存储策略与多因素分支是最易出错的部分。
-
-本能力交付官方 JS 浏览器 SDK，把认证生命周期封装为框架无关、零运行时依赖的可发布包，让集成方前端开发者安装即用、获得经过验证的刷新与存储实现，并与后端契约保持同步，补齐「SaaS 底座 + 官方接入工具」的最后一公里。
-
-### 3.2 关键特性
-
-- 认证生命周期一站式封装：注册/邮箱验证/找回重置/登录+多因素/无密码邮箱验证码登录/状态/登出。
-- 自动静默刷新：单飞、单次重放、防循环，开发者零刷新代码。
-- 安全默认存储 + 可插拔：访问凭证仅内存，刷新凭证可插拔，非浏览器环境安全守卫。
-- 框架无关核心 + 零运行时依赖：React / Vue / 原生均可消费，产物最小化。
-- 与后端契约同源：HTTP 类型层复用 OpenAPI 生成，消除手写契约漂移。
 
 ---
 
@@ -125,31 +98,7 @@ Herald 已具备完整的第三方网页跨域认证能力（浏览器 Bearer to
 
 ---
 
-## 5. 功能需求
-
-### 5.1 核心需求
-
-**接入与配置**
-
-- **FR-1（初始化与跨域接入）** -- US-JS-001：以所属 Realm 与 Client App 上下文初始化 SDK，获得可用客户端；来源未预登记时跨域失败，按网络错误处理并提示检查来源配置；框架无关；非浏览器环境无存储适配器时报错。
-- **FR-2（可配置凭证存储）** -- US-JS-007：访问凭证仅内存持有；刷新凭证经可插拔存储接口管理，提供安全浏览器默认值与仅内存选项；非浏览器/SSR 环境提供安全守卫。
-
-**未认证身份流程**
-
-- **FR-3（注册与邮箱验证）** -- US-JS-002：提供注册与邮箱验证方法；验证结果只回跳到 Client App 预登记页面；校验失败返回可区分错误。
-- **FR-4（找回/重置密码）** -- US-JS-003：提供找回密码发起方法；新密码提交由 Herald 托管重置页承接（SDK 不暴露重置提交方法），重置成功后回跳到 Client App 预登记页面；发起请求失败返回可区分错误。
-
-**登录与会话**
-
-- **FR-5（登录与多因素编排）** -- US-JS-004：提供密码登录方法，编排二因素（TOTP / Passkey）分支并返回会话；提供独立的无密码邮箱验证码登录流程；提供 LDAP 目录登录方法 `loginWithLdap`（透传后端既有 LDAP 登录端点，与密码登录共用结果分支编排，Realm 未配置 LDAP 时由后端拒绝）；登录可能返回需要同意协议的中间状态；尊重 Passkey RP 隔离；登录失败返回可区分错误。
-- **FR-6（自动静默刷新）** -- US-JS-005：访问凭证过期时自动用刷新凭证静默换发并单次重放原请求；并发合并为单次刷新；防刷新死循环；刷新失效或整族被吊销时清会话并发出重登信号。
-- **FR-7（会话状态与登出）** -- US-JS-006：提供状态查询与登出；登出终止当前会话及其刷新凭证族，随后请求处于未登录状态。
-
-**开发者体验**
-
-- **FR-8（可区分的错误反馈）** -- US-JS-008：对网络、鉴权、需要二因素、需要同意协议、需要重登等返回类型化、可编程判别的错误；浏览器 CORS 拒绝无法与网络故障可靠区分，支持按稳定错误类别分支处理。
-
-### 5.2 验收目标
+## 5. 验收目标
 
 - 集成方用 SDK 可完成：初始化 → 注册 → 邮箱验证 → 登录（含二因素与无密码邮箱验证码登录）→ 业务请求 → 自动刷新 → 登出的完整认证生命周期。
 - 密码登录按结果分支呈现：直接成功 / 需要二因素（仅 TOTP、Passkey）/ 需要同意协议 / OAuth 跳转；需要同意协议时集成方可携带协议同意标识完成登录。
@@ -165,49 +114,43 @@ Herald 已具备完整的第三方网页跨域认证能力（浏览器 Bearer to
 
 ---
 
-## 6. API 相关约束
+## 6. 边界与约束
 
-**适用性**: 适用（SDK 消费既有后端契约，本节描述能力边界与访问控制原则；端点清单、参数 schema、状态码矩阵不在 PRD 承载范围，下沉到技术设计）
+**适用性**: 适用（SDK 消费既有后端契约；端点清单、参数 schema、状态码矩阵不在 PRD 承载范围，下沉到技术设计）
 
-- **凭证类边界**：SDK 只封装 `/login` 直签的 `CustomUserUi` 凭证；不经 OAuth/PKCE 换取 `FirstParty`。两类凭证不混用，凭证类由服务端 fail-closed 判定。
-- **访问控制原则**：SDK 持有的 token 绑定用户、Realm、Client App 与凭证用途；`CustomUserUi` 只获得用户自服务权限上限内的能力，管理员与未知能力默认拒绝。该规则由服务端授权层执行，SDK 不绕过、不声明凭证类。
-- **租户/realm 数据边界**：token 只能访问当前登录用户自己的数据；Client App 禁用时其 token 家族联动失效。
-- **CORS 兼容性**：SDK 不绕过 CORS；当前网页来源必须在对应 Client App 的允许来源中预登记（精确匹配），否则跨域失败并按网络错误处理。
-- **刷新契约**：复用后端既有的 access/refresh 轮换 + 复用检测吊销家族 + 绝对有效上限 + 吊销模型；SDK 在客户端实现单飞刷新、单次重放与防循环，不改变服务端语义。
+**API / 集成边界:**
 - **契约同步**：SDK 的 HTTP 类型层与后端 OpenAPI 导出同源，避免手写契约漂移；具体生成与构建方案下沉到技术设计。
-- **不引入 OIDC**：SDK 不含 discovery / JWKS / userinfo / id_token。
 
-> 端点清单、请求/响应参数、状态码与生成管线的技术细节不在 PRD 承载范围，下沉到技术设计。
-
----
-
-## 7. 前端/交互约束
-
-**适用性**: 适用（SDK 本身即前端集成制品）
-
+**前端 / 交互边界:**
 - **页面入口**：SDK 以独立可发布包形式提供（npm 包名 `herald-auth-web`，无 scope——`@herald` 不可用，npm 名 `herald` 已被第三方占用，Q-js-sdk-002 已裁决，见决策账本 DEC-js-sdk-015）。集成方在自家网页安装并初始化后使用，Herald 不托管集成方页面。
 - **关键交互**：初始化配置（Realm/Client App 上下文、可选存储适配器）→ 调用认证生命周期方法（注册/邮箱验证/找回密码/密码登录+多因素/无密码邮箱验证码登录/状态/登出）→ 业务请求由 SDK 自动注入凭证与静默刷新。
 - **状态反馈**：会话状态变化（登录/刷新失败/整族吊销/登出）以可订阅的会话事件暴露；各类异常以可编程判别的类型化错误暴露。
 - **权限/边界可见性**：需要二因素、需要同意协议、需要重登等情形返回可区分的错误类别；来源未授权导致的 CORS 拒绝通常归入网络错误，Client App 被禁用可能表现为会话失效，便于开发者给出准确提示与跳转。
 - **SSR/非浏览器守卫**：无浏览器窗口且未注入存储适配器时，SDK 明确报错并提示注入适配器，不静默误用浏览器存储。
-- **框架无关**：核心不绑定特定前端框架；React / Vue / 原生页面按同一套接入方式消费。本轮不交付框架专用适配层。
 
 > 框架适配层、产物体积与 tree-shaking、构建工具链等技术细节不在 PRD 承载范围，下沉到技术设计。
 
 ---
 
-## 8. 已确认决策
+## 7. 已确认决策
 
 | Decision ID | 状态 | 决策项 | 结论 | PRD 落点 | 来源 |
 |---|---|---|---|---|---|
-| `DEC-js-sdk-001` | Applied | scope.browser-primary | 本轮只交付面向第三方网页的浏览器 SDK（注册/邮箱验证/登录含 2FA/passkey/找回重置/自动刷新/登出/状态）；Node 服务端 SDK 已由 DEC-js-sdk-016 独立交付于 `sdk/node/` | §2.1 / §2.2 / §3 / §5 | `.ai/decision-log/js-sdk.md` |
-| `DEC-js-sdk-002` | Applied | framework.agnostic-core | 本轮只交付框架无关纯 TS 核心；React/Vue 适配层为后续可选项 | §2.1 / §2.2 / §7 | `.ai/decision-log/js-sdk.md` |
-| `DEC-js-sdk-003` | Applied | supersedes.custom-user-ui-d-scope-03 | 本轮交付官方 JS 浏览器 SDK，取代 `docs/prd/integration/custom-user-ui.md` D-SCOPE-03「不交付官方 JS SDK」的表述 | §2.2 / §3.1 | `.ai/decision-log/js-sdk.md` |
+| `DEC-js-sdk-001` | Applied | scope.browser-primary | 本轮只交付面向第三方网页的浏览器 SDK（注册/邮箱验证/登录含 2FA/passkey/找回重置/自动刷新/登出/状态）；Node 服务端 SDK 已由 DEC-js-sdk-016 独立交付于 `sdk/node/` | §2.1 / §2.2 / §5 | `.ai/decision-log/js-sdk.md` |
+| `DEC-js-sdk-002` | Applied | framework.agnostic-core | 本轮只交付框架无关纯 TS 核心；React/Vue 适配层为后续可选项 | §2.1 / §2.2 / §6 | `.ai/decision-log/js-sdk.md` |
+| `DEC-js-sdk-003` | Applied | supersedes.custom-user-ui-d-scope-03 | 本轮交付官方 JS 浏览器 SDK，取代 `docs/prd/integration/custom-user-ui.md` D-SCOPE-03「不交付官方 JS SDK」的表述 | §2.1 / §2.2 | `.ai/decision-log/js-sdk.md` |
 | `DEC-js-sdk-004` | Applied | transport.openapi-generated | SDK HTTP 层复用后端 OpenAPI 生成管线，fetch 类型化客户端；运行时零依赖 | §2.3 / §6 | `.ai/decision-log/js-sdk.md` |
-| `DEC-js-sdk-005` | Superseded | packaging.location-and-build | ~~新建仓库顶层独立包 `sdk-web/`~~ → 目录布局由 `DEC-js-sdk-017` 取代（`sdk/web`）；tsup 构建/ES2020+ 部分仍有效 | §2.1 / §7 | `.ai/decision-log/js-sdk.md` |
-| `DEC-js-sdk-006` | Applied | token.storage-strategy | access token 仅内存；refresh token 经可插拔 `TokenStorage` 管理，默认浏览器存储；提供 SSR 安全守卫 | §2.1 / §4.1 / §4.2 / §5 / §7 | `.ai/decision-log/js-sdk.md` |
-| `DEC-js-sdk-007` | Applied | refresh.semantics | 单飞刷新 + 单次重放 + 防循环 header + 失败清会话发事件 | §4.1 / §4.2 / §5.1（FR-6） | `.ai/decision-log/js-sdk.md` |
+| `DEC-js-sdk-005` | Superseded | packaging.location-and-build | ~~新建仓库顶层独立包 `sdk-web/`~~ → 目录布局由 `DEC-js-sdk-017` 取代（`sdk/web`）；tsup 构建/ES2020+ 部分仍有效 | §2.1 / §6 | `.ai/decision-log/js-sdk.md` |
+| `DEC-js-sdk-006` | Applied | token.storage-strategy | access token 仅内存；refresh token 经可插拔 `TokenStorage` 管理，默认浏览器存储；提供 SSR 安全守卫 | §2.1 / §4.1 / §4.2 / §5 / §6 | `.ai/decision-log/js-sdk.md` |
+| `DEC-js-sdk-007` | Applied | refresh.semantics | 单飞刷新 + 单次重放 + 防循环 header + 失败清会话发事件 | §4.1 / §4.2 | `.ai/decision-log/js-sdk.md` |
 | `DEC-js-sdk-008` | Applied | scope.credential-class | 浏览器 SDK 面向 `CustomUserUi`，不经 PKCE 换 `FirstParty` | §2.2 / §4.1 / §6 | `.ai/decision-log/js-sdk.md` |
-| `DEC-js-sdk-010` | Applied | api.login-surface-and-email-otp | 密码登录返回判别分支（成功 / 需二因素（仅 totp、passkey）/ 需同意协议 / OAuth 跳转）；邮箱验证码登录是独立的无密码第一因素流程，非密码登录二因素；登录可携带协议同意标识以通过 consent 门 | §4.1 / §4.2 / §5.1（FR-5） | `.ai/decision-log/js-sdk.md` |
+| `DEC-js-sdk-010` | Applied | api.login-surface-and-email-otp | 密码登录返回判别分支（成功 / 需二因素（仅 totp、passkey）/ 需同意协议 / OAuth 跳转）；邮箱验证码登录是独立的无密码第一因素流程，非密码登录二因素；登录可携带协议同意标识以通过 consent 门 | §4.1 / §4.2 | `.ai/decision-log/js-sdk.md` |
 
 > 本表只记录带稳定 DEC ID、且影响产品语义的已确认结论。其余实现级决策（OpenAPI 注解修正 DEC-js-sdk-011、浏览器产物打包格式 DEC-js-sdk-012、最终 npm 命名 DEC-js-sdk-015、Node SDK 交付 DEC-js-sdk-016、SDK 目录统一 `sdk/{web,node,rust}` DEC-js-sdk-017 等）保留在 `.ai/decision-log/js-sdk.md`，不进 PRD。原延期问题 Q-js-sdk-002（最终 npm scope 与是否本轮发布）已裁决：`herald-auth-web`（浏览器，`sdk/web/`）+ `herald-sdk`（Node 服务端，`sdk/node/`，Rust crate `sdk/rust/` 同名对应物），均无 scope。
+
+---
+
+## 8. 参考资料
+
+- 用户故事来源见 §1 表格
+- 决策账本：`.ai/decision-log/js-sdk.md`

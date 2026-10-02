@@ -9,25 +9,12 @@
 
 > 详细故事与验收标准请查看 [docs/user-stories/billing/refund-clawback.md](/docs/user-stories/billing/refund-clawback.md)。
 
-### 1.1 相关故事
-- `[US-RC-001]` 多次部分退款按每笔增量回收积分，优先级 P0，来源 [docs/user-stories/billing/refund-clawback.md](/docs/user-stories/billing/refund-clawback.md)
-  - 角色：Regular User
-  - 摘要：每笔退款按其金额占原支付的比例回收积分，多次部分退款的累计回收对齐累计退款比例，只回收未消费部分，单笔退款重复推送幂等
-- `[US-RC-002]` 部分退款保留一次性购买角色，优先级 P1，来源 [docs/user-stories/billing/refund-clawback.md](/docs/user-stories/billing/refund-clawback.md)
-  - 角色：Regular User
-  - 摘要：一次性购买的部分退款（任意比例）保留该购买授予的角色，仅累计全额退款回收；争议/撤销事件不受此规则影响
-- `[US-PW-005]` 支付事件触发 role 撤销，优先级 P0，来源 [docs/user-stories/billing/support-paywall.md](/docs/user-stories/billing/support-paywall.md)
-  - 角色：Realm Admin（系统代为执行）
-  - 摘要：订阅取消/过期/退款触发角色撤销与补偿最终一致的部分维持不变；其场景 4「一次性永久权益回收」由本 PRD 细化为累计全额退款门（见 §9.2 覆盖关系）
-- `[US-PO-003]` 查看用户积分交易历史，优先级 P1，来源 [docs/user-stories/billing/points-admin.md](/docs/user-stories/billing/points-admin.md)
-  - 角色：Realm Admin
-  - 摘要：退款回收作为交易类型可见可筛选——本 PRD 不改变该可见性，回收记录按每笔退款的正确金额生成
-
-### 1.2 优先级汇总
-| 优先级 | 数量 | 关键故事 |
-|--------|------|----------|
-| P0 | 1 | US-RC-001 |
-| P1 | 1 | US-RC-002 |
+| US-ID | 标题 | 优先级 | 来源 |
+|-------|------|--------|------|
+| US-RC-001 | 多次部分退款按每笔增量回收积分 | P0 | [docs/user-stories/billing/refund-clawback.md](/docs/user-stories/billing/refund-clawback.md) |
+| US-RC-002 | 部分退款保留一次性购买角色 | P1 | [docs/user-stories/billing/refund-clawback.md](/docs/user-stories/billing/refund-clawback.md) |
+| US-PW-005 | 支付事件触发 role 撤销——其场景 4「一次性永久权益回收」由本 PRD 细化为累计全额退款门（见 §8.2 覆盖关系） | P0 | [docs/user-stories/billing/support-paywall.md](/docs/user-stories/billing/support-paywall.md) |
+| US-PO-003 | 查看用户积分交易历史——退款回收作为交易类型可见可筛选，本 PRD 不改变该可见性，回收记录按每笔退款的正确金额生成 | P1 | [docs/user-stories/billing/points-admin.md](/docs/user-stories/billing/points-admin.md) |
 
 ---
 
@@ -52,19 +39,6 @@
 
 ---
 
-## 3. 需求概述
-
-### 3.1 功能描述
-一笔支付可以发生多次部分退款（Stripe 单笔 charge 可多次退款，累计不超过原额）。退款回收的产品语义固化为两条不变量：积分回收始终以单笔退款增量为单位按比例执行且只回收未消费部分；一次性购买的角色只在累计全额退款时回收。由此用户的积分余额准确反映实际退款比例，商家的善意部分补偿不剥夺已购永久权益，全额退款仍防止权益被无偿保留。
-
-### 3.2 关键特性
-- 积分回收增量语义：每笔退款按 本笔退款金额 ÷ 原支付金额 的比例回收对应授予积分
-- 累计对齐不变量：任意时刻的累计回收积分等于 累计退款比例 × 原始授予（在未消费额度内），可容忍整数四舍五入误差
-- 单笔退款幂等：同一笔退款（支付方退款单）重复推送不产生二次回收
-- 角色回收全额阈值：一次性购买的角色回收以累计退款达 100% 为界
-
----
-
 ## 4. 业务规则与状态
 
 ### 4.1 业务规则
@@ -84,15 +58,8 @@
 
 ---
 
-## 5. 功能需求
+## 5. 验收目标
 
-### 5.1 核心需求
-- **FR-1** Stripe 充值退款按单笔退款增量比例回收积分；单次全额退款回收全部剩余的行为保持不变。
-- **FR-2** Creem 充值退款按相同的增量语义执行，两条退款路径行为一致。
-- **FR-3** 一次性购买的角色回收按规则 5 执行：部分退款保留角色；同笔支付累计退款达到 100% 的那次退款事件触发角色回收。Stripe 与 Creem 两条路径一致。
-- **FR-4** 退款回收的幂等单位为「支付方退款单」：同一退款单的重复推送不二次回收积分；角色回收为幂等操作，重复推送会按该退款单已落库的闸门状态重跑一次（对已回收角色为无操作），用于自愈此前 best-effort 回收失败的情况，不产生重复回收效果。
-
-### 5.2 验收目标
 - US-RC-001 场景 1–4 全部通过（含 300+200 两笔部分退款累计回收 50% 的锚定场景）。
 - US-RC-002 场景 1–4 全部通过（部分退款保留角色、累计全额回收角色、争议事件不触发回收且保留不失效）。
 - 既有单次部分退款、单次全额退款、退款幂等、多积分账户归属回收相关既有测试全部保持通过（回归）。
@@ -100,41 +67,33 @@
 
 ---
 
-## 6. API 相关约束
+## 6. 边界与约束
 
-**适用性**: 不适用
+**适用性**: 不适用（原 API 约束与前端/交互约束均不适用，合并陈述）
 
-本 PRD 为支付方 webhook 处理链路与内部回收逻辑的行为规则，不新增、不变更任何对外接口；管理员手动 credit note 记录接口与发票查询接口维持现状。
-
----
-
-## 7. 前端/交互约束
-
-**适用性**: 不适用
-
-无前端页面与管理后台界面变更。退款回收流水在既有交易历史中按每笔退款的正确金额展示（US-PO-003 既有能力）。
+本 PRD 为支付方 webhook 处理链路与内部回收逻辑的行为规则，不新增、不变更任何对外接口；管理员手动 credit note 记录接口与发票查询接口维持现状。无前端页面与管理后台界面变更；退款回收流水在既有交易历史中按每笔退款的正确金额展示（US-PO-003 既有能力）。
 
 ---
 
-## 8. 已确认决策
+## 7. 已确认决策
 
 | Decision ID | 状态 | 决策项 | 结论 | PRD 落点 |
 |---|---|---|---|---|
 | `DEC-refund-patch-001` | Applied | 回收范围 | 积分回收增量语义 + 一次性购买角色回收细化；订阅退款政策维持现状 | §2 |
-| `DEC-refund-patch-002` | Applied | 角色回收全额阈值 | 部分退款保留角色，仅累计退款达 100% 回收；争议/撤销不受约束 | §4 规则 5/6、FR-3 |
-| `DEC-refund-patch-003` | Applied | 积分回收增量语义 | 以单笔退款增量为单位按比例回收，累计回收对齐累计退款比例，幂等以退款单为单位 | §4 规则 1/3/4、FR-1/2/4 |
-| `DEC-refund-patch-004` | Applied | 历史不回溯 | 不补偿历史过度回收积分与被回收角色，仅对未来退款事件生效 | §4 规则 8、§2.2 |
-| `DEC-refund-patch-005` | Applied | 争议维持现状 | 争议/撤销事件处理不变（一次性争议不回收角色）；US-RC-002 场景 4 钉住现状；能力缺口另立方案 | §4 规则 6、§2.2、§5.2 |
+| `DEC-refund-patch-002` | Applied | 角色回收全额阈值 | 部分退款保留角色，仅累计退款达 100% 回收；争议/撤销不受约束 | §4.1 规则 5/6 |
+| `DEC-refund-patch-003` | Applied | 积分回收增量语义 | 以单笔退款增量为单位按比例回收，累计回收对齐累计退款比例，幂等以退款单为单位 | §4.1 规则 1/3/4 |
+| `DEC-refund-patch-004` | Applied | 历史不回溯 | 不补偿历史过度回收积分与被回收角色，仅对未来退款事件生效 | §4.1 规则 8、§2.2 |
+| `DEC-refund-patch-005` | Applied | 争议维持现状 | 争议/撤销事件处理不变（一次性争议不回收角色）；US-RC-002 场景 4 钉住现状；能力缺口另立方案 | §4.1 规则 6、§2.2、§5 |
 
 ---
 
-## 9. 参考资料
+## 8. 参考资料
 
-### 9.1 来源文件
-- 用户故事：[docs/user-stories/billing/refund-clawback.md](/docs/user-stories/billing/refund-clawback.md)（US-RC-001、US-RC-002）
+### 8.1 来源文件
+- 用户故事来源见 §1 表格
 - 相关 PRD：[docs/prd/billing/stripe-payment.md](/docs/prd/billing/stripe-payment.md)（§退款处理——topup 退款按单笔增量比例回收）、[docs/prd/billing/points.md](/docs/prd/billing/points.md)（退款积分回收规则）、[docs/prd/billing/credit-bucket.md](/docs/prd/billing/credit-bucket.md)（回收回原账户）
 
-### 9.2 与相关 PRD / 用户故事的覆盖关系
+### 8.2 与相关 PRD / 用户故事的覆盖关系
 - [docs/user-stories/billing/support-paywall.md](/docs/user-stories/billing/support-paywall.md) **US-PW-005 场景 4**「一次性永久权益回收」：退款半句按 `DEC-refund-patch-002` 细化为「仅累计全额退款回收」；撤销/争议半句钉住现状——一次性购买的争议事件不回收角色，能力缺口另立方案（`DEC-refund-patch-005`）。
 - [docs/prd/billing/support-paywall.md](/docs/prd/billing/support-paywall.md) 与 [docs/prd/billing/pay_model.md](/docs/prd/billing/pay_model.md) 中「一次性退款/撤销回收支付来源角色」表述：按累计全额门细化；Apple/Google 表述不受影响（其退款为整笔语义，行为不变）。
 - US-PW-005 场景 1/2/3（订阅退款撤角色、webhook 补偿最终一致）不冲突，维持不变。

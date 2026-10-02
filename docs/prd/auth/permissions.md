@@ -9,38 +9,25 @@
 
 > 详细故事与验收标准请查看 `docs/user-stories/` 中对应文档。
 
-### 1.1 故事引用
-
-**Realm Admin 用户故事** — `docs/user-stories/core/realm-admin.md`
-- `[US-RA-001]` Realm 隔离访问 (P0): 作为 Realm Admin，我只能访问自己 Realm 的资源
-- `[US-RA-002]` 角色定义管理 (P0): 作为 Realm Admin，我想要管理角色定义
-- `[US-RA-003]` 权限定义管理 (P0): 作为 Realm Admin，我想要管理权限定义
-- `[US-RA-004]` 为角色分配权限 (P0): 作为 Realm Admin，我想要为角色分配权限
-- `[US-RA-005]` 查看角色权限 (P0): 作为 Realm Admin，我想要查看角色的权限
-- `[US-RA-006]` 用户角色分配 (P0): 作为 Realm Admin，我想要为用户分配角色
-- `[US-RA-007]` 权限策略管理 (P0): 作为 Realm Admin，我想要管理权限策略
-- `[US-RA-009]` 权限层级验证 (P0): 作为 Realm Admin，系统应自动应用权限层级规则
-- `[US-RA-010]` 查看 Dashboard 用户活跃概览 (P1)
-- `[US-RA-011]` 查看 Dashboard 认证趋势图 (P1)
-- `[US-RA-012]` 通过 Dashboard 快捷导航跳转 (P1)
-
-**内置保护用户故事** — `docs/user-stories/core/builtin-protection.md`
-- `[US-BP-001]` 默认角色和权限保护 (P0): 默认的角色和权限不能被删除，内置角色名称不可修改
-
-**审计日志用户故事** — `docs/user-stories/core/audit.md`
-- `[US-AU-001]` 查看 Realm 审计日志 (P0)
-- `[US-AU-002]` 按条件筛选审计日志 (P0)
-- `[US-AU-003]` 查看审计日志详情 (P1)
-- `[US-AU-004]` 查看 Admin Realm 审计日志 (P0)
-- `[US-AU-005]` 系统自动记录核心操作 (P0)
-
-### 1.2 优先级汇总
-
-| 优先级 | 数量 | 关键故事 |
-|--------|------|----------|
-| P0 | 13 | Realm 隔离访问、角色定义管理、权限定义管理、为角色分配权限、查看角色权限、用户角色分配、权限策略管理、权限层级验证、默认角色和权限不可删除/内置角色名称不可修改、审计日志查看/筛选/Admin Realm/自动记录 |
-| P1 | 4 | Dashboard 活跃概览、认证趋势图、快捷导航、审计详情 |
-| P2 | 0 | - |
+| US-ID | 标题 | 优先级 | 来源 |
+|-------|------|--------|------|
+| US-RA-001 | Realm 隔离访问 | P0 | `docs/user-stories/core/realm-admin.md` |
+| US-RA-002 | 角色定义管理 | P0 | `docs/user-stories/core/realm-admin.md` |
+| US-RA-003 | 权限定义管理 | P0 | `docs/user-stories/core/realm-admin.md` |
+| US-RA-004 | 为角色分配权限 | P0 | `docs/user-stories/core/realm-admin.md` |
+| US-RA-005 | 查看角色权限 | P0 | `docs/user-stories/core/realm-admin.md` |
+| US-RA-006 | 用户角色分配 | P0 | `docs/user-stories/core/realm-admin.md` |
+| US-RA-007 | 权限策略管理 | P0 | `docs/user-stories/core/realm-admin.md` |
+| US-RA-009 | 权限层级验证 | P0 | `docs/user-stories/core/realm-admin.md` |
+| US-RA-010 | 查看 Dashboard 用户活跃概览 | P1 | `docs/user-stories/core/realm-admin.md` |
+| US-RA-011 | 查看 Dashboard 认证趋势图 | P1 | `docs/user-stories/core/realm-admin.md` |
+| US-RA-012 | 通过 Dashboard 快捷导航跳转 | P1 | `docs/user-stories/core/realm-admin.md` |
+| US-BP-001 | 默认角色和权限保护 | P0 | `docs/user-stories/core/builtin-protection.md` |
+| US-AU-001 | 查看 Realm 审计日志 | P0 | `docs/user-stories/core/audit.md` |
+| US-AU-002 | 按条件筛选审计日志 | P0 | `docs/user-stories/core/audit.md` |
+| US-AU-003 | 查看审计日志详情 | P1 | `docs/user-stories/core/audit.md` |
+| US-AU-004 | 查看 Admin Realm 审计日志 | P0 | `docs/user-stories/core/audit.md` |
+| US-AU-005 | 系统自动记录核心操作 | P0 | `docs/user-stories/core/audit.md` |
 
 ---
 
@@ -71,25 +58,6 @@
 - Realm 系统 — 权限属于 Realm 级别
 - Client App 系统 — 权限与 Client App 关联
 - Redis 缓存 — 提升权限检查性能（P95 < 50ms）
-
----
-
-## 3. 需求概述
-
-### 3.1 功能描述
-
-Herald 系统实现完整的 RBAC（基于角色的访问控制）权限管理体系，采用两层权限控制：
-
-1. **RBAC 元数据层** — 定义角色、权限及其关联关系，用于管理操作（如创建角色定义）
-2. **自研权限运行时层** — 实际权限检查和用户角色分配（Redis 缓存 + PostgreSQL），用于运行时权限检查（如用户是否有权限访问某个资源）
-
-### 3.2 关键特性
-
-- `resource.action` 格式的细粒度权限模型
-- `manage` / `create` / `view` 三级 action 层级，`manage` 向下隐含 `view` 和 `create`
-- Realm 级别权限隔离，跨 Realm 访问拒绝
-- 内置 `realm-admin` 和 `user` 默认角色，不可删除，名称不可修改，描述可修改
-- 菜单级和按钮级前端权限控制，对齐后端权限模型
 
 ---
 
@@ -239,17 +207,7 @@ Herald 系统实现完整的 RBAC（基于角色的访问控制）权限管理�
 
 ---
 
-## 5. 功能需求
-
-### 5.1 核心需求
-
-- RBAC 元数据管理：支持角色定义的创建、查询、更新、删除；权限定义的创建、查询、更新、删除；角色权限关联的管理。生命周期约束：使用中（有用户持有/分配给角色）的角色与权限不可删除（409）；使用中的权限不可修改 resource/action（409）
-- 权限运行时：支持用户角色分配、API Key 角色分配、用户直接权限分配/移除、资源访问策略管理
-- 权限检查：Service 层集成 `resource.action` 权限检查，`manage` 隐含 `view` 和 `create`
-- 前端权限控制：侧边栏菜单根据 `resource.view` 权限动态显示/隐藏；按钮级权限控制新增、编辑、删除操作
-- 默认角色与权限：系统提供 `realm-admin` 和 `user` 内置角色及对应权限，受内置保护（不可删除，内置角色名称不可修改）
-
-### 5.2 验收目标
+## 5. 验收目标
 
 - Realm Admin 可在管理端完成角色定义、权限定义、角色权限关联、用户角色分配、API Key 角色分配、用户直接权限分配/移除的完整操作
 - 无权限用户访问受保护资源时被拒绝，前端隐藏无权限的菜单和操作按钮
@@ -259,23 +217,16 @@ Herald 系统实现完整的 RBAC（基于角色的访问控制）权限管理�
 
 ---
 
-## 6. API 相关约束
+## 6. 边界与约束
 
-**适用性**: 适用
+**适用性**: 适用（API 与前端/交互边界合并陈述）
 
+**API / 集成边界:**
 - 每个 API 端点检查具体的 `resource.action` 权限，不使用宽泛的 `realm.admin` 或特殊策略
-- Realm 隔离：权限属于 Realm 级别，跨 Realm 访问必须拒绝
-- 权限层级遵循 4.1 节规则，`manage` 隐含 `view` 和 `create`
 - 只读操作（list、get）检查 `view` 权限；写操作（create、update、delete）检查 `manage` 权限
-- Realm 创建在 admin realm 内检查 `realm.manage`
 - 必须遵守 realm 隔离、权限边界、凭证脱敏和幂等要求
 
----
-
-## 7. 前端/交互约束
-
-**适用性**: 适用
-
+**前端 / 交互边界:**
 - 管理端侧边栏菜单根据用户权限动态显示/隐藏，每个菜单项对应明确的 `resource.view` 权限
 - Dashboard 快捷导航根据权限过滤，避免导向无权限页面
 - 按钮级权限控制新增、编辑、删除操作；仅有 `view` 权限时管理按钮不可用
@@ -323,25 +274,19 @@ Herald 系统实现完整的 RBAC（基于角色的访问控制）权限管理�
 
 ---
 
-## 8. 已确认决策
-
-### 8.1 已确认决策
+## 7. 已确认决策
 
 - 权限模型采用 `resource.action` 格式，不使用通配符或隐式全局权限
 - `manage` 是唯一具有向下隐含能力的 action，简化权限授予策略
-- `create` 不隐含 `view`，需要查看和创建的必须分别授予或直接授予 `manage`
-- 所有层级规则仅在同一 resource 内生效，避免跨资源隐含
 - 不使用 `admin` action，不引入 `realm.admin:{realm_id}` 等特殊策略
 - 用户修改 profile 和 password 不走权限检查，在业务逻辑层直接处理
 
 ---
 
-## 9. 参考资料
+## 8. 参考资料
 
-- 用户故事：`docs/user-stories/core/realm-admin.md`
-- 用户故事：`docs/user-stories/core/builtin-protection.md`
-- 用户故事：`docs/user-stories/core/audit.md`
 - 相关 PRD：`docs/prd/core/realm-settings.md`
 - 相关 PRD：`docs/prd/auth/oauth.md`
 - 相关 PRD：`docs/prd/core/dashboard.md`
 - 相关 PRD：`docs/prd/core/audit.md`
+- 用户故事来源见 §1 表格

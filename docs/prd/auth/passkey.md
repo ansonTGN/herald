@@ -9,46 +9,18 @@
 
 > 详细故事与验收标准请查看 `docs/user-stories/` 中对应文档。
 
-### 1.1 故事引用
-
-- `[US-PK-001]` Realm 管理员启用/禁用 Passkey 功能，优先级 P0，来源 `docs/user-stories/auth/passkey.md`
-  - 角色：Realm Admin
-  - 摘要：管理员为本 Realm 启用或禁用 Passkey 认证功能
-- `[US-PK-002]` Realm 管理员强制启用 Passkey，优先级 P0，来源 `docs/user-stories/auth/passkey.md`
-  - 角色：Realm Admin
-  - 摘要：管理员设置本 Realm 强制使用 Passkey
-- `[US-PK-003]` Realm 管理员配置 Passkey 安全策略，优先级 P1，来源 `docs/user-stories/auth/passkey.md`
-  - 角色：Realm Admin
-  - 摘要：管理员配置用户验证要求、跨平台 authenticator 策略等
-- `[US-PK-004]` 用户注册 Passkey，优先级 P0，来源 `docs/user-stories/auth/passkey.md`
-  - 角色：Regular User
-  - 摘要：用户在安全设置页注册 Passkey，支持多设备
-- `[US-PK-005]` 用户使用 Passkey 直接登录，优先级 P0，来源 `docs/user-stories/auth/passkey.md`
-  - 角色：Regular User
-  - 摘要：用户通过 usernameless / conditional UI 使用 Passkey 直接登录
-- `[US-PK-006]` 用户在密码登录后使用 Passkey 作为第二因素，优先级 P0，来源 `docs/user-stories/auth/passkey.md`
-  - 角色：Regular User
-  - 摘要：用户在密码验证通过后使用 Passkey 完成二次验证
-- `[US-PK-007]` 用户查看和重命名已注册 Passkey，优先级 P0，来源 `docs/user-stories/auth/passkey.md`
-  - 角色：Regular User
-  - 摘要：用户查看、重命名已注册的 Passkey 设备
-- `[US-PK-008]` 用户在无法使用 Passkey 时回退到密码/TOTP，优先级 P0，来源 `docs/user-stories/auth/passkey.md`
-  - 角色：Regular User
-  - 摘要：用户在浏览器不支持、验证失败或设备不可用时回退到密码/TOTP
-- `[US-PK-009]` 用户删除 Passkey，优先级 P0，来源 `docs/user-stories/auth/passkey.md`
-  - 角色：Regular User
-  - 摘要：用户删除不再使用的 Passkey 设备
-- `[US-PK-010]` Realm 管理员查看 Passkey 使用情况统计，优先级 P2，来源 `docs/user-stories/auth/passkey.md`
-  - 角色：Realm Admin
-  - 摘要：管理员查看本 Realm Passkey 启用率和登录统计
-
-### 1.2 优先级汇总
-
-| 优先级 | 数量 | 关键故事 |
-|--------|------|----------|
-| P0 | 8 | 管理员开关/强制、用户注册、直接登录、第二因素、设备管理、回退、删除 |
-| P1 | 1 | 管理员配置安全策略 |
-| P2 | 1 | 管理员查看使用统计 |
+| US-ID | 标题 | 优先级 | 来源 |
+|-------|------|--------|------|
+| US-PK-001 | Realm 管理员启用/禁用 Passkey 功能 | P0 | `docs/user-stories/auth/passkey.md` |
+| US-PK-002 | Realm 管理员强制启用 Passkey | P0 | `docs/user-stories/auth/passkey.md` |
+| US-PK-003 | Realm 管理员配置 Passkey 安全策略 | P1 | `docs/user-stories/auth/passkey.md` |
+| US-PK-004 | 用户注册 Passkey | P0 | `docs/user-stories/auth/passkey.md` |
+| US-PK-005 | 用户使用 Passkey 直接登录 | P0 | `docs/user-stories/auth/passkey.md` |
+| US-PK-006 | 用户在密码登录后使用 Passkey 作为第二因素 | P0 | `docs/user-stories/auth/passkey.md` |
+| US-PK-007 | 用户查看和重命名已注册 Passkey | P0 | `docs/user-stories/auth/passkey.md` |
+| US-PK-008 | 用户在无法使用 Passkey 时回退到密码/TOTP | P0 | `docs/user-stories/auth/passkey.md` |
+| US-PK-009 | 用户删除 Passkey | P0 | `docs/user-stories/auth/passkey.md` |
+| US-PK-010 | Realm 管理员查看 Passkey 使用情况统计 | P2 | `docs/user-stories/auth/passkey.md` |
 
 ---
 
@@ -66,7 +38,7 @@
 - 删除最后一个 Passkey 时的明确风险提示
 - 当 Passkey 不可用时回退到密码/TOTP 登录
 - 浏览器不支持 WebAuthn 时的降级显示
-- Realm 管理员查看 Passkey 启用率与登录统计（P2）
+- Realm 管理员查看 Passkey 启用率与登录统计（P2，本期未实现）
 - 审计日志记录关键 Passkey 事件（注册、删除、登录、策略变更）
 
 ### 2.2 不包含功能 (Out of Scope)
@@ -90,32 +62,6 @@
 - 浏览器 Web Authentication API — 前端创建/获取 credential
 - HTTPS 生产环境 — WebAuthn 规范强制要求
 - 多 RP 解析模型 — 默认使用环境变量 `RP_ID`/`RP_ORIGIN`；请求 Origin 命中某启用 Client App 的 `allowed_origins` 时以该 origin 为 RP（Client App 无独立 `passkey_rp` 字段，RP 即请求来源 origin）；已生效的自定义域名优先于环境变量（三级匹配 `resolve_passkey_rp`）。credential 唯一性按 `(realm, user, rp_id, credential_id)` 隔离，同一用户在不同 RP 下持有各自独立的 passkey，设备列表按当前请求解析出的 RP 过滤
-
----
-
-## 3. 需求概述
-
-### 3.1 功能描述
-
-Passkey 基于 WebAuthn / FIDO2 标准，提供无密码、防钓鱼的公钥加密认证能力。Herald 系统在 Realm 级别和用户级别同时支持 Passkey：
-
-- **Realm 级别**：管理员决定是否启用 Passkey、是否强制用户使用，以及配置安全策略（如用户验证要求）。
-- **用户级别**：用户可以在 Realm 允许时注册一个或多个 Passkey，并使用 Passkey 直接登录或作为密码后的第二因素。
-
-Passkey 同时支持两种认证场景：
-1. **第一因素登录**：用户访问登录页后，系统通过 conditional UI 提示可用 Passkey，用户选择并完成验证后直接登录，无需输入密码。
-2. **第二因素验证**：用户先输入邮箱和密码，验证通过后再使用 Passkey 完成二次验证，与现有 TOTP 二次认证模式并列。
-
-系统必须始终保留密码（以及已启用的 TOTP）作为回退方式，防止因设备丢失、浏览器不兼容或平台生态限制导致账户锁定。
-
-### 3.2 关键特性
-
-- **双模式认证**：同一 Passkey credential 既可作为第一因素登录，也可在密码登录后作为第二因素。
-- **Usernameless / Conditional UI**：登录页支持自动填充可用 Passkey，已注册用户无需手动输入邮箱即可选择凭证。
-- **多设备管理**：用户可注册多个 Passkey，并为每个凭证设置可识别名称、查看最近使用时间、删除指定设备。
-- **Realm 级策略**：沿用 TOTP 的 `enabled` / `force_enabled` 模式，并扩展可选的安全策略配置。
-- **安全默认**：challenge 一次性且限时；验证 origin 与 RP_ID；校验签名计数器防止 credential 克隆；私钥始终留在用户设备。
-- **平滑降级**：Realm 禁用 Passkey 后，新用户无法注册，已注册用户仍可回退到密码/TOTP；浏览器不支持时自动隐藏 Passkey 入口。
 
 ---
 
@@ -151,19 +97,7 @@ Passkey 同时支持两种认证场景：
 
 ---
 
-## 5. 功能需求
-
-### 5.1 核心需求
-
-- **Realm 级别 Passkey 配置**：管理员在 Settings -> Security 页面控制 Passkey 开关、强制模式和基础安全策略。启用率与登录统计接口（US-PK-010）为 P2，本期未实现。
-- **用户注册 Passkey**：已登录用户在个人资料 -> Security 页面发起注册，系统与浏览器交互创建 credential，成功后显示设备名称并允许用户修改。
-- **Passkey 第一因素登录**：登录页支持 conditional UI，已注册用户在聚焦用户名输入框时自动收到 Passkey 提示；也可主动点击"Use Passkey"按钮。
-- **Passkey 第二因素登录**：用户在输入邮箱和密码后，若已启用 Passkey 作为第二因素，则进入 Passkey 验证步骤；验证通过后创建 Session。
-- **用户设备管理**：用户在 Security 页面查看所有已注册 Passkey 列表，包括设备名、注册时间、最近使用时间、同步状态；支持重命名和删除。
-- **回退与降级**：登录流程始终提供"Use password instead"入口；浏览器不支持时隐藏 Passkey 选项；强制模式下仍保留回退。
-- **审计与可观测性**：记录 Passkey 相关关键事件到审计日志，管理员可查看启用率与登录方式分布统计（P2）。
-
-### 5.2 验收目标
+## 5. 验收目标
 
 - 用户可在支持的浏览器中完成 Passkey 注册、直接登录、作为第二因素登录的全流程。
 - 同一用户可在多个设备上注册 Passkey，并能在 Security 页面管理这些设备。
@@ -175,60 +109,42 @@ Passkey 同时支持两种认证场景：
 
 ---
 
-## 6. API 相关约束
+## 6. 边界与约束
 
-**适用性**: 适用
+**适用性**: 适用（API 与前端/交互边界合并陈述）
 
-- **接口能力范围**：Passkey 注册 challenge 生成与完成、Passkey 认证 challenge 生成与完成、用户已注册 Passkey 列表查询/重命名/删除、Realm 级别 Passkey 开关与策略配置（Passkey 启用率统计查询为 US-PK-010，P2，本期未实现）；另有匿名公开状态端点 `GET /api/auth/{realmId}/passkey/status` 返回 `{ enabled, forceEnabled }`（读取 Realm `passkey` 配置行；登录页据此在调用任何 Passkey 端点前决定是否渲染 Passkey 入口，避免以 404 试探发现禁用）。
-- **访问控制**：Realm Admin 可操作 Realm 级别 Passkey 配置和统计；Regular User 仅可操作自身 Passkey 设置；Passkey 注册和管理操作需在已认证 Session 内进行；Passkey 注册（发起/完成）与删除必须先完成独立重新认证并消费单次 reauth 票据（实现严于本 PRD 原文，属既定安全行为），仅重命名不要求重新认证；Passkey 登录为未认证接口，需应用速率限制。
-- **数据边界**：Passkey credential 数据按 realm 隔离；credential ID 在 `(realm, user, rp_id, credential_id)` 组合内唯一；响应中不返回公钥等敏感元数据。
-- **登录二因素探测的失败语义**：密码/LDAP/邮箱验证码登录对"是否需要 passkey 第二因素"的探测，仅在部署配置类失败（RP 环境变量未设、查找故障）时容错为不提供 passkey；由请求 Origin 头触发的解析失败（未映射来源）失败关闭——用户在 realm 内持有任意 passkey 即要求完成仪式（仪式本身会拒绝该未配置来源），攻击者不能凭伪造 Origin 头让密码登录跳过第二因素
-- **安全约束**：challenge 一次性且限时；验证 origin 与 RP_ID 必须匹配当前 Client App、有效自定义域名或部署默认配置；第一因素与第二因素均按本次目标 Client App 限定 RP 解析；签名计数器递增校验防止克隆；验证失败不暴露具体原因；注册和认证接口应用速率限制。
-- **兼容性约束**：接口设计需支持 usernameless（discoverable credential）和 non-discoverable credential 两种场景；前端需处理不同浏览器对 transports、user verification 的差异。
+**API / 集成边界:**
+- 接口能力范围：Passkey 注册 challenge 生成与完成、Passkey 认证 challenge 生成与完成、用户已注册 Passkey 列表查询/重命名/删除、Realm 级别 Passkey 开关与策略配置（Passkey 启用率统计查询为 US-PK-010，P2，本期未实现）；另有匿名公开状态端点返回 Realm `passkey` 配置的 `{ enabled, forceEnabled }`（登录页据此在调用任何 Passkey 端点前决定是否渲染 Passkey 入口，避免以 404 试探发现禁用）。
+- 访问控制：Realm Admin 可操作 Realm 级别 Passkey 配置和统计；Regular User 仅可操作自身 Passkey 设置；Passkey 注册和管理操作需在已认证 Session 内进行；Passkey 注册（发起/完成）与删除必须先完成独立重新认证并消费单次 reauth 票据（实现严于本 PRD 原文，属既定安全行为），仅重命名不要求重新认证；Passkey 登录为未认证接口，需应用速率限制。
+- 数据边界：Passkey credential 数据按 realm 隔离；credential ID 在 `(realm, user, rp_id, credential_id)` 组合内唯一；响应中不返回公钥等敏感元数据。
+- **登录二因素探测的失败语义**：密码/LDAP/邮箱验证码登录对"是否需要 passkey 第二因素"的探测，仅在部署配置类失败（RP 环境变量未设、查找故障）时容错为不提供 passkey；由请求 Origin 头触发的解析失败（未映射来源）失败关闭——用户在 realm 内持有任意 passkey 即要求完成仪式（仪式本身会拒绝该未配置来源），攻击者不能凭伪造 Origin 头让密码登录跳过第二因素。
+- 安全约束：验证 origin 与 RP_ID 必须匹配当前 Client App、有效自定义域名或部署默认配置；第一因素与第二因素均按本次目标 Client App 限定 RP 解析；签名计数器递增校验防止 credential 克隆。
+- 兼容性约束：接口设计需支持 usernameless（discoverable credential）和 non-discoverable credential 两种场景；前端需处理不同浏览器对 transports、user verification 的差异。
 
----
-
-## 7. 前端/交互约束
-
-**适用性**: 适用
-
-- **页面入口**：
-  - 管理员：Settings -> Security 页面管理 Passkey 开关、强制模式和安全策略。
-  - 用户：个人资料 -> Security 页面管理 Passkey 设备（注册、查看、重命名、删除）。
-  - 登录页：提供 Passkey 登录入口，并支持 conditional UI 自动填充。
-- **关键用户路径**：
-  - 注册 Passkey：进入 Security 页面 -> 点击"Add Passkey" -> 浏览器弹窗完成验证 -> 显示设备名 -> 可修改名称。
-  - 直接登录：访问登录页 -> 系统自动提示可用 Passkey（conditional UI）或点击"Use Passkey" -> 完成验证 -> 登录成功。
-  - 第二因素登录：输入邮箱密码 -> 验证通过 -> 显示 Passkey 验证提示 -> 完成验证 -> 登录成功。
-  - 管理设备：Security 页面显示列表 -> 点击编辑名称或删除 -> 删除最后一个时弹出风险提示。
-- **状态反馈**：
-  - 注册成功：显示设备名和"注册成功"提示。
-  - 验证失败：直接登录（无密码）统一提示"Passkey 验证失败"，提供重试和"使用密码登录"选项；第二因素验证任意一次失败即失效本次临时会话，用户需重新完成登录后再次进入二次验证（失败计数跨尝试累积，达到阈值后临时锁定；阈值与锁定时长与 TOTP 二次验证一致，窗口语义略有差异——Passkey 的计数窗口随每次失败顺延，TOTP 的窗口锚定于首次失败并在达阈值时重置）。
-  - 浏览器不支持：隐藏 Passkey 入口，提示"当前浏览器不支持 Passkey"。
-  - 无可用的 Passkey：提示"未找到可用的 Passkey"，引导切换密码。
-  - 强制模式未注册：登录后提示引导注册 Passkey，但保留跳过入口。
-- **权限可见性**：Realm 未启用 Passkey 时，用户看不到 Passkey 注册入口和登录选项；强制模式下禁用/删除最后一个 Passkey 需明确提示风险。
-- **异常提示**：challenge 超时需重新发起；用户取消浏览器弹窗时不报错，保持页面可继续操作；网络异常时给出通用错误提示。
+**前端 / 交互边界:**
+- 页面入口：管理员通过 Settings -> Security 页面管理 Passkey 开关、强制模式和安全策略；用户通过个人资料 -> Security 页面管理 Passkey 设备（注册、查看、重命名、删除）；登录页提供 Passkey 登录入口，并支持 conditional UI 自动填充。
+- 关键用户路径：注册 Passkey（进入 Security 页面 -> 点击"Add Passkey" -> 浏览器弹窗完成验证 -> 显示设备名 -> 可修改名称）；直接登录（访问登录页 -> 系统自动提示可用 Passkey（conditional UI）或点击"Use Passkey" -> 完成验证 -> 登录成功）；第二因素登录（输入邮箱密码 -> 验证通过 -> 显示 Passkey 验证提示 -> 完成验证 -> 登录成功）；管理设备（Security 页面显示列表 -> 点击编辑名称或删除 -> 删除最后一个时弹出风险提示）。
+- 状态反馈：注册成功显示设备名和"注册成功"提示；验证失败时直接登录（无密码）统一提示"Passkey 验证失败"，提供重试和"使用密码登录"选项，第二因素验证任意一次失败即失效本次临时会话，用户需重新完成登录后再次进入二次验证（失败计数跨尝试累积，达到阈值后临时锁定；阈值与锁定时长与 TOTP 二次验证一致，窗口语义略有差异——Passkey 的计数窗口随每次失败顺延，TOTP 的窗口锚定于首次失败并在达阈值时重置）；浏览器不支持时隐藏 Passkey 入口，提示"当前浏览器不支持 Passkey"；无可用的 Passkey 时提示"未找到可用的 Passkey"，引导切换密码；强制模式未注册时登录后提示引导注册 Passkey，但保留跳过入口。
+- 权限可见性：Realm 未启用 Passkey 时，用户看不到 Passkey 注册入口和登录选项；强制模式下禁用/删除最后一个 Passkey 需明确提示风险。
+- 异常提示：challenge 超时需重新发起；用户取消浏览器弹窗时不报错，保持页面可继续操作；网络异常时给出通用错误提示。
 
 ---
 
-## 8. 已确认决策
+## 7. 已确认决策
 
 - Passkey 同时支持第一因素登录和第二因素验证，两种模式均为 P0。
 - 第一因素登录支持 usernameless / discoverable credential 的 conditional UI 自动填充体验。
 - 系统保留密码和/或 TOTP 作为回退认证方式，不实现"纯无密码"模式（强制模式下也必须保留回退）。
-- 一个用户可以拥有多个 Passkey credential，并可在 Security 页面管理。
 - Realm 级别沿用 TOTP 的 `enabled` / `force_enabled` 开关模式，并扩展可选安全策略配置。
 - 后端采用经过安全审计的 WebAuthn RP 库，不自行实现密码学验证。
 - 生产环境必须 HTTPS，RP_ID 与 RP_ORIGIN 需按部署环境配置，不硬编码（作为未配置 Client App origin / 自定义域名时的默认 RP）。
-- 服务器不存储私钥；仅存储 credential ID、公钥、计数器、transports、backup 状态、设备昵称等元数据。
 
 ---
 
-## 9. 参考资料
+## 8. 参考资料
 
-- 用户故事：`docs/user-stories/auth/passkey.md`
 - 相关 PRD：`docs/prd/auth/totp.md`（TOTP 作为 Passkey 不可用时的回退认证方式）
 - 角色定义：`docs/user-stories/_roles.md`
 - PRD 索引：`docs/prd/index.md`
 - WebAuthn / FIDO2 规范
+- 用户故事来源见 §1 表格

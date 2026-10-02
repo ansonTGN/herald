@@ -9,113 +9,32 @@
 
 > 详细故事与验收标准请查看 `docs/user-stories/billing/invoice.md`。
 
-### 1.1 故事引用
-
-- `[US-IV-001]` 创建发票，优先级 P0，来源 `docs/user-stories/billing/invoice.md`
-  - 角色：Realm Admin
-  - 摘要：创建发票草稿，添加行项目，设置费用和双方信息
-
-- `[US-IV-002]` 编辑发票草稿，优先级 P0，来源 `docs/user-stories/billing/invoice.md`
-  - 角色：Realm Admin
-  - 摘要：修改草稿发票的行项目、费用和双方信息
-
-- `[US-IV-003]` 查看发票列表，优先级 P0，来源 `docs/user-stories/billing/invoice.md`
-  - 角色：Realm Admin
-  - 摘要：查看本 Realm 所有发票，支持筛选和分页
-
-- `[US-IV-004]` 查看发票详情，优先级 P0，来源 `docs/user-stories/billing/invoice.md`
-  - 角色：Realm Admin
-  - 摘要：查看发票完整详情，包括行项目和状态历史
-
-- `[US-IV-005]` 开具发票，优先级 P0，来源 `docs/user-stories/billing/invoice.md`
-  - 角色：Realm Admin
-  - 摘要：将草稿发票正式开具（draft → issued）
-
-- `[US-IV-006]` 作废发票，优先级 P1，来源 `docs/user-stories/billing/invoice.md`
-  - 角色：Realm Admin
-  - 摘要：作废草稿或已开具的发票
-
-- `[US-IV-007]` 标记发票已付，优先级 P0，来源 `docs/user-stories/billing/invoice.md`
-  - 角色：Realm Admin
-  - 摘要：手动将发票标记为已付款
-
-- `[US-IV-008]` 查看我的发票，优先级 P1，来源 `docs/user-stories/billing/invoice.md`
-  - 角色：Regular User
-  - 摘要：查看自己的发票列表和详情
-
-- `[US-IV-009]` 系统标记逾期发票，优先级 P1，来源 `docs/user-stories/billing/invoice.md`
-  - 角色：Herald 系统
-  - 摘要：自动将超过到期日未支付的发票标记为逾期
-
-- `[US-IV-010]` 配置销售方信息，优先级 P0，来源 `docs/user-stories/billing/invoice.md`
-  - 角色：Realm Admin
-  - 摘要：在 Billing 设置中配置本 Realm 的销售方信息，用户申请发票时自动填充
-
-- `[US-IV-011]` 申请发票，优先级 P0，来源 `docs/user-stories/billing/invoice.md`
-  - 角色：Regular User
-  - 摘要：为已付款订单或订阅申请发票
-
-- `[US-IV-012]` 审核并开具用户申请的发票，优先级 P0，来源 `docs/user-stories/billing/invoice.md`
-  - 角色：Realm Admin
-  - 摘要：审核用户申请的发票，确认后开具或作废
-
-**外部 Provider 发票（Invoice Fallback）**: `docs/user-stories/billing/invoice-fallback.md`
-
-- `[US-IF-001]` 配置发票策略，优先级 P0
-  - 角色：Realm Admin
-  - 摘要：配置 Realm 发票策略（provider_first / manual_only / none）和各支付平台的外部发票能力开关
-
-- `[US-IF-002]` 系统同步 Stripe 发票，优先级 P0
-  - 角色：Herald 系统
-  - 摘要：通过 Stripe webhook 自动同步 Stripe 发票数据到 Herald
-
-- `[US-IF-003]` 系统同步 Creem 交易税务数据，优先级 P0
-  - 角色：Herald 系统
-  - 摘要：同步 Creem MoR 交易的税务数据到 Herald
-
-- `[US-IF-004]` 查看外部 Provider 发票（管理员），优先级 P0
-  - 角色：Realm Admin
-  - 摘要：在发票列表中查看外部 provider 同步的发票（只读）
-
-- `[US-IF-005]` 查看外部 Provider 发票（普通用户），优先级 P1
-  - 角色：Regular User
-  - 摘要：在"我的发票"中查看外部 provider 同步的发票（只读）
-
-- `[US-IF-006]` 下载外部发票 PDF 或查看 Provider 页面，优先级 P1
-  - 角色：Realm Admin / Regular User
-  - 摘要：通过外部 URL 下载或查看 provider 管理的发票 PDF
-
-- `[US-IF-007]` 系统同步 Stripe Credit Note，优先级 P0
-  - 角色：Herald 系统
-  - 摘要：通过 Stripe webhook 自动同步 Credit Note 数据到关联发票
-
-- `[US-IF-008]` 管理员查看发票退款信息与 Credit Note 列表，优先级 P0
-  - 角色：Realm Admin
-  - 摘要：在发票详情中查看累计退款金额、剩余应付与只读 Credit Note 列表
-
-- `[US-IF-009]` 普通用户查看退款标注，优先级 P1
-  - 角色：Regular User
-  - 摘要：在"我的发票"中看到自己已退款发票的退款标注与剩余应付
-
-- `[US-IF-010]` 管理员记录自研发票的线下退款，优先级 P0
-  - 角色：Realm Admin
-  - 摘要：为已付款的 Herald 自研发票创建 Manual Credit Note，记录线下退款，保留税务合规凭证
-
-- `[US-IF-011]` 系统处理 Stripe Credit Note 作废，优先级 P0
-  - 角色：Herald 系统
-  - 摘要：通过 Stripe `credit_note.voided` webhook 同步作废状态，恢复关联发票的剩余应付
-
-**支付与发票归属**: `docs/user-stories/billing/payment-invoice-mapping.md`
-
-- `[US-PM-001～004]` 续费支付记录、Creem 续费发票、外部发票归属与补偿可观测性
-
-### 1.2 优先级汇总表
-
-| 优先级 | 数量 | 关键故事 |
-|--------|------|----------|
-| P0 | 17 | 创建发票、编辑草稿、查看列表、查看详情、开具发票、标记已付、配置销售方、申请发票、审核开具、配置发票策略、同步 Stripe 发票、同步 Creem 税务、管理员查看外部发票、同步 Stripe Credit Note、管理员查看发票退款信息、管理员记录自研发票线下退款、处理 Stripe Credit Note 作废 |
-| P1 | 6 | 作废发票、查看我的发票、系统标记逾期、用户查看外部发票、下载外部 PDF、用户查看退款标注 |
-| P2 | 0 | - |
+| US-ID | 标题 | 优先级 | 来源 |
+|-------|------|--------|------|
+| US-IV-001 | 创建发票 | P0 | `docs/user-stories/billing/invoice.md` |
+| US-IV-002 | 编辑发票草稿 | P0 | `docs/user-stories/billing/invoice.md` |
+| US-IV-003 | 查看发票列表 | P0 | `docs/user-stories/billing/invoice.md` |
+| US-IV-004 | 查看发票详情 | P0 | `docs/user-stories/billing/invoice.md` |
+| US-IV-005 | 开具发票 | P0 | `docs/user-stories/billing/invoice.md` |
+| US-IV-006 | 作废发票 | P1 | `docs/user-stories/billing/invoice.md` |
+| US-IV-007 | 标记发票已付 | P0 | `docs/user-stories/billing/invoice.md` |
+| US-IV-008 | 查看我的发票 | P1 | `docs/user-stories/billing/invoice.md` |
+| US-IV-009 | 系统标记逾期发票 | P1 | `docs/user-stories/billing/invoice.md` |
+| US-IV-010 | 配置销售方信息 | P0 | `docs/user-stories/billing/invoice.md` |
+| US-IV-011 | 申请发票 | P0 | `docs/user-stories/billing/invoice.md` |
+| US-IV-012 | 审核并开具用户申请的发票 | P0 | `docs/user-stories/billing/invoice.md` |
+| US-IF-001 | 配置发票策略 | P0 | `docs/user-stories/billing/invoice-fallback.md` |
+| US-IF-002 | 系统同步 Stripe 发票 | P0 | `docs/user-stories/billing/invoice-fallback.md` |
+| US-IF-003 | 系统同步 Creem 交易税务数据 | P0 | `docs/user-stories/billing/invoice-fallback.md` |
+| US-IF-004 | 查看外部 Provider 发票（管理员） | P0 | `docs/user-stories/billing/invoice-fallback.md` |
+| US-IF-005 | 查看外部 Provider 发票（普通用户） | P1 | `docs/user-stories/billing/invoice-fallback.md` |
+| US-IF-006 | 下载外部发票 PDF 或查看 Provider 页面 | P1 | `docs/user-stories/billing/invoice-fallback.md` |
+| US-IF-007 | 系统同步 Stripe Credit Note | P0 | `docs/user-stories/billing/invoice-fallback.md` |
+| US-IF-008 | 管理员查看发票退款信息与 Credit Note 列表 | P0 | `docs/user-stories/billing/invoice-fallback.md` |
+| US-IF-009 | 普通用户查看退款标注 | P1 | `docs/user-stories/billing/invoice-fallback.md` |
+| US-IF-010 | 管理员记录自研发票的线下退款 | P0 | `docs/user-stories/billing/invoice-fallback.md` |
+| US-IF-011 | 系统处理 Stripe Credit Note 作废 | P0 | `docs/user-stories/billing/invoice-fallback.md` |
+| US-PM-001～004 | 续费支付记录、Creem 续费发票、外部发票归属与补偿可观测性 | — | `docs/user-stories/billing/payment-invoice-mapping.md` |
 
 ---
 
@@ -172,32 +91,6 @@
 
 ---
 
-## 3. 需求概述
-
-### 3.1 功能描述
-
-为 Herald 多租户系统增补发票功能。系统采用"外部平台发票优先 + 自研发票 Fallback"的双模式架构。
-
-**自研发票主流程**：Realm Admin 配置销售方信息 → Regular User 申请发票 → Realm Admin 审核开具。同时保留 Admin 手动创建发票的辅助路径。
-
-**外部 Provider 发票**：当支付平台（如 Stripe、Creem）提供发票/税务能力时，Herald 通过 webhook 被动同步外部发票数据并只读展示。对于 Stripe，订阅发票通过 `invoice.*` 事件同步，一次性购买发票通过 `checkout.session.completed`（mode=payment）事件 inline 创建。发票来源由实际收款 payment_provider 的发票能力决定，而非按产品或 Realm 全局决定。
-
-发票与现有 billing 模块集成，可关联 Subscription 和 Payment Attempt，但不自动生成。
-
-- **以用户申请为主**：Regular User 主动申请发票，Admin 审核
-- **销售方信息预配置**：Realm Admin 一次性配置，后续自动填充
-- 发票状态机管理（draft / issued / paid / void / overdue）
-- 行项目驱动的金额计算，以最小货币单位（分）存储
-- 折扣 / 税费支持固定金额和百分比两种模式；运费仅支持固定金额模式
-- 发票编号在租户内按年自动递增
-- 严格的租户数据隔离
-- **发票跟随实际收款 provider**：同一产品支持多支付平台时，发票归属由实际 payment_provider 的发票能力决定
-- **三种发票策略**：provider_first（优先外部 provider）、manual_only（仅自研）、none（不提供自研发票入口）
-- **只读展示 provider-owned 发票**：数据由 webhook/API 同步，不可通过 Herald API 修改
-- **Creem MoR 不可覆盖**：Creem 作为 Merchant of Record 的交易，Herald 不得创建 manual 发票
-
----
-
 ## 4. 业务规则与状态
 
 ### 4.1 业务规则
@@ -206,6 +99,7 @@
 - **用户申请验证**：用户申请发票需验证拥有对应的支付记录；申请时填写开票抬头信息（含税号），系统创建草稿发票（来源标记为 user_application），销售方信息自动从 Realm 配置填充
 - **用户申请发票时必须填写开票抬头税号**：用户申请发票时，`billing_tax_id` 为必填字段，不可为空字符串
 - **发票编辑时双方税号保持必填不变量**：草稿 PATCH 是部分更新，因此 `billing_tax_id` 和 `seller_tax_id` 字段可省略（省略即保留原值）；一旦提供则不得为空字符串，更新后的持久化发票仍须保有双方税号
+- **管理员审核开具**：Realm Admin 在发票列表中筛选待审核发票，审核通过后开具，审核不通过可作废并注明原因；审核时允许编辑草稿内容
 - **列表搜索**：发票列表支持通过 `search` 查询参数对 `invoice_number` 和 `billing_name` 进行模糊搜索（ILIKE），不区分大小写
 - **销售方默认付款条款**：销售方配置（`SellerConfigRequest`）包含 `default_payment_terms` 可选字段，用户申请发票时自动填充为发票的 `payment_terms`；管理员手动创建时也可单独指定
 - **发票编号唯一性**：发票编号（invoice_number）在 realm + 年范围内唯一，格式 INV-{YEAR}-{SEQ:04}（序号 4 位零填充，如 INV-2026-0001）
@@ -275,38 +169,7 @@
 
 ---
 
-## 5. 功能需求
-
-### 5.1 核心需求
-
-**支付归属与退款凭证**：
-
-- Stripe/Creem 订阅续费成功时创建支付尝试记录；Creem 同步每期续费发票。
-- 外部发票写入时建立支付尝试/订阅归属；失败时进入可补偿状态。
-- 管理员可筛选“成功支付无发票”和“外部发票无归属”，普通用户不暴露内部支付尝试标识。
-- Stripe `credit_note.created` / `credit_note.voided` 同步为只读凭证并更新退款汇总，重复事件保持幂等。
-- 管理员可为已付款的 Manual 发票记录线下退款凭证；Stripe/Creem 发票拒绝 Manual Credit Note。
-
-- **销售方信息配置**：Realm Admin 在 Billing 设置中配置本 Realm 的销售方信息，用户申请发票时自动填充
-- **用户申请发票（主流程）**：Regular User 为已付款的订单或订阅申请发票，填写开票抬头信息，系统创建草稿发票
-- **管理员审核开具**：Realm Admin 在发票列表中筛选待审核发票，审核通过后开具，审核不通过可作废并注明原因；审核时允许编辑草稿内容
-- **管理员手动创建（辅助路径）**：Realm Admin 可直接创建草稿发票，手动填写双方信息和行项目
-- **发票编辑**：仅草稿状态可编辑，编辑后自动重算金额
-- **发票开具**：将草稿发票正式开具，记录开票日期；支持通过 `issue_date` 可选参数覆盖开票日期
-- **发票作废**：将草稿或已开具的发票作废；已付款发票不可作废
-- **标记已付**：手动将已开具或逾期发票标记为已付款；支持通过 `paid_at` 可选参数指定实际付款时间
-- **逾期标记**：系统定时检查到期日已过的 issued 发票，自动标记为 overdue
-- **PDF 生成和下载**：支持发票 PDF 生成和下载
-- **发票策略配置**：Realm Admin 在 Billing 设置中配置 invoice_policy 和每个支付平台的外部发票能力开关
-- **Stripe 发票 webhook 同步**：Herald 自动接收 Stripe 的 invoice.* 事件，同步发票数据到本地，状态按映射规则转换
-- **Stripe 一次性购买发票同步**：Herald 在处理 checkout.session.completed（mode=payment）事件时，自动创建 provider=stripe 的外部发票记录，状态为 paid
-- **Creem 交易税务同步**：Creem 支付成功后，系统创建 provider='creem' 的发票记录，同步交易税务数据
-- **外部发票只读展示**：发票列表和详情页显示 provider 来源标识；provider != manual 的发票隐藏所有编辑操作按钮，显示 "View in Provider" 链接
-- **自研发票 Fallback**：invoice_policy=provider_first 时，不支持外部发票的 provider 交易仍可使用 Herald 自研发票
-- **外部 PDF / 页面跳转**：有 external_pdf_url 时重定向下载；有 external_hosted_url 时显示跳转链接
-- **发票列表 provider 筛选**：支持按 provider 类型（Manual / Stripe / Creem / Wechat）筛选发票列表
-
-### 5.2 验收目标
+## 5. 验收目标
 
 - Realm Admin 能配置销售方信息，后续发票自动填充
 - Regular User 能为已付款订单申请发票，看到申请状态变化
@@ -333,23 +196,17 @@
 
 ---
 
-## 6. API 相关约束
+## 6. 边界与约束
 
-**适用性**: 适用
+**适用性**: 适用（API 与前端/交互边界合并陈述）
 
+**API / 集成边界:**
 - **接口能力范围**：发票 CRUD、销售方信息配置、发票开具/作废/标记已付、用户申请、PDF 下载与 provider 筛选位于 api-billing；`invoice_policy` 及 provider 外部发票能力开关的写入复用通用 Realm Config API（`/api/configs`，realm 由 admin 会话钉定），api-billing 只读取并执行策略
 - **访问控制原则**：发票管理端接口通过 `billing.view` / `billing.manage` 权限检查控制（`require_billing_permission` 辅助函数实现）；用户端接口复用登录用户身份判断；Realm Admin 可管理本 Realm 所有发票；Regular User 只能查询和申请自己的发票；销售方信息配置需 `billing.manage`。通用 Realm Config 中的发票策略读取/写入分别使用 `settings.view` / `settings.manage`
 - **租户/Realm 数据边界**：发票按 Realm 隔离；发票编号在 realm + 年范围内唯一；发票策略配置按 Realm 独立；provider 能力开关按 Realm + Provider 独立
-- **状态操作约束**：仅 draft 可编辑；issued / overdue 可标记已付或作废；paid 不可修改
-- **外部发票写操作禁止**：现有发票 CRUD API 对 provider != manual 的发票禁止写操作（创建、编辑、开具、作废、标记已付）
 - **兼容性要求**：现有 invoice API 响应向后兼容（新增字段可选，默认 provider='manual'）；自研发票的全部 API 行为不变
 
----
-
-## 7. 前端/交互约束
-
-**适用性**: 适用
-
+**前端 / 交互边界:**
 - **管理后台**（Realm Admin）：
   - 入口：Realm 管理后台的 Billing 区域新增 "Invoices" 菜单；只按管理权限控制，不因当前 Realm 尚未配置销售方信息或尚无发票记录而隐藏
   - 销售方配置：Billing 设置页面新增销售方信息配置区域（公司名称、地址、邮箱、电话、税号）
@@ -374,33 +231,22 @@
 
 ---
 
-## 8. 已确认决策
-
-### 8.1 已确认决策
+## 7. 已确认决策
 
 - 第三方托管支付采用“每次成功支付一条支付尝试、一张映射发票”，零元周期除外
 - 新同步的外部发票必须建立显式归属；既有历史空归属不回填
-- Credit Note 是退款凭证维度，不新增或改变发票主状态，也不重复触发积分回收
-
 - 主流程为用户申请 + 管理员审核开具，保留管理员手动创建辅助路径
 - 不新增 Invoice 细粒度权限，管理端使用 `billing.view` / `billing.manage` 权限控制，用户端复用登录用户身份判断
-- 发票可关联 Subscription 和 Payment Attempt 但不自动生成
-- 发票编号格式为 INV-{YEAR}-{SEQ:04}（序号 4 位零填充），租户内按年递增
 - 发票来源跟随实际收款 payment_provider，而非跟随产品或 Realm 全局选择
-- 三种发票策略：provider_first / manual_only / none
 - Stripe 发票同步通过 webhook 被动驱动，Herald 不主动调用 Stripe Invoice API 创建发票
 - Stripe 一次性购买发票通过 checkout.session.completed（mode=payment）事件 inline 同步，与 Creem 模式一致
-- Creem MoR 交易的发票不可被 Herald manual 覆盖，无论 invoice_policy 设置
-- 已有 manual 发票在策略切换后保持 provider='manual' 不变
-- 外部发票 PDF 有 URL 时直接重定向，无 URL 时提示由 provider 管理
 - 外部发票本地编号由 Herald 合成为 EXT-{PROVIDER}-{外部发票/订单ID}，不采用 provider 分配编号；自研发票继续 INV-{YEAR}-{SEQ:04}
 
 ---
 
-## 9. 参考资料
+## 8. 参考资料
 
-- 用户故事：`docs/user-stories/billing/invoice.md`
-- 用户故事：`docs/user-stories/billing/invoice-fallback.md`、`docs/user-stories/billing/payment-invoice-mapping.md`
+- 用户故事来源见 §1 表格
 - 技术预研：`.ai/tech-research/invoice_fallback.md`
 - 相关 PRD：`docs/prd/billing/subscription.md`
 - 相关 PRD：`docs/prd/billing/stripe-payment.md`
