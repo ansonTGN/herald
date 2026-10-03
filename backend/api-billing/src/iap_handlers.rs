@@ -476,6 +476,41 @@ async fn apple_refund_or_revoke_recorded(
     Ok(None)
 }
 
+/// Promote the pending synthetic payment_event for an Apple lifecycle
+/// notification to processed in place. The row is uniquely keyed on
+/// (realm_id, external_event_id, provider), so a fresh processed insert would
+/// only collide with it. A mark failure is logged, not propagated: the row
+/// stays pending and the retry sweep replays it. Returns whether a row was
+/// found, so callers fall back to recording a fresh event.
+async fn promote_pending_apple_event(
+    state: &AppState,
+    realm_id: &str,
+    synthetic_event_id: &str,
+    context: &str,
+) -> Result<bool, CoreError> {
+    let Some(pending) = state
+        .billing_repository
+        .find_payment_event_by_external_id(realm_id, synthetic_event_id, "apple")
+        .await?
+    else {
+        return Ok(false);
+    };
+    if !pending.processed
+        && let Err(e) = state
+            .billing_repository
+            .mark_payment_event_processed(pending.id)
+            .await
+    {
+        tracing::error!(
+            realm_id = %realm_id,
+            external_id = %synthetic_event_id,
+            error = %e,
+            "apple REFUND/REVOKE {context} but marking the pending event processed failed — the retry sweep will replay it"
+        );
+    }
+    Ok(true)
+}
+
 // ============================================================================
 // ============================================================================
 
@@ -1892,7 +1927,10 @@ async fn process_apple_refund_or_revoke(
         Some(a) if a.realm_id == realm_id => a,
         Some(a) => {
             // The provider-reference lookup is realm-free; a JWS verified for
-            // this realm must not revoke another realm's attempt.
+            // this realm must not revoke another realm's attempt. The skip is
+            // terminal — the pending row written above is promoted in place
+            // so the retry sweep does not replay a revoke that keeps
+            // resolving to this same foreign-realm skip.
             tracing::warn!(
                 realm_id = %realm_id,
                 attempt_id = %a.id,
@@ -1900,19 +1938,13 @@ async fn process_apple_refund_or_revoke(
                 notification_type = %notification_type_str,
                 "apple REFUND/REVOKE: attempt belongs to a different realm — skipping"
             );
-            record_idempotent_payment_event(
+            promote_pending_apple_event(
                 state,
                 realm_id,
                 &synthetic_event_id,
-                "apple",
-                format!("apple_{notification_type_str}"),
-                serde_json::json!({
-                    "notificationType": notification_type_str,
-                    "productId": product_id,
-                    "outcome": "foreign_realm_attempt",
-                }),
+                "foreign-realm skip recorded",
             )
-            .await;
+            .await?;
             return Ok(());
         }
         None => {
@@ -1973,10 +2005,14 @@ async fn process_apple_refund_or_revoke(
     match billing_type {
         BillingType::OneTime => {
             // Revoke topup credits granted from this attempt (source_id =
-            // attempt.id, same as the grant). Best-effort: a missing ledger
-            // (buyout mapping with no points) is a no-op.
+            // attempt.id, same as the grant). A missing ledger is already an
+            // Ok no-op (revoke_points_by_source_id returns an empty result for
+            // a buyout mapping with no points), so an Err is a real failure
+            // and propagates: the pending payment_event row stays unprocessed
+            // for the retry sweep — the same reliability tier as the role
+            // revoke below.
             for bucket_id in crate::webhook_common::captured_bucket_ids(state, &attempt).await? {
-                if let Err(e) = state
+                state
                     .points_service
                     .revoke_points_by_source_id(
                         realm_id,
@@ -1986,16 +2022,7 @@ async fn process_apple_refund_or_revoke(
                         herald_core::domain::points::entities::RevocationType::RefundRevoke,
                         format!("Apple {notification_type_str} for attempt {}", attempt.id),
                     )
-                    .await
-                {
-                    tracing::warn!(
-                        realm_id = %realm_id,
-                        attempt_id = %attempt.id,
-                        bucket_id = %bucket_id,
-                        error = %e,
-                        "apple REFUND/REVOKE: topup points revoke failed (best-effort)"
-                    );
-                }
+                    .await?;
             }
 
             crate::webhook_common::revoke_payment_roles_for_source(
@@ -2074,25 +2101,9 @@ async fn process_apple_refund_or_revoke(
     // Record the synthetic payment_event so a replay is deduped. A pending
     // row from a prior no-attempt delivery (left for the retry sweep) is
     // promoted in place instead of colliding with a fresh insert.
-    if let Some(pending) = state
-        .billing_repository
-        .find_payment_event_by_external_id(realm_id, &synthetic_event_id, "apple")
+    if !promote_pending_apple_event(state, realm_id, &synthetic_event_id, "revoke succeeded")
         .await?
     {
-        if !pending.processed
-            && let Err(e) = state
-                .billing_repository
-                .mark_payment_event_processed(pending.id)
-                .await
-        {
-            tracing::error!(
-                realm_id = %realm_id,
-                external_id = %synthetic_event_id,
-                error = %e,
-                "apple REFUND/REVOKE revoke succeeded but marking the pending event processed failed"
-            );
-        }
-    } else {
         record_idempotent_payment_event(
             state,
             realm_id,
@@ -3264,9 +3275,12 @@ async fn reprocess_google_one_time_revoke(
         }
     };
 
-    // Revoke topup credits (source_id = attempt.id). Best-effort.
+    // Revoke topup credits (source_id = attempt.id). A missing ledger is
+    // already an Ok no-op, so an Err is a real failure and propagates —
+    // reprocess_google_event marks its synthetic row processed only after
+    // this returns Ok, keeping this revoke on the retry sweep.
     for bucket_id in crate::webhook_common::captured_bucket_ids(state, &attempt).await? {
-        if let Err(e) = state
+        state
             .points_service
             .revoke_points_by_source_id(
                 realm_id,
@@ -3279,16 +3293,7 @@ async fn reprocess_google_one_time_revoke(
                     attempt.id
                 ),
             )
-            .await
-        {
-            tracing::warn!(
-                realm_id = %realm_id,
-                attempt_id = %attempt.id,
-                bucket_id = %bucket_id,
-                error = %e,
-                "google one-time revoke: points revoke failed (best-effort)"
-            );
-        }
+            .await?;
     }
 
     // A failure propagates: reprocess_google_event marks its synthetic row

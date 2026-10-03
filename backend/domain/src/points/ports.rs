@@ -185,6 +185,13 @@ impl WalletDelta {
     }
 }
 
+/// Per-credit-type available balances paired with the earliest upcoming pool
+/// expiry — the result of [`PointsRepository::compute_available_balance_with_expiry`].
+pub type AvailableBalancesWithExpiry = (
+    Vec<(CreditType, i64)>,
+    Option<chrono::DateTime<chrono::Utc>>,
+);
+
 /// Repository for points operations
 #[cfg_attr(test, mockall::automock)]
 pub trait PointsRepository: Send + Sync {
@@ -472,6 +479,24 @@ pub trait PointsRepository: Send + Sync {
         bucket_ids: &[Uuid],
         now: chrono::DateTime<chrono::Utc>,
     ) -> impl Future<Output = Result<Vec<(CreditType, i64)>, CoreError>> + Send;
+
+    /// [`compute_available_balance`] and the earliest upcoming pool expiry in
+    /// ONE scan: `SUM(remaining_amount)` and `MIN(expires_at)` are aggregated
+    /// over the same shared predicate in a single `GROUP BY credit_type`
+    /// query, so a balance read never pays a second round trip for its
+    /// expiry projection and the two figures can never diverge on the
+    /// predicate. The overall expiry is the MIN across the per-credit-type
+    /// MINs (permanent `NULL` pools drop out); `None` ⟺ no expiring pool
+    /// balance in scope. `bucket_ids` semantics mirror
+    /// [`compute_available_balance`]: empty slice ⟺ aggregate across ALL the
+    /// user's buckets; non-empty ⟺ restrict to the listed buckets.
+    fn compute_available_balance_with_expiry(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        bucket_ids: &[Uuid],
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> impl Future<Output = Result<AvailableBalancesWithExpiry, CoreError>> + Send;
 
     /// Earliest upcoming pool expiry: `MIN(expires_at)` over the SAME shared
     /// predicate as `compute_available_balance` (`status='active' AND

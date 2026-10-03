@@ -18,6 +18,9 @@
 //   - GET /api/users/{userId} cross-realm targets must 404 — the
 //     same id-oracle convention as the module's require_target_user_in_realm
 //     helper (update/delete/reset-password already 404).
+//   - PUT /api/users/{userId}/roles follows the same id-oracle for missing /
+//     cross-realm targets (404, not the pre-fix catch-all 500 that its own
+//     OpenAPI 404 declaration already promised).
 //   - Duplicate email on admin create returns 409 Conflict, unified
 //     with the ext user-creation and self-service change-email faces
 //     (users.md §4.1: 邮箱冲突返回 409).
@@ -104,6 +107,24 @@ async fn put_update_user(
         .header(header::CONTENT_TYPE, "application/json")
         .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
         .body(Body::from(body.to_string()))
+        .unwrap();
+    app.oneshot(req).await.unwrap().status()
+}
+
+/// PUT `/api/users/{userId}/roles` with the given role ids.
+async fn put_user_roles(
+    ctx: &TestContext,
+    admin_token: &str,
+    user_id: Uuid,
+    role_ids: &[Uuid],
+) -> StatusCode {
+    let app = ctx.create_unified_test_router();
+    let req = Request::builder()
+        .method("PUT")
+        .uri(format!("/api/users/{}/roles", user_id))
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
+        .body(Body::from(json!({ "roleIds": role_ids }).to_string()))
         .unwrap();
     app.oneshot(req).await.unwrap().status()
 }
@@ -270,18 +291,9 @@ async fn test_update_roles_deleted_user_returns_409(ctx: &mut TestContext) {
     let (user_id, _email) = seed_user_with_status(ctx, 3, "deleted-roles").await;
     let role_id = create_role(ctx, &ctx._realm_id, &admin_token, "role-deleted-guard", "R").await;
 
-    let app = ctx.create_unified_test_router();
-    let req = Request::builder()
-        .method("PUT")
-        .uri(format!("/api/users/{}/roles", user_id))
-        .header(header::CONTENT_TYPE, "application/json")
-        .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
-        .body(Body::from(json!({ "roleIds": [role_id] }).to_string()))
-        .unwrap();
-    let resp = app.oneshot(req).await.unwrap();
-
+    let status = put_user_roles(ctx, &admin_token, user_id, &[role_id]).await;
     assert_eq!(
-        resp.status(),
+        status,
         StatusCode::CONFLICT,
         "role update on a Deleted user must be refused with 409"
     );
@@ -334,6 +346,42 @@ async fn test_get_user_cross_realm_returns_404_in_realm_returns_200(ctx: &mut Te
     assert!(
         body["providerIds"].is_array(),
         "in-realm detail payload must still include providerIds"
+    );
+}
+
+/// ============================================================================
+/// WHY: PUT roles' error mapping dropped UserNotFound into the catch-all 500
+///      arm, so a missing or cross-realm target id — the exact id-oracle case
+///      every sibling face maps to 404 and this endpoint's own OpenAPI
+///      declaration promises — surfaced as "Unexpected error". A 5xx on a
+///      client addressing error is wrong on both ends: it breaks the uniform
+///      404 convention (no id oracle across realms) and pollutes 5xx
+///      monitoring with a 4xx-class condition.
+/// ============================================================================
+#[test_context(TestContext)]
+#[tokio::test]
+async fn test_update_roles_missing_or_cross_realm_user_returns_404(ctx: &mut TestContext) {
+    let (admin_token, admin_user_id) =
+        create_admin_session_with_user(ctx, "roles-404-admin@test.com", 1800).await;
+    grant_realm_admin_role(ctx, &admin_user_id).await;
+
+    let role_id = create_role(ctx, &ctx._realm_id, &admin_token, "role-404-guard", "R").await;
+
+    // Missing id: a random UUID with no account row anywhere.
+    let missing_status = put_user_roles(ctx, &admin_token, Uuid::now_v7(), &[role_id]).await;
+    assert_eq!(
+        missing_status,
+        StatusCode::NOT_FOUND,
+        "role update on a missing user must 404 (uniform id-oracle, not the catch-all 500)"
+    );
+
+    // Cross-realm target: same shape as a missing id (404, no id oracle).
+    let (foreign_id, _foreign_email) = seed_user_in_foreign_realm(ctx, "roles-cross").await;
+    let foreign_status = put_user_roles(ctx, &admin_token, foreign_id, &[role_id]).await;
+    assert_eq!(
+        foreign_status,
+        StatusCode::NOT_FOUND,
+        "role update on a cross-realm user must 404 (indistinguishable from missing)"
     );
 }
 

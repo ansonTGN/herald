@@ -41,8 +41,16 @@
 
 #[cfg(test)]
 mod tests {
+    use crate::tests::helpers::async_payment_helpers::create_test_user;
+    use crate::tests::helpers::billing_seed_helpers::{
+        count_payment_roles_by_source_id, seed_payment_role_grant,
+    };
     use crate::tests::helpers::iap_mocks::{
         insert_apple_realm_config, make_apple_jws, make_apple_notification_body,
+    };
+    use crate::tests::helpers::points_helpers::{
+        create_points_wallet, get_ledger_by_id, get_revocation_records,
+        seed_fulfilled_topup_ledger_for_attempt,
     };
     use crate::tests::schema_test_context::SchemaTestContext;
     use axum::{
@@ -1252,6 +1260,213 @@ mod tests {
         assert!(
             processed,
             "the converged refund event must be marked processed"
+        );
+    }
+
+    /// Symmetric fault-injection pin to the role-revoke one in
+    /// refund_incremental_scenarios (PRD support-paywall §4.1): the Apple
+    /// one-time REFUND
+    /// compensation must treat a points-clawback failure exactly like a
+    /// role-revoke failure — the delivery fails, the synthetic payment_event
+    /// stays processed=false, and the replay after the transient fault clears
+    /// completes the whole compensation. The old best-effort swallow logged
+    /// the failure, still ran the role revoke, and let the function tail mark
+    /// the pending event processed — permanently burning the only retry
+    /// channel (the live webhook always answers Apple 200, so no provider
+    /// redelivery ever comes).
+    #[test_context(AppleWebhookContext)]
+    #[tokio::test]
+    async fn test_refund_points_revoke_failure_keeps_event_unprocessed(
+        ctx: &mut AppleWebhookContext,
+    ) {
+        let realm_id = ctx._realm_id.clone();
+        let mapping_id =
+            insert_apple_mapping(ctx, &realm_id, "prod.ot-points-fault", "one_time", None).await;
+        let user_id = create_test_user(ctx, &realm_id, "apple-ot-fault@test.com").await;
+        create_points_wallet(ctx, user_id, &realm_id).await;
+
+        let attempt_id = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO payment_attempts
+                (id, realm_id, user_id, payment_provider, target_type, target_id,
+                 amount, currency, status, provider_reference, provider_status,
+                 expires_at, created_at, updated_at)
+             VALUES ($1, $2, $3, 'apple', 'entitlement_mapping', $4,
+                     999, 'usd', 'Succeeded', 'orig-ot-fault-1', 'succeeded',
+                     NOW() + INTERVAL '1 hour', NOW(), NOW())",
+        )
+        .bind(attempt_id)
+        .bind(&realm_id)
+        .bind(user_id)
+        .bind(mapping_id)
+        .execute(&ctx.app_state.pool)
+        .await
+        .expect("seed one-time purchase attempt");
+
+        let ledger_id = seed_fulfilled_topup_ledger_for_attempt(
+            ctx, &realm_id, user_id, attempt_id, 10000, None,
+        )
+        .await;
+
+        // Production `create_payment_attempt` writes the captured rule-ref
+        // snapshot that `captured_bucket_ids` routes the clawback through;
+        // direct-SQL attempt seeding must materialize it too (mirrors
+        // create_payment_attempt_snapshot, which is provider-creem only).
+        let (rule_id, bucket_id): (Uuid, Uuid) = sqlx::query_as(
+            "SELECT distribution_rule_id, bucket_id FROM points_credit_ledger WHERE id = $1",
+        )
+        .bind(ledger_id)
+        .fetch_one(&ctx.app_state.pool)
+        .await
+        .expect("seeded ledger must carry its rule attribution");
+        sqlx::query(
+            "INSERT INTO payment_attempt_point_rules
+                (payment_attempt_id, rule_id, bucket_id, created_at)
+             VALUES ($1, $2, $3, NOW())",
+        )
+        .bind(attempt_id)
+        .bind(rule_id)
+        .bind(bucket_id)
+        .execute(&ctx.app_state.pool)
+        .await
+        .expect("snapshot the captured rule ref for the attempt");
+
+        // Payment-source role granted under the attempt (as one-time
+        // fulfillment grants it) — the compensation must revoke it too.
+        let role_id = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO roles (id, name, realm_id, client_id, is_builtin)
+             VALUES ($1, $2, $3, $4, false)",
+        )
+        .bind(role_id)
+        .bind("apple-ot-points-fault-role")
+        .bind(&realm_id)
+        .bind(&ctx._client_id)
+        .execute(&ctx.app_state.pool)
+        .await
+        .expect("create role");
+        seed_payment_role_grant(ctx, &realm_id, user_id, role_id, attempt_id).await;
+
+        // Fault injection: the clawback's ledger UPDATE for this attempt's
+        // source raises at the DB level, so the points revoke inside the
+        // refund handler fails before the role revoke runs.
+        sqlx::query(
+            r#"CREATE OR REPLACE FUNCTION ap_otf_block_points_revoke() RETURNS trigger AS $$
+               BEGIN
+                   RAISE EXCEPTION 'injected points revoke failure';
+               END;
+               $$ LANGUAGE plpgsql"#,
+        )
+        .execute(&ctx.app_state.pool)
+        .await
+        .unwrap();
+        // (the attempt_id is inlined — CREATE TRIGGER's WHEN clause takes no
+        // bind params)
+        sqlx::query(&format!(
+            r#"CREATE TRIGGER ap_otf_block_points_revoke BEFORE UPDATE ON points_credit_ledger
+               FOR EACH ROW
+               WHEN (OLD.source_id = '{attempt_id}')
+               EXECUTE FUNCTION ap_otf_block_points_revoke()"#
+        ))
+        .execute(&ctx.app_state.pool)
+        .await
+        .unwrap();
+
+        let notification = decoded_notification(
+            r#"{"notificationType":"REFUND","notificationUUID":"uuid-ot-fault-1",
+                "data":{"bundleId":"com.herald.test"}}"#,
+        );
+        let txn = decoded_transaction(
+            r#"{"originalTransactionId":"orig-ot-fault-1","productId":"prod.ot-points-fault"}"#,
+        );
+
+        // Faulted delivery: must fail (not swallow), leave the ledger and the
+        // role untouched, and keep the pending event retryable.
+        let outcome = process_apple_notification_decoded(
+            &ctx.app_state,
+            &realm_id,
+            &local_verifier(),
+            &notification,
+            &txn,
+        )
+        .await;
+        assert!(
+            outcome.is_err(),
+            "a points-revoke failure must fail the delivery, not be swallowed best-effort"
+        );
+
+        let ledger = get_ledger_by_id(ctx, ledger_id).await;
+        assert_eq!(
+            ledger.revoked_amount, 0,
+            "the faulted clawback must not partially revoke"
+        );
+        let payment_roles =
+            count_payment_roles_by_source_id(ctx, user_id, &attempt_id.to_string()).await;
+        assert_eq!(
+            payment_roles, 1,
+            "the role revoke must not run past a failed points clawback"
+        );
+        let (processed,): (bool,) = sqlx::query_as(
+            "SELECT processed FROM payment_event \
+             WHERE realm_id = $1 AND external_event_id = 'apple:orig-ot-fault-1:\"REFUND\"'",
+        )
+        .bind(&realm_id)
+        .fetch_one(&ctx.app_state.pool)
+        .await
+        .expect("the faulted REFUND must have recorded its pending event");
+        assert!(
+            !processed,
+            "a points-revoke failure must NOT mark the event processed — the retry-sweep channel stays open"
+        );
+
+        // The transient fault clears; the retry sweep replays the notification.
+        sqlx::query("DROP TRIGGER ap_otf_block_points_revoke ON points_credit_ledger")
+            .execute(&ctx.app_state.pool)
+            .await
+            .unwrap();
+        sqlx::query("DROP FUNCTION ap_otf_block_points_revoke")
+            .execute(&ctx.app_state.pool)
+            .await
+            .unwrap();
+
+        process_apple_notification_decoded(
+            &ctx.app_state,
+            &realm_id,
+            &local_verifier(),
+            &notification,
+            &txn,
+        )
+        .await
+        .expect("the replay after the fault cleared must complete the compensation");
+
+        let ledger = get_ledger_by_id(ctx, ledger_id).await;
+        assert_eq!(
+            ledger.revoked_amount, 10000,
+            "the replay must revoke the full topup amount"
+        );
+        let payment_roles =
+            count_payment_roles_by_source_id(ctx, user_id, &attempt_id.to_string()).await;
+        assert_eq!(
+            payment_roles, 0,
+            "the replay must revoke the payment role too"
+        );
+        let (processed,): (bool,) = sqlx::query_as(
+            "SELECT processed FROM payment_event \
+             WHERE realm_id = $1 AND external_event_id = 'apple:orig-ot-fault-1:\"REFUND\"'",
+        )
+        .bind(&realm_id)
+        .fetch_one(&ctx.app_state.pool)
+        .await
+        .unwrap();
+        assert!(
+            processed,
+            "the successful replay marks the event processed — the retry channel closes"
+        );
+        let revocations = get_revocation_records(ctx, user_id).await;
+        assert_eq!(
+            revocations.len(),
+            1,
+            "exactly one points revocation record across both deliveries"
         );
     }
 

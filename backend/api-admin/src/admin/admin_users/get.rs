@@ -103,29 +103,25 @@ pub async fn get_user(
     // Detail columns not carried by the AdminUser DTO. The realm predicate
     // mirrors the service-level lookup above so the row can never come from
     // another realm.
-    let (nickname, provider_ids, updated_at): (Option<String>, Vec<Uuid>, DateTime<Utc>) =
-        sqlx::query_as(
-            "SELECT p.nickname, a.provider_ids, a.updated_at
-             FROM account a
-             LEFT JOIN profile p ON p.id = a.id AND p.realm_id = a.realm_id
-             WHERE a.id = $1 AND a.realm_id = $2",
-        )
-        .bind(target_user_id)
-        .bind(&realm_id)
-        .fetch_optional(&state.pool)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to fetch user detail columns: {e}");
-            ApiError::internal("Failed to fetch user details")
-        })?
-        .ok_or_else(|| ApiError::not_found("User not found"))?;
+    let (provider_ids, updated_at): (Vec<Uuid>, DateTime<Utc>) = sqlx::query_as(
+        "SELECT provider_ids, updated_at FROM account WHERE id = $1 AND realm_id = $2",
+    )
+    .bind(target_user_id)
+    .bind(&realm_id)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to fetch user detail columns: {e}");
+        ApiError::internal("Failed to fetch user details")
+    })?
+    .ok_or_else(|| ApiError::not_found("User not found"))?;
 
     // Map to UserDetailResponse
     Ok(ApiResult::ok(UserDetailResponse {
         id: admin_user.id,
         realm_id: admin_user.realm_id,
         email: admin_user.email,
-        nickname,
+        nickname: admin_user.nickname,
         status: admin_user.status as i16,
         provider_ids,
         created_at: admin_user.created_at,

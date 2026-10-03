@@ -60,6 +60,31 @@ pub struct AddPolicyRequest {
 // Handlers
 // ============================================================================
 
+/// Role lookup scoped to the admin session's realm (permissions.md §4.2:
+/// admin endpoints take no realm path segment, and cross-realm resources 404
+/// rather than 403, so a scoped miss is indistinguishable from a missing
+/// role — no id oracle).
+async fn role_in_realm_or_404(
+    db: &sea_orm::DatabaseConnection,
+    role_id: Uuid,
+    realm_id: &str,
+) -> Result<(), ApiError> {
+    let role_exists = herald_core::entity::roles::Entity::find()
+        .filter(herald_core::entity::roles::Column::Id.eq(role_id))
+        .filter(herald_core::entity::roles::Column::RealmId.eq(realm_id))
+        .one(db)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, role_id = %role_id, "Failed to query role");
+            ApiError::internal("Failed to query role")
+        })?
+        .is_some();
+    if !role_exists {
+        return Err(ApiError::not_found("Role not found"));
+    }
+    Ok(())
+}
+
 /// Get role's policies
 ///
 /// Returns all permission policies for a specific role
@@ -91,19 +116,7 @@ pub async fn get_role_policies(
     // scope the role lookup to the caller's realm instead of loading the role
     // globally and rejecting the mismatch afterwards — that 403/404 split
     // leaked cross-realm role existence.
-    let role_exists = herald_core::entity::roles::Entity::find()
-        .filter(herald_core::entity::roles::Column::Id.eq(role_uuid))
-        .filter(herald_core::entity::roles::Column::RealmId.eq(realm_id.as_str()))
-        .one(state.db.as_ref())
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, role_id = %role_uuid, "Failed to query role");
-            ApiError::internal("Failed to query role")
-        })?
-        .is_some();
-    if !role_exists {
-        return Err(ApiError::not_found("Role not found"));
-    }
+    role_in_realm_or_404(state.db.as_ref(), role_uuid, &realm_id).await?;
 
     // Query role_policies
     let policies = role_policies::Entity::find()
@@ -170,19 +183,7 @@ pub async fn add_policy_to_role(
 
     // Scope the role lookup to the admin session's realm (permissions.md
     // §4.2: cross-realm resources 404 rather than 403).
-    let role_exists = herald_core::entity::roles::Entity::find()
-        .filter(herald_core::entity::roles::Column::Id.eq(role_id))
-        .filter(herald_core::entity::roles::Column::RealmId.eq(realm_id.as_str()))
-        .one(state.db.as_ref())
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, role_id = %role_id, "Failed to query role");
-            ApiError::internal("Failed to query role")
-        })?
-        .is_some();
-    if !role_exists {
-        return Err(ApiError::not_found("Role not found"));
-    }
+    role_in_realm_or_404(state.db.as_ref(), role_id, &realm_id).await?;
 
     // Security: wildcard policies are reserved for the platform; shared guard
     // with the other policy-creation surfaces so the same names (including

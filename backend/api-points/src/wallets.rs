@@ -206,9 +206,8 @@ async fn group_wallets_by_bucket(
         group_keys.insert((wallet.bucket_id, wallet.user_id), ());
     }
 
-    let mut balances_by_key: BTreeMap<(Option<Uuid>, Uuid), BalancesByType> = BTreeMap::new();
-    let mut expiry_by_key: BTreeMap<(Option<Uuid>, Uuid), Option<chrono::DateTime<chrono::Utc>>> =
-        BTreeMap::new();
+    type BucketView = (BalancesByType, Option<chrono::DateTime<chrono::Utc>>);
+    let mut view_by_key: BTreeMap<(Option<Uuid>, Uuid), BucketView> = BTreeMap::new();
     for (bucket_id, user_id) in group_keys.keys() {
         // Aggregate (bucket_id=None) rows have no concrete bucket; their
         // derived balance is the user-total across all buckets, fetched with
@@ -218,32 +217,39 @@ async fn group_wallets_by_bucket(
             Some(id) => std::slice::from_ref(id),
             None => &[],
         };
-        let derived = state
-            .points_repository
-            .compute_available_balance(realm_id, *user_id, bucket_filter, now)
-            .await
-            .unwrap_or_default();
-        // Earliest upcoming pool expiry over the same predicate / bucket
-        // scope. Unlike the balance read (best-effort `.unwrap_or_default()`
-        // above), a failure here is surfaced — the expiry view is the point
-        // of this field and silently dropping it would reintroduce the
-        // "no backend supply for 即将过期" gap invisibly. Same fail-loud
-        // policy as `compute_bucket_window_view` below.
-        let next_expiry = state
-            .points_repository
-            .compute_next_pool_expiry(realm_id, *user_id, bucket_filter, now)
-            .await
-            .map_err(ApiError::from)?;
-        expiry_by_key.insert((*bucket_id, *user_id), next_expiry);
-        balances_by_key.insert(
+        // The two repository reads share the predicate and bucket scope, so
+        // they are issued concurrently. Error policies stay per read: the
+        // balance is best-effort (`.unwrap_or_default()`), while an expiry
+        // failure is surfaced — the expiry view is the point of this field
+        // and silently dropping it would reintroduce the "no backend supply
+        // for 即将过期" gap invisibly. Same fail-loud policy as
+        // `compute_bucket_window_view` below.
+        let (derived, next_expiry) = {
+            let balance_fut = state.points_repository.compute_available_balance(
+                realm_id,
+                *user_id,
+                bucket_filter,
+                now,
+            );
+            let expiry_fut = state.points_repository.compute_next_pool_expiry(
+                realm_id,
+                *user_id,
+                bucket_filter,
+                now,
+            );
+            tokio::join!(balance_fut, expiry_fut)
+        };
+        let derived = derived.unwrap_or_default();
+        let next_expiry = next_expiry.map_err(ApiError::from)?;
+        view_by_key.insert(
             (*bucket_id, *user_id),
-            derived_to_balances_by_type(&derived),
+            (derived_to_balances_by_type(&derived), next_expiry),
         );
     }
 
     let mut cross_bucket_total: i64 = 0;
-    let mut items: Vec<WalletByBucketResponse> = Vec::with_capacity(balances_by_key.len());
-    for ((bucket_id, user_id), balances_by_type) in balances_by_key {
+    let mut items: Vec<WalletByBucketResponse> = Vec::with_capacity(view_by_key.len());
+    for ((bucket_id, user_id), (balances_by_type, next_expiry)) in view_by_key {
         // Window-quota view per concrete bucket. Pool-only buckets (no active
         // entitlement) and the aggregate user-total row (bucket_id = None) get
         // `(None, None)`.
@@ -284,9 +290,7 @@ async fn group_wallets_by_bucket(
             quota_windows,
             spendable_from_quota,
             spendable_from_pool,
-            expires_at: expiry_by_key
-                .get(&(bucket_id, user_id))
-                .and_then(|dt| dt.map(|dt| dt.to_rfc3339())),
+            expires_at: next_expiry.map(|dt| dt.to_rfc3339()),
         });
     }
 
@@ -464,16 +468,12 @@ pub async fn get_wallet(
             // aggregate across all the user's buckets (matches the user-total
             // view returned by get_wallet).
             let now = chrono::Utc::now();
-            let derived = state
+            // Derived SUM plus the earliest upcoming pool expiry across the
+            // same user-total scope (empty bucket_ids ⟺ all the user's
+            // buckets) — one scan of the shared predicate.
+            let (derived, expires_at) = state
                 .points_repository
-                .compute_available_balance(&realm_id, user_uuid, &[], now)
-                .await
-                .map_err(ApiError::from)?;
-            // Earliest upcoming pool expiry across the same user-total scope
-            // (empty bucket_ids ⟺ all the user's buckets).
-            let expires_at = state
-                .points_repository
-                .compute_next_pool_expiry(&realm_id, user_uuid, &[], now)
+                .compute_available_balance_with_expiry(&realm_id, user_uuid, &[], now)
                 .await
                 .map_err(ApiError::from)?;
             Ok(Json(wallet_to_response(account, derived, expires_at)))
@@ -514,23 +514,16 @@ pub async fn update_wallet_status(
         .update_wallet_status(identity, &realm_id, user_id, bucket_id, status)
         .await
         .map_err(ApiError::from)?;
-    let derived = state
+    // Derived SUM plus the earliest upcoming pool expiry for this bucket —
+    // one scan of the shared predicate at a single instant.
+    let now = chrono::Utc::now();
+    let (derived, expires_at) = state
         .points_repository
-        .compute_available_balance(
+        .compute_available_balance_with_expiry(
             &realm_id,
             user_id,
             std::slice::from_ref(&bucket_id),
-            chrono::Utc::now(),
-        )
-        .await
-        .map_err(ApiError::from)?;
-    let expires_at = state
-        .points_repository
-        .compute_next_pool_expiry(
-            &realm_id,
-            user_id,
-            std::slice::from_ref(&bucket_id),
-            chrono::Utc::now(),
+            now,
         )
         .await
         .map_err(ApiError::from)?;

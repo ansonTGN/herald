@@ -27,8 +27,9 @@ use herald_domain::points::{
     errors::PointsErrorExt,
     expiration_service::ExpirationSummary,
     ports::{
-        LedgerFilters, LedgerUpdate, PointsRepository, ReclaimLocator, TopupRefundRevokeOutcome,
-        TopupRefundRevokeRequest, TransactionFilters, WalletDelta, WalletFilters,
+        AvailableBalancesWithExpiry, LedgerFilters, LedgerUpdate, PointsRepository, ReclaimLocator,
+        TopupRefundRevokeOutcome, TopupRefundRevokeRequest, TransactionFilters, WalletDelta,
+        WalletFilters,
     },
     service::{MixedConsumePlan, plan_mixed_consume},
 };
@@ -4812,13 +4813,38 @@ impl PointsRepository for PostgresPointsRepository {
     /// `get_balance`'s user-total view); non-empty ⟺ restrict to listed
     /// buckets (per-bucket grant responses). Empty-slice maps to no
     /// `bucket_id` filter (the predicate still scopes by realm+user).
-    fn compute_available_balance(
+    async fn compute_available_balance(
         &self,
         realm_id: &str,
         user_id: Uuid,
         bucket_ids: &[Uuid],
         now: chrono::DateTime<chrono::Utc>,
-    ) -> impl std::future::Future<Output = Result<Vec<(CreditType, i64)>, CoreError>> + Send {
+    ) -> Result<Vec<(CreditType, i64)>, CoreError> {
+        let (balances, _) = self
+            .compute_available_balance_with_expiry(realm_id, user_id, bucket_ids, now)
+            .await?;
+        Ok(balances)
+    }
+
+    /// Single-scan source of the shared availability predicate: aggregates
+    /// `SUM(remaining_amount)` (per credit_type) and `MIN(expires_at)` (the
+    /// earliest upcoming pool expiry) over the SAME predicate consumption
+    /// selects from, in one `GROUP BY credit_type` query — so a balance read
+    /// never pays a second round trip for its expiry projection, and the two
+    /// figures can never be computed over different row sets. The expiry
+    /// gate (`expires_at > now`) drops permanent (NULL) and already-expired
+    /// rows, so the MIN is over live expiring rows only; the overall value
+    /// is the MIN across the per-credit-type MINs. `None` ⟺ no expiring
+    /// pool balance in scope. `bucket_ids` semantics mirror
+    /// `compute_available_balance` (empty ⟺ all the user's buckets).
+    fn compute_available_balance_with_expiry(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        bucket_ids: &[Uuid],
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> impl std::future::Future<Output = Result<AvailableBalancesWithExpiry, CoreError>> + Send
+    {
         let pool = self.pool.clone();
         let realm_id = realm_id.to_string();
         let bucket_ids = bucket_ids.to_vec();
@@ -4826,10 +4852,12 @@ impl PointsRepository for PostgresPointsRepository {
             // Coalesce to a sentinel-safe form: empty slice ⇒ no bucket_id
             // filter (aggregate across all the user's buckets). ANY() on an
             // empty array evaluates to FALSE, so we branch the SQL.
-            let rows: Vec<(String, i64)> = if bucket_ids.is_empty() {
+            let rows: Vec<(String, i64, Option<chrono::DateTime<chrono::Utc>>)> = if bucket_ids
+                .is_empty()
+            {
                 sqlx::query_as(
                     r#"
-                    SELECT credit_type, COALESCE(SUM(remaining_amount), 0)::BIGINT AS available
+                    SELECT credit_type, COALESCE(SUM(remaining_amount), 0)::BIGINT AS available, MIN(expires_at)
                     FROM points_credit_ledger
                     WHERE realm_id = $1
                       AND user_id = $2
@@ -4849,7 +4877,7 @@ impl PointsRepository for PostgresPointsRepository {
             } else {
                 sqlx::query_as(
                     r#"
-                    SELECT credit_type, COALESCE(SUM(remaining_amount), 0)::BIGINT AS available
+                    SELECT credit_type, COALESCE(SUM(remaining_amount), 0)::BIGINT AS available, MIN(expires_at)
                     FROM points_credit_ledger
                     WHERE realm_id = $1
                       AND user_id = $2
@@ -4870,14 +4898,17 @@ impl PointsRepository for PostgresPointsRepository {
                 .map_err(|e| CoreError::DatabaseError(e.to_string()))?
             };
 
-            rows.into_iter()
-                .map(|(credit_type, amount)| {
+            let next_expiry = rows.iter().filter_map(|(_, _, expiry)| *expiry).min();
+            let balances = rows
+                .into_iter()
+                .map(|(credit_type, amount, _)| {
                     let credit_type: CreditType = credit_type.parse().map_err(|_| {
                         CoreError::DatabaseError(format!("invalid credit_type: {credit_type}"))
                     })?;
                     Ok((credit_type, amount))
                 })
-                .collect()
+                .collect::<Result<Vec<_>, CoreError>>()?;
+            Ok((balances, next_expiry))
         }
     }
 
@@ -4887,63 +4918,17 @@ impl PointsRepository for PostgresPointsRepository {
     /// so the MIN is over live expiring rows only. `None` ⟺ no expiring pool
     /// balance in scope. `bucket_ids` semantics mirror
     /// `compute_available_balance` (empty ⟺ all the user's buckets).
-    fn compute_next_pool_expiry(
+    async fn compute_next_pool_expiry(
         &self,
         realm_id: &str,
         user_id: Uuid,
         bucket_ids: &[Uuid],
         now: chrono::DateTime<chrono::Utc>,
-    ) -> impl std::future::Future<Output = Result<Option<chrono::DateTime<chrono::Utc>>, CoreError>> + Send
-    {
-        let pool = self.pool.clone();
-        let realm_id = realm_id.to_string();
-        let bucket_ids = bucket_ids.to_vec();
-        async move {
-            // Same empty-slice branch discipline as compute_available_balance:
-            // empty ⇒ no bucket_id filter (aggregate across all buckets).
-            let (min_expiry,): (Option<chrono::DateTime<chrono::Utc>>,) = if bucket_ids.is_empty() {
-                sqlx::query_as(
-                    r#"
-                    SELECT MIN(expires_at)
-                    FROM points_credit_ledger
-                    WHERE realm_id = $1
-                      AND user_id = $2
-                      AND status = 'active'
-                      AND remaining_amount > 0
-                      AND (effective_at IS NULL OR effective_at <= $3)
-                      AND (expires_at  IS NULL OR expires_at  >  $3)
-                    "#,
-                )
-                .bind(&realm_id)
-                .bind(user_id)
-                .bind(now)
-                .fetch_one(&pool)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?
-            } else {
-                sqlx::query_as(
-                    r#"
-                    SELECT MIN(expires_at)
-                    FROM points_credit_ledger
-                    WHERE realm_id = $1
-                      AND user_id = $2
-                      AND bucket_id = ANY($3)
-                      AND status = 'active'
-                      AND remaining_amount > 0
-                      AND (effective_at IS NULL OR effective_at <= $4)
-                      AND (expires_at  IS NULL OR expires_at  >  $4)
-                    "#,
-                )
-                .bind(&realm_id)
-                .bind(user_id)
-                .bind(&bucket_ids)
-                .bind(now)
-                .fetch_one(&pool)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?
-            };
-            Ok(min_expiry)
-        }
+    ) -> Result<Option<chrono::DateTime<chrono::Utc>>, CoreError> {
+        let (_, next_expiry) = self
+            .compute_available_balance_with_expiry(realm_id, user_id, bucket_ids, now)
+            .await?;
+        Ok(next_expiry)
     }
 
     /// Explicitly covered bucket ids for a client app in a realm.

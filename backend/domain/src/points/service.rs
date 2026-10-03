@@ -178,17 +178,12 @@ where
         // Analytics still from Stored wallet columns (lifetime totals).
         let account = self.get_wallet(identity, realm_id, user_id).await?;
 
-        // Derived SUM by credit_type (same predicate as consumption).
-        let derived = self
+        // Derived SUM by credit_type plus the earliest upcoming pool expiry
+        // (PRD points.md §4.1 「用户可查看即将过期的池子类型积分」) — one
+        // scan of the same predicate as consumption for both figures.
+        let (derived, expires_at) = self
             .repository
-            .compute_available_balance(realm_id, user_id, &[], now)
-            .await?;
-
-        // Earliest upcoming pool expiry over the same predicate (PRD
-        // points.md §4.1 「用户可查看即将过期的池子类型积分」).
-        let expires_at = self
-            .repository
-            .compute_next_pool_expiry(realm_id, user_id, &[], now)
+            .compute_available_balance_with_expiry(realm_id, user_id, &[], now)
             .await?;
 
         // Window-quota availability for the window-model credit types
@@ -250,15 +245,11 @@ where
         let (derived, window_balances, expires_at) = if covered.is_empty() {
             (Vec::new(), Default::default(), None)
         } else {
-            let derived = self
+            // Derived SUM plus the pool expiry, one scan of the shared
+            // predicate scoped to the same coverage set.
+            let (derived, expires_at) = self
                 .repository
-                .compute_available_balance(realm_id, user_id, &covered, now)
-                .await?;
-            // Pool expiry scoped to the same coverage set the balance above
-            // is restricted to.
-            let expires_at = self
-                .repository
-                .compute_next_pool_expiry(realm_id, user_id, &covered, now)
+                .compute_available_balance_with_expiry(realm_id, user_id, &covered, now)
                 .await?;
             let covered_set: std::collections::HashSet<Uuid> = covered.iter().copied().collect();
             let window_balances = self

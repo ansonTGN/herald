@@ -640,9 +640,17 @@ mod tests {
         assert_eq!(create_realm_resp.status(), StatusCode::CREATED);
         let realm_b: serde_json::Value = crate::tests::response_json(create_realm_resp).await;
         let realm_b_id = realm_b["id"].as_str().expect("realm id").to_string();
-        let realm_b_admin_id =
-            uuid::Uuid::parse_str(realm_b["adminUser"]["id"].as_str().expect("admin user id"))
-                .unwrap();
+        // adminUser is contractually null on this face (RealmResponse reserves
+        // the field; the repository never populates it) — the initial admin's
+        // id comes from the DB, same as realm_admin_creation_scenarios.
+        let realm_b_admin_id: uuid::Uuid =
+            sqlx::query_scalar("SELECT id FROM account WHERE realm_id = $1 AND email = $2")
+                .bind(&realm_b_id)
+                .bind("admin@sensitive-realm.com")
+                .fetch_optional(&ctx._app_state.pool)
+                .await
+                .unwrap()
+                .expect("realm-b initial admin must exist in DB");
         assert_ne!(
             realm_b_id, "admin",
             "fixture realm must not be the admin realm"

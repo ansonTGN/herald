@@ -31,7 +31,6 @@ use herald_core::domain::authentication::Identity;
 use herald_core::domain::authorization::permission_service::PermissionService;
 use herald_core::domain::authorization::principal_types;
 use herald_core::domain::client::ADMIN_WEB_CONSOLE_CLIENT_ID;
-use herald_core::domain::user::UserStatus;
 use herald_core::entity::{account, role_policies, roles, user_roles};
 
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
@@ -179,33 +178,18 @@ pub async fn assign_roles_to_user(
     admin.require_permission(&state, "roles", "manage").await?;
     let realm_id = admin.realm_id().to_string();
 
-    // Scope the user lookup to the admin session's realm (permissions.md
-    // §4.2: cross-realm resources 404 rather than 403).
-    let target_user = account::Entity::find()
-        .filter(account::Column::Id.eq(user_id))
-        .filter(account::Column::RealmId.eq(realm_id.as_str()))
-        .one(state.db.as_ref())
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, user_id = %user_id, "Failed to query user");
-            ApiError::internal(format!("Failed to query user: {}", e))
-        })?;
-    if target_user.is_none() {
-        return Err(ApiError::not_found("User not found"));
-    }
-    // Deleted(3) terminal-state guard (users.md §4.2): role writes must not
-    // mutate the anonymized tombstone — same guard as the users-module
-    // role/update write paths.
-    if target_user.is_some_and(|u| u.status == UserStatus::Deleted as i16) {
-        tracing::warn!(
-            realm_id = %realm_id,
-            user_id = %user_id,
-            "Role assignment rejected: target is Deleted (anonymized terminal state)"
-        );
-        return Err(ApiError::conflict(
-            "User is deleted (anonymized) and cannot be edited",
-        ));
-    }
+    // Scope the target lookup to the admin session's realm (permissions.md
+    // §4.2: cross-realm resources 404 rather than 403) and refuse Deleted(3)
+    // targets (users.md §4.2) — same guard as the users-module role/update
+    // write paths.
+    crate::admin::middleware::ensure_target_writable(
+        &state.pool,
+        &realm_id,
+        user_id,
+        "role assignment",
+        true,
+    )
+    .await?;
 
     let mut seen_role_ids = HashSet::new();
     let unique_role_ids: Vec<Uuid> = request
@@ -395,32 +379,17 @@ pub async fn remove_role_from_user(
     admin.require_permission(&state, "roles", "manage").await?;
     let realm_id = admin.realm_id().to_string();
 
-    // Scope the user lookup to the admin session's realm (permissions.md
-    // §4.2: cross-realm resources 404 rather than 403).
-    let target_user = account::Entity::find()
-        .filter(account::Column::Id.eq(user_id))
-        .filter(account::Column::RealmId.eq(realm_id.as_str()))
-        .one(state.db.as_ref())
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, user_id = %user_id, "Failed to query user");
-            ApiError::internal(format!("Failed to query user: {}", e))
-        })?;
-    if target_user.is_none() {
-        return Err(ApiError::not_found("User not found"));
-    }
-    // Deleted(3) terminal-state guard (users.md §4.2): role removals must not
-    // mutate the anonymized tombstone — same guard as the assignment path.
-    if target_user.is_some_and(|u| u.status == UserStatus::Deleted as i16) {
-        tracing::warn!(
-            realm_id = %realm_id,
-            user_id = %user_id,
-            "Role removal rejected: target is Deleted (anonymized terminal state)"
-        );
-        return Err(ApiError::conflict(
-            "User is deleted (anonymized) and cannot be edited",
-        ));
-    }
+    // Scope the target lookup to the admin session's realm (permissions.md
+    // §4.2: cross-realm resources 404 rather than 403) and refuse Deleted(3)
+    // targets (users.md §4.2) — same guard as the assignment path.
+    crate::admin::middleware::ensure_target_writable(
+        &state.pool,
+        &realm_id,
+        user_id,
+        "role removal",
+        true,
+    )
+    .await?;
 
     // Find and delete the user_role assignment
     let result = user_roles::Entity::delete_many()

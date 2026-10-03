@@ -14,7 +14,6 @@ use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
 use herald_core::domain::authorization::permission_service::PermissionService;
 use herald_core::domain::user::UserPermissionService;
-use herald_core::domain::user::UserStatus;
 use herald_core::domain::user::admin_errors::UserAdminError;
 use sqlx::Row;
 use uuid::Uuid;
@@ -152,34 +151,14 @@ pub async fn assign_user_permission(
     // never written for arbitrary ids (including users of other realms).
     // Deleted(3) targets are refused: the anonymized tombstone must not gain
     // authorization surface (users.md §4.2 terminal state).
-    let target_status: Option<i16> =
-        sqlx::query_scalar("SELECT status FROM account WHERE id = $1 AND realm_id = $2")
-            .bind(target_user_id)
-            .bind(&realm_id)
-            .fetch_optional(&state.pool)
-            .await
-            .map_err(|e| {
-                tracing::error!(
-                    realm_id = %realm_id,
-                    target_user_id = %target_user_id,
-                    error = %e,
-                    "Failed to check target user for permission assignment"
-                );
-                ApiError::internal("Failed to check target user")
-            })?;
-    if target_status.is_none() {
-        return Err(ApiError::not_found("User not found in this realm"));
-    }
-    if target_status == Some(UserStatus::Deleted as i16) {
-        tracing::warn!(
-            realm_id = %realm_id,
-            target_user_id = %target_user_id,
-            "Permission assignment rejected: target is Deleted (anonymized terminal state)"
-        );
-        return Err(ApiError::conflict(
-            "User is deleted (anonymized) and cannot be edited",
-        ));
-    }
+    crate::admin::middleware::ensure_target_writable(
+        &state.pool,
+        &realm_id,
+        target_user_id,
+        "permission assignment",
+        true,
+    )
+    .await?;
 
     // Check if permission already exists
     let existing = sqlx::query_scalar::<_, Uuid>(
@@ -301,34 +280,14 @@ pub async fn remove_user_permission(
     // assignment path (policy rows are only ever removed for realm users).
     // Deleted(3) targets are refused like on the assignment path: the
     // anonymized tombstone's authorization surface is a compliance record.
-    let target_status: Option<i16> =
-        sqlx::query_scalar("SELECT status FROM account WHERE id = $1 AND realm_id = $2")
-            .bind(target_user_id)
-            .bind(&realm_id)
-            .fetch_optional(&state.pool)
-            .await
-            .map_err(|e| {
-                tracing::error!(
-                    realm_id = %realm_id,
-                    target_user_id = %target_user_id,
-                    error = %e,
-                    "Failed to check target user for permission removal"
-                );
-                ApiError::internal("Failed to check target user")
-            })?;
-    if target_status.is_none() {
-        return Err(ApiError::not_found("User not found in this realm"));
-    }
-    if target_status == Some(UserStatus::Deleted as i16) {
-        tracing::warn!(
-            realm_id = %realm_id,
-            target_user_id = %target_user_id,
-            "Permission removal rejected: target is Deleted (anonymized terminal state)"
-        );
-        return Err(ApiError::conflict(
-            "User is deleted (anonymized) and cannot be edited",
-        ));
-    }
+    crate::admin::middleware::ensure_target_writable(
+        &state.pool,
+        &realm_id,
+        target_user_id,
+        "permission removal",
+        true,
+    )
+    .await?;
 
     // Delete the permission policy from role_policies table
     let result = sqlx::query(

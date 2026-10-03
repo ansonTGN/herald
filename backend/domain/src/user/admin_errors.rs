@@ -45,7 +45,10 @@ impl From<UserAdminError> for CoreError {
             }
             UserAdminError::PermissionDenied(msg) => CoreError::Forbidden(msg),
             UserAdminError::InvalidRoleAssignment(msg) => CoreError::BadRequest(msg),
-            UserAdminError::DuplicateEmail(msg) => CoreError::BadRequest(msg),
+            // Email conflicts are state conflicts (users.md §4.1: the ext and
+            // self-service faces return 409, and the admin create/update
+            // handlers map this explicitly) — CoreError::Conflict → 409.
+            UserAdminError::DuplicateEmail(msg) => CoreError::Conflict(msg),
             // Deleted is a terminal state (users.md §4.2), so mutating it is a
             // state conflict — same convention as self_delete's already-deleted
             // rejection (CoreError::Conflict → 409).
