@@ -614,6 +614,12 @@ pub struct PointsBalance {
     pub total_consumed: i64,
     pub unit: String,
     pub updated_at: chrono::DateTime<chrono::Utc>,
+    /// Earliest upcoming pool expiry (`MIN(expires_at)` over the same
+    /// predicate as the typed balances — `compute_next_pool_expiry`).
+    /// `None` ⟺ no expiring pool balance in scope (permanent-only or empty).
+    /// PRD points.md §4.1「用户可查看即将过期的池子类型积分」: the time itself
+    /// is the backend supply; "即将过期" thresholds are presentation-layer.
+    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 /// Idempotency status enum

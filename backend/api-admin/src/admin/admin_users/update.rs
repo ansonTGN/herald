@@ -34,6 +34,7 @@ use uuid::Uuid;
         (status = 400, description = "Bad request", body = ErrorResponse),
         (status = 403, description = "Forbidden - Insufficient permissions (requires users.manage) or realm boundary violation", body = ErrorResponse),
         (status = 404, description = "User not found", body = ErrorResponse),
+        (status = 409, description = "Conflict - User is deleted (anonymized terminal state) or email already exists", body = ErrorResponse),
         (status = 500, description = "Internal server error", body = ErrorResponse)
     ),
     security(("bearer_auth" = []))
@@ -82,7 +83,15 @@ pub async fn update_user(
                     user_id = %target_user_id,
                     "User update failed: email already exists"
                 );
-                ApiError::bad_request(format!("Email already exists: {}", email))
+                ApiError::conflict(format!("Email already exists: {}", email))
+            }
+            UserAdminError::UserDeleted(_) => {
+                tracing::warn!(
+                    realm_id = %realm_id,
+                    user_id = %target_user_id,
+                    "User update rejected: target is Deleted (anonymized terminal state)"
+                );
+                ApiError::conflict("User is deleted (anonymized) and cannot be edited")
             }
             UserAdminError::PermissionDenied(msg) => {
                 tracing::warn!(

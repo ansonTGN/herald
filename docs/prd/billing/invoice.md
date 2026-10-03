@@ -127,6 +127,9 @@
   | PDF 下载 | 外部发票用外部 URL，自研发票用 IronPress | IronPress 生成 | 外部 URL |
   | "View in Provider" 链接 | 有 external_hosted_url 时显示 | 不显示 | 有时显示 |
 
+  > 矩阵注：manual_only 列的「全部允许」仅指自研（provider=manual）发票。外部来源发票无论 invoice_policy 为何都不可经 Herald 操作（见下文「外部发票不可操作」，两条约束并存时取更强一侧的只读约束），策略不放宽该只读约束。
+
+- **invoice_policy 默认值**：Realm 未显式配置（无配置行或配置行被禁用）时默认按 provider_first 处理；各 provider 的外部发票能力开关缺省视为启用——合起来等价于策略机制上线前的既有行为
 - **Creem MoR 约束**：Creem 交易的发票必须由 Creem 管理；无论 invoice_policy 设置如何，Herald 不得为 Creem 交易创建 manual 发票
 - **Stripe 发票同步触发**：通过 Stripe webhook 被动同步，处理 `invoice.*` 生命周期事件——状态投影（invoice.created / invoice.finalized / invoice.paid / invoice.voided）与支付生命周期（invoice.payment_succeeded / invoice.payment_action_required / invoice.payment_failed），另经 payment_intent.succeeded / payment_intent.payment_failed 补充交易支付结果；Herald 不主动调用 Stripe Invoice API 创建发票
 - **Stripe 一次性购买发票同步触发**：通过 Stripe `checkout.session.completed`（mode=payment）事件 inline 创建外部发票记录；使用 checkout session 上的 Stripe invoice ID（`in_...`，由 Checkout 在启用 invoice_creation 时自动创建）作为 external_invoice_id，payment_intent（`pi_...`）作为 external_order_id；status 直接为 paid

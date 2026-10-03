@@ -25,7 +25,7 @@ mod tests {
         seed_attributed_topup_ledger, seed_fulfilled_topup_ledger_for_attempt,
     };
     use crate::tests::helpers::webhook_helpers::{
-        assert_webhook_success, build_refund_created_event_with_user,
+        assert_webhook_error, assert_webhook_success, build_refund_created_event_with_user,
         build_stripe_charge_refunded_dashboard_event, build_stripe_charge_refunded_topup_event,
         generate_test_event_id, send_stripe_webhook_with_signature, send_webhook_with_signature,
     };
@@ -931,14 +931,14 @@ mod tests {
         );
     }
 
-    /// Self-heal: the payment-role revocation
-    /// after a cumulative full refund is best-effort (logged, not propagated).
-    /// When it fails transiently, or the process dies between the refund
-    /// commit and the event being marked processed, the re-pushed refund must
-    /// revoke the roles again: the duplicate branch reports the recorded
-    /// row's real gate state (fully_refunded=true) and the idempotent role
-    /// revoke re-runs, while the per-refund points revocation stays deduped —
-    /// no second sweep, no extra revocation record.
+    /// Self-heal: when the role revocation after a cumulative full refund
+    /// does not land (a crash between the refund commit and the event being
+    /// marked processed, or a delivery whose revoke failed transiently before
+    /// the failure was propagated), the re-pushed refund must revoke the roles
+    /// again: the duplicate branch reports the recorded row's real gate state
+    /// (fully_refunded=true) and the idempotent role revoke re-runs, while the
+    /// per-refund points revocation stays deduped — no second sweep, no extra
+    /// revocation record.
     #[test_context(SchemaTestContext)]
     #[tokio::test]
     async fn test_us_rp002_full_refund_replay_self_heals_role_revocation(
@@ -1051,6 +1051,169 @@ mod tests {
             revocations.len(),
             1,
             "exactly one points revocation record for the single refund id"
+        );
+    }
+
+    /// PRD support-paywall §4.1: a missed role revoke is a P0 fault — "绝不
+    /// 永久漏撤". A role-revoke failure during a one-time full refund must fail
+    /// the webhook and leave the payment_event row `processed = false`, so the
+    /// Stripe redelivery / payment_event retry sweep re-runs the event instead
+    /// of permanently swallowing the revoke (the old best-effort behavior
+    /// logged the failure and marked the event processed, closing every retry
+    /// channel). Fault injection: a BEFORE DELETE trigger on `user_roles`
+    /// makes the payment-role DELETE fail at the DB level; dropping the
+    /// trigger models the transient fault clearing before the redelivery.
+    #[test_context(SchemaTestContext)]
+    #[tokio::test]
+    async fn test_us_rp002_role_revoke_failure_keeps_event_unprocessed(
+        ctx: &mut SchemaTestContext,
+    ) {
+        let app = ctx.create_unified_test_router();
+        let webhook_secret = "whsec_ri_rp5";
+        let realm_id = ctx._realm_id.clone();
+
+        setup_stripe_config(ctx, &realm_id, "sk_test_ri_rp5", webhook_secret).await;
+
+        let token = crate::tests::helpers::billing_helpers::setup_billing_admin_session(
+            ctx,
+            "ri-rp5-admin@test.com",
+        )
+        .await;
+        let role_id = crate::tests::helpers::rbac_helpers::create_role(
+            ctx,
+            &realm_id,
+            &token,
+            "ri-rp5-role",
+            "role revoke failure retention role",
+        )
+        .await;
+
+        let user_id = create_test_user(ctx, &realm_id, "ri-rp5@test.com").await;
+        create_points_wallet(ctx, user_id, &realm_id).await;
+
+        let mapping_id = create_stripe_one_time_mapping_with_role(
+            ctx,
+            &realm_id,
+            "ri-rp5",
+            Some(10000),
+            &[role_id],
+        )
+        .await;
+        let charge_id = format!("ch_ri_rp5_{}", Uuid::now_v7());
+        let attempt_id =
+            create_stripe_succeeded_attempt(ctx, &realm_id, user_id, mapping_id, &charge_id, 1000)
+                .await;
+        let ledger_id = seed_fulfilled_topup_ledger_for_attempt(
+            ctx, &realm_id, user_id, attempt_id, 10000, None,
+        )
+        .await;
+        seed_payment_role_grant(ctx, &realm_id, user_id, role_id, attempt_id).await;
+
+        // Fault injection: every DELETE of this attempt's payment-role rows
+        // raises, so the role revoke inside the refund handler fails while
+        // the points clawback (a separate, already-committed transaction)
+        // has succeeded — exactly the partial-failure window of P1-1.
+        sqlx::query(
+            r#"CREATE OR REPLACE FUNCTION ri_rp5_block_role_revoke() RETURNS trigger AS $$
+               BEGIN
+                   RAISE EXCEPTION 'injected role revoke failure';
+               END;
+               $$ LANGUAGE plpgsql"#,
+        )
+        .execute(&ctx._app_state.pool)
+        .await
+        .unwrap();
+        // (a Uuid, inlined — CREATE TRIGGER's WHEN clause takes no bind params)
+        sqlx::query(&format!(
+            r#"CREATE TRIGGER ri_rp5_block_revoke BEFORE DELETE ON user_roles
+               FOR EACH ROW
+               WHEN (OLD.source = 'payment' AND OLD.source_id = '{attempt_id}')
+               EXECUTE FUNCTION ri_rp5_block_role_revoke()"#
+        ))
+        .execute(&ctx._app_state.pool)
+        .await
+        .unwrap();
+
+        // Full refund 1000/1000: the gate opens, points are swept, but the
+        // role revoke fails → the handler must fail the delivery.
+        let event_id = generate_test_event_id();
+        let refund_id = format!("re_ri_rp5_{}", Uuid::now_v7());
+        let event = build_stripe_charge_refunded_topup_event(
+            &event_id, &realm_id, user_id, &charge_id, 1000, 1000, &refund_id, 1000,
+        );
+        let response =
+            send_stripe_webhook_with_signature(&app, &realm_id, event, webhook_secret).await;
+        assert_webhook_error(&response, StatusCode::INTERNAL_SERVER_ERROR);
+
+        let ledger = get_ledger_by_id(ctx, ledger_id).await;
+        assert_eq!(
+            ledger.revoked_amount, 10000,
+            "the points clawback itself committed and is not lost"
+        );
+        assert_eq!(
+            count_payment_roles_by_source_id(ctx, user_id, &attempt_id.to_string()).await,
+            1,
+            "the role revoke did not land — the fault is still active"
+        );
+        let processed: bool = sqlx::query_scalar(
+            "SELECT processed FROM payment_event
+             WHERE realm_id = $1 AND payment_provider = 'stripe' AND external_event_id = $2",
+        )
+        .bind(&realm_id)
+        .bind(&event_id)
+        .fetch_one(&ctx._app_state.pool)
+        .await
+        .unwrap();
+        assert!(
+            !processed,
+            "a role-revoke failure must NOT mark the event processed — the redelivery / retry-sweep channel stays open"
+        );
+
+        // The transient fault clears; Stripe re-delivers the SAME event id.
+        sqlx::query("DROP TRIGGER ri_rp5_block_revoke ON user_roles")
+            .execute(&ctx._app_state.pool)
+            .await
+            .unwrap();
+        sqlx::query("DROP FUNCTION ri_rp5_block_role_revoke")
+            .execute(&ctx._app_state.pool)
+            .await
+            .unwrap();
+
+        let event = build_stripe_charge_refunded_topup_event(
+            &event_id, &realm_id, user_id, &charge_id, 1000, 1000, &refund_id, 1000,
+        );
+        let response =
+            send_stripe_webhook_with_signature(&app, &realm_id, event, webhook_secret).await;
+        assert_webhook_success(&response);
+
+        assert_eq!(
+            count_payment_roles_by_source_id(ctx, user_id, &attempt_id.to_string()).await,
+            0,
+            "the redelivery re-ran the revoke and closed the leak"
+        );
+        let processed: bool = sqlx::query_scalar(
+            "SELECT processed FROM payment_event
+             WHERE realm_id = $1 AND payment_provider = 'stripe' AND external_event_id = $2",
+        )
+        .bind(&realm_id)
+        .bind(&event_id)
+        .fetch_one(&ctx._app_state.pool)
+        .await
+        .unwrap();
+        assert!(
+            processed,
+            "the successful redelivery marks the event processed"
+        );
+        let ledger = get_ledger_by_id(ctx, ledger_id).await;
+        assert_eq!(
+            ledger.revoked_amount, 10000,
+            "the redelivery must not revoke points a second time"
+        );
+        let revocations = get_revocation_records(ctx, user_id).await;
+        assert_eq!(
+            revocations.len(),
+            1,
+            "exactly one points revocation record across both deliveries"
         );
     }
 

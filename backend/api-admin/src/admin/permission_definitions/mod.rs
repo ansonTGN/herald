@@ -163,11 +163,3 @@ async fn record_permission_failure(
     )
     .await;
 }
-
-/// Whether a permission definition names a platform-reserved wildcard
-/// (`All`, or a `*` in either segment). Wildcards are reserved for the
-/// platform: the RBAC matcher is exact-match today so this is inert, but a
-/// future wildcard matcher would turn such rows into bypasses.
-fn is_reserved_wildcard(resource: &str, action: &str) -> bool {
-    resource == "All" || resource.contains('*') || action.contains('*')
-}

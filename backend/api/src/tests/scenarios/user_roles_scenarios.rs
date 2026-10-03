@@ -483,3 +483,149 @@ async fn test_scenario_permission_post_grant_is_revocable_by_put_replace(
         "re-granting the replaced role must not collide with a surviving row"
     );
 }
+
+// ============================================================================
+// Regression: cross-realm user-role endpoints are 404
+// ============================================================================
+
+/// PRD permissions.md §4.2：管理端点路径不含 {realmId} 段，realm 由 admin
+/// 会话 token 钉定，跨 realm 资源返回 404。旧实现先全局查用户再
+/// require_in_realm 校验归属：跨 realm 用户 403、未知用户 404——403/404 的
+/// 区分向本 realm 管理员泄露其他 realm 的用户存在性。修复后首查按 admin
+/// 会话 realm 域内过滤，跨 realm 与未知 id 得到等价的 404；域内行为不变
+/// （同 realm 分配/查询由上方场景覆盖）。
+///
+/// **Given**: realm-b 存在用户 user-b 与角色 role-b，且 user-b 已持有 role-b
+/// **When**: admin realm 管理员 GET/POST/DELETE /api/permission/users/{user-b}/roles
+/// **Then**: 一律 404；user-b 的既有角色分配保持原样
+#[test_context(SchemaTestContext)]
+#[tokio::test]
+async fn test_scenario_cross_realm_user_role_endpoints_return_404(ctx: &mut SchemaTestContext) {
+    let (token, admin_user_id) = create_admin_session_with_user(ctx, "test-admin", 1800).await;
+    grant_realm_admin_role(ctx, &admin_user_id).await;
+
+    // Given: a user + role (already assigned) in another realm
+    let realm_b = format!("realm-x-{}", uuid::Uuid::now_v7().simple());
+    sqlx::query("INSERT INTO realm (id, name) VALUES ($1, 'Cross Realm')")
+        .bind(&realm_b)
+        .execute(&ctx._app_state.pool)
+        .await
+        .expect("Failed to insert realm-b");
+
+    let user_b = uuid::Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO account (id, realm_id, email, password, status)
+         VALUES ($1, $2, 'cross-realm-user@example.com', '$2a$12$dummy_password_hash', 1)",
+    )
+    .bind(user_b)
+    .bind(&realm_b)
+    .execute(&ctx._app_state.pool)
+    .await
+    .expect("Failed to insert user-b");
+
+    let role_b = uuid::Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO roles (id, name, description, realm_id, client_id, is_builtin)
+         VALUES ($1, 'role-b', 'Foreign role', $2, $3, false)",
+    )
+    .bind(role_b)
+    .bind(&realm_b)
+    .bind(&ctx._client_id)
+    .execute(&ctx._app_state.pool)
+    .await
+    .expect("Failed to insert role-b");
+
+    sqlx::query(
+        "INSERT INTO user_roles (id, user_id, role_id, realm_id, client_id, principal_type, principal_id)
+         VALUES ($1, $2, $3, $4, $5, 'user', $2::text)",
+    )
+    .bind(uuid::Uuid::now_v7())
+    .bind(user_b)
+    .bind(role_b)
+    .bind(&realm_b)
+    .bind(&ctx._client_id)
+    .execute(&ctx._app_state.pool)
+    .await
+    .expect("Failed to assign role-b to user-b");
+
+    let app = ctx.create_unified_test_router();
+
+    // When/Then: GET cross-realm user's roles -> 404
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri(format!("/api/permission/users/{}/roles", user_b))
+                .header(header::AUTHORIZATION, format!("Bearer {}", token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::NOT_FOUND,
+        "cross-realm user must be a uniform 404, not a 403 realm tell"
+    );
+
+    // When/Then: POST assign a role to the cross-realm user -> 404
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/permission/users/{}/roles", user_b))
+                .header("content-type", "application/json")
+                .header(header::AUTHORIZATION, format!("Bearer {}", token))
+                .body(Body::from(json!({ "roleIds": [role_b] }).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+
+    // When/Then: DELETE the cross-realm assignment -> 404, assignment survives
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!("/api/permission/users/{}/roles/{}", user_b, role_b))
+                .header(header::AUTHORIZATION, format!("Bearer {}", token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+
+    let surviving: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM user_roles WHERE user_id = $1 AND role_id = $2")
+            .bind(user_b)
+            .bind(role_b)
+            .fetch_one(&ctx._app_state.pool)
+            .await
+            .expect("Failed to query user-b roles");
+    assert_eq!(
+        surviving, 1,
+        "cross-realm assignment must survive untouched"
+    );
+
+    // And: an unknown user id is indistinguishable from a cross-realm one
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri(format!(
+                    "/api/permission/users/{}/roles",
+                    uuid::Uuid::now_v7()
+                ))
+                .header(header::AUTHORIZATION, format!("Bearer {}", token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}

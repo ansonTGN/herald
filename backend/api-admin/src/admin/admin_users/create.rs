@@ -28,6 +28,7 @@ use herald_core::domain::user::admin_errors::UserAdminError;
         (status = 201, description = "User created", body = UserResponse),
         (status = 400, description = "Bad request", body = ErrorResponse),
         (status = 403, description = "Forbidden - Insufficient permissions (requires users.manage) or realm boundary violation", body = ErrorResponse),
+        (status = 409, description = "Conflict - Email already exists", body = ErrorResponse),
         (status = 500, description = "Internal server error", body = ErrorResponse)
     ),
     security(("bearer_auth" = []))
@@ -87,7 +88,9 @@ pub async fn create_user(
                     realm_id = %realm_id,
                     "User creation failed: email already exists"
                 );
-                ApiError::bad_request(format!("Email already exists: {}", email))
+                // 409, matching the ext user-creation and self-service
+                // change-email faces (users.md §4.1: 邮箱冲突返回 409).
+                ApiError::conflict(format!("Email already exists: {}", email))
             }
             UserAdminError::PermissionDenied(msg) => {
                 tracing::warn!(
@@ -137,6 +140,9 @@ pub async fn create_user(
                 );
                 ApiError::internal(msg)
             }
+            // Unreachable in practice (create inserts a fresh row), listed to
+            // keep the match exhaustive alongside the new variant.
+            UserAdminError::UserDeleted(msg) => ApiError::conflict(msg),
         })?;
 
     // 5. Convert to UserResponse (convert i32 to i16 for status)

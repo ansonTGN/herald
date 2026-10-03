@@ -120,11 +120,13 @@ pub fn parse_attempt_id(value: &Value) -> Option<Uuid> {
         .filter(|id| *id != Uuid::nil())
 }
 
-/// a role revoke failure is logged but NOT propagated, because the role row is
-/// already gone or the next compensation/retry sweep will reconcile. Manual
-/// grants (`source='manual'`) are never affected — the primitive's internal
-/// SQL filters `source='payment'`. Idempotent: NotFound (no payment role /
-/// already revoked) is a no-op, not an error.
+/// Failures propagate: the caller must fail the webhook so the event is left
+/// `processed = false` and the provider redelivery / payment_event retry sweep
+/// re-runs it (support-paywall §4.1 — a missed revoke is a P0 fault, never
+/// best-effort). Safe to re-run: `RevokeRoleOutcome::NotFound` (no payment
+/// role / already revoked) is `Ok`, not an error. Manual grants
+/// (`source='manual'`) are never affected — the primitive's internal SQL
+/// filters `source='payment'`.
 ///
 /// `source_id` is the value written at grant time: `attempt.id` for one-time
 /// purchases, `subscription.id` for subscription/non-renewing grants.
@@ -133,33 +135,18 @@ pub async fn revoke_payment_roles_for_source(
     realm_id: &str,
     user_id: Uuid,
     source_id: &str,
-) {
+) -> Result<(), CoreError> {
     use herald_core::domain::user::UserRoleRepository;
-    match app_state
+    let outcome = app_state
         .user_role_repository
         .revoke_roles_by_payment_source(realm_id, user_id, source_id)
-        .await
-    {
-        Ok(outcome) => {
-            tracing::info!(
-                realm_id = %realm_id,
-                user_id = %user_id,
-                source_id = %source_id,
-                outcome = ?outcome,
-                "Payment-granted roles revoked on refund/revocation"
-            );
-        }
-        Err(e) => {
-            // Best-effort: do not fail the whole webhook over a role revoke
-            // error. The points/subscription revocation above already
-            // succeeded; the compensation sweep will retry the role revoke.
-            tracing::warn!(
-                realm_id = %realm_id,
-                user_id = %user_id,
-                source_id = %source_id,
-                error = %e,
-                "Failed to revoke payment-granted roles (best-effort; compensation sweep will retry)"
-            );
-        }
-    }
+        .await?;
+    tracing::info!(
+        realm_id = %realm_id,
+        user_id = %user_id,
+        source_id = %source_id,
+        outcome = ?outcome,
+        "Payment-granted roles revoked on refund/revocation"
+    );
+    Ok(())
 }

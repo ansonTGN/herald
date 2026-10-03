@@ -101,6 +101,11 @@ pub mod legal;
 
 pub mod account_self_delete_scenarios;
 
+// Admin user-management write guards: Deleted(3) terminal-state protection
+// (no edit/revival of the anonymized tombstone), cross-realm GET 404
+// (id-oracle convention), duplicate-email 409 on admin create.
+pub mod admin_user_terminal_state_scenarios;
+
 // Kickoff User (session management / forced logout) scenarios, covering
 // docs/user-stories/core/realm-admin.md US-RA-020 and US-RA-021.
 pub mod user_sessions_scenarios;

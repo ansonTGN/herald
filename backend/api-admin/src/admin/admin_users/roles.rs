@@ -11,6 +11,7 @@ use herald_api_base::application::http::common::auth_utils::AdminIdentity;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
+use herald_core::domain::user::UserStatus;
 use herald_core::domain::user::admin_errors::UserAdminError;
 use herald_core::domain::user::admin_ports::RoleAssignmentService;
 use uuid::Uuid;
@@ -97,6 +98,8 @@ pub async fn get_user_roles(
         (status = 400, description = "Bad request", body = ErrorResponse),
         (status = 401, description = "Unauthorized", body = ErrorResponse),
         (status = 403, description = "Forbidden - cannot assign admin roles", body = ErrorResponse),
+        (status = 404, description = "User not found", body = ErrorResponse),
+        (status = 409, description = "Conflict - User is deleted (anonymized terminal state)", body = ErrorResponse),
         (status = 500, description = "Internal server error", body = ErrorResponse)
     )
 )]
@@ -110,6 +113,36 @@ pub async fn update_user_roles(
     let admin = AdminIdentity::require(identity, "user role management")?;
     let realm_id = admin.realm_id().to_string();
     admin.require_permission(&state, "roles", "manage").await?;
+
+    // Deleted(3) terminal-state guard (users.md §4.2): role writes must not
+    // mutate the anonymized tombstone. Mirrors the domain-level guard on the
+    // admin update path; the role service only holds the user-role repository,
+    // so the status is read here with the same realm predicate.
+    let target_status: Option<i16> =
+        sqlx::query_scalar("SELECT status FROM account WHERE id = $1 AND realm_id = $2")
+            .bind(target_user_id)
+            .bind(&realm_id)
+            .fetch_optional(&state.pool)
+            .await
+            .map_err(|e| {
+                tracing::error!(
+                    realm_id = %realm_id,
+                    user_id = %target_user_id,
+                    error = %e,
+                    "Failed to load target user status before role update"
+                );
+                ApiError::internal("Failed to load target user")
+            })?;
+    if target_status == Some(UserStatus::Deleted as i16) {
+        tracing::warn!(
+            realm_id = %realm_id,
+            user_id = %target_user_id,
+            "Role update rejected: target is Deleted (anonymized terminal state)"
+        );
+        return Err(ApiError::conflict(
+            "User is deleted (anonymized) and cannot be edited",
+        ));
+    }
 
     let role_assignment_service = &state.role_assignment_service;
 

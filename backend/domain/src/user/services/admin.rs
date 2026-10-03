@@ -87,6 +87,32 @@ async fn require_target_user_in_realm(
     Ok(user)
 }
 
+/// Deleted(3) terminal-state guard for admin mutations on a target user.
+///
+/// `Deleted` is the anonymizing self-deletion terminal state (users.md §4.2
+/// 「不可恢复」): the account row survives only as a compliance record, so an
+/// admin edit (status flip, nickname, password reset) must not mutate it —
+/// otherwise the tombstone can be revived into a live account shell. Loads
+/// the user with the same realm-boundary semantics as
+/// [`require_target_user_in_realm`] and additionally rejects a Deleted target
+/// with [`UserAdminError::UserDeleted`].
+async fn require_target_user_not_deleted(
+    user_repository: &impl AdminUserRepository,
+    realm_id: &str,
+    user_id: Uuid,
+) -> UserAdminResult<AdminUserEntity> {
+    let user = require_target_user_in_realm(user_repository, realm_id, user_id).await?;
+    if user.status == UserStatus::Deleted as i32 {
+        tracing::warn!(
+            realm_id = %realm_id,
+            user_id = %user_id,
+            "Blocked admin operation on a Deleted (anonymized) user"
+        );
+        return Err(UserAdminError::UserDeleted(user_id.to_string()));
+    }
+    Ok(user)
+}
+
 /// Same target realm-boundary check for services that only hold a
 /// [`UserRoleRepository`]: verifies the target user exists and belongs to
 /// `realm_id`, returning `UserNotFound` otherwise.
@@ -647,28 +673,34 @@ where
 
         // Load the target user before any write: this enforces the target
         // realm boundary (a cross-realm id must fail here, not mid-mutation)
-        // and captures the old status for the Forbidden linkage.
-        let _target_user =
-            match require_target_user_in_realm(&*self.user_repository, realm_id, user_id).await {
-                Ok(user) => user,
-                Err(e) => {
-                    self.record_user_audit(
-                        &ctx,
-                        realm_id,
-                        AuditAction::UserUpdate,
-                        user_id.to_string(),
-                        None,
-                        AuditResult::Failure,
-                        Some(if matches!(e, UserAdminError::UserNotFound(_)) {
-                            "user_not_found"
-                        } else {
-                            "fetch_existing_user_failed"
-                        }),
-                    )
-                    .await;
-                    return Err(e);
-                }
-            };
+        // and refuses a Deleted(3) target — the anonymized tombstone is the
+        // terminal state (users.md §4.2) and must not be edited/revived.
+        let _target_user = match require_target_user_not_deleted(
+            &*self.user_repository,
+            realm_id,
+            user_id,
+        )
+        .await
+        {
+            Ok(user) => user,
+            Err(e) => {
+                self.record_user_audit(
+                    &ctx,
+                    realm_id,
+                    AuditAction::UserUpdate,
+                    user_id.to_string(),
+                    None,
+                    AuditResult::Failure,
+                    Some(match &e {
+                        UserAdminError::UserNotFound(_) => "user_not_found",
+                        UserAdminError::UserDeleted(_) => "user_deleted",
+                        _ => "fetch_existing_user_failed",
+                    }),
+                )
+                .await;
+                return Err(e);
+            }
+        };
         // Update user fields (email is read-only after creation)
         if let Err(e) = self
             .user_repository
@@ -1018,9 +1050,11 @@ where
         }
 
         // Target realm boundary: a realm admin must not be able to reset
-        // another realm's user password by id.
+        // another realm's user password by id. Deleted(3) is refused too — a
+        // fresh credential is the strongest revival vector for the anonymized
+        // tombstone (users.md §4.2).
         if let Err(e) =
-            require_target_user_in_realm(&*self.user_repository, realm_id, user_id).await
+            require_target_user_not_deleted(&*self.user_repository, realm_id, user_id).await
         {
             self.record_user_audit(
                 &ctx,
@@ -1029,10 +1063,10 @@ where
                 user_id.to_string(),
                 None,
                 AuditResult::Failure,
-                Some(if matches!(e, UserAdminError::UserNotFound(_)) {
-                    "user_not_found"
-                } else {
-                    "fetch_target_user_failed"
+                Some(match &e {
+                    UserAdminError::UserNotFound(_) => "user_not_found",
+                    UserAdminError::UserDeleted(_) => "user_deleted",
+                    _ => "fetch_target_user_failed",
                 }),
             )
             .await;
@@ -2683,6 +2717,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn update_user_admin_rejects_deleted_target_without_writing() {
+        // users.md §4.2: Deleted(3) is the anonymizing terminal state
+        // (不可恢复). An edit — even a status flip back to Normal — must not
+        // touch the tombstone, or the compliance record can be revived into
+        // a live account shell.
+        let (svc, counts) = make_service_with_row_realm(
+            Arc::new(AtomicUsize::new(0)),
+            None,
+            i16::from(UserStatus::Deleted) as i32,
+            "r",
+        );
+        let res = svc
+            .update_user_admin(
+                admin_identity("r"),
+                audit_ctx(),
+                "r",
+                Uuid::nil(),
+                UpdateUserAdminRequest {
+                    nickname: Some("revive".to_string()),
+                    status: Some(1),
+                },
+            )
+            .await;
+        match res {
+            Err(UserAdminError::UserDeleted(_)) => {}
+            other => panic!("expected UserDeleted, got {:?}", other),
+        }
+        assert_eq!(
+            counts.update_calls.load(Ordering::SeqCst),
+            0,
+            "no field update may run for a Deleted target"
+        );
+    }
+
+    #[tokio::test]
     async fn delete_user_rejects_cross_realm_target_without_deleting() {
         let (svc, counts) = make_service_with_row_realm(
             Arc::new(AtomicUsize::new(0)),
@@ -2723,6 +2792,31 @@ mod tests {
             counts.password_calls.load(Ordering::SeqCst),
             0,
             "no password write may run for a cross-realm target"
+        );
+    }
+
+    #[tokio::test]
+    async fn reset_user_password_rejects_deleted_target_without_resetting() {
+        // A password reset is the strongest revival vector for a Deleted
+        // tombstone (anonymization destroyed the original credential): it
+        // would make the account login-capable again.
+        let (svc, counts) = make_service_with_row_realm(
+            Arc::new(AtomicUsize::new(0)),
+            None,
+            i16::from(UserStatus::Deleted) as i32,
+            "r",
+        );
+        let res = svc
+            .reset_user_password(admin_identity("r"), audit_ctx(), "r", Uuid::nil())
+            .await;
+        match res {
+            Err(UserAdminError::UserDeleted(_)) => {}
+            other => panic!("expected UserDeleted, got {:?}", other),
+        }
+        assert_eq!(
+            counts.password_calls.load(Ordering::SeqCst),
+            0,
+            "no password write may run for a Deleted target"
         );
     }
 

@@ -42,7 +42,9 @@ mod tests {
     use crate::tests::helpers::iap_mocks::{
         GooglePlayMockServer, build_service_account_json, fresh_rsa_pem, insert_google_realm_config,
     };
-    use crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm;
+    use crate::tests::helpers::points_helpers::{
+        ensure_test_bucket_for_realm, get_points_wallet_by_user,
+    };
     use crate::tests::schema_test_context::SchemaTestContext;
     use axum::{
         body::{Body, to_bytes},
@@ -410,6 +412,168 @@ mod tests {
         assert!(
             !consume_seen,
             "buyout (non-consumable) fulfillment must NOT call products.consume (would break restore purchase)"
+        );
+    }
+
+    /// User Story: US-PM-004 + DEC-pay_model-006 regression (buyout *bundle*:
+    ///             one_time + points + role must be acknowledged, not
+    ///             consumed — pay_model.md「消耗仅适用于积分包」).
+    /// Covers: design §5.4 (ack-only branch), PRD pay_model.md (consume
+    ///         applies to points packs only), support-paywall.md
+    ///         six-combination table (one_time + 积分 + role = 买断礼包,
+    ///         one per person).
+    ///
+    /// A buyout gift bundle grants BOTH points and a permanent role. Google
+    /// must keep the purchase record (acknowledge) so "restore purchases"
+    /// still sees the entitlement; the one-per-person guarantee is Herald's
+    /// own dedup (M3), NOT Google-side consumption. Consuming the bundle
+    /// would erase the Google-side purchase record, break restore purchases,
+    /// and leave a re-purchase attempt rejected by Herald — a dispute
+    /// surface. Fulfillment must stay unchanged by the routing: points are
+    /// issued and the permanent role granted exactly once.
+    #[test_context(PayModelContext)]
+    #[tokio::test]
+    async fn test_pay_model_buyout_bundle_points_plus_role_acknowledged_not_consumed(
+        ctx: &mut PayModelContext,
+    ) {
+        let realm_id = ctx._realm_id.clone();
+        let (token, user_id_str) =
+            create_admin_session_with_user(ctx, "pm-bundle-ack@test.com", 1800).await;
+        let user_id = Uuid::parse_str(&user_id_str).expect("user id parses");
+
+        // Bundle mapping: one_time + a role + an enabled points rule.
+        let role_id = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO roles (id, name, realm_id, client_id, is_builtin)
+             VALUES ($1, $2, $3, $4, false)",
+        )
+        .bind(role_id)
+        .bind("pm-bundle-role")
+        .bind(&realm_id)
+        .bind(&ctx._client_id)
+        .execute(&ctx.app_state.pool)
+        .await
+        .expect("create role");
+
+        let mapping_id = insert_mapping(
+            ctx,
+            &realm_id,
+            "google",
+            "founder_pack",
+            "one_time",
+            "founder",
+            None,
+            Some(&[role_id]),
+            None,
+        )
+        .await;
+
+        // Enabled topup rule > 0: without the granted_role_ids guard in the
+        // consumable-points-pack classification this bundle would (wrongly)
+        // be routed to products.consume.
+        let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, &realm_id).await;
+        let rule_id = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO points_distribution_rules
+                (id, realm_id, owner_type, entitlement_mapping_id, bucket_id,
+                 trigger_sources, grant_mode, points_amount, validity_days,
+                 enabled, display_order)
+             VALUES ($1, $2, 'entitlement_mapping', $3, $4, $5, 'fixed', 100, 0, true, 0)",
+        )
+        .bind(rule_id)
+        .bind(&realm_id)
+        .bind(mapping_id)
+        .bind(bucket_id)
+        .bind(&["topup"][..])
+        .execute(&ctx.app_state.pool)
+        .await
+        .expect("seed topup rule for buyout bundle");
+
+        let google_mock = GooglePlayMockServer::start().await;
+        google_mock.mount_token_stub().await;
+        let purchase_token = "gplay-bundle-1";
+        google_mock
+            .mount_product_get_success(
+                "com.herald.app",
+                "founder_pack",
+                purchase_token,
+                &user_id_str,
+            )
+            .await;
+        google_mock
+            .mount_product_acknowledge_success("com.herald.app", "founder_pack", purchase_token)
+            .await;
+        wire_google_realm(ctx, &realm_id, &google_mock).await;
+
+        let app = ctx.create_unified_test_router();
+        let response = app
+            .oneshot(iap_receipt_request(
+                &realm_id,
+                &token,
+                json!({
+                    "provider": "google",
+                    "receipt": purchase_token,
+                    "productId": "founder_pack",
+                    "targetType": "entitlement_mapping",
+                    "targetId": mapping_id,
+                    "productType": "one_time",
+                }),
+            ))
+            .await
+            .unwrap();
+
+        let status = response.status();
+        let body = body_json(response).await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "buyout bundle receipt must succeed, body={body}"
+        );
+        assert_eq!(body["status"], "succeeded");
+
+        let requests = google_mock
+            .server
+            .received_requests()
+            .await
+            .unwrap_or_default();
+        let ack_seen = requests
+            .iter()
+            .any(|r| r.method == "POST" && r.url.path().ends_with(":acknowledge"));
+        let consume_seen = requests
+            .iter()
+            .any(|r| r.method == "POST" && r.url.path().ends_with(":consume"));
+        assert!(
+            ack_seen,
+            "buyout bundle (points + role) fulfillment must call products.acknowledge"
+        );
+        assert!(
+            !consume_seen,
+            "buyout bundle (points + role) must NOT be consumed: Google would drop the purchase record, break restore purchases, and Herald's one-per-person dedup would then reject the re-purchase"
+        );
+
+        // Fulfillment is unchanged by the ack/consume routing: the bundle's
+        // points are issued and the permanent role granted exactly once.
+        let attempt_id: Uuid = sqlx::query_scalar::<_, Uuid>(
+            "SELECT id FROM payment_attempts
+             WHERE realm_id = $1 AND payment_provider = 'google'
+             ORDER BY created_at DESC LIMIT 1",
+        )
+        .bind(&realm_id)
+        .fetch_one(&ctx.app_state.pool)
+        .await
+        .expect("a google payment_attempt must exist after fulfillment");
+        assert_eq!(
+            count_payment_roles_by_source_id(ctx, user_id, &attempt_id.to_string()).await,
+            1,
+            "buyout bundle fulfillment must grant exactly 1 permanent payment-source role"
+        );
+
+        let wallet = get_points_wallet_by_user(ctx, user_id).await;
+        let (_, _, topup_balance, _) =
+            wallet.expect("buyout bundle buyer must have a points wallet");
+        assert_eq!(
+            topup_balance, 100,
+            "buyout bundle fulfillment must still issue the mapped topup points"
         );
     }
 

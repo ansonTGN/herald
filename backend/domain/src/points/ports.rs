@@ -473,6 +473,24 @@ pub trait PointsRepository: Send + Sync {
         now: chrono::DateTime<chrono::Utc>,
     ) -> impl Future<Output = Result<Vec<(CreditType, i64)>, CoreError>> + Send;
 
+    /// Earliest upcoming pool expiry: `MIN(expires_at)` over the SAME shared
+    /// predicate as `compute_available_balance` (`status='active' AND
+    /// remaining_amount>0 AND effective/expiry gates` — the expiry gate
+    /// already drops NULL `expires_at` rows). Backs the PRD points.md §4.1
+    /// "用户可查看即将过期的池子类型积分" capability: wallets/balance query
+    /// surfaces project this as the pool's `expires_at`. `None` ⟺ no expiring
+    /// pool balance in scope (permanent-only or empty). `bucket_ids`
+    /// semantics mirror `compute_available_balance`: empty slice ⟺ aggregate
+    /// across ALL the user's buckets; non-empty ⟺ restrict to the listed
+    /// buckets.
+    fn compute_next_pool_expiry(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        bucket_ids: &[Uuid],
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> impl Future<Output = Result<Option<chrono::DateTime<chrono::Utc>>, CoreError>> + Send;
+
     /// Explicitly covered, enabled bucket ids for a client app in a realm
     /// (`credit_bucket_client_apps` joined to enabled `credit_buckets`).
     /// Used to scope client-app-bound API keys to the buckets their app

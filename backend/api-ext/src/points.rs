@@ -62,6 +62,13 @@ pub struct ExtPointsBalanceResponse {
     pub unit: String,
     pub currency: String,
     pub updated_at: String,
+    /// Earliest upcoming pool expiry (RFC3339) within this balance's scope
+    /// (all buckets, or the client app's covered buckets for a bound key) —
+    /// `MIN(points_credit_ledger.expires_at)` over the same predicate as the
+    /// typed balances. `null` ⟺ no expiring pool balance. PRD points.md §4.1
+    /// 「用户可查看即将过期的池子类型积分」; mirrors the api-points wallet
+    /// surfaces and the grant write response's `expiresAt`.
+    pub expires_at: Option<String>,
 }
 
 /// Consume points request (SDK-compatible)
@@ -432,6 +439,7 @@ pub async fn get_balance_ext(
         unit: balance.unit.clone(),
         currency: balance.unit,
         updated_at: balance.updated_at.to_rfc3339(),
+        expires_at: balance.expires_at.map(|dt| dt.to_rfc3339()),
     };
 
     tracing::info!(

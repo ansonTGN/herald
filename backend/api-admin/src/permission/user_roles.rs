@@ -31,6 +31,7 @@ use herald_core::domain::authentication::Identity;
 use herald_core::domain::authorization::permission_service::PermissionService;
 use herald_core::domain::authorization::principal_types;
 use herald_core::domain::client::ADMIN_WEB_CONSOLE_CLIENT_ID;
+use herald_core::domain::user::UserStatus;
 use herald_core::entity::{account, role_policies, roles, user_roles};
 
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
@@ -91,23 +92,28 @@ pub async fn get_user_roles(
     Extension(identity): Extension<Identity>,
     Path(user_id): Path<Uuid>,
 ) -> Result<ApiResult<PermissionUserRolesResponse>, ApiError> {
-    let user = account::Entity::find()
+    let admin = AdminIdentity::require(identity, "user roles")?;
+    admin.require_permission(&state, "users", "view").await?;
+    let realm_id = admin.realm_id().to_string();
+
+    // The realm is pinned by the admin session (permissions.md §4.2: admin
+    // endpoints take no realm path segment and cross-realm resources 404), so
+    // verify the target user exists in the caller's realm instead of loading
+    // the user globally and rejecting the realm mismatch with a 403 — that
+    // 403/404 split leaked cross-realm user existence.
+    let user_exists = account::Entity::find()
         .filter(account::Column::Id.eq(user_id))
+        .filter(account::Column::RealmId.eq(realm_id.as_str()))
         .one(state.db.as_ref())
         .await
         .map_err(|e| {
             tracing::error!(error = %e, user_id = %user_id, "Failed to query user");
             ApiError::internal(format!("Failed to query user: {}", e))
         })?
-        .ok_or_else(|| ApiError::not_found("User not found"))?;
-
-    let realm_id = user
-        .realm_id
-        .as_ref()
-        .ok_or_else(|| ApiError::bad_request("User has no realm"))?;
-
-    let admin = AdminIdentity::require_in_realm(identity, realm_id, "user roles")?;
-    admin.require_permission(&state, "users", "view").await?;
+        .is_some();
+    if !user_exists {
+        return Err(ApiError::not_found("User not found"));
+    }
 
     // Query user_roles with join to roles table
     let user_roles_data = user_roles::Entity::find()
@@ -169,24 +175,37 @@ pub async fn assign_roles_to_user(
         )));
     }
 
-    // Get user's realm_id
-    let user = account::Entity::find()
+    let admin = AdminIdentity::require(identity.clone(), "user roles")?;
+    admin.require_permission(&state, "roles", "manage").await?;
+    let realm_id = admin.realm_id().to_string();
+
+    // Scope the user lookup to the admin session's realm (permissions.md
+    // §4.2: cross-realm resources 404 rather than 403).
+    let target_user = account::Entity::find()
         .filter(account::Column::Id.eq(user_id))
+        .filter(account::Column::RealmId.eq(realm_id.as_str()))
         .one(state.db.as_ref())
         .await
         .map_err(|e| {
             tracing::error!(error = %e, user_id = %user_id, "Failed to query user");
             ApiError::internal(format!("Failed to query user: {}", e))
-        })?
-        .ok_or_else(|| ApiError::not_found("User not found"))?;
-
-    let realm_id = user
-        .realm_id
-        .as_ref()
-        .ok_or_else(|| ApiError::bad_request("User has no realm"))?;
-
-    let admin = AdminIdentity::require_in_realm(identity.clone(), realm_id, "user roles")?;
-    admin.require_permission(&state, "roles", "manage").await?;
+        })?;
+    if target_user.is_none() {
+        return Err(ApiError::not_found("User not found"));
+    }
+    // Deleted(3) terminal-state guard (users.md §4.2): role writes must not
+    // mutate the anonymized tombstone — same guard as the users-module
+    // role/update write paths.
+    if target_user.is_some_and(|u| u.status == UserStatus::Deleted as i16) {
+        tracing::warn!(
+            realm_id = %realm_id,
+            user_id = %user_id,
+            "Role assignment rejected: target is Deleted (anonymized terminal state)"
+        );
+        return Err(ApiError::conflict(
+            "User is deleted (anonymized) and cannot be edited",
+        ));
+    }
 
     let mut seen_role_ids = HashSet::new();
     let unique_role_ids: Vec<Uuid> = request
@@ -210,7 +229,7 @@ pub async fn assign_roles_to_user(
         record_user_role_audit(
             &state,
             &identity,
-            realm_id,
+            &realm_id,
             user_id,
             AuditAction::RoleAssign,
             AuditResult::Failure,
@@ -302,7 +321,7 @@ pub async fn assign_roles_to_user(
     // Invalidate user role cache
     let _ = state
         .permission_checker
-        .invalidate_user_role_cache(realm_id, &user_id.to_string())
+        .invalidate_user_role_cache(&realm_id, &user_id.to_string())
         .await;
 
     // Query and return updated user roles list
@@ -337,7 +356,7 @@ pub async fn assign_roles_to_user(
     record_user_role_audit(
         &state,
         &identity,
-        realm_id,
+        &realm_id,
         user_id,
         AuditAction::RoleAssign,
         AuditResult::Success,
@@ -372,23 +391,36 @@ pub async fn remove_role_from_user(
     Extension(identity): Extension<Identity>,
     Path((user_id, role_id)): Path<(Uuid, Uuid)>,
 ) -> Result<ApiResult<()>, ApiError> {
-    let user = account::Entity::find()
+    let admin = AdminIdentity::require(identity.clone(), "user roles")?;
+    admin.require_permission(&state, "roles", "manage").await?;
+    let realm_id = admin.realm_id().to_string();
+
+    // Scope the user lookup to the admin session's realm (permissions.md
+    // §4.2: cross-realm resources 404 rather than 403).
+    let target_user = account::Entity::find()
         .filter(account::Column::Id.eq(user_id))
+        .filter(account::Column::RealmId.eq(realm_id.as_str()))
         .one(state.db.as_ref())
         .await
         .map_err(|e| {
             tracing::error!(error = %e, user_id = %user_id, "Failed to query user");
             ApiError::internal(format!("Failed to query user: {}", e))
-        })?
-        .ok_or_else(|| ApiError::not_found("User not found"))?;
-
-    let realm_id = user
-        .realm_id
-        .as_ref()
-        .ok_or_else(|| ApiError::bad_request("User has no realm"))?;
-
-    let admin = AdminIdentity::require_in_realm(identity.clone(), realm_id, "user roles")?;
-    admin.require_permission(&state, "roles", "manage").await?;
+        })?;
+    if target_user.is_none() {
+        return Err(ApiError::not_found("User not found"));
+    }
+    // Deleted(3) terminal-state guard (users.md §4.2): role removals must not
+    // mutate the anonymized tombstone — same guard as the assignment path.
+    if target_user.is_some_and(|u| u.status == UserStatus::Deleted as i16) {
+        tracing::warn!(
+            realm_id = %realm_id,
+            user_id = %user_id,
+            "Role removal rejected: target is Deleted (anonymized terminal state)"
+        );
+        return Err(ApiError::conflict(
+            "User is deleted (anonymized) and cannot be edited",
+        ));
+    }
 
     // Find and delete the user_role assignment
     let result = user_roles::Entity::delete_many()
@@ -411,7 +443,7 @@ pub async fn remove_role_from_user(
         record_user_role_audit(
             &state,
             &identity,
-            realm_id,
+            &realm_id,
             user_id,
             AuditAction::RoleUnassign,
             AuditResult::Failure,
@@ -433,7 +465,7 @@ pub async fn remove_role_from_user(
     record_user_role_audit(
         &state,
         &identity,
-        realm_id,
+        &realm_id,
         user_id,
         AuditAction::RoleUnassign,
         AuditResult::Success,

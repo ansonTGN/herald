@@ -868,10 +868,18 @@ pub async fn submit_iap_receipt(
         if let Some((creds, developer, auth)) = google_ready.as_ref()
             && !google_already_consumed
         {
-            let is_consumable_points_pack = mapping_rule_value(&state, &realm_id, resolved.mapping.id)
-                .await
-                .map_err(|e| core_error_to_api_error(e, "iap mapping rules"))?
-                > 0;
+            // Consume applies to pure points packs only (pay_model.md:
+            // 「消耗仅适用于积分包」). A one_time bundle that also grants roles
+            // is a buyout (support-paywall.md six-combination table: one_time
+            // + 积分 + role = 买断礼包, one per person): it must be
+            // acknowledged so Google keeps the purchase record ("restore
+            // purchases" still sees it) — the repurchase block is Herald's
+            // own one-per-person dedup, not Google-side consumption.
+            let is_consumable_points_pack = resolved.mapping.granted_role_ids.is_empty()
+                && mapping_rule_value(&state, &realm_id, resolved.mapping.id)
+                    .await
+                    .map_err(|e| core_error_to_api_error(e, "iap mapping rules"))?
+                    > 0;
             if let Err(e) = google_ack_or_consume_in_tx(
                 developer,
                 auth,
@@ -1038,8 +1046,9 @@ pub async fn submit_iap_receipt(
 /// `GoogleServiceAccountAuth` access-token cache is reused rather than
 /// re-granted.
 ///
-/// an enabled fixed grant rule makes the purchase a consumable points pack;
-/// a one-time mapping with no points (buyout / non-consumable) →
+/// an enabled fixed grant rule with no granted roles makes the purchase a
+/// consumable points pack; a one-time mapping that grants roles (buyout /
+/// non-consumable, including one_time + points + role bundles) →
 /// `acknowledge_product` so a later "restore purchases" can still see the
 /// owned entitlement.
 async fn google_ack_or_consume_in_tx(
@@ -1834,6 +1843,40 @@ async fn process_apple_refund_or_revoke(
         return Ok(());
     }
 
+    // Record the pending dedup row (processed=false) up-front: the live
+    // webhook always answers Apple 200, so a revoke failure below has no
+    // provider redelivery — this row is what the PaymentEventRetryJob
+    // re-runs, from these identity fields (see reprocess_apple_event). It is
+    // promoted to processed only after the revocations succeed (the tail of
+    // this function), so a propagated failure leaves it retryable.
+    match state
+        .billing_repository
+        .create_payment_event(PaymentEvent {
+            id: Uuid::now_v7(),
+            realm_id: realm_id.to_string(),
+            external_event_id: synthetic_event_id.clone(),
+            payment_provider: "apple".to_string(),
+            event_type: format!("apple_{notification_type_str}"),
+            subscription_id: None,
+            payload: serde_json::json!({
+                "notificationType": notification_type_str,
+                "productId": product_id,
+                "originalTransactionId": original_transaction_id,
+            }),
+            processed: false,
+            processing_started_at: None,
+            created_at: Utc::now(),
+        })
+        .await
+    {
+        Ok(_) => {}
+        // A concurrent delivery (or a pending row from the no-attempt branch
+        // below) already inserted this event.
+        Err(CoreError::DatabaseError(ref msg))
+            if crate::webhook_common::is_unique_violation_msg(msg) => {}
+        Err(e) => return Err(e),
+    }
+
     // Look up the originating payment_attempt by provider_reference
     // (= originalTransactionId, the idempotency key used at submit_iap_receipt).
     let attempt = state
@@ -1961,7 +2004,7 @@ async fn process_apple_refund_or_revoke(
                 attempt.user_id,
                 &attempt.id.to_string(),
             )
-            .await;
+            .await?;
         }
         BillingType::NonRenewing => {
             // Locate the non-renewing subscription by external_subscription_id
@@ -1981,14 +2024,16 @@ async fn process_apple_refund_or_revoke(
                 )
                 .await;
                 // Revoke the subscription's payment roles regardless of the
-                // update outcome (source_id = subscription.id).
+                // update outcome (source_id = subscription.id). A failure
+                // propagates: the pending payment_event row stays unprocessed
+                // and the retry sweep re-runs this revoke.
                 crate::webhook_common::revoke_payment_roles_for_source(
                     state,
                     realm_id,
                     sub_user_id,
                     &sub_id.to_string(),
                 )
-                .await;
+                .await?;
             } else {
                 tracing::warn!(
                     realm_id = %realm_id,
@@ -2001,7 +2046,7 @@ async fn process_apple_refund_or_revoke(
                     attempt.user_id,
                     &attempt.id.to_string(),
                 )
-                .await;
+                .await?;
             }
         }
         BillingType::Recurring => {
@@ -3246,13 +3291,16 @@ async fn reprocess_google_one_time_revoke(
         }
     }
 
+    // A failure propagates: reprocess_google_event marks its synthetic row
+    // processed only after this returns Ok, so the retry sweep re-runs this
+    // revoke.
     crate::webhook_common::revoke_payment_roles_for_source(
         state,
         realm_id,
         attempt.user_id,
         &attempt.id.to_string(),
     )
-    .await;
+    .await?;
 
     Ok(())
 }
@@ -3349,13 +3397,16 @@ async fn reprocess_google_non_renewing_revoke(
     .await;
 
     // Revoke the subscription's payment roles (source_id = subscription.id).
+    // A failure propagates: reprocess_google_event marks its synthetic row
+    // processed only after this returns Ok, so the retry sweep re-runs this
+    // revoke.
     crate::webhook_common::revoke_payment_roles_for_source(
         state,
         realm_id,
         subscription_user_id,
         &subscription_id.to_string(),
     )
-    .await;
+    .await?;
 
     Ok(())
 }
@@ -3506,10 +3557,13 @@ fn iap_error_to_core_error(e: IapError) -> CoreError {
 
 /// pure function so the routing rule is unit-testable without standing up the
 /// async `GoogleDeveloperClient` mock fixture. A one-time mapping that
-/// configures an enabled fixed grant rule is a consumable points pack and
-/// must be consumed so it can be re-purchased; a points-less one-time mapping
-/// (buyout / non-consumable) must be acknowledged only so "restore purchases"
+/// configures an enabled fixed grant rule and grants no roles is a consumable
+/// points pack and must be consumed so it can be re-purchased; a one-time
+/// mapping that grants roles (buyout / non-consumable, including one_time +
+/// points + role bundles) must be acknowledged only so "restore purchases"
 /// still sees the entitlement and Google does not auto-refund after 3 days.
+/// The caller derives the flag from the mapping: enabled points rules > 0
+/// AND `granted_role_ids` is empty.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum GoogleOneTimeAckAction {
     /// Consumable points pack — `purchases.products.consume`.
@@ -3535,11 +3589,15 @@ mod tests {
     use super::*;
     use herald_infra_iap::apple::models::ProductType;
 
-    // Google purchase is consumed (points pack) or merely acknowledged
-    // (buyout). Reversing this would either block re-purchase of points packs
+    // Google purchase is consumed (pure points pack — points rules > 0 and no
+    // granted roles) or merely acknowledged (buyout, including one_time +
+    // points + role bundles). Reversing this would either block re-purchase
+    // of points packs or erase the buyout's Google-side purchase record
+    // (breaking restore purchases while Herald's one-per-person dedup still
+    // rejects the re-purchase).
     #[test]
-    fn google_one_time_ack_action_consumes_when_points_configured() {
-        // Points pack (consumable): must consume so it can be re-purchased.
+    fn google_one_time_ack_action_consumes_when_pure_points_pack() {
+        // Pure points pack (consumable): must consume so it can be re-purchased.
         assert_eq!(
             google_one_time_ack_action(true),
             GoogleOneTimeAckAction::Consume
@@ -3551,8 +3609,10 @@ mod tests {
     }
 
     #[test]
-    fn google_one_time_ack_action_acknowledges_when_no_points() {
-        // Buyout / non-consumable: acknowledge only.
+    fn google_one_time_ack_action_acknowledges_when_not_pure_points_pack() {
+        // Buyout / non-consumable — no points rules OR grants roles (a
+        // one_time + points + role bundle is a buyout, not a consumable):
+        // acknowledge only.
         assert_eq!(
             google_one_time_ack_action(false),
             GoogleOneTimeAckAction::Acknowledge

@@ -27,7 +27,7 @@
 
 ### 2.1 包含功能
 
-- 支持多种支付平台：Creem（模拟支付平台）、Stripe（详见 `docs/prd/billing/stripe-payment.md`）、WeChat Pay（`docs/prd/billing/wechat-support.md`）、Apple / Google 内购（`docs/prd/billing/support-iap.md`）；支付平台配置管理支持添加、编辑、启用/禁用、删除（API Key、Secret Key、Webhook Secret）
+- 支持多种支付平台：Creem（真实支付渠道）、Stripe（详见 `docs/prd/billing/stripe-payment.md`）、WeChat Pay（`docs/prd/billing/wechat-support.md`）、Apple / Google 内购（`docs/prd/billing/support-iap.md`）；支付平台配置管理支持添加、编辑、启用/禁用、删除（API Key、Secret Key、Webhook Secret）
 - Provider Entitlement 映射管理（查看、配置积分策略、启用/禁用、触发 Provider 产品同步）
 - 支付方商品同步与 provider-sourced cache
 - 前端 Entitlement 映射管理页面
@@ -64,7 +64,7 @@
 - **Realm 系统** — Billing 功能属于 Realm 级别
 - **Client App 系统** — 套餐分配到 Client App
 - **权限管理系统** — Realm Admin 权限检查
-- **支付平台集成** — 当前已集成 Creem（模拟支付平台）、Stripe（`docs/prd/billing/stripe-payment.md`）、WeChat Pay（`docs/prd/billing/wechat-support.md`）与 Apple / Google 内购（`docs/prd/billing/support-iap.md`）
+- **支付平台集成** — 当前已集成 Creem（真实支付渠道）、Stripe（`docs/prd/billing/stripe-payment.md`）、WeChat Pay（`docs/prd/billing/wechat-support.md`）与 Apple / Google 内购（`docs/prd/billing/support-iap.md`）
 
 ---
 
@@ -102,6 +102,7 @@
 - 订阅状态转换需通过合法性验证
 - 支持 Creem 的 checkout.completed、subscription.active/trialing/paid/paused/canceled/expired/update/scheduled_cancel、subscription.past_due、dispute.created、refund.created 事件
 - 支持 Stripe 的 checkout.session.completed/expired/async_payment_succeeded/async_payment_failed、customer.subscription.created/updated/deleted/paused/resumed、charge.refunded、charge.dispute.created/closed、invoice.payment_succeeded/payment_failed/payment_action_required/created/finalized/paid/voided、payment_intent.succeeded/payment_failed 事件（详见 `docs/prd/billing/stripe-payment.md`）
+- Stripe `credit_note.created/updated/voided` 事件同样经本 webhook 链路（含补偿重放）处理，但其能力面——落 Credit Note 记录并联动发票退款总额——由 [invoice.md](invoice.md) §4.2 承载，此处不重复定义
 
 **Webhook 补偿规则**：
 

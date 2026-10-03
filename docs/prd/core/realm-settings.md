@@ -67,7 +67,7 @@
 - **Registration 键名统一**：注册开关使用 `config_key = "enabled"`，创建 Realm、查询注册状态和 public config 均使用同一键名。
 
 > **计划中功能**：以下功能在 PRD 中曾提及但当前代码无实现，移至未来扩展：
-> - 密码策略配置（最小长度、大小写、数字、特殊字符要求）：`password_min_length`、`require_uppercase`、`require_lowercase`、`require_numbers`、`require_special_chars` 仅在 ConfigType::Registration 的注释中声明为合法键，前后端均无消费方（前端密码强度规则为硬编码常量，不从 Realm Config 读取）；实际被读取的 Registration 键仅为 `enabled`、`require_email_verification`、`allowed_domains`
+> - 密码策略配置（最小长度、大小写、数字、特殊字符要求）：`password_min_length`、`require_uppercase`、`require_lowercase`、`require_numbers`、`require_special_chars` 在 ConfigType::Registration 的代码注释中明确声明为 NOT consumed by any reader——密码规则由用户服务执行，不经该配置类型配置（前端密码强度规则为硬编码常量，不从 Realm Config 读取）；实际被读取的 Registration 键仅为 `enabled`、`require_email_verification`、`allowed_domains`
 > - `default_user_status`（Registration 配置中新用户默认状态，取值范围 0-3）：当前代码中无此字段，未来可能作为 Registration 类型的 config_key 新增
 
 ---
@@ -90,7 +90,7 @@
 
 **API / 集成边界:**
 
-- 接口能力范围：Realm Config 的查询、单个 Upsert、批量 Upsert（batch_upsert）、删除（delete），涵盖 registration、email、totp、totp_key、passkey、white_label、custom_domain、ldap、email_otp、platform_signup、stripe、creem、apple、google、wechat、invoice_policy、turnstile 配置类型（以 ConfigType 枚举为准），以及 OAuth Provider 的独立配置管理。`turnstile` 配置类型仅保留遗留兼容，不再承载有效配置（见 §7）。**例外类型两种：`custom_domain` 与 `white_label`——通用 configs API 对这两类仅放行查询，全部写路径（单个/批量 Upsert、删除）一律 400 拒绝**：`custom_domain` 的写会绕过专用 custom-domain 端点对 `custom_domain_mapping` 耦合表的同步维护（见 realm-custom-domain.md §2.3）；`white_label` 的写会绕过专用白标端点对品牌值（CSS 注入、URL 加载等）的校验直接把未校验值发布给第三方登录 UI，且通用 DELETE 可清除已发布品牌配置或 `previous_settings` 恢复快照、绕过草稿/发布/恢复生命周期（见 ui-custom.md §6）。因此这两类行的写与删必须走各自的专用端点
+- 接口能力范围：Realm Config 的查询、单个 Upsert、批量 Upsert（batch_upsert）、删除（delete），涵盖 registration、email、totp、totp_key、passkey、white_label、custom_domain、ldap、email_otp、platform_signup、stripe、creem、apple、google、wechat、invoice_policy、turnstile 配置类型（以 ConfigType 枚举为准），以及 OAuth Provider 的独立配置管理。`turnstile` 配置类型仅保留遗留兼容，不再承载有效配置（见 §7）。**例外类型两种：`custom_domain` 与 `white_label`——通用 configs API 对这两类仅放行查询，全部写路径（单个/批量 Upsert、删除）一律 400 拒绝**：`custom_domain` 的写会绕过专用 custom-domain 端点对 `custom_domain_mapping` 耦合表的同步维护（见 realm-custom-domain.md §2.3）；`white_label` 的写会绕过专用白标端点对品牌值（CSS 注入、URL 加载等）的校验直接把未校验值发布给第三方登录 UI，且通用 DELETE 可清除已发布品牌配置或 `previous_settings` 恢复快照、绕过草稿/发布/恢复生命周期（见 ui-custom.md §6）。因此这两类行的写与删必须走各自的专用端点。**第三类写拒绝：`platform_signup` 仅对 admin realm 有效**——自助开通开关只从 admin realm 读取（见 realm-create PRD），非 admin realm 经通用 configs API 对该类型的写与删一律 400 拒绝，避免产生无人读取的脏数据。此外，TOTP、Passkey、Email OTP 三类认证方式配置除通用 configs API 外，另有各自的专用配置端点承载读取与更新（更新操作记录审计日志）
 - 详细接口契约、验证规则和错误模型在技术设计文档中维护
 
 **前端 / 交互边界:**

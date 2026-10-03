@@ -31,6 +31,13 @@ pub struct PointsWalletResponse {
     pub updated_at: String,
     pub unit: String,
     pub currency: String,
+    /// Earliest upcoming pool expiry (RFC3339) across the wallets in this
+    /// view's scope — `MIN(points_credit_ledger.expires_at)` over the same
+    /// predicate as `balance` (`compute_next_pool_expiry`). `null` ⟺ no
+    /// expiring pool balance (permanent-only or empty). PRD points.md §4.1
+    /// 「用户可查看即将过期的池子类型积分」: the backend supplies the time;
+    /// "即将过期" presentation thresholds are frontend concerns.
+    pub expires_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, ToSchema)]
@@ -175,6 +182,13 @@ pub struct WalletByBucketResponse {
     /// component; otherwise the pool contribution to `bucket_total`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub spendable_from_pool: Option<i64>,
+    /// Earliest upcoming pool expiry (RFC3339) for this (user, bucket) —
+    /// `MIN(points_credit_ledger.expires_at)` over the same predicate as
+    /// `balances_by_type` (`compute_next_pool_expiry`). `null` ⟺ the pool has
+    /// no expiring balance (permanent-only or empty pool). PRD points.md §4.1
+    /// 「用户可查看即将过期的池子类型积分」: the backend supplies the time;
+    /// "即将过期" presentation thresholds are frontend concerns.
+    pub expires_at: Option<String>,
 }
 
 /// Aggregated wallets-by-bucket list response.

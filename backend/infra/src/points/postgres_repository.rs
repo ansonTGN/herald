@@ -4881,6 +4881,71 @@ impl PointsRepository for PostgresPointsRepository {
         }
     }
 
+    /// Earliest upcoming pool expiry: `MIN(expires_at)` over the same
+    /// predicate as `compute_available_balance`. The expiry gate
+    /// (`expires_at > now`) drops permanent (NULL) and already-expired rows,
+    /// so the MIN is over live expiring rows only. `None` ⟺ no expiring pool
+    /// balance in scope. `bucket_ids` semantics mirror
+    /// `compute_available_balance` (empty ⟺ all the user's buckets).
+    fn compute_next_pool_expiry(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        bucket_ids: &[Uuid],
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> impl std::future::Future<Output = Result<Option<chrono::DateTime<chrono::Utc>>, CoreError>> + Send
+    {
+        let pool = self.pool.clone();
+        let realm_id = realm_id.to_string();
+        let bucket_ids = bucket_ids.to_vec();
+        async move {
+            // Same empty-slice branch discipline as compute_available_balance:
+            // empty ⇒ no bucket_id filter (aggregate across all buckets).
+            let (min_expiry,): (Option<chrono::DateTime<chrono::Utc>>,) = if bucket_ids.is_empty() {
+                sqlx::query_as(
+                    r#"
+                    SELECT MIN(expires_at)
+                    FROM points_credit_ledger
+                    WHERE realm_id = $1
+                      AND user_id = $2
+                      AND status = 'active'
+                      AND remaining_amount > 0
+                      AND (effective_at IS NULL OR effective_at <= $3)
+                      AND (expires_at  IS NULL OR expires_at  >  $3)
+                    "#,
+                )
+                .bind(&realm_id)
+                .bind(user_id)
+                .bind(now)
+                .fetch_one(&pool)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?
+            } else {
+                sqlx::query_as(
+                    r#"
+                    SELECT MIN(expires_at)
+                    FROM points_credit_ledger
+                    WHERE realm_id = $1
+                      AND user_id = $2
+                      AND bucket_id = ANY($3)
+                      AND status = 'active'
+                      AND remaining_amount > 0
+                      AND (effective_at IS NULL OR effective_at <= $4)
+                      AND (expires_at  IS NULL OR expires_at  >  $4)
+                    "#,
+                )
+                .bind(&realm_id)
+                .bind(user_id)
+                .bind(&bucket_ids)
+                .bind(now)
+                .fetch_one(&pool)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?
+            };
+            Ok(min_expiry)
+        }
+    }
+
     /// Explicitly covered bucket ids for a client app in a realm.
     /// Same coverage set as the in-tx consume path (`find_covered_bucket_ids_in_tx`):
     /// explicit `credit_bucket_client_apps` rows, no `enabled` filter — balances

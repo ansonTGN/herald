@@ -72,6 +72,7 @@ pub struct AddPolicyRequest {
     responses(
         (status = 200, description = "Role policies retrieved successfully", body = RolePoliciesResponse),
         (status = 403, description = "Forbidden - Insufficient permissions", body = ErrorResponse),
+        (status = 404, description = "Role not found", body = ErrorResponse),
         (status = 500, description = "Internal server error", body = ErrorResponse)
     ),
     tag = "permission"
@@ -81,21 +82,29 @@ pub async fn get_role_policies(
     Extension(identity): Extension<Identity>,
     Path(role_uuid): Path<Uuid>,
 ) -> Result<ApiResult<RolePoliciesResponse>, ApiError> {
-    // First, get the role to determine realm_id
-    let role = herald_core::entity::roles::Entity::find()
+    let admin = AdminIdentity::require(identity, "role policies")?;
+    admin.require_permission(&state, "policies", "view").await?;
+    let realm_id = admin.realm_id().to_string();
+
+    // The realm is pinned by the admin session (permissions.md §4.2: admin
+    // endpoints take no realm path segment and cross-realm resources 404), so
+    // scope the role lookup to the caller's realm instead of loading the role
+    // globally and rejecting the mismatch afterwards — that 403/404 split
+    // leaked cross-realm role existence.
+    let role_exists = herald_core::entity::roles::Entity::find()
         .filter(herald_core::entity::roles::Column::Id.eq(role_uuid))
+        .filter(herald_core::entity::roles::Column::RealmId.eq(realm_id.as_str()))
         .one(state.db.as_ref())
         .await
         .map_err(|e| {
             tracing::error!(error = %e, role_id = %role_uuid, "Failed to query role");
             ApiError::internal("Failed to query role")
         })?
-        .ok_or_else(|| ApiError::not_found("Role not found"))?;
+        .is_some();
+    if !role_exists {
+        return Err(ApiError::not_found("Role not found"));
+    }
 
-    let realm_id = role.realm_id;
-
-    let admin = AdminIdentity::require_in_realm(identity, &realm_id, "role policies")?;
-    admin.require_permission(&state, "policies", "view").await?;
     // Query role_policies
     let policies = role_policies::Entity::find()
         .filter(role_policies::Column::RoleId.eq(role_uuid))
@@ -153,33 +162,39 @@ pub async fn add_policy_to_role(
         )));
     }
 
-    // Get role to determine realm_id
-    let role = herald_core::entity::roles::Entity::find()
+    let admin = AdminIdentity::require(identity, "role policies")?;
+    admin
+        .require_permission(&state, "policies", "manage")
+        .await?;
+    let realm_id = admin.realm_id().to_string();
+
+    // Scope the role lookup to the admin session's realm (permissions.md
+    // §4.2: cross-realm resources 404 rather than 403).
+    let role_exists = herald_core::entity::roles::Entity::find()
         .filter(herald_core::entity::roles::Column::Id.eq(role_id))
+        .filter(herald_core::entity::roles::Column::RealmId.eq(realm_id.as_str()))
         .one(state.db.as_ref())
         .await
         .map_err(|e| {
             tracing::error!(error = %e, role_id = %role_id, "Failed to query role");
             ApiError::internal("Failed to query role")
         })?
-        .ok_or_else(|| ApiError::not_found("Role not found"))?;
+        .is_some();
+    if !role_exists {
+        return Err(ApiError::not_found("Role not found"));
+    }
 
-    let realm_id = role.realm_id;
-
-    let admin = AdminIdentity::require_in_realm(identity, &realm_id, "role policies")?;
-    admin
-        .require_permission(&state, "policies", "manage")
-        .await?;
-
-    // Security: wildcard policies are reserved for the platform; mirror the
-    // guard used by direct user-permission assignment so the two policy-creation
-    // surfaces stay consistent (currently inert — matches_policy is exact-match
-    // — but a future matcher change would otherwise make this a bypass).
-    if request.resource == "All" || request.resource.contains("*") {
+    // Security: wildcard policies are reserved for the platform; shared guard
+    // with the other policy-creation surfaces so the same names (including
+    // action-segment `All`/`*`) are rejected everywhere (currently inert —
+    // matches_policy is exact-match — but a future matcher change would
+    // otherwise make this a bypass).
+    if crate::admin::middleware::is_reserved_wildcard(&request.resource, &request.action) {
         tracing::warn!(
             role_id = %role_id,
             realm_id = %realm_id,
             resource = %request.resource,
+            action = %request.action,
             "Attempted to create privileged role policy"
         );
         return Err(ApiError::forbidden("Cannot create privileged policies"));
@@ -262,8 +277,16 @@ pub async fn remove_policy_from_role(
     Extension(identity): Extension<Identity>,
     Path((role_id, policy_id)): Path<(Uuid, Uuid)>,
 ) -> Result<ApiResult<()>, ApiError> {
+    let admin = AdminIdentity::require(identity, "role policies")?;
+    admin
+        .require_permission(&state, "policies", "manage")
+        .await?;
+
+    // Scope the policy lookup to the admin session's realm (permissions.md
+    // §4.2: cross-realm resources 404 rather than 403).
     let policy = role_policies::Entity::find()
         .filter(role_policies::Column::Id.eq(policy_id))
+        .filter(role_policies::Column::RealmId.eq(admin.realm_id()))
         .one(state.db.as_ref())
         .await
         .map_err(|e| {
@@ -274,15 +297,9 @@ pub async fn remove_policy_from_role(
                 "Failed to query policy"
             );
             ApiError::internal("Failed to query policy")
-        })?;
-
-    let policy = policy.ok_or_else(|| ApiError::not_found("Policy not found"))?;
+        })?
+        .ok_or_else(|| ApiError::not_found("Policy not found"))?;
     let realm_id = policy.realm_id.clone();
-
-    let admin = AdminIdentity::require_in_realm(identity, &realm_id, "role policies")?;
-    admin
-        .require_permission(&state, "policies", "manage")
-        .await?;
 
     // The policy must actually be attached to the path role: otherwise a
     // caller could delete a realm-mate role's policy while the cache

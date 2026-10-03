@@ -934,3 +934,153 @@ async fn test_multi_wallet_grant_rule_bucket_references_and_user_non_leak(ctx: &
         "ordinary wallet schema must not leak ruleReferences"
     );
 }
+
+// =============================================================================
+// Scenario 7 (regression): wallet query surfaces carry the pool
+// expiry time
+// =============================================================================
+//
+// WHY this test exists: PRD points.md §4.1 declares 「用户可查看即将过期的
+// 池子类型积分」 and §4.2 「当前仅提供到期时间查询与页面展示」 — but the
+// expiry written at grant time (`points_credit_ledger.expires_at`) was only
+// ever echoed in the grant WRITE response; every subsequent wallet query
+// surface omitted it, so the "即将过期" capability had NO backend supply.
+// These assertions pin that the query surfaces now project the earliest
+// upcoming pool expiry from the same ledger rows the balance is derived from:
+//   - by-bucket rows (`expiresAt`) equal the EARLIEST grant-time expiry of
+//     that pool (MIN over live expiring ledger rows);
+//   - permanent-only pools keep `expiresAt` null (永久有效 ≠ 即将过期);
+//   - the flat wallet view (`GET /api/points/wallets/{userId}`) carries the
+//     earliest expiry across the user's pools;
+//   - the self-service `GET /api/user/wallets` surface (the PRD's user view)
+//     shares the same projection.
+// The backend supplies the time itself only — no "expiring soon" threshold
+// semantics (presentation-layer, per PRD wording).
+//
+/// User Story: US-CB-005 + points.md §4.1 积分过期机制「用户可查看即将过期的
+/// 池子类型积分」.
+#[test_context(TestContext)]
+#[tokio::test]
+async fn wallet_queries_surface_pool_expiry(ctx: &mut TestContext) {
+    let realm_id = ctx._realm_id.clone();
+    let pool = ctx.app_state.pool.clone();
+
+    // Caller: realm admin (the manage-gated list endpoint) who is also the
+    // wallet owner, so the same session can drive the self-service view.
+    let (token, user_id) =
+        setup_billing_admin_session_with_user(ctx, "cb_t05_pool_expiry@example.com").await;
+
+    // Bucket A: two expiring grants (earlier + later) → the MIN must win.
+    let bucket_a = create_test_credit_bucket(
+        &pool,
+        &realm_id,
+        CreditBucketOpts {
+            name: Some("Expiring Pool A".into()),
+            bucket_key: Some(format!("bucket-exp-a-{}", Uuid::now_v7())),
+            ..Default::default()
+        },
+    )
+    .await;
+    // Bucket B: permanent-only grant.
+    let bucket_b = create_test_credit_bucket(
+        &pool,
+        &realm_id,
+        CreditBucketOpts {
+            name: Some("Permanent Pool B".into()),
+            bucket_key: Some(format!("bucket-exp-b-{}", Uuid::now_v7())),
+            ..Default::default()
+        },
+    )
+    .await;
+
+    let earlier_expiry = chrono::Utc::now() + chrono::Duration::days(5);
+    let later_expiry = chrono::Utc::now() + chrono::Duration::days(30);
+    admin_grant_to_bucket(ctx, &realm_id, user_id, bucket_a, 120, Some(earlier_expiry)).await;
+    admin_grant_to_bucket(ctx, &realm_id, user_id, bucket_a, 30, Some(later_expiry)).await;
+    admin_grant_to_bucket(ctx, &realm_id, user_id, bucket_b, 80, None).await;
+
+    // --- (1) by-bucket grouped view: row-level earliest expiry -------------
+    let (status, body) = auth_user_get_via_api(ctx, "/api/points/wallets", "", &token).await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "wallets list must succeed: status={status:?} body={body:?}"
+    );
+
+    let items = items_array(&body).expect("wallets response must contain items[]");
+    let row_a = find_row_by_bucket(items, &bucket_a.to_string())
+        .expect("items[] must contain the expiring pool row");
+    let row_b = find_row_by_bucket(items, &bucket_b.to_string())
+        .expect("items[] must contain the permanent pool row");
+
+    let got_a = row_a
+        .get("expiresAt")
+        .and_then(|v| v.as_str())
+        .expect(
+            "expiring pool row must carry expiresAt — without it the 即将过期 capability \
+             has no backend supply",
+        )
+        .parse::<chrono::DateTime<chrono::Utc>>()
+        .expect("expiresAt must be a valid RFC3339 timestamp");
+    assert!(
+        (got_a - earlier_expiry).num_seconds().abs() < 1,
+        "pool row expiresAt must equal the EARLIEST grant-time expiry (MIN over live \
+         expiring ledger rows): expected ~{earlier_expiry:?}, got {got_a:?}"
+    );
+    assert!(
+        row_b.get("expiresAt").is_none_or(|v| v.is_null()),
+        "permanent-only pool must keep expiresAt null (永久有效 has no upcoming \
+         expiry): row={row_b:?}"
+    );
+
+    // --- (2) flat wallet view: earliest expiry across the user's pools -----
+    let (status, body) =
+        auth_user_get_via_api(ctx, &format!("/api/points/wallets/{}", user_id), "", &token).await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "flat wallet view must succeed: status={status:?} body={body:?}"
+    );
+    let got_flat = body
+        .as_ref()
+        .and_then(|v| v.get("expiresAt"))
+        .and_then(|v| v.as_str())
+        .expect("flat wallet view must carry the user-total earliest pool expiry")
+        .parse::<chrono::DateTime<chrono::Utc>>()
+        .expect("expiresAt must be a valid RFC3339 timestamp");
+    assert!(
+        (got_flat - earlier_expiry).num_seconds().abs() < 1,
+        "flat view expiresAt must be the earliest expiry across the user's pools \
+         (~{earlier_expiry:?}), got {got_flat:?}"
+    );
+
+    // --- (3) self-service view: the user's own 即将过期 supply --------------
+    // Shares group_wallets_by_bucket with the admin list; asserted here so
+    // the PRD's user-facing wording is pinned to a real endpoint.
+    let (status, body) = auth_user_get_via_api(ctx, "/api/user/wallets", "", &token).await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "self-service wallets must succeed: status={status:?} body={body:?}"
+    );
+    let items = items_array(&body).expect("user wallets response must contain items[]");
+    let user_row_a = find_row_by_bucket(items, &bucket_a.to_string())
+        .expect("user wallets items[] must contain the expiring pool row");
+    let user_row_b = find_row_by_bucket(items, &bucket_b.to_string())
+        .expect("user wallets items[] must contain the permanent pool row");
+    let got_user_a = user_row_a
+        .get("expiresAt")
+        .and_then(|v| v.as_str())
+        .expect("self-service view must carry the pool expiry for the end user")
+        .parse::<chrono::DateTime<chrono::Utc>>()
+        .expect("expiresAt must be a valid RFC3339 timestamp");
+    assert!(
+        (got_user_a - earlier_expiry).num_seconds().abs() < 1,
+        "self-service expiresAt must equal the earliest grant-time expiry: \
+         expected ~{earlier_expiry:?}, got {got_user_a:?}"
+    );
+    assert!(
+        user_row_b.get("expiresAt").is_none_or(|v| v.is_null()),
+        "self-service permanent-only pool must keep expiresAt null: row={user_row_b:?}"
+    );
+}

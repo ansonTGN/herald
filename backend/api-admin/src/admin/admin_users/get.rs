@@ -4,29 +4,34 @@ use axum::{
     extract::{Path, State},
     http::HeaderMap,
 };
+use chrono::{DateTime, Utc};
 use herald_api_base::application::http::common::auth_utils::AdminIdentity;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
+use herald_core::domain::user::AdminUserService;
+use herald_core::domain::user::admin_errors::UserAdminError;
 use uuid::Uuid;
 
 /// Get user by ID
 ///
-/// **MIGRATED**: Now uses Extension<Identity> for authentication
-/// Realm boundary check is enforced in Service layer
+/// Uses the admin-user service lookup, so a target outside the caller's
+/// realm is indistinguishable from a missing one (404, no id oracle) — the
+/// same `require_target_user_in_realm` semantics as the module's other
+/// handlers.
 #[utoipa::path(
     get,
     path = "/api/users/{userId}",
     tag = "users",
     summary = "Get user by ID",
-    description = "Get detailed information about a specific user. Requires `users.view` permission.",
+    description = "Get detailed information about a specific user. Requires `users.view` permission. Cross-realm targets return 404 (indistinguishable from missing).",
     params(
         ("userId" = Uuid, Path, description = "User ID")
     ),
     responses(
         (status = 200, description = "User found", body = UserDetailResponse),
-        (status = 403, description = "Forbidden - Insufficient permissions (requires users.view) or realm boundary violation", body = ErrorResponse),
-        (status = 404, description = "User not found", body = ErrorResponse),
+        (status = 403, description = "Forbidden - Insufficient permissions (requires users.view)", body = ErrorResponse),
+        (status = 404, description = "User not found (including cross-realm targets)", body = ErrorResponse),
         (status = 500, description = "Internal server error", body = ErrorResponse)
     ),
     security(("bearer_auth" = []))
@@ -37,59 +42,93 @@ pub async fn get_user(
     Path(target_user_id): Path<Uuid>,
     _headers: HeaderMap,
 ) -> Result<ApiResult<UserDetailResponse>, ApiError> {
-    use herald_core::domain::common::entities::app_errors::CoreError;
-
     let admin = AdminIdentity::require(identity, "user management")?;
     admin.require_permission(&state, "users", "view").await?;
 
-    // Call UserService - Realm boundary check is enforced in Service layer
-    use herald_core::domain::user::UserService;
+    let realm_id = admin.realm_id().to_string();
 
-    let user = UserService::get_user(
-        &*state.service.user_service(),
-        admin.identity().clone(),
-        target_user_id,
-    )
-    .await
-    .map_err(|e| match e {
-        CoreError::NotFound => ApiError::not_found("User not found"),
-        CoreError::Forbidden(msg) => {
-            tracing::warn!(
-                "Realm boundary check failed for get_user: user_id={}, error={}",
-                target_user_id,
-                msg
-            );
-            ApiError::forbidden(msg)
-        }
-        _ => {
-            tracing::error!("Failed to get user: {e}");
-            ApiError::internal("Failed to get user")
-        }
-    })?;
+    // In-realm lookup via the admin-user service (require_target_user_in_realm):
+    // a cross-realm id yields UserNotFound → 404, matching the module's
+    // id-oracle convention (update/delete/reset-password do the same).
+    let admin_user = state
+        .admin_user_service
+        .get_user_admin(admin.identity().clone(), &realm_id, target_user_id)
+        .await
+        .map_err(|e| match e {
+            UserAdminError::UserNotFound(id) => {
+                tracing::debug!(
+                    realm_id = %realm_id,
+                    user_id = %target_user_id,
+                    "Get user failed: user not found in realm"
+                );
+                ApiError::not_found(format!("User not found: {}", id))
+            }
+            UserAdminError::PermissionDenied(msg) => {
+                tracing::warn!(
+                    realm_id = %realm_id,
+                    user_id = %target_user_id,
+                    error = %msg,
+                    "Get user failed: permission denied"
+                );
+                ApiError::forbidden(msg)
+            }
+            UserAdminError::DatabaseError(msg) => {
+                tracing::error!(
+                    realm_id = %realm_id,
+                    user_id = %target_user_id,
+                    error = %msg,
+                    "Failed to get user"
+                );
+                ApiError::internal(format!("Database error: {}", msg))
+            }
+            UserAdminError::InternalError(msg) => {
+                tracing::error!(
+                    realm_id = %realm_id,
+                    user_id = %target_user_id,
+                    error = %msg,
+                    "Failed to get user"
+                );
+                ApiError::internal(msg)
+            }
+            _ => {
+                tracing::error!(
+                    realm_id = %realm_id,
+                    user_id = %target_user_id,
+                    "Unexpected error getting user"
+                );
+                ApiError::internal("Unexpected error")
+            }
+        })?;
 
-    // Fetch nickname from profile table (realm predicate mirrors the user
-    // lookup above so the row can never come from another realm)
-    let nickname: Option<String> =
-        sqlx::query_scalar("SELECT nickname FROM profile WHERE id = $1 AND realm_id = $2")
-            .bind(target_user_id)
-            .bind(admin.realm_id())
-            .fetch_optional(&state.pool)
-            .await
-            .map_err(|e| {
-                tracing::error!("Failed to fetch user nickname: {e}");
-                ApiError::internal("Failed to fetch user nickname")
-            })?
-            .flatten();
+    // Detail columns not carried by the AdminUser DTO. The realm predicate
+    // mirrors the service-level lookup above so the row can never come from
+    // another realm.
+    let (nickname, provider_ids, updated_at): (Option<String>, Vec<Uuid>, DateTime<Utc>) =
+        sqlx::query_as(
+            "SELECT p.nickname, a.provider_ids, a.updated_at
+             FROM account a
+             LEFT JOIN profile p ON p.id = a.id AND p.realm_id = a.realm_id
+             WHERE a.id = $1 AND a.realm_id = $2",
+        )
+        .bind(target_user_id)
+        .bind(&realm_id)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to fetch user detail columns: {e}");
+            ApiError::internal("Failed to fetch user details")
+        })?
+        .ok_or_else(|| ApiError::not_found("User not found"))?;
 
-    // Map User entity to UserDetailResponse
+    // Map to UserDetailResponse
     Ok(ApiResult::ok(UserDetailResponse {
-        id: user.id,
-        realm_id: user.realm_id,
-        email: user.email,
+        id: admin_user.id,
+        realm_id: admin_user.realm_id,
+        email: admin_user.email,
         nickname,
-        status: user.status as i16,
-        provider_ids: user.provider_ids,
-        created_at: user.created_at.to_rfc3339(),
-        updated_at: user.updated_at.to_rfc3339(),
+        status: admin_user.status as i16,
+        provider_ids,
+        created_at: admin_user.created_at,
+        updated_at: updated_at.to_rfc3339(),
     }))
 }

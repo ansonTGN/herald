@@ -1856,11 +1856,11 @@ async fn handle_refund_created(
         // Full-refund gate: a partial refund (any share, any count) keeps
         // the payment-granted permanent roles; only a refund that brings
         // the cumulative total to the original payment amount revokes
-        // them. Runs on duplicate re-delivery too: the revoke is
-        // idempotent (NotFound is a no-op; only source='payment' rows)
-        // and the call itself is best-effort, so re-running it is the
-        // only self-heal path when the first attempt failed transiently —
-        // the persistent dedup row above guards the points revocation.
+        // them. A revoke failure propagates so the event stays unprocessed
+        // and the provider redelivery / retry sweep re-runs it; the whole
+        // handler is re-runnable (the payment_refunds dedup row above
+        // makes the points clawback a no-op, the role revoke is
+        // idempotent).
         if outcome.fully_refunded {
             revoke_payment_roles_for_source(
                 &app_state,
@@ -1868,7 +1868,7 @@ async fn handle_refund_created(
                 payload.user_id,
                 &attempt.id.to_string(),
             )
-            .await;
+            .await?;
         }
 
         info!(

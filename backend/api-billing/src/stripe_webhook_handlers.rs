@@ -1636,16 +1636,17 @@ async fn handle_checkout_session_async_failed(
 
         // Revoke payment-granted permanent roles for this one-time attempt
         // with `source_id = attempt.id`, so revoke with the same source id.
-        // Idempotent: NotFound (no payment role / already revoked) is a no-op,
-        // not an error. Only `source='payment'` rows are touched; manual grants
-        // are unaffected.
+        // A failure propagates so the event stays unprocessed for the
+        // provider redelivery / retry sweep; safe to re-run: NotFound (no
+        // payment role / already revoked) is a no-op, not an error, and only
+        // `source='payment'` rows are touched.
         revoke_payment_roles_for_attempt(
             &app_state,
             realm_id,
             attempt.user_id,
             &attempt_id.to_string(),
         )
-        .await;
+        .await?;
 
         one_time_result
     } else {
@@ -2705,11 +2706,11 @@ async fn handle_charge_refunded(
         // Full-refund gate: a partial refund (any share, any count) keeps
         // the payment-granted permanent roles; only a refund that brings
         // the cumulative total to the original payment amount revokes
-        // them. Runs on duplicate re-delivery too: the revoke is
-        // idempotent (NotFound is a no-op; only source='payment' rows)
-        // and the call itself is best-effort, so re-running it is the
-        // only self-heal path when the first attempt failed transiently —
-        // the persistent dedup row above guards the points revocation.
+        // them. A revoke failure propagates so the event stays unprocessed
+        // and the provider redelivery / retry sweep re-runs it; the whole
+        // handler is re-runnable (the payment_refunds dedup row above
+        // makes the points clawback a no-op, the role revoke is
+        // idempotent).
         if outcome.fully_refunded {
             revoke_payment_roles_for_attempt(
                 &app_state,
@@ -2717,7 +2718,7 @@ async fn handle_charge_refunded(
                 payload.user_id,
                 &attempt.id.to_string(),
             )
-            .await;
+            .await?;
         }
 
         info!(

@@ -20,6 +20,11 @@ pub enum UserAdminError {
     #[error("Duplicate email: {0}")]
     DuplicateEmail(String),
 
+    /// The target user is in the `Deleted(3)` anonymizing terminal state
+    /// (users.md §4.2: 不可恢复). Admin mutations must not edit the tombstone.
+    #[error("User is deleted: {0}")]
+    UserDeleted(String),
+
     #[error("Database error: {0}")]
     DatabaseError(String),
 
@@ -41,6 +46,10 @@ impl From<UserAdminError> for CoreError {
             UserAdminError::PermissionDenied(msg) => CoreError::Forbidden(msg),
             UserAdminError::InvalidRoleAssignment(msg) => CoreError::BadRequest(msg),
             UserAdminError::DuplicateEmail(msg) => CoreError::BadRequest(msg),
+            // Deleted is a terminal state (users.md §4.2), so mutating it is a
+            // state conflict — same convention as self_delete's already-deleted
+            // rejection (CoreError::Conflict → 409).
+            UserAdminError::UserDeleted(msg) => CoreError::Conflict(msg),
             UserAdminError::DatabaseError(msg) => CoreError::InternalServerError(msg),
             UserAdminError::InternalError(msg) => CoreError::InternalServerError(msg),
         }

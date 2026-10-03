@@ -35,7 +35,7 @@
 
 - 批量导入配置
 - 平台健康检查与 Webhook 连接测试（本期均未提供专用测试端点）
-- 其他支付网关的详细实现（Creem 是模拟平台，其他平台需单独 PRD）
+- 其他支付网关的详细实现（Creem 是与 Stripe 并列的真实支付渠道，其集成语义分散承载于 subscription.md、invoice.md 等 PRD，本 PRD 不展开；其他平台需单独 PRD）
 - 多币种转换（使用 Stripe 原生币种支持）
 - 税务计算（使用 Stripe Tax 或后续集成）
 - Disputes 证据提交（Herald 只处理争议状态标记、审计记录和权益/积分策略；证据提交由 Stripe Dashboard 完成）
@@ -77,6 +77,7 @@
 - **Webhook 重试**：除依赖 Stripe 自身的重试发送策略外，代码对进程内处理实行最多 3 次的瞬态重试（`MAX_ATTEMPTS = 3`）；非瞬态失败仍依赖 Stripe 重发与补偿框架
 - **安全约束**：API Key 不得暴露给前端（仅 Publishable Key 可暴露）；Webhook 端点必须验证 Stripe Signature；所有支付操作必须通过 HTTPS；支付敏感信息不得存储在本地数据库；支付生命周期以 `payment_event` 与支付账本追踪，配置变更进入统一审计日志
 - **Webhook 签名验证**：使用 HMAC-SHA256 验证，签名格式为 `stripe-signature` 头中的 `t=...,v1=...`；包含时间戳重放攻击防护（15 分钟窗口，即 900 秒），拒绝过旧或未来时间戳的请求
+- **Creem 回调防护模型（对照）**：Creem 回调仅做 HMAC-SHA256 验签（对原始请求体的 `creem-signature` 头），签名不含时间戳成分，因此没有 Stripe/WeChat 的 900 秒时间戳重放窗口；重放缓解依赖事件级幂等（payment_event 去重），防护弱于 Stripe/WeChat
 
 ---
 

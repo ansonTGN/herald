@@ -72,7 +72,7 @@ pub async fn create_permission(
     }
 
     // Security: wildcard permissions are reserved for the platform.
-    if super::is_reserved_wildcard(resource, action) {
+    if super::super::middleware::is_reserved_wildcard(resource, action) {
         tracing::warn!(
             user_id = %admin.user_id_string(),
             realm_id = %realm_id,

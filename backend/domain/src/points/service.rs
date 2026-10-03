@@ -184,6 +184,13 @@ where
             .compute_available_balance(realm_id, user_id, &[], now)
             .await?;
 
+        // Earliest upcoming pool expiry over the same predicate (PRD
+        // points.md §4.1 「用户可查看即将过期的池子类型积分」).
+        let expires_at = self
+            .repository
+            .compute_next_pool_expiry(realm_id, user_id, &[], now)
+            .await?;
+
         // Window-quota availability for the window-model credit types
         // (subscription + free-periodic). Folded into the balance so the
         // user-visible total matches what `consume_points_atomic` can spend.
@@ -195,6 +202,7 @@ where
             account,
             derived,
             window_balances,
+            expires_at,
         ))
     }
 
@@ -239,24 +247,31 @@ where
         // An app that covers no buckets must yield a zero balance — NOT fall
         // back to the unfiltered view (an empty bucket slice means "all
         // buckets" in compute_available_balance).
-        let (derived, window_balances) = if covered.is_empty() {
-            (Vec::new(), Default::default())
+        let (derived, window_balances, expires_at) = if covered.is_empty() {
+            (Vec::new(), Default::default(), None)
         } else {
             let derived = self
                 .repository
                 .compute_available_balance(realm_id, user_id, &covered, now)
                 .await?;
+            // Pool expiry scoped to the same coverage set the balance above
+            // is restricted to.
+            let expires_at = self
+                .repository
+                .compute_next_pool_expiry(realm_id, user_id, &covered, now)
+                .await?;
             let covered_set: std::collections::HashSet<Uuid> = covered.iter().copied().collect();
             let window_balances = self
                 .compute_window_balance_for_buckets(realm_id, user_id, Some(&covered_set), now)
                 .await?;
-            (derived, window_balances)
+            (derived, window_balances, expires_at)
         };
 
         Ok(Self::build_balance_from_derived(
             account,
             derived,
             window_balances,
+            expires_at,
         ))
     }
 
@@ -330,10 +345,13 @@ where
     /// the derived SUM keyed by `CreditType` plus the window-model
     /// contribution; analytics (`total_recharged` / `total_consumed`) are
     /// passed through from the Stored wallet (analytics remain Stored).
+    /// `expires_at` is the earliest upcoming pool expiry over the same
+    /// predicate (`compute_next_pool_expiry`), passed in by the caller.
     fn build_balance_from_derived(
         account: PointsWallet,
         derived: Vec<(CreditType, i64)>,
         window_balances: std::collections::HashMap<CreditType, i64>,
+        expires_at: Option<chrono::DateTime<chrono::Utc>>,
     ) -> PointsBalance {
         let mut topup = 0i64;
         let mut subscription = 0i64;
@@ -373,6 +391,7 @@ where
             total_consumed: account.total_consumed,
             unit: "points".to_string(),
             updated_at: account.updated_at,
+            expires_at,
         }
     }
 
@@ -928,9 +947,10 @@ where
     /// Revoke topup points for a single provider refund (fail-loud on
     /// nonsensical amounts). The idempotency unit is the provider refund id;
     /// see `TopupRefundRevokeRequest`. The caller gates payment-role
-    /// revocation on `fully_refunded` alone: the revoke is idempotent, so
-    /// duplicate re-delivery of a full refund re-runs it and self-heals a
-    /// transient best-effort failure.
+    /// revocation on `fully_refunded` alone and propagates its failure (the
+    /// event stays unprocessed and is re-run), so duplicate re-delivery of a
+    /// full refund re-runs the revoke — the duplicate branch must report the
+    /// recorded row's real gate state for that self-heal to work.
     pub async fn revoke_topup_refund(
         &self,
         request: TopupRefundRevokeRequest<'_>,

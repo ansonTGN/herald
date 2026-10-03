@@ -600,4 +600,252 @@ mod tests {
 
         tracing::info!("✓ In-use permission deletion conflicts until fully unreferenced");
     }
+
+    /// 场景测试：非 admin realm 不可通过 rename 造出敏感权限定义
+    ///
+    /// **Given**: realm-b（非 admin realm）的管理员创建了自定义权限定义
+    /// **When**: 把该定义 rename 为 `realm.manage`
+    /// **Then**: API 返回 403 Forbidden——`realm.manage` 的权限定义仅可在
+    /// admin realm 存在（permissions.md §4.1 敏感权限定义创建约束）。create
+    /// 侧已有同样守卫；rename 是同一个污染入口（跨租户语义的定义面污染 +
+    /// 未来 realm.manage 检查点的潜伏风险），必须同样封堵
+    /// **And**: rename 为普通名称仍然成功（守卫只针对敏感名）
+    #[test_context(PermissionSecurityTestContext)]
+    #[tokio::test]
+    async fn test_scenario_rename_to_sensitive_name_outside_admin_realm_forbidden(
+        ctx: &mut PermissionSecurityTestContext,
+    ) {
+        let app = ctx.create_unified_test_router();
+
+        // Given: admin realm 管理员创建 realm-b；其初始管理员持有 realm-b 的
+        // realm-admin（含 permissions.manage），可操作本 realm 的权限定义。
+        let (root_token, root_user_id) =
+            create_admin_session_with_user(ctx, "sensitive-rename-root@test.com", 1800).await;
+        grant_realm_admin_role(ctx, &root_user_id).await;
+
+        let create_realm_req = Request::builder()
+            .method("POST")
+            .uri("/api/realms")
+            .header("content-type", "application/json")
+            .header(header::AUTHORIZATION, format!("Bearer {}", root_token))
+            .body(Body::from(
+                json!({
+                    "name": "Sensitive Rename Realm",
+                    "adminUser": { "email": "admin@sensitive-realm.com", "password": "password123" }
+                })
+                .to_string(),
+            ))
+            .unwrap();
+        let create_realm_resp = app.clone().oneshot(create_realm_req).await.unwrap();
+        assert_eq!(create_realm_resp.status(), StatusCode::CREATED);
+        let realm_b: serde_json::Value = crate::tests::response_json(create_realm_resp).await;
+        let realm_b_id = realm_b["id"].as_str().expect("realm id").to_string();
+        let realm_b_admin_id =
+            uuid::Uuid::parse_str(realm_b["adminUser"]["id"].as_str().expect("admin user id"))
+                .unwrap();
+        assert_ne!(
+            realm_b_id, "admin",
+            "fixture realm must not be the admin realm"
+        );
+
+        let realm_b_token = mint_first_party_session(ctx, realm_b_admin_id).await;
+
+        // Given: realm-b 管理员创建一个普通自定义权限定义
+        let create_req = Request::builder()
+            .method("POST")
+            .uri("/api/permission/define")
+            .header("content-type", "application/json")
+            .header(header::AUTHORIZATION, format!("Bearer {}", realm_b_token))
+            .body(Body::from(
+                json!({ "name": "test.rename-me", "description": "Rename target" }).to_string(),
+            ))
+            .unwrap();
+        let create_resp = app.clone().oneshot(create_req).await.unwrap();
+        assert_eq!(
+            create_resp.status(),
+            StatusCode::CREATED,
+            "realm-b admin with permissions.manage must create ordinary definitions"
+        );
+        let created: serde_json::Value = crate::tests::response_json(create_resp).await;
+        let permission_id = created["id"].as_str().unwrap();
+
+        // When: rename 为敏感名 realm.manage
+        let rename_resp = app
+            .clone()
+            .oneshot(put_permission_request(
+                &realm_b_token,
+                &realm_b_id,
+                permission_id,
+                "realm.manage",
+                "Escalation attempt",
+            ))
+            .await
+            .unwrap();
+
+        // Then: 403——create 拒绝的敏感名，rename 同样不得绕过
+        assert_eq!(
+            rename_resp.status(),
+            StatusCode::FORBIDDEN,
+            "Renaming to realm.manage outside the admin realm must be forbidden"
+        );
+        let error_body: serde_json::Value = crate::tests::response_json(rename_resp).await;
+        assert!(
+            error_body["message"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("admin realm"),
+            "Error should name the admin-realm-only constraint, got: {}",
+            error_body["message"]
+        );
+
+        let leaked: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM permissions WHERE realm_id = $1 AND name = 'realm.manage'",
+        )
+        .bind(&realm_b_id)
+        .fetch_one(&ctx._app_state.pool)
+        .await
+        .unwrap();
+        assert_eq!(leaked, 0, "No realm.manage definition may exist in realm-b");
+
+        // And: rename 为普通名仍然成功（守卫不误伤合法 rename）
+        let ordinary_resp = app
+            .clone()
+            .oneshot(put_permission_request(
+                &realm_b_token,
+                &realm_b_id,
+                permission_id,
+                "test.ordinary",
+                "Ordinary rename",
+            ))
+            .await
+            .unwrap();
+        assert_eq!(
+            ordinary_resp.status(),
+            StatusCode::OK,
+            "Renaming to an ordinary name must stay allowed"
+        );
+        let renamed: serde_json::Value = crate::tests::response_json(ordinary_resp).await;
+        assert_eq!(renamed["name"], "test.ordinary");
+
+        tracing::info!("✓ Sensitive-name rename guard matches the create-side constraint");
+    }
+
+    /// 场景测试：权限定义 rename 的通配/All 守卫覆盖 action 段
+    ///
+    /// **Given**: 管理员创建了自定义权限定义
+    /// **When**: rename 为 action 段含通配符（`test.vie*`）或字面 `All`
+    ///（`test.All`）的名称，或 resource 段 `All`（`All.manage`，回归）
+    /// **Then**: 均返回 403——通配/All 为平台保留（permissions.md §2.2 不
+    /// 引入通配符权限），且守卫与 create / 角色策略 / 直接授权面共用同一
+    /// 规则，任一段命中即拒绝；数据库不出现这些名称
+    #[test_context(PermissionSecurityTestContext)]
+    #[tokio::test]
+    async fn test_scenario_permission_definition_rename_rejects_wildcard_in_either_segment(
+        ctx: &mut PermissionSecurityTestContext,
+    ) {
+        let (admin_token, user_id_str) =
+            create_admin_session_with_user(ctx, "test-wildcard-rename@test.com", 1800).await;
+        grant_realm_admin_role(ctx, &user_id_str).await;
+
+        let app = ctx.create_unified_test_router();
+        let create_req = Request::builder()
+            .method("POST")
+            .uri("/api/permission/define")
+            .header("content-type", "application/json")
+            .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
+            .body(Body::from(
+                json!({ "name": "test.guard", "description": "Wildcard guard target" }).to_string(),
+            ))
+            .unwrap();
+        let create_resp = app.clone().oneshot(create_req).await.unwrap();
+        assert_eq!(create_resp.status(), StatusCode::CREATED);
+        let created: serde_json::Value = crate::tests::response_json(create_resp).await;
+        let permission_id = created["id"].as_str().unwrap();
+
+        for rejected_name in ["test.vie*", "test.All", "All.manage"] {
+            let resp = app
+                .clone()
+                .oneshot(put_permission_request(
+                    &admin_token,
+                    &ctx._realm_id,
+                    permission_id,
+                    rejected_name,
+                    "Must be rejected",
+                ))
+                .await
+                .unwrap();
+            assert_eq!(
+                resp.status(),
+                StatusCode::FORBIDDEN,
+                "Rename to '{rejected_name}' must hit the shared wildcard guard"
+            );
+        }
+
+        let leaked: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM permissions WHERE realm_id = $1 AND (action = 'All' OR action LIKE '%*%' OR resource = 'All')",
+        )
+        .bind(&ctx._realm_id)
+        .fetch_one(&ctx._app_state.pool)
+        .await
+        .unwrap();
+        assert_eq!(leaked, 0, "No wildcard/All definition may be written");
+
+        tracing::info!("✓ Definition rename rejects All/* in both resource and action segments");
+    }
+
+    /// 场景测试：用户直接授权面的通配/All 守卫覆盖 action 段
+    ///
+    /// **Given**: 管理员（policies.manage + users.manage 自持）与同 realm 用户
+    /// **When**: POST /api/users/{userId}/permissions 附带 action 段 `All` /
+    /// `manage*`，或 resource 段 `All`（回归）
+    /// **Then**: 均返回 403，且目标用户名下无任何直接策略行——三个策略
+    /// 创建面（定义/角色策略/直接授权）共用同一守卫，action 段不得成为
+    /// 绕过口（permissions.md §4.2 安全约束：不可创建 All 或通配符权限策略）
+    #[test_context(PermissionSecurityTestContext)]
+    #[tokio::test]
+    async fn test_scenario_direct_user_permission_rejects_wildcard_in_either_segment(
+        ctx: &mut PermissionSecurityTestContext,
+    ) {
+        let (admin_token, user_id_str) =
+            create_admin_session_with_user(ctx, "test-direct-wildcard@test.com", 1800).await;
+        grant_realm_admin_role(ctx, &user_id_str).await;
+        let target_user_id = create_simple_test_user(ctx, "direct-wildcard-target@test.com").await;
+
+        let app = ctx.create_unified_test_router();
+        for (resource, action) in [("users", "All"), ("users", "manage*"), ("All", "manage")] {
+            let resp = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri(format!("/api/users/{}/permissions", target_user_id))
+                        .header("content-type", "application/json")
+                        .header(header::AUTHORIZATION, format!("Bearer {}", admin_token))
+                        .body(Body::from(
+                            json!({ "resource": resource, "action": action }).to_string(),
+                        ))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                resp.status(),
+                StatusCode::FORBIDDEN,
+                "Direct grant ({resource},{action}) must hit the shared wildcard guard"
+            );
+        }
+
+        let leaked: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM role_policies WHERE role_id = $1::uuid")
+                .bind(target_user_id)
+                .fetch_one(&ctx._app_state.pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            leaked, 0,
+            "No direct policy row may be written for the target"
+        );
+
+        tracing::info!("✓ Direct user-permission grants reject All/* in both segments");
+    }
 }

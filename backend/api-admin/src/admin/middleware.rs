@@ -23,3 +23,13 @@ pub fn validate_sensitive_permission_creation(
     }
     Ok(())
 }
+
+/// Whether a permission or policy name uses a platform-reserved wildcard
+/// (`All`, or a `*` in either segment). Wildcards are reserved for the
+/// platform: the RBAC matcher is exact-match today so this is inert, but a
+/// future wildcard matcher would turn such rows into bypasses. Shared by all
+/// policy-creation surfaces (permission definitions, role policies, direct
+/// user permissions) so they reject the same names in both segments.
+pub fn is_reserved_wildcard(resource: &str, action: &str) -> bool {
+    resource == "All" || action == "All" || resource.contains('*') || action.contains('*')
+}

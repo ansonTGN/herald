@@ -113,6 +113,7 @@ fn pool_balance_sum(balances: &BalancesByType) -> i64 {
 fn wallet_to_response(
     account: PointsWallet,
     derived: Vec<(CreditType, i64)>,
+    expires_at: Option<chrono::DateTime<chrono::Utc>>,
 ) -> PointsWalletResponse {
     let bucket_id = account.bucket_id;
     let total_balance = derived_to_balances_by_type(&derived).total();
@@ -132,6 +133,9 @@ fn wallet_to_response(
         updated_at: account.updated_at.to_rfc3339(),
         unit: POINTS_UNIT.to_string(),
         currency: POINTS_UNIT.to_string(),
+        // Earliest upcoming pool expiry over the same predicate as the
+        // derived balance (RFC3339, mirroring GrantPointsResponse.expiresAt).
+        expires_at: expires_at.map(|dt| dt.to_rfc3339()),
     }
 }
 
@@ -203,6 +207,8 @@ async fn group_wallets_by_bucket(
     }
 
     let mut balances_by_key: BTreeMap<(Option<Uuid>, Uuid), BalancesByType> = BTreeMap::new();
+    let mut expiry_by_key: BTreeMap<(Option<Uuid>, Uuid), Option<chrono::DateTime<chrono::Utc>>> =
+        BTreeMap::new();
     for (bucket_id, user_id) in group_keys.keys() {
         // Aggregate (bucket_id=None) rows have no concrete bucket; their
         // derived balance is the user-total across all buckets, fetched with
@@ -217,6 +223,18 @@ async fn group_wallets_by_bucket(
             .compute_available_balance(realm_id, *user_id, bucket_filter, now)
             .await
             .unwrap_or_default();
+        // Earliest upcoming pool expiry over the same predicate / bucket
+        // scope. Unlike the balance read (best-effort `.unwrap_or_default()`
+        // above), a failure here is surfaced — the expiry view is the point
+        // of this field and silently dropping it would reintroduce the
+        // "no backend supply for 即将过期" gap invisibly. Same fail-loud
+        // policy as `compute_bucket_window_view` below.
+        let next_expiry = state
+            .points_repository
+            .compute_next_pool_expiry(realm_id, *user_id, bucket_filter, now)
+            .await
+            .map_err(ApiError::from)?;
+        expiry_by_key.insert((*bucket_id, *user_id), next_expiry);
         balances_by_key.insert(
             (*bucket_id, *user_id),
             derived_to_balances_by_type(&derived),
@@ -266,6 +284,9 @@ async fn group_wallets_by_bucket(
             quota_windows,
             spendable_from_quota,
             spendable_from_pool,
+            expires_at: expiry_by_key
+                .get(&(bucket_id, user_id))
+                .and_then(|dt| dt.map(|dt| dt.to_rfc3339())),
         });
     }
 
@@ -448,7 +469,14 @@ pub async fn get_wallet(
                 .compute_available_balance(&realm_id, user_uuid, &[], now)
                 .await
                 .map_err(ApiError::from)?;
-            Ok(Json(wallet_to_response(account, derived)))
+            // Earliest upcoming pool expiry across the same user-total scope
+            // (empty bucket_ids ⟺ all the user's buckets).
+            let expires_at = state
+                .points_repository
+                .compute_next_pool_expiry(&realm_id, user_uuid, &[], now)
+                .await
+                .map_err(ApiError::from)?;
+            Ok(Json(wallet_to_response(account, derived, expires_at)))
         }
         Err(e) => Err(ApiError::from(e)),
     }
@@ -496,5 +524,15 @@ pub async fn update_wallet_status(
         )
         .await
         .map_err(ApiError::from)?;
-    Ok(Json(wallet_to_response(wallet, derived)))
+    let expires_at = state
+        .points_repository
+        .compute_next_pool_expiry(
+            &realm_id,
+            user_id,
+            std::slice::from_ref(&bucket_id),
+            chrono::Utc::now(),
+        )
+        .await
+        .map_err(ApiError::from)?;
+    Ok(Json(wallet_to_response(wallet, derived, expires_at)))
 }

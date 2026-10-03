@@ -69,7 +69,7 @@ pub async fn update_permission(
 
     // Security: same wildcard guard as create (renaming an unassigned
     // definition to All/* would otherwise reopen what create refuses).
-    if super::is_reserved_wildcard(resource, action) {
+    if super::super::middleware::is_reserved_wildcard(resource, action) {
         super::record_permission_failure(
             &state,
             &admin,
@@ -108,6 +108,28 @@ pub async fn update_permission(
         return Err(ApiError::forbidden(
             "Cannot modify built-in permission definition",
         ));
+    }
+
+    // Security: same sensitive-name guard as create — renaming a definition
+    // to `realm.manage` would otherwise recreate outside the admin realm
+    // exactly what create refuses (permissions.md §4.1: sensitive permission
+    // definitions are admin-realm-only).
+    if payload.name != permission.name
+        && let Err(e) = super::super::middleware::validate_sensitive_permission_creation(
+            &payload.name,
+            &realm_id,
+        )
+    {
+        super::record_permission_failure(
+            &state,
+            &admin,
+            &realm_id,
+            AuditAction::PermissionUpdate,
+            (id.to_string(), Some(permission.name.clone())),
+            "sensitive_permission_outside_admin_realm",
+        )
+        .await;
+        return Err(e);
     }
 
     // resource/action are mirrored into role_policies (runtime authorization)

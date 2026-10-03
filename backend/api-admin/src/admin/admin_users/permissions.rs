@@ -14,6 +14,7 @@ use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
 use herald_core::domain::authorization::permission_service::PermissionService;
 use herald_core::domain::user::UserPermissionService;
+use herald_core::domain::user::UserStatus;
 use herald_core::domain::user::admin_errors::UserAdminError;
 use sqlx::Row;
 use uuid::Uuid;
@@ -121,12 +122,15 @@ pub async fn assign_user_permission(
         "Assigning direct permission to user"
     );
 
-    // Security: Cannot create "All" or wildcard policies
-    if payload.resource == "All" || payload.resource.contains("*") {
+    // Security: Cannot create "All" or wildcard policies — shared guard with
+    // the other policy-creation surfaces so the same names (including
+    // action-segment `All`/`*`) are rejected everywhere.
+    if crate::admin::middleware::is_reserved_wildcard(&payload.resource, &payload.action) {
         tracing::warn!(
             current_user_id = %current_user_id,
             realm_id = %realm_id,
             resource = %payload.resource,
+            action = %payload.action,
             "Attempted to create privileged policy"
         );
         return Err(ApiError::forbidden("Cannot create privileged policies"));
@@ -146,8 +150,10 @@ pub async fn assign_user_permission(
 
     // Security: the target user must exist in this realm, so policy rows are
     // never written for arbitrary ids (including users of other realms).
-    let target_exists =
-        sqlx::query_scalar::<_, Uuid>("SELECT id FROM account WHERE id = $1 AND realm_id = $2")
+    // Deleted(3) targets are refused: the anonymized tombstone must not gain
+    // authorization surface (users.md §4.2 terminal state).
+    let target_status: Option<i16> =
+        sqlx::query_scalar("SELECT status FROM account WHERE id = $1 AND realm_id = $2")
             .bind(target_user_id)
             .bind(&realm_id)
             .fetch_optional(&state.pool)
@@ -161,8 +167,18 @@ pub async fn assign_user_permission(
                 );
                 ApiError::internal("Failed to check target user")
             })?;
-    if target_exists.is_none() {
+    if target_status.is_none() {
         return Err(ApiError::not_found("User not found in this realm"));
+    }
+    if target_status == Some(UserStatus::Deleted as i16) {
+        tracing::warn!(
+            realm_id = %realm_id,
+            target_user_id = %target_user_id,
+            "Permission assignment rejected: target is Deleted (anonymized terminal state)"
+        );
+        return Err(ApiError::conflict(
+            "User is deleted (anonymized) and cannot be edited",
+        ));
     }
 
     // Check if permission already exists
@@ -283,8 +299,10 @@ pub async fn remove_user_permission(
 
     // Security: the target user must exist in this realm, matching the
     // assignment path (policy rows are only ever removed for realm users).
-    let target_exists =
-        sqlx::query_scalar::<_, Uuid>("SELECT id FROM account WHERE id = $1 AND realm_id = $2")
+    // Deleted(3) targets are refused like on the assignment path: the
+    // anonymized tombstone's authorization surface is a compliance record.
+    let target_status: Option<i16> =
+        sqlx::query_scalar("SELECT status FROM account WHERE id = $1 AND realm_id = $2")
             .bind(target_user_id)
             .bind(&realm_id)
             .fetch_optional(&state.pool)
@@ -298,8 +316,18 @@ pub async fn remove_user_permission(
                 );
                 ApiError::internal("Failed to check target user")
             })?;
-    if target_exists.is_none() {
+    if target_status.is_none() {
         return Err(ApiError::not_found("User not found in this realm"));
+    }
+    if target_status == Some(UserStatus::Deleted as i16) {
+        tracing::warn!(
+            realm_id = %realm_id,
+            target_user_id = %target_user_id,
+            "Permission removal rejected: target is Deleted (anonymized terminal state)"
+        );
+        return Err(ApiError::conflict(
+            "User is deleted (anonymized) and cannot be edited",
+        ));
     }
 
     // Delete the permission policy from role_policies table

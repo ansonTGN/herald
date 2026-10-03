@@ -26,6 +26,7 @@ use uuid::Uuid;
         (status = 200, description = "Password reset successfully", body = ResetPasswordResponse),
         (status = 403, description = "Forbidden - Insufficient permissions", body = ErrorResponse),
         (status = 404, description = "User not found", body = ErrorResponse),
+        (status = 409, description = "Conflict - User is deleted (anonymized terminal state)", body = ErrorResponse),
         (status = 500, description = "Internal server error", body = ErrorResponse)
     )
 )]
@@ -75,6 +76,14 @@ pub async fn reset_user_password(
                     "Password reset failed: user not found"
                 );
                 ApiError::not_found(format!("User not found: {}", id))
+            }
+            UserAdminError::UserDeleted(_) => {
+                tracing::warn!(
+                    realm_id = %realm_id,
+                    user_id = %target_user_id,
+                    "Password reset rejected: target is Deleted (anonymized terminal state)"
+                );
+                ApiError::conflict("User is deleted (anonymized) and cannot be edited")
             }
             UserAdminError::DatabaseError(msg) => {
                 tracing::error!(

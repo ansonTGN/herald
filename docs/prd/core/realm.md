@@ -94,12 +94,17 @@
 - Realm ID 创建后不可修改
 - Realm ID 可选，留空时自动生成 UUID v7
 
+**Realm 名称验证规则**
+
+- 名称必填，长度 3-50 个字符；管理通道创建与自助开通（realm-create）通道一致适用
+
 **Realm 创建初始化规则**
 
 - 创建 realm 时必须指定管理员用户的 email 和 password
 - 自动级联创建默认 web-console client app（client_id 固定为 `admin-web-console`）
 - 自动创建 API Key 客户端应用（client_id 固定为 `admin-api-client`），用于 API Key 认证
-- 自动创建个人中心客户端应用（client_id 固定为 `user-account-center`，供终端用户访问个人中心，浏览器 refresh 绝对上限 30 天）
+- 自动创建个人中心客户端应用（client_id 固定为 `user-account-center`，供终端用户访问个人中心）
+- 三个内置客户端应用（`admin-web-console`、`admin-api-client`、`user-account-center`）统一设置浏览器 refresh 绝对上限 30 天
 - 自动初始化注册配置（`registration.enabled: false`）
 - 自动创建管理员用户并分配 `realm-admin` 角色
 - 管理员用户状态自动设为 Normal（已验证），可立即登录
